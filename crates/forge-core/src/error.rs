@@ -71,6 +71,15 @@ pub enum ForgeError {
     /// The feature exists in the contracts but is not implemented yet.
     #[error("not implemented: {0}")]
     NotImplemented(String),
+
+    /// The operation was cancelled on request (`job.cancel`, Ctrl+C in the CLI).
+    #[error("cancelled: {0}")]
+    Cancelled(String),
+
+    /// Invariant broken inside the daemon: an actor or the store writer stopped, a job
+    /// panicked. Never caused by user input; always worth a bug report.
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 fn owner_suffix(owner: Option<&str>) -> String {
@@ -91,6 +100,8 @@ pub const ERROR_CODES: &[&str] = &[
     "unsupported_platform",
     "timeout",
     "not_implemented",
+    "cancelled",
+    "internal",
 ];
 
 impl ForgeError {
@@ -109,6 +120,8 @@ impl ForgeError {
             Self::UnsupportedPlatform(_) => "unsupported_platform",
             Self::Timeout { .. } => "timeout",
             Self::NotImplemented(_) => "not_implemented",
+            Self::Cancelled(_) => "cancelled",
+            Self::Internal(_) => "internal",
         }
     }
 
@@ -125,7 +138,9 @@ impl ForgeError {
             | Self::Schema(_)
             | Self::UnsupportedPlatform(_)
             | Self::Timeout { .. }
-            | Self::NotImplemented(_) => 1,
+            | Self::NotImplemented(_)
+            | Self::Cancelled(_)
+            | Self::Internal(_) => 1,
         }
     }
 
@@ -189,6 +204,8 @@ mod tests {
                 after: Duration::from_secs(1),
             },
             ForgeError::NotImplemented("x".into()),
+            ForgeError::Cancelled("x".into()),
+            ForgeError::Internal("x".into()),
         ]
     }
 

@@ -144,7 +144,7 @@ forge mcp serve                                      # servidor MCP via stdio pa
 ```
 
 ## Comportamentos
-- Erros da API trazem um `code` estável (`forge_core::error::ForgeError::code`, também no `--json`) que define o código de saída: `invalid_input`, `config_invalid` → 2 · `not_found` → 3 · `conflict`, `port_in_use` → 4 · `needs_elevation` → 5 · `verification_failed` → 6 · `io`, `db`, `unsupported_platform`, `timeout`, `not_implemented` → 1. Códigos nunca são renomeados; só se acrescentam.
+- Erros da API trazem um `code` estável (`forge_core::error::ForgeError::code`, também no `--json`) que define o código de saída: `invalid_input`, `config_invalid` → 2 · `not_found` → 3 · `conflict`, `port_in_use` → 4 · `needs_elevation` → 5 · `verification_failed` → 6 · `io`, `db`, `unsupported_platform`, `timeout`, `not_implemented`, `cancelled`, `internal` → 1. Códigos nunca são renomeados; só se acrescentam.
 - `--yes` pula confirmações; sem TTY assume `--yes=false` e falha com código 2 em ações que exigem confirmação (CI deve passar `--yes`).
 - Ações que precisam do helper elevado mostram "Precisa de confirmação de administrador (UAC)…" e disparam o prompt; com `--no-elevate` falham com código 5.
 - Downloads mostram barra multi-item com velocidade/ETA; `--quiet` só imprime resultado.

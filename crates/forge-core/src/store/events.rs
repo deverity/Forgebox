@@ -16,7 +16,8 @@ fn to_i64(seq: u64) -> Result<i64> {
 }
 
 impl<'c> EventRepo<'c> {
-    pub(crate) fn new(conn: &'c Connection) -> Self {
+    /// Repository on `conn` (maintenance connection, a writer operation or a reader).
+    pub fn new(conn: &'c Connection) -> Self {
         Self { conn }
     }
 

@@ -13,6 +13,10 @@ authors = ["Forgebox Team"]
 
 [workspace.dependencies]
 tokio = { version = "1.54.1", features = ["full"] }
+# CancellationToken (cooperative job cancellation, docs/03 §7.4).
+tokio-util = "0.7.20"
+# Opt-in tokio-console instrumentation (forge-core feature `console`, needs --cfg tokio_unstable).
+console-subscriber = "0.5.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 # serde_yml está deprecado; ver docs/adr/0012-yaml-crate-serde-yaml-ng.md
@@ -53,6 +57,9 @@ unsafe_op_in_unsafe_fn = "warn"
 all = { level = "warn", priority = -1 }
 # Mutex segurado através de .await trava atores; é erro (CLAUDE.md, ADR-0011).
 await_holding_lock = "deny"
+# Same for RefCell borrows and for forge_core::sync::OrderedMutexGuard (listed in clippy.toml).
+await_holding_refcell_ref = "deny"
+await_holding_invalid_type = "deny"
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "allow"
