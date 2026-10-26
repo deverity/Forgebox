@@ -23,6 +23,8 @@ anyhow = "1.0.104"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 ulid = { version = "3.0.0", features = ["serde"] }
+# Timestamps UTC (RFC 3339 no fio). Sem tzdb embutido: só Timestamp é usado no núcleo (ADR-0013).
+jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 schemars = { version = "1.2.3", features = ["derive"] }
 # specta ainda está em release candidate: versão exata para evitar quebra silenciosa.
@@ -34,7 +36,8 @@ minijinja = "3.0.3"
 clap = { version = "4.6.7", features = ["derive"] }
 # features Win32 são adicionadas nos crates que usam a API (somente forge-core/platform/windows).
 windows = "0.62.2"
-junction = "2.1.0"
+# Sem `unstable_admin`: não tentar habilitar SeRestorePrivilege/SeBackupPrivilege no token.
+junction = { version = "2.1.0", default-features = false }
 parking_lot = "0.13.0"
 futures = "0.3.34"
 bytes = "1.12.1"

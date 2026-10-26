@@ -148,5 +148,5 @@ Diálogo com três opções: **Manter tudo em `C:\Forgebox`** (só remove binár
 `forge import laragon C:\laragon`: importa versões de PHP/Apache/Nginx/MySQL/Node encontradas em `bin\` (copiando ou referenciando), vhosts de `etc\apache2\sites-enabled\auto.*.conf` como sites, data dirs de `data\` como instâncias (sem copiar: oferece mover), `www\` como parked dir, preferências de `usr\laragon.ini` (TLD, documentroot). Relatório do que foi e não foi importado.
 
 ## 7. Compatibilidade de atualização do Forgebox
-- Updates do app nunca tocam `bin\ data\ www\ certs\ etc\`. Só `*.exe`, `app\` e migrations do `state\forgebox.db` (sempre forward-compatíveis; backup automático do `.db` antes).
+- Updates do app nunca tocam `bin\ data\ www\ certs\ etc\`. Só `*.exe`, `app\` e migrations do `state\forgebox.db` (sempre forward-compatíveis; backup automático do `.db` antes, via `VACUUM INTO`, em `state\forgebox.db.bak-v<NNNN>-<UTC>`; um `.db` com schema mais novo que o binário é recusado, nunca rebaixado).
 - Templates embutidos novos podem mudar o conteúdo dos **blocos gerenciados** em `etc\`; o update mostra diff antes de aplicar (ou aplica silenciosamente se o usuário escolher "sempre aceitar").

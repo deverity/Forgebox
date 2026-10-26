@@ -11,3 +11,37 @@ publish = false
 
 [lints]
 workspace = true
+
+[features]
+default = []
+# Derives `specta::Type` for API-facing types (IDs). Enabled by forge-ipc so that
+# `cargo xtask gen-ts` can export them; domain crates do not need it.
+specta = ["dep:specta", "specta/ulid", "specta/jiff"]
+
+[dependencies]
+jiff = { workspace = true }
+parking_lot = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+specta = { workspace = true, features = ["derive"], optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
+
+# Win32 only behind `platform::windows` (CLAUDE.md). `junction` wraps
+# CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile.
+[target.'cfg(windows)'.dependencies]
+junction = { workspace = true }
+windows = { workspace = true, features = [
+    "Wdk_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

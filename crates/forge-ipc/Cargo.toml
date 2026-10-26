@@ -13,10 +13,14 @@ publish = false
 workspace = true
 
 [dependencies]
-forge-core = { path = "../forge-core" }
+# `specta` derives TS types for the IDs defined in forge-core (RequestId...).
+forge-core = { path = "../forge-core", features = ["specta"] }
 serde = { workspace = true }
 specta = { workspace = true, features = ["derive"] }
 specta-typescript = { workspace = true }
 specta-serde = { workspace = true }
 ulid = { workspace = true }
 anyhow = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
