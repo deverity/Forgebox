@@ -7,5 +7,4 @@ upstream php_8_3 {
     least_conn;
     server 127.0.0.1:19083;
     server 127.0.0.1:19084;
-    keepalive 8;
 }

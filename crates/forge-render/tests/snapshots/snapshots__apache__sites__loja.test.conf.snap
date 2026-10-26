@@ -35,6 +35,11 @@ expression: content
     <FilesMatch "\.php$">
         SetHandler "proxy:balancer://php_8_3/"
     </FilesMatch>
+    # php-cgi is the only backend on Windows (docs/03 section 2.1). Without GENERIC the
+    # SCRIPT_FILENAME is "proxy:fcgi://host:port/C:/..."; with it, "/C:/...". Strip the
+    # slash before the drive letter or php-cgi answers "No input file specified.".
+    ProxyFCGIBackendType GENERIC
+    ProxyFCGISetEnvIf "reqenv('SCRIPT_FILENAME') =~ m#^/([A-Za-z]:/.*)$#" SCRIPT_FILENAME "$1"
     ProxyFCGISetEnvIf "true" FORGEBOX_SITE "loja.test"
     ProxyFCGISetEnvIf "true" APP_ENV "local"
 </VirtualHost>

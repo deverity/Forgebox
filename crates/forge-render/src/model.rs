@@ -343,10 +343,7 @@ pub struct UpstreamModel {
     pub name: String,
     /// Workers; at least one.
     pub servers: Vec<UpstreamServer>,
-    /// Idle keepalive connections (Nginx).
-    #[serde(default = "default_keepalive")]
-    pub keepalive: u32,
-    /// Max connections per worker (Apache `max=`).
+    /// Max connections per worker (Apache `max=`); 1 because php-cgi serves one at a time.
     #[serde(default = "default_max_conns")]
     pub max_conns: u32,
     /// Backend timeout in seconds (Apache `timeout=`).
@@ -354,11 +351,8 @@ pub struct UpstreamModel {
     pub timeout_secs: u32,
 }
 
-fn default_keepalive() -> u32 {
-    8
-}
 fn default_max_conns() -> u32 {
-    20
+    1
 }
 fn default_timeout() -> u32 {
     300
@@ -370,7 +364,6 @@ impl UpstreamModel {
         Self {
             name: name.into(),
             servers,
-            keepalive: default_keepalive(),
             max_conns: default_max_conns(),
             timeout_secs: default_timeout(),
         }
@@ -500,6 +493,10 @@ pub struct PhpModel {
     pub series: String,
     /// Enabled extensions (`defaults_on` plus the user's choices).
     pub extensions: Vec<String>,
+    /// `zend_extension` entries to load (`opcache` only when it is a separate DLL; PHP 8.5+
+    /// builds OPcache in and must leave it out). Filled from the manifest.
+    #[serde(default)]
+    pub zend_extensions: Vec<String>,
     /// Quick settings overriding the defaults (`memory_limit`...).
     pub settings: BTreeMap<String, String>,
     /// Present when Xdebug is installed.

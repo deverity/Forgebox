@@ -3,5 +3,4 @@ upstream {{ upstream.name }} {
 {% for s in upstream.servers %}
     server {{ s.host }}:{{ s.port }};
 {% endfor %}
-    keepalive {{ upstream.keepalive }};
 }

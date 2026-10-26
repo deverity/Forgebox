@@ -18,12 +18,12 @@ error_reporting = E_ALL
 log_errors = On
 error_log = "C:/fb-test/logs/php/8.3/error.log"
 sys_temp_dir = "C:/fb-test/tmp"
-upload_tmp_dir = "C:/fb-test/tmp/uploads"
+upload_tmp_dir = "C:/fb-test/tmp/php/8.3/uploads"
 cgi.fix_pathinfo = 0
 default_charset = "UTF-8"
 
 [Session]
-session.save_path = "C:/fb-test/tmp/sessions/php/8.3"
+session.save_path = "C:/fb-test/tmp/php/8.3/sessions"
 
 [opcache]
 zend_extension = opcache

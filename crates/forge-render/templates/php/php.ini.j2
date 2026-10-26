@@ -13,15 +13,17 @@ error_reporting = E_ALL
 log_errors = On
 error_log = "{{ paths.logs }}/php/{{ php.series }}/error.log"
 sys_temp_dir = "{{ paths.tmp }}"
-upload_tmp_dir = "{{ paths.tmp }}/uploads"
+upload_tmp_dir = "{{ paths.tmp }}/php/{{ php.series }}/uploads"
 cgi.fix_pathinfo = 0
 default_charset = "UTF-8"
 
 [Session]
-session.save_path = "{{ paths.tmp }}/sessions/php/{{ php.series }}"
+session.save_path = "{{ paths.tmp }}/php/{{ php.series }}/sessions"
 
 [opcache]
-zend_extension = opcache
+{% for ext in php.zend_extensions %}
+zend_extension = {{ ext }}
+{% endfor %}
 opcache.enable = {{ php.settings.opcache | default('1') }}
 opcache.enable_cli = 0
 opcache.memory_consumption = 192

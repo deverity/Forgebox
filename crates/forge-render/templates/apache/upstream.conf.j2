@@ -1,6 +1,8 @@
+{# php-cgi serves one connection at a time: connection reuse would pin it to an idle
+   connection and queue new ones (docs/06 section 2.1), so enablereuse=off and max=1. #}
 <Proxy "balancer://{{ upstream.name }}/">
 {% for s in upstream.servers %}
-    BalancerMember "fcgi://{{ s.host }}:{{ s.port }}" enablereuse=on max={{ upstream.max_conns }} timeout={{ upstream.timeout_secs }}
+    BalancerMember "fcgi://{{ s.host }}:{{ s.port }}" enablereuse=off max={{ upstream.max_conns }} timeout={{ upstream.timeout_secs }}
 {% endfor %}
     ProxySet lbmethod=bybusyness
 </Proxy>

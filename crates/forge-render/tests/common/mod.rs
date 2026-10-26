@@ -104,6 +104,7 @@ pub fn php_context(root: &ForgeRoot) -> RenderContext {
         .iter()
         .map(|s| (*s).to_owned())
         .collect(),
+        zend_extensions: vec!["opcache".to_owned()],
         settings: BTreeMap::from([("memory_limit".to_owned(), "1G".to_owned())]),
         xdebug: Some(XdebugModel {
             mode: "debug".to_owned(),
