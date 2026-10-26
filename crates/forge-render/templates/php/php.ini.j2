@@ -14,7 +14,7 @@ log_errors = On
 error_log = "{{ paths.logs }}/php/{{ php.series }}/error.log"
 sys_temp_dir = "{{ paths.tmp }}"
 upload_tmp_dir = "{{ paths.tmp }}/uploads"
-cgi.fix_pathinfo = 1
+cgi.fix_pathinfo = 0
 default_charset = "UTF-8"
 
 [Session]

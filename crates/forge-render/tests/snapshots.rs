@@ -88,6 +88,11 @@ fn nginx_log_format_and_site_param_follow_docs() {
             .contains("fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;")
     );
     assert!(loja.body.contains("fastcgi_pass php_8_3;"));
+    // Path-info guard: the php location must refuse non-existent script paths.
+    let php_loc = &loja.body[loja.body.find(r"location ~ \.php$").unwrap()..];
+    assert!(php_loc.contains("try_files $fastcgi_script_name =404;"));
+    assert!(php_loc.contains(r"fastcgi_split_path_info ^(.+?\.php)(/.*)$;"));
+    assert!(php_loc.contains("fastcgi_param PATH_INFO $fastcgi_path_info;"));
     assert!(
         loja.body
             .contains("server_name loja.test *.loja.test admin.loja.test;")

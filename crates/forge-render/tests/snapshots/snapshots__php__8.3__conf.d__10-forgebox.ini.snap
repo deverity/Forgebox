@@ -19,7 +19,7 @@ log_errors = On
 error_log = "C:/fb-test/logs/php/8.3/error.log"
 sys_temp_dir = "C:/fb-test/tmp"
 upload_tmp_dir = "C:/fb-test/tmp/uploads"
-cgi.fix_pathinfo = 1
+cgi.fix_pathinfo = 0
 default_charset = "UTF-8"
 
 [Session]
