@@ -168,14 +168,24 @@ Regra de ouro: **o daemon nunca espera por uma tool.** Toda operação lenta ou 
 - `tokio` multi-thread: `worker_threads = max(4, núcleos)`; pool de bloqueio (`spawn_blocking`) dimensionado para `2 × núcleos`, usado para **tudo** que é síncrono: I/O de arquivo grande, extração de zip/7z, hashing, chamadas Win32 que podem demorar (`GetExtendedTcpTable`, `WinVerifyTrust`, APIs de certificado), `CreateProcess`.
 - SQLite em **uma thread dedicada de escrita** (fila mpsc; transações curtas; WAL) + conexões de leitura em pool. Nenhuma query roda numa worker thread do tokio.
 - Em dev, `tokio-console` habilitado (`--cfg tokio_unstable`) para detectar tasks que bloqueiam > 1 ms.
+- Implementação ([ADR-0014](adr/0014-concurrency-skeleton.md)):
+  - `forge_core::runtime::build_runtime(&RuntimeConfig::default())`: tamanhos acima, threads nomeadas `forgebox-rt-N`. `tokio-console` é a feature opt-in `console` de `forge-core` (`runtime::init_console()`), compilada com `RUSTFLAGS="--cfg tokio_unstable"`; o build padrão não usa `tokio_unstable`.
+  - `Store::writer()` → `StoreWriter::execute(|conn| …)` (timeout padrão 5 s; `execute_timeout` para outro valor). A thread `forgebox-db-writer` agrupa o que já está na fila em transações de até 64 operações ou 5 ms, sem esperar por mais trabalho; cada operação roda num `SAVEPOINT` (erro ou pânico desfaz só ela) e as respostas saem depois do `COMMIT`. Operação cujo chamador desistiu antes de começar é pulada; `Timeout` de uma operação já iniciada significa "resultado desconhecido" (escritas idempotentes).
+  - `Store::reader()` → `StoreReader::query(|conn| …)`: `spawn_blocking` com timeout sobre um pool de conexões `query_only`; com WAL a leitura nunca espera o writer.
+  - `Store::conn()` é a conexão de manutenção (migrações no boot, ferramentas offline, testes), nunca usada em código async.
 
 ### 7.2 Atores
 Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor IPC, o scheduler, o download manager e o metrics collector são **atores**: uma task própria com mailbox (`mpsc`) e estado privado. Consequências:
 - Um `mysqladmin shutdown` que trava afeta só o ator do MySQL, que tem timeout e escala para a próxima estratégia de parada. Nginx, PHP, IPC e GUI seguem respondendo.
 - Comandos entre atores são mensagens com `oneshot` de resposta e **sempre** `tokio::time::timeout`. Nunca há chamada direta de método entre atores.
-- Sem `std::sync::Mutex`/`RwLock` segurado através de `.await`. Estado compartilhado só por mensagem; `parking_lot::Mutex` apenas para seções críticas de nanosegundos (contadores, caches) e nunca aninhado.
-- Ordem de travas, quando inevitável, é documentada no módulo e verificada por `debug_assert`.
+- Sem `std::sync::Mutex`/`RwLock` segurado através de `.await`. Estado compartilhado só por mensagem; `parking_lot::Mutex` apenas para seções críticas de nanosegundos (contadores, caches) e nunca aninhado fora da ordem documentada.
+- Ordem de travas, quando inevitável, é documentada no módulo e verificada por `debug_assert` (hoje um único aninhamento: `jobs.table` → `event_bus.seq`, para publicar `job.*` em ordem).
 - Um ator que entra em pânico é isolado (`catch_unwind` na fronteira da task) e reiniciado pelo supervisor de atores; o evento `actor.restarted` é emitido. O daemon **nunca** morre por culpa de uma tool.
+- Implementação (`forge_core::actor`, [ADR-0014](adr/0014-concurrency-skeleton.md)):
+  - `trait Actor { type Msg; handle; on_start; on_stop; on_restart }`; `ActorRef::tell(msg)` nunca espera (fila cheia → `MailboxFull`); `ActorRef::ask(|reply| Msg::X(reply), timeout)` sempre com timeout → `Timeout | Stopped | MailboxFull`.
+  - `ActorSupervisor::spawn(ActorSpec, factory)`: o loop de supervisão roda no task do próprio ator e reaproveita a mesma mailbox (os `ActorRef` sobrevivem ao reinício). `RestartPolicy` padrão: 5 reinícios em 60 s, backoff 100 ms dobrando até 5 s; esgotada → status `Failed`, evento `actor.failed`, `ask` → `Stopped`.
+  - `ActorHandle::stop()`: fecha a mailbox, drena o que estava nela e roda `on_stop` dentro de `stop_timeout` (5 s); depois aborta o task e devolve `Aborted` (quem pede a parada nunca fica preso).
+  - Travas: `forge_core::sync::OrderedMutex` com `LockLevel`; tabela de ordem no topo de `actor/mod.rs`; `clippy::await_holding_lock`, `await_holding_refcell_ref` e `await_holding_invalid_type` (guard do `OrderedMutex`) são erro.
 
 ### 7.3 Pipes de processo
 - stdout/stderr de cada processo têm tasks bombeadoras próprias. Escrita em arquivo é garantida (fila limitada com backpressure para o processo, como um terminal faria); broadcast para assinantes da UI é *drop-oldest* (um cliente lento nunca segura o daemon).
@@ -183,6 +193,7 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor 
 
 ### 7.4 API assíncrona por natureza
 - Nenhum método JSON-RPC segura a conexão mais de ~1 s, exceto streams. Operações longas (instalar, iniciar serviço, trocar PHP, exportar banco) devolvem **imediatamente** um `job_id`; progresso e conclusão vêm por eventos (`job.progress`, `job.done`, `job.failed`). CLI mostra barra; GUI mostra estado otimista.
+- Implementação (`forge_core::jobs`): `JobRegistry::start(nome, |ctx| async { … })` devolve o `JobId` na hora; `ctx.progress(JobProgress::new().pct(40.0).message("…"))` (no máximo um `job.progress` a cada 100 ms; o snapshot de `get/list` é sempre atual); `job.cancel` → `CancellationToken` cooperativo (`ctx.cancelled()`, `ctx.check_cancelled()?`), e após 10 s de tolerância o future é descartado (`job.cancelled{forced: true}`); pânico → `job.failed` com código `internal`; `request_id` repetido devolve o mesmo job; ficam retidos os últimos 100 jobs terminados. Eventos de um job saem em ordem de `seq` (`started < progress < done|failed|cancelled`).
 - Prioridade: ações do usuário sobre tarefas de fundo. O download manager tem fila com prioridade; o scheduler de updates pausa quando há job do usuário em curso; o sampler de métricas reduz frequência sob carga.
 - O servidor IPC aceita conexões em task própria; cada conexão tem sua task; parsing de JSON não acontece na task de accept.
 
@@ -198,8 +209,8 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor 
 - Teste de "download pesado + start de serviço": start não pode atrasar mais que 10 % em relação ao baseline.
 
 ## 8. Eventos (nomes canônicos)
-`daemon.ready`, `daemon.shutdown`, `job.started|progress|done|failed|cancelled`, `actor.restarted`, `fs.case_sensitivity_applied|unavailable`, `tool.install.started|progress|completed|failed`, `tool.updated`, `tool.rollback`, `service.starting|running|stopping|stopped|crashed|failed`, `pool.scaled`, `pool.worker.recycled`, `site.created|updated|removed`, `site.php_changed`, `config.rendered`, `config.drift_detected`, `dns.policy_applied`, `tls.ca_created|leaf_issued|renewed`, `port.conflict`, `helper.op{name, ok}`.
+`daemon.ready`, `daemon.shutdown`, `job.started|progress|done|failed|cancelled`, `actor.restarted`, `actor.failed`, `fs.case_sensitivity_applied|unavailable`, `tool.install.started|progress|completed|failed`, `tool.updated`, `tool.rollback`, `service.starting|running|stopping|stopped|crashed|failed`, `pool.scaled`, `pool.worker.recycled`, `site.created|updated|removed`, `site.php_changed`, `config.rendered`, `config.drift_detected`, `dns.policy_applied`, `tls.ca_created|leaf_issued|renewed`, `port.conflict`, `helper.op{name, ok}`.
 
 Cada evento é `{id: ULID, seq, ts (RFC 3339 UTC), kind, payload}` (`forge_core::event`). `seq` cresce de 1 em 1 e continua após restart (o daemon semeia o `EventBus` com o maior `seq` da tabela `events`), o que permite `resume_from(seq)`. O bus é `tokio::sync::broadcast` (4096 por assinante): publicar nunca bloqueia; um assinante lento perde os mais antigos (drop-oldest) e recebe a contagem de perdidos para ressincronizar pelo SQLite.
 
-Payloads são structs serde versionadas em `forge-ipc`. A GUI é 100% reativa a esses eventos; nenhuma tela faz polling além de métricas.
+Payloads são structs serde versionadas (campo `v`). As de `job.*` (`forge_core::jobs::payload`) e `actor.*` (`forge_core::actor::{ActorRestartedPayload, ActorFailedPayload}`) ficam em `forge-core`, junto de quem as publica, e são re-exportadas por `forge-ipc`; as demais nascem em `forge-ipc`. A GUI é 100% reativa a esses eventos; nenhuma tela faz polling além de métricas.
