@@ -1,0 +1,418 @@
+---
+source: crates/forge-manifest/tests/schema.rs
+expression: text
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectManifest",
+  "description": "A complete `kind: Project` manifest.",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/$defs/ApiVersion"
+    },
+    "kind": {
+      "$ref": "#/$defs/ProjectKind"
+    },
+    "metadata": {
+      "$ref": "#/$defs/ProjectMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/ProjectSpec"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "$defs": {
+    "ApiVersion": {
+      "description": "`apiVersion` of a manifest. Anything other than `forgebox.dev/v1` is rejected.",
+      "type": "string",
+      "enum": [
+        "forgebox.dev/v1"
+      ]
+    },
+    "ProcessAutostart": {
+      "description": "true, false or on-visit (start on the first request to the site).",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "const": "on-visit"
+        }
+      ]
+    },
+    "ProcessPort": {
+      "description": "A port number or auto (allocated from the apps range).",
+      "oneOf": [
+        {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
+        {
+          "const": "auto"
+        }
+      ]
+    },
+    "ProcessSpec": {
+      "description": "`spec.processes.<name>`.",
+      "type": "object",
+      "properties": {
+        "autostart": {
+          "description": "Default `true` (starts with the site).",
+          "$ref": "#/$defs/ProcessAutostart"
+        },
+        "cmd": {
+          "description": "Command line; `$PORT` receives the allocated port.",
+          "type": "string"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "description": "Fixed port or `auto` (range `apps`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessPort"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxy": {
+          "description": "The site host proxies to this process. Default `false`.",
+          "type": "boolean"
+        },
+        "proxy_path": {
+          "description": "Path proxied to the process (`/api`); default: the whole host when `proxy`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "restart": {
+          "description": "Default `failure`.",
+          "$ref": "#/$defs/RestartOn"
+        },
+        "runtime": {
+          "description": "`tool@version` put first on the PATH (`nodejs@22`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cmd"
+      ]
+    },
+    "ProjectKind": {
+      "description": "`kind: Project`.",
+      "type": "string",
+      "enum": [
+        "Project"
+      ]
+    },
+    "ProjectMetadata": {
+      "description": "`metadata` of a Project.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "ProjectProxy": {
+      "description": "`spec.proxies[]`.",
+      "type": "object",
+      "properties": {
+        "host": {
+          "description": "Lowercase host.",
+          "type": "string"
+        },
+        "secure": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "upstream": {
+          "description": "`http://127.0.0.1:3000`.",
+          "type": "string"
+        },
+        "websocket": {
+          "description": "Default `false`.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "upstream"
+      ]
+    },
+    "ProjectRuntime": {
+      "description": "`spec.runtimes[]`.",
+      "type": "object",
+      "properties": {
+        "series": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolId"
+        },
+        "version": {
+          "description": "Version or series prefix (`\"22\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tool"
+      ]
+    },
+    "ProjectService": {
+      "description": "`spec.services[]`.",
+      "type": "object",
+      "properties": {
+        "database": {
+          "description": "Database created on `forge up` when missing.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instance": {
+          "description": "Default `default`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "series": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolId"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tool"
+      ]
+    },
+    "ProjectSite": {
+      "description": "`spec.site`.",
+      "type": "object",
+      "properties": {
+        "aliases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "driver": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host": {
+          "description": "Lowercase host (`loja.test`). Default: folder name + TLD.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "php": {
+          "description": "PHP series (`\"8.3\"`) or exact version (`\"8.3.36\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "php_ini": {
+          "description": "`php.ini` overrides for this site.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "root": {
+          "description": "Document root relative to the project (`public`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "secure": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "server": {
+          "description": "Front web server tool (`apache`, `nginx`, `caddy`, `frankenphp`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "xdebug": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/XdebugMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProjectSpec": {
+      "description": "`spec` of a Project. Every block is optional.",
+      "type": "object",
+      "properties": {
+        "processes": {
+          "description": "Managed by the supervisor while the site is up (docs/06 §4.2).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ProcessSpec"
+          }
+        },
+        "proxies": {
+          "description": "Extra reverse-proxy sites.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectProxy"
+          }
+        },
+        "runtimes": {
+          "description": "Used by `forge shell` and by `processes`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectRuntime"
+          }
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectService"
+          }
+        },
+        "share": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Share"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "site": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectSite"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RestartOn": {
+      "description": "Restart behaviour (`restart_policy.on`, `processes.*.restart`).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "never",
+            "always"
+          ]
+        },
+        {
+          "description": "Restart after an unexpected exit (default).",
+          "type": "string",
+          "const": "failure"
+        }
+      ]
+    },
+    "Share": {
+      "description": "`spec.share`.",
+      "type": "object",
+      "properties": {
+        "provider": {
+          "description": "Tunnel tool (`cloudflared`, `ngrok`).",
+          "$ref": "#/$defs/ToolId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider"
+      ]
+    },
+    "ToolId": {
+      "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",
+      "type": "string",
+      "not": {
+        "enum": [
+          "shims",
+          "current"
+        ]
+      },
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "XdebugMode": {
+      "description": "Xdebug for a site (docs/06 §1).",
+      "type": "string",
+      "enum": [
+        "inherit",
+        "off",
+        "trigger",
+        "always"
+      ]
+    }
+  }
+}

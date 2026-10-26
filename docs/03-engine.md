@@ -85,7 +85,7 @@ Troca de `8.3.36 → 8.3.37` ou de um site de `8.2 → 8.4`:
 Zero requests perdidas, zero restart de Apache/Nginx.
 
 ### 2.3 Xdebug e extensões
-- Extensões são `kind: Extension` no registry, com `requires: php ~8.3, build: vs17, ts: nts`. Instaladas em `bin/php/8.3.36/ext/` + `etc/php/8.3/conf.d/20-xdebug.ini`.
+- Extensões são `kind: Extension` no registry, com `extends: php` e `compat: [{ tool: "~8.4", variant: { ts: nts, compiler: vs17 }, version: "3.4.*" }]` ([04](04-tool-manifest-spec.md) §2). Instaladas em `bin/php/8.3.36/ext/` + `etc/php/8.3/conf.d/20-xdebug.ini`.
 - Toggle de Xdebug é por **versão** (afeta o pool) ou por **site** (via `FORGEBOX_XDEBUG=1` → `php.ini` com `xdebug.mode=${XDEBUG_MODE}`). Reload = recycle do pool, não restart.
 - Porta do Xdebug (9003) é reservada no alocador para nunca colidir com pools (bug histórico do Laragon #374).
 
@@ -154,7 +154,7 @@ bin/apache/2.4.69/     bin/nginx/1.30.6/
 - Pools web não dependem de `current`: cada site aponta para a versão exata.
 
 ### 5.3 Descoberta de tools soltas
-`forge-registry::discover` varre `bin/*/*/` e reconhece pastas sem registro (ex. o usuário copiou `php-8.1-Win32-vs16-x64` do Laragon). Heurísticas por manifesto (`discover.match: ["php.exe", "php-cgi.exe"]`, `discover.version_cmd: "php.exe -v"`). Reconhecidas → importadas como `ToolVersion{source: manual}`; podem virar pools normalmente.
+`forge-registry::discover` varre `bin/*/*/` e reconhece pastas sem registro (ex. o usuário copiou `php-8.1-Win32-vs16-x64` do Laragon). Heurísticas por manifesto (`discover.match_files: ["php.exe", "php-cgi.exe"]`, `discover.version_command: "php.exe -v"`, `version_regex`, `variant_detect`; [04](04-tool-manifest-spec.md) §1). Reconhecidas → importadas como `ToolVersion{source: manual}`; podem virar pools normalmente.
 
 ## 6. Scheduler interno
 - Tarefas periódicas (tokio): checagem de updates (padrão 6 h, jitter), renovação de certificados (diária), limpeza de `tmp/` (diária), refresh do registry (12 h), métricas (2 s), health (5 s por instance).

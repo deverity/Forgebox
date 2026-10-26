@@ -1,0 +1,12 @@
+# expect: missing_template
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: missing-template, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  install:
+    post_install:
+      - render: { template: "php/nope.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/99-nope.ini" }

@@ -1,0 +1,9 @@
+# expect: invalid_host
+apiVersion: forgebox.dev/v1
+kind: Project
+metadata: { name: loja }
+spec:
+  site:
+    host: Loja.test
+  proxies:
+    - { host: api.Loja.test, upstream: "http://127.0.0.1:3000" }

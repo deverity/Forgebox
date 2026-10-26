@@ -1,0 +1,7 @@
+# expect: unsupported
+apiVersion: forgebox.dev/v1
+kind: Registry
+metadata: { name: official }
+spec:
+  schema_version: 2
+  updated_at: 2026-10-26T00:00:00Z
