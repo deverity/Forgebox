@@ -5,7 +5,9 @@
 //! slow volumes, antivirus or network shares): async code calls them from
 //! `tokio::task::spawn_blocking` (ADR-0011).
 //!
-//! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows.
+//! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows;
+//! M1-E5-T1 added [`FileAcl`] (owner-only secret files) and
+//! [`windows::pipe_security`] (DACL and owner check of the local API pipe).
 //! [`ProcessGroup`] (M1-E3-T1), [`TrustStore`] (M1-E4-T4) and [`DnsPolicy`]
 //! (M1-E4-T3) are declared only; their signatures may still grow in those tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
@@ -75,6 +77,18 @@ pub trait CaseSensitiveFs: Send + Sync {
     fn set(&self, dir: &Path, enabled: bool) -> Result<()>;
 }
 
+/// Restricts files holding secrets (`state/ipc.token`, the CA key) to the current OS user
+/// (docs/11 §3-§4).
+pub trait FileAcl: Send + Sync {
+    /// Replaces the access rules of the existing file `path` so that only the current
+    /// user can open it (Windows: protected DACL with one ACE; Unix: mode `0600`).
+    /// `NotFound` if `path` does not exist.
+    fn restrict_to_current_user(&self, path: &Path) -> Result<()>;
+
+    /// Whether `path` is accessible to the current user only.
+    fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool>;
+}
+
 /// Group of processes that die together (Job Object on Windows, cgroup on Linux).
 /// Implemented in M1-E3-T1.
 pub trait ProcessGroup: Send + Sync {
@@ -131,6 +145,7 @@ pub struct Platform {
     name: &'static str,
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
+    file_acl: Arc<dyn FileAcl>,
 }
 
 impl fmt::Debug for Platform {
@@ -147,11 +162,13 @@ impl Platform {
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
         case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
+        file_acl: Arc<dyn FileAcl>,
     ) -> Self {
         Self {
             name,
             link_fs,
             case_sensitive_fs,
+            file_acl,
         }
     }
 
@@ -167,6 +184,10 @@ impl Platform {
     pub fn case_sensitive_fs(&self) -> &dyn CaseSensitiveFs {
         self.case_sensitive_fs.as_ref()
     }
+
+    pub fn file_acl(&self) -> &dyn FileAcl {
+        self.file_acl.as_ref()
+    }
 }
 
 /// Implementations for the OS this binary runs on.
@@ -176,6 +197,7 @@ pub fn current() -> Platform {
         "windows",
         Arc::new(windows::WindowsLinkFs),
         Arc::new(windows::WindowsCaseSensitiveFs),
+        Arc::new(windows::WindowsFileAcl),
     )
 }
 
@@ -184,6 +206,7 @@ pub fn current() -> Platform {
 pub fn current() -> Platform {
     Platform::new(
         std::env::consts::OS,
+        Arc::new(unsupported::Unsupported),
         Arc::new(unsupported::Unsupported),
         Arc::new(unsupported::Unsupported),
     )
@@ -218,6 +241,33 @@ mod unsupported {
         }
         fn replace_junction(&self, _: &Path, _: &Path) -> Result<()> {
             err("junctions")
+        }
+    }
+
+    /// Unix permission bits; other OSes fail with `UnsupportedPlatform`.
+    impl FileAcl for Unsupported {
+        #[cfg(unix)]
+        fn restrict_to_current_user(&self, path: &Path) -> Result<()> {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| ForgeError::io_at("restricting permissions of", path, e))
+        }
+        #[cfg(not(unix))]
+        fn restrict_to_current_user(&self, _: &Path) -> Result<()> {
+            err("file ACLs")
+        }
+        #[cfg(unix)]
+        fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool> {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(path)
+                .map_err(|e| ForgeError::io_at("reading permissions of", path, e))?
+                .permissions()
+                .mode();
+            Ok(mode & 0o077 == 0)
+        }
+        #[cfg(not(unix))]
+        fn is_restricted_to_current_user(&self, _: &Path) -> Result<bool> {
+            err("file ACLs")
         }
     }
 

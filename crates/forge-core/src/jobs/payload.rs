@@ -1,8 +1,9 @@
 //! Job snapshots and the versioned payloads of the `job.*` events.
 //!
 //! Wire format (serde, field `v` = [`JOB_EVENT_VERSION`]); `forge-ipc` re-exports these
-//! types when the API contracts are written (M1-E5-T1). Fields are only ever added; a
-//! breaking change bumps `v`.
+//! types in the API contracts (`forge_ipc::api::jobs`) and exports them to TypeScript
+//! (feature `specta`). Fields are only ever added; a breaking change bumps `v`.
+//! [`JobInfo`] is the in-process snapshot; the API sends `forge_ipc::api::JobDto`.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,7 @@ pub const JOB_EVENT_VERSION: u32 = 1;
 
 /// Progress report. Fields left `None` keep their previous value when merged into the
 /// job snapshot, so a job may report only a message, only bytes, etc.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct JobProgress {
     /// Percentage in `0.0..=100.0`.
@@ -24,8 +26,10 @@ pub struct JobProgress {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub bytes_done: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub bytes_total: Option<u64>,
 }
 
@@ -76,6 +80,7 @@ impl JobProgress {
 }
 
 /// Lifecycle of a job.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobState {
@@ -93,6 +98,7 @@ impl JobState {
 }
 
 /// Error of a failed job: the stable API code ([`ForgeError::code`]) and the message.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobErrorInfo {
     pub code: String,
@@ -130,6 +136,7 @@ pub struct JobInfo {
 }
 
 /// Payload of `job.started`.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobStartedPayload {
     pub v: u32,
@@ -140,6 +147,7 @@ pub struct JobStartedPayload {
 }
 
 /// Payload of `job.progress` (the merged progress of the job, not just the delta).
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobProgressPayload {
     pub v: u32,
@@ -149,32 +157,39 @@ pub struct JobProgressPayload {
 }
 
 /// Payload of `job.done`.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobDonePayload {
     pub v: u32,
     pub job_id: JobId,
     pub name: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub duration_ms: u64,
     /// Serialized return value of the job (`null` for `()`).
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Unknown))]
     pub result: serde_json::Value,
 }
 
 /// Payload of `job.failed`.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobFailedPayload {
     pub v: u32,
     pub job_id: JobId,
     pub name: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub duration_ms: u64,
     pub error: JobErrorInfo,
 }
 
 /// Payload of `job.cancelled`.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobCancelledPayload {
     pub v: u32,
     pub job_id: JobId,
     pub name: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub duration_ms: u64,
     /// `true` when the job ignored the request past the grace period and its future
     /// was dropped.
