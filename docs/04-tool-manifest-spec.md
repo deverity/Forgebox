@@ -86,7 +86,7 @@ spec:
   # ---------- Como instala ----------
   install:
     archive: zip                 # zip | 7z | tar.gz | tar.xz | file (arquivo único: .exe/.dll/.phar) | msi (não suportado em v1); omitido = deduzido do nome do arquivo
-    strip_root: auto             # true | false | auto (remove diretório único de topo)
+    strip_root: auto             # auto: remove a pasta de topo quando TODAS as entradas estão nela | true: exige essa pasta (erro se não houver) | false
     layout: versioned            # versioned → bin/<id>/<version>/ (padrão) | single → bin/<id>/ (tools sem versão)
     current_link: true           # cria/atualiza junction bin/<id>/current
     path:                        # subpastas a expor no PATH via `current` e shims

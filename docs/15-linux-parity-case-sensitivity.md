@@ -23,7 +23,7 @@ Desde o Windows 10 1803 o NTFS suporta a flag **por diretório** `FILE_CS_FLAG_C
 | `www/<novo projeto>` via `forge new` | Herdado automaticamente | — |
 | `data/` dos bancos | Na criação da instância (vazio) | direto (ver §5) |
 | `etc/`, `logs/`, `tmp/`, `backups/` | Onboarding (`ForgeRoot::init()`, que também marca as subpastas que cria: `etc/templates`, `etc/sites`, `tmp/downloads`, `tmp/stage`) | direto, por consistência |
-| `bin/` | **Não** | Tools Windows esperam FS normal; sem benefício |
+| `bin/` | **Não** | Tools Windows esperam FS normal; sem benefício. A extração (`forge_provider::extract`) dá ao staging (`tmp/stage/<id>`, que herdaria a flag de `tmp/`) a sensibilidade do pai do destino antes de escrever, porque a flag viaja com o diretório no rename final |
 
 Em cada site a UI mostra badge **`Aa` case-sensitive** ou **`aA` insensitive** com tooltip explicando. O estado é re-verificado no boot (`fs.case_sensitivity_applied|unavailable`).
 

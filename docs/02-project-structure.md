@@ -36,8 +36,9 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, ProcessGroup, TrustStore, DnsPolicy) + current();
-│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile)
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, ProcessGroup, TrustStore, DnsPolicy) + current();
+│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
+│   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema: common, tool,
@@ -55,12 +56,15 @@ Forgebox/
 │   │       ├── search.rs         # busca por nome/categoria/tag, ranking
 │   │       └── discover.rs       # heurísticas para pastas soltas em bin/ (php.exe, httpd.exe, mysqld.exe...)
 │   ├── forge-provider/
+│   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
 │   │   └── src/
 │   │       ├── provider/         # trait Provider + impls: http, github_release, php_windows, apache_lounge,
 │   │       │                     #   nginx_org, mysql, mariadb, postgresql_edb, nodejs_dist, python, composer, mailpit...
 │   │       ├── download.rs       # fila (ator), paralelismo, resume (Range), progresso, mirrors; submódulos download/{transfer,limiter,progress,messages}.rs
-│   │       ├── verify.rs         # sha256/sha512, minisign/gpg quando disponível, tamanho
-│   │       ├── extract.rs        # zip/7z/tar.*; strip_root; staging em tmp/ e move atômico
+│   │       ├── verify.rs         # tamanho, sha256/sha512, minisign, Authenticode (platform::CodeSign); verify/pgp.rs (rpgp, keyrings)
+│   │       ├── extract.rs        # zip/7z/tar.gz/tar.xz/arquivo único; strip_root; staging em tmp/stage e move atômico;
+│   │       │                     #   extract/{entry (nomes seguros), formats, install (strip, rename, cópia entre volumes)}.rs
+│   │       ├── messages.rs       # textos de progresso pt-BR de verify/extract (até existir i18n)
 │   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
