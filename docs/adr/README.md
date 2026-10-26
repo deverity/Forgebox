@@ -15,3 +15,4 @@ Formato: contexto → decisão → alternativas rejeitadas → consequências. U
 | [0009](0009-remote-ready-ipc.md) | API "remote-ready" desde a v1 (transporte abstrato, ULIDs, streams com seq, perfis) | aceito |
 | [0010](0010-case-sensitive-by-default.md) | Case-sensitive por padrão via NTFS por diretório (paridade Linux), desativável | aceito |
 | [0011](0011-actor-concurrency-model.md) | Concorrência por atores com tokio; nada bloqueia o controlador nem um serviço bloqueia outro | aceito |
+| [0012](0012-yaml-crate-serde-yaml-ng.md) | YAML com `serde_yaml_ng` (`serde_yml` deprecado), atrás de `forge_manifest::yaml` | aceito |

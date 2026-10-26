@@ -25,7 +25,7 @@ Ambiente de desenvolvimento PHP (e stacks web em geral) local para Windows, em R
 - Ao divergir de um doc, **atualize o doc no mesmo PR**.
 
 ## Stack
-Rust 2024 stable · tokio · rusqlite · serde_yml · minijinja · reqwest(rustls) · hickory-server · rcgen · windows crate · clap · Tauri 2 + React 19 + TS + Tailwind 4 + Radix + Motion · pnpm.
+Rust 2024 stable · tokio · rusqlite · serde_yaml_ng · minijinja · reqwest(rustls) · hickory-server · rcgen · windows crate · clap · Tauri 2 + React 19 + TS + Tailwind 4 + Radix + Motion · pnpm.
 
 ## Comandos (após M0)
 ```

@@ -20,3 +20,18 @@ Fase de especificação. Toda a arquitetura, o motor, o padrão de manifestos, o
 
 ## Licença
 MIT (núcleo). Ferramentas de terceiros mantêm suas licenças.
+
+## Desenvolvimento
+
+Pré-requisitos: Windows 10 (1809+) x64. O `rust-toolchain.toml` instala a toolchain stable com `rustfmt` e `clippy`. Para `cargo deny`, instale com `cargo install cargo-deny`.
+
+```
+cargo build --workspace                                    # compila todos os crates e binários
+cargo test --workspace                                     # testes unitários e de integração
+cargo clippy --workspace --all-targets -- -D warnings      # lint, warnings são erro
+cargo fmt --all -- --check                                 # formatação
+cargo deny check                                           # licenças, advisories, bans e fontes
+cargo xtask schema | gen-ts | lint-registry                # tarefas de desenvolvimento (placeholders até M0-E1-T2)
+```
+
+Antes de começar uma tarefa, leia [CLAUDE.md](CLAUDE.md) e o [índice da documentação](docs/README.md). O estado das tarefas do roadmap fica em [docs/STATUS.md](docs/STATUS.md).
