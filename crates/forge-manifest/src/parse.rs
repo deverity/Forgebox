@@ -790,6 +790,20 @@ impl Checker<'_> {
         }
         let curated =
             !source.releases.is_empty() && source.releases.iter().all(|r| r.sha256.is_some());
+        // Every native provider lists versions; `http` only through `version_source`. A
+        // fallback `http` after a native provider is fine (it only builds URLs).
+        let can_list = !source.releases.is_empty()
+            || source.providers.iter().any(|p| match p {
+                Provider::Http(http) => http.version_source.is_some(),
+                _ => true,
+            });
+        if !source.providers.is_empty() && !can_list {
+            self.push(
+                IssueCode::InvalidValue,
+                "spec.source",
+                "no provider can list versions: add `source.releases` or an http `version_source`",
+            );
+        }
         for (i, provider) in source.providers.iter().enumerate() {
             let f = format!("spec.source.providers[{i}]");
             match provider {
@@ -809,25 +823,18 @@ impl Checker<'_> {
                             );
                         }
                     }
-                    match &http.version_source {
-                        Some(vs) => {
-                            self.url(&format!("{f}.version_source.url"), &vs.url, true);
-                            match (&vs.regex, &vs.json_path) {
-                                (Some(re), None) => self.regex(&format!("{f}.version_source.regex"), re),
-                                (None, Some(path)) => self.not_empty(&format!("{f}.version_source.json_path"), path),
-                                _ => self.push(
-                                    IssueCode::InvalidValue,
-                                    format!("{f}.version_source"),
-                                    "needs exactly one of `regex` and `json_path`",
-                                ),
-                            }
+                    if let Some(vs) = &http.version_source {
+                        let vf = format!("{f}.version_source");
+                        self.url(&format!("{vf}.url"), &vs.url, true);
+                        match (&vs.regex, &vs.json_path) {
+                            (Some(re), None) => self.regex(&format!("{vf}.regex"), re),
+                            (None, Some(path)) => self.not_empty(&format!("{vf}.json_path"), path),
+                            _ => self.push(
+                                IssueCode::InvalidValue,
+                                vf,
+                                "needs exactly one of `regex` and `json_path`",
+                            ),
                         }
-                        None if source.releases.is_empty() => self.push(
-                            IssueCode::InvalidValue,
-                            &f,
-                            "an http provider needs `source.releases` or `version_source` to list versions",
-                        ),
-                        None => {}
                     }
                 }
                 Provider::GithubRelease(gh) => {
