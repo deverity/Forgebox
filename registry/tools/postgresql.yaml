@@ -3,6 +3,9 @@
 # verified: 2026-10-26 17.11 6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3
 #   (EDB publishes no checksum or index: sha256 computed locally from
 #   get.enterprisedb.com/postgresql/postgresql-<ver>-1-windows-x64-binaries.zip, curated)
+# Daemon sequence exercised on 17.11 (2026-10-26): initdb -U postgres -A trust -E UTF8 --locale=C,
+# postgres -D <data> -c config_file=... -c hba_file=... (config outside the data dir), psql over
+# TCP, pg_ctl reload, pg_ctl stop -m fast: all worked; `create table Foo` is stored as `foo`.
 apiVersion: forgebox.dev/v1
 kind: Tool
 

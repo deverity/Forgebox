@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-26T21:15:05Z
+  updated_at: 2026-10-26T21:24:19Z
   tools:
   - id: apache
     path: tools/apache.yaml
@@ -70,7 +70,7 @@ spec:
     - runtime
   - id: postgresql
     path: tools/postgresql.yaml
-    sha256: b7b6219cd3059a55d90cad8f8acc072236c15aaf52b99d60a0464f0ff24adcc3
+    sha256: 9123527303d97f566570ce93dbc53eb5b6ef0137b077f808ba2d7f0a1b75485e
     categories:
     - database
     latest: '18.6'

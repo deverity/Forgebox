@@ -118,7 +118,7 @@ Sites com `runtime: frankenphp` não usam pool: o Forgebox sobe um `frankenphp.e
 | Mailpit | argumentos de linha de comando | restart |
 
 ### 3.3 Contexto disponível nos templates
-`paths.*` (root, bin, etc, data, logs, tmp, www, certs), `tool`, `version`, `instance` (name, ports, data_dir, settings), `sites[]` (host, root, php_pool, ssl, aliases, env), `pools[]`, `prefs` (document_root, tld...). Filtros: `win_path`, `posix_path`, `quote`, `indent`, `to_yaml`.
+`paths.*` (root, bin, etc, data, logs, tmp, www, certs), `tool`, `version`, `instance` (name, ports, data_dir, `case_sensitive` (bool: o data dir tem a flag NTFS case-sensitive; usado por `mysql/my.ini.j2` e `mariadb/my.ini.j2` para `lower_case_table_names`, [15](15-linux-parity-case-sensitivity.md) §5), settings), `sites[]` (host, root, php_pool, ssl, aliases, env), `pools[]`, `prefs` (document_root, tld...). Filtros: `win_path`, `posix_path`, `quote`, `indent`, `to_yaml`.
 
 ## 4. Portas
 

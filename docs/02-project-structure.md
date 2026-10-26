@@ -188,7 +188,7 @@ Forgebox/
 │   ├── portable/                 # script que monta o zip portátil
 │   └── assets/                   # banners, ícones do instalador
 │
-├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry
+├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry, registry-index
 ├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)

@@ -27,8 +27,14 @@ param(
     [string]$CacheDir = 'C:\apps_src\Forgebox-wt\cache',
     [string]$TmpDir = 'C:\apps_src\Forgebox-wt\tmp',
     [ValidateSet('all', 'mysql', 'mariadb')][string]$Only = 'all',
+    # 0 (default): the validation of docs/15 section 5 (with the =2 fallback on FAIL).
+    # 2: diagnostic, runs only lower_case_table_names=2 on the case-sensitive data dir.
+    [ValidateSet(0, 2)][int]$Setting = 0,
     [int]$PortFrom = 33070,  # 33060 is the default MySQL X protocol port, often taken (Laragon)
     [int]$PortTo = 33199,
+    # Negative control: leave the data dir case-insensitive (no NTFS flag). PASS then only means
+    # "the server started and both tables could not coexist / effective value is reported".
+    [switch]$NoCaseSensitiveFlag,
     [switch]$KeepFiles
 )
 
@@ -183,14 +189,19 @@ function Test-Server($Spec, $Archive, [int]$LowerCase) {
         $logs = Join-Path $work 'logs'
         New-Item -ItemType Directory -Force -Path $data, $logs | Out-Null
 
-        # Measured (M1-E1-T2): the flag needs FILE_DELETE_CHILD on the directory. Under a root
-        # where the user only has Modify (inherited ACL) the call fails with ACCESS_DENIED.
-        & icacls $data /grant "$($env:USERNAME):(OI)(CI)(DC)" | Out-Null
-        [ForgeCs]::Set($data, $true)
-        $state = "data dir case-sensitive flag: $([ForgeCs]::Get($data))"
-        if (-not [ForgeCs]::Get($data)) { throw 'could not mark the data dir case-sensitive' }
-        $notes.Add($state)
-        Write-Step $state
+        if ($NoCaseSensitiveFlag) {
+            $notes.Add('negative control: data dir left case-insensitive')
+            Write-Step 'negative control: data dir left case-insensitive'
+        } else {
+            # Measured (M1-E1-T2): the flag needs FILE_DELETE_CHILD on the directory. Under a root
+            # where the user only has Modify (inherited ACL) the call fails with ACCESS_DENIED.
+            & icacls $data /grant "$($env:USERNAME):(OI)(CI)(DC)" | Out-Null
+            [ForgeCs]::Set($data, $true)
+            $state = "data dir case-sensitive flag: $([ForgeCs]::Get($data))"
+            if (-not [ForgeCs]::Get($data)) { throw 'could not mark the data dir case-sensitive' }
+            $notes.Add($state)
+            Write-Step $state
+        }
 
         $port = Get-FreePort
         $ini = Join-Path $work 'my.ini'
@@ -242,7 +253,9 @@ function Test-Server($Spec, $Archive, [int]$LowerCase) {
         if ($second) { $notes.Add("second CREATE TABLE failed: $second") }
         $bothExist = ($tables -ccontains 'Users') -and ($tables -ccontains 'users')
 
-        if ($LowerCase -eq 0) {
+        if ($NoCaseSensitiveFlag) {
+            $pass = $true  # informational: the effective value and tables are in the notes
+        } elseif ($LowerCase -eq 0) {
             $pass = ($effectiveLctn -eq 0) -and $bothExist
         } else {
             # With =2 names are stored as given but compared case-insensitively: one table only.
@@ -271,9 +284,9 @@ foreach ($spec in $Servers) {
     if ($Only -ne 'all' -and $Only -ne $spec.Id) { continue }
     Write-Host "== $($spec.Name) $($spec.Version)"
     $archive = Get-Archive $spec
-    $first = Test-Server $spec $archive 0
-    $results += [pscustomobject]@{ Server = "$($spec.Name) $($spec.Version)"; Setting = 'lower_case_table_names=0'; Result = $(if ($first.Pass) { 'PASS' } else { 'FAIL' }); Notes = ($first.Notes -join ' ; ') }
-    if (-not $first.Pass) {
+    $first = Test-Server $spec $archive $Setting
+    $results += [pscustomobject]@{ Server = "$($spec.Name) $($spec.Version)"; Setting = "lower_case_table_names=$Setting"; Result = $(if ($first.Pass) { 'PASS' } else { 'FAIL' }); Notes = ($first.Notes -join ' ; ') }
+    if (-not $first.Pass -and $Setting -eq 0) {
         Write-Host "   lower_case_table_names=0 FAILED, retrying with =2"
         $second = Test-Server $spec $archive 2
         $results += [pscustomobject]@{ Server = "$($spec.Name) $($spec.Version)"; Setting = 'lower_case_table_names=2 (fallback)'; Result = $(if ($second.Pass) { 'PASS' } else { 'FAIL' }); Notes = ($second.Notes -join ' ; ') }

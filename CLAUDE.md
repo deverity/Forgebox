@@ -31,7 +31,7 @@ Rust 2024 stable · tokio · rusqlite · serde_yaml_ng · minijinja · reqwest(r
 ```
 cargo build --workspace            cargo test --workspace
 cargo clippy --workspace -- -D warnings
-cargo xtask schema | gen-ts | lint-registry
+cargo xtask schema | gen-ts | lint-registry | registry-index
 pnpm -C apps/desktop dev | build   cargo tauri dev (em apps/desktop)
 ```
 

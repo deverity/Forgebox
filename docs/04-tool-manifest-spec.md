@@ -275,7 +275,7 @@ Campos de cada provider (comportamento em [05](05-providers-and-updates.md) §1)
 | `php-windows` | `include_archives` (padrão `true`), `qa` (padrão `false`) | sim |
 | `apache-lounge` | `builds` (páginas, padrão `[vs17, vs18]`), `asset` (regex do arquivo; padrão: o zip do httpd) | sim |
 | `nginx-org` | — | **não** (só PGP) |
-| `github-release` | `repo` (`owner/name`), `asset` (regex), `checksum: {type, asset}` (`checksums.txt`, `{asset}.sha256`), `prerelease` (padrão `false`), `version_regex` (padrão: tag sem `v`) | se `checksum` |
+| `github-release` | `repo` (`owner/name`), `asset` (regex), `checksum: {type, asset}` (`checksums.txt`, `{asset}.sha256`; no nome do asset, `{asset}` e `{version}` são substituídos), `prerelease` (padrão `false`), `version_regex` (padrão: tag sem `v`) | se `checksum` |
 | `mysql`, `postgresql-edb` | — (lista curada em `releases:`) | **não** |
 | `mariadb`, `nodejs-dist` | — | sim |
 | `python-embed` | `package: embed \| nuget` (padrão `embed`) | **não** (curado) |
@@ -338,6 +338,8 @@ spec:
       - { key: client_port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true }
   toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }
 ```
+`source.releases[].variants` de uma Extension aceita chaves livres (as variantes reais são as da tool alvo): o catálogo usa `php_series` (`{php_series}`) para distinguir DLLs que compartilham `ts`/`compiler` (PHP 8.4 e 8.5 são ambos `nts`/`vs17`). Como xdebug.org não publica `.sha256`, cada release traz `url` e `sha256` curados.
+
 `install` de Extension aceita `archive`, `strip_root`, `target` (obrigatório, começa com `{{ paths.version }}`), `post_install`, `uninstall` e `size_estimate_mb`. Versões de Extension usam `semver`.
 
 ---
@@ -429,7 +431,9 @@ spec:
     - { id: laravel, path: stacks/laravel.yaml, sha256: "<64 hex>" }
   signature: { type: minisign, key_id: "RWR...", sig: "..." }
 ```
-- `schema_version` é `1`; `sha256` tem 64 dígitos hexadecimais; `path` é relativo à raiz do registry.
+- `schema_version` é `1`; `sha256` tem 64 dígitos hexadecimais **e é conferido pelo lint contra os bytes do arquivo** (`index_mismatch`); `path` é relativo à raiz do registry.
+- `registry/index.yaml` é **gerado** por `cargo xtask registry-index` (ordenado por id; `categories` vem de `metadata.category`; `latest` é a maior versão estável de `source.releases` quando houver, senão ausente; `updated_at` só muda quando as entradas mudam). Depois de editar qualquer manifesto, rode o comando; `lint-registry` falha com `index_mismatch` se o índice estiver velho.
+- Assinatura: até M1-E1-T3 o índice leva o placeholder `{type: minisign, key_id: dev, sig: ""}`. Só `key_id: dev` pode ter `sig` vazio; um loader deve aceitá-lo apenas em modo de desenvolvimento.
 - Registries de terceiros: `forge registry add https://.../index.yaml` (exibidos com badge "terceiro"; manifestos com `post_install.run` são recusados, [11](11-security.md) §2).
 - Manifesto **embutido no pacote**: se o zip da tool contém `forgebox.yaml` na raiz, `forge tool add-local <zip>` instala direto. Permite que qualquer autor distribua sua ferramenta "pronta para Forgebox" sem passar pelo registry.
 
@@ -438,7 +442,7 @@ spec:
 ## 6. Regras de lint (`cargo xtask lint-registry`)
 Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::parse::validate` (um manifesto). Cada problema tem um código estável (`IssueCode`, também chave de i18n) e a regra a que pertence.
 
-1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id` e `kind` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui.
+1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui.
 2. Provider sem checksum upstream (`http`/`github-release` sem `checksum`, `nginx-org`, `mysql`, `postgresql-edb`, `python-embed`) precisa de `releases[].sha256` em todas as releases.
 3. `service.daemon.ports[].range` e `service.pool.port_range` devem existir nas faixas conhecidas (`forge_core::config`, [03](03-engine.md) §4).
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).
