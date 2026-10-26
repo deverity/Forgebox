@@ -36,8 +36,9 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, ProcessGroup, TrustStore, DnsPolicy) + current();
-│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile)
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, FileAcl, ProcessGroup, TrustStore, DnsPolicy) + current();
+│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
+│   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema
@@ -101,12 +102,19 @@ Forgebox/
 │   │       ├── ca.rs             # geração/rotação da CA (ECDSA P-256, 10 anos), armazenamento em certs/ca/
 │   │       ├── leaf.rs           # cert por site: SAN host + *.host, 825 dias, renovação automática
 │   │       └── trust.rs          # CurrentUser\Root (sem admin) + opcional LocalMachine via helper; Firefox/NSS; NODE_EXTRA_CA_CERTS
-│   ├── forge-ipc/
+│   ├── forge-ipc/                # protocolo: ADR-0015
 │   │   └── src/
-│   │       ├── api/              # contratos: métodos JSON-RPC agrupados (tools, sites, services, php, net, tls, system)
-│   │       ├── events.rs         # assinatura de eventos (subscribe/unsubscribe), filtros
-│   │       ├── server/           # named pipe (windows) + ws (tokio-tungstenite), auth token em state/ipc.token
-│   │       └── client/           # cliente usado por CLI, GUI (via Tauri), MCP
+│   │       ├── api/              # contratos: um módulo de DTOs por grupo do docs/09 (daemon, tools, services, logs, php, sites,
+│   │       │                     #   db, net, tls, mail, shell, fs_parity, jobs, stats, remote, registry, system, fs, events) +
+│   │       │                     #   common.rs (Role, MethodInfo, ApiError, SiteRef...), methods.rs (tabela única METHODS → marcadores,
+│   │       │                     #   Client, methods.ts), contracts.rs (export TS: generated.ts + methods.ts)
+│   │       ├── rpc.rs            # frames JSON-RPC 2.0 (request_id obrigatório, códigos de erro)
+│   │       ├── auth.rs           # state/ipc.token (ACL do usuário), Authenticator (system.hello)
+│   │       ├── transport/        # trait Transport/Listener; framing NDJSON; named_pipe (windows), unix (cfg unix), memory, websocket (placeholder M6)
+│   │       ├── stream_queue.rs   # fila drop-oldest com marcadores de lag (servidor e cliente)
+│   │       ├── server/           # dispatcher (Router/Ctx), conexão (leitor/escritor/outbox), idempotência por request_id,
+│   │       │                     #   events.rs (subscribe + resume_from: anel do EventBus + tabela events), fs.rs (FsScope), builtins
+│   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
 │   ├── forge-daemon/             # bin forgeboxd.exe: main.rs, boot.rs, scheduler.rs, tray-less
 │   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
 │   ├── forge-helper/             # bin forgebox-helper.exe: allowlist de ops, manifest UAC, logging
@@ -121,7 +129,7 @@ Forgebox/
 │       │   ├── app/              # roteamento (tanstack-router), shell (sidebar, titlebar, command palette)
 │       │   ├── design/           # tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
 │       │   ├── features/         # dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
-│       │   ├── ipc/              # cliente tipado gerado dos contratos (ver xtask gen-ts)
+│       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`
 │       │   ├── state/            # stores (zustand), queries (tanstack-query), event bridge
 │       │   └── i18n/             # pt-BR, en (fluent ou i18next)
 │       ├── src-tauri/

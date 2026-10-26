@@ -143,8 +143,15 @@ forge completions powershell|bash|zsh
 forge mcp serve                                      # servidor MCP via stdio para IDEs/agentes
 ```
 
+## Mapeamento para a API
+Cada comando é um método `grupo.acao` da API do daemon ([ADR-0015](adr/0015-ipc-protocol.md)). A tabela canônica é `forge_ipc::api::methods::METHODS` (campo `cli` lista os comandos atendidos), exportada para a GUI em `apps/desktop/src/ipc/methods.ts`; um teste garante que todo comando desta página tem método. Exemplos: `forge site add`/`forge link` → `sites.add` (job) · `forge proxy remove`/`forge unlink` → `sites.remove` · `forge logs [-f]` e `forge daemon logs` → `logs.read`/`logs.subscribe` (alvo `daemon`) · `forge status --watch`, `forge jobs watch` → `events.subscribe` · `forge stats --watch` → `metrics.subscribe` · `forge exec` → `shell.env` com `versions` + execução local · `forge service config` abre o editor (`services.config`, `local_only`); a GUI remota usa `services.config_files` + `fs.read/write`.
+
+Rodam só no cliente (sem método): `forge daemon start` (inicia o `forgeboxd`), `forge completions`, `forge mcp serve`, `forge remote add|list|use|remove` e `--context` (perfis de conexão guardados na máquina do cliente).
+
+Métodos `local_only` (recusados em conexões remotas): `sites.open`, `db.open`, `db.shell`, `services.config`, `php.ini_open`, `mail.open`, `shell.open`, `shell.env`, `tools.add_local`.
+
 ## Comportamentos
-- Erros da API trazem um `code` estável (`forge_core::error::ForgeError::code`, também no `--json`) que define o código de saída: `invalid_input`, `config_invalid` → 2 · `not_found` → 3 · `conflict`, `port_in_use` → 4 · `needs_elevation` → 5 · `verification_failed` → 6 · `io`, `db`, `unsupported_platform`, `timeout`, `not_implemented`, `cancelled`, `internal` → 1. Códigos nunca são renomeados; só se acrescentam.
+- Erros da API trazem um `code` estável (`forge_core::error::ForgeError::code`, também no `--json`) que define o código de saída (`forge_core::error::exit_code_for`): `invalid_input`, `config_invalid` → 2 · `not_found` → 3 · `conflict`, `port_in_use` → 4 · `needs_elevation` → 5 · `verification_failed` → 6 · `io`, `db`, `unsupported_platform`, `timeout`, `not_implemented`, `cancelled`, `internal`, `unauthorized` (token inválido), `forbidden` (papel insuficiente, método `local_only` em conexão remota, caminho fora de `fs.*`) → 1. Códigos nunca são renomeados; só se acrescentam.
 - `--yes` pula confirmações; sem TTY assume `--yes=false` e falha com código 2 em ações que exigem confirmação (CI deve passar `--yes`).
 - Ações que precisam do helper elevado mostram "Precisa de confirmação de administrador (UAC)…" e disparam o prompt; com `--no-elevate` falham com código 5.
 - Downloads mostram barra multi-item com velocidade/ETA; `--quiet` só imprime resultado.

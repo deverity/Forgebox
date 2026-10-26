@@ -45,7 +45,7 @@ Regras:
 | Extração | `zip`, `sevenz-rust`, `tar` + `flate2`/`xz2` | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz |
 | DNS | **hickory-server** | Resolver `*.test` → 127.0.0.1 em `127.0.0.1:53` (ou porta alta + NRPT) |
 | TLS/CA | **rcgen** + `windows::Win32::Security::Cryptography` | CA raiz local e certificados folha; instalação no store `CurrentUser\Root` sem admin |
-| IPC | **JSON-RPC 2.0** sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md)) | Named pipe tem ACL por usuário; mesma API local e remota |
+| IPC | **JSON-RPC 2.0** (NDJSON, `request_id` obrigatório, handshake `system.hello`) sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md), [ADR-0015](adr/0015-ipc-protocol.md)) | Named pipe tem ACL por usuário; mesma API local e remota |
 | GUI | **Tauri 2** + WebView2 (presente em todo Win10/11) | Frontend web permite acabamento Apple-ish; bundle ~10 MB; `window-vibrancy` para Mica/Acrylic. Ver [ADR-0002](adr/0002-gui-tauri.md) |
 | Frontend | **React 19 + TypeScript + Vite + Tailwind 4 + Radix Primitives + Motion** | Acessibilidade de graça (Radix), motion com springs, tokens via CSS vars |
 | CLI | **clap** v4 + `tabled`/`indicatif` + saída `--json` | UX de CLI moderna; cada comando tem saída humana e JSON |
