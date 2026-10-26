@@ -14,6 +14,7 @@ pub mod event;
 pub mod ids;
 pub mod paths;
 pub mod platform;
+pub mod runtime;
 pub mod store;
 pub mod sync;
 
