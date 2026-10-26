@@ -19,7 +19,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E2-T3 | Providers | todo | — | |
 | M1-E2-T4 | Layout + current | todo | — | |
 | M1-E2-T5 | Update engine | todo | — | |
-| M1-E3-T1 | Job Objects + spawn + stop em cascata | todo | — | |
+| M1-E3-T1 | Job Objects + spawn + stop em cascata | doing | feature/M1-E3-T1-job-objects-spawn-stop | |
 | M1-E3-T2 | Health probes + estados + restart + métricas | todo | — | |
 | M1-E3-T3 | Pré-checagens | todo | — | |
 | M1-E3-T4 | PhpPool | todo | — | |
