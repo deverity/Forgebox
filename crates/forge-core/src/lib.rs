@@ -4,9 +4,12 @@
 //! that touches the disk or Win32 is blocking; async code calls it from
 //! `spawn_blocking` (docs/03 §7, ADR-0011).
 
+pub mod config;
 pub mod error;
 pub mod event;
 pub mod ids;
+pub mod paths;
+pub mod platform;
 
 pub use error::{ForgeError, Result};
 /// UTC instant used by every timestamp of the domain (RFC 3339 on the wire, ADR-0013).
