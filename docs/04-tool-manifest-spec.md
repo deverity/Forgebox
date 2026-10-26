@@ -18,6 +18,7 @@ Regras gerais (implementadas em `forge-manifest`):
 - `apiVersion` é exatamente `forgebox.dev/v1`; `kind` decide o schema do resto do documento.
 - **Chave desconhecida é erro** em qualquer nível (nada de typo ignorado em silêncio). Erros de YAML/schema trazem linha e coluna.
 - Durações são texto com unidade (`"15s"`, `"2m"`, `"1h"`, `"1h 30m"`); número puro é recusado.
+- Versões e séries são texto. O parser preserva o texto original mesmo sem aspas (`series: 8.10` continua `"8.10"`), mas prefira aspas: o JSON Schema do editor marca número onde se espera texto.
 - Ações (`post_install`, `update.migrate`, `post_create`) são mapas de uma chave só: `- copy: {...}`, `- run: {...}`.
 - `id`s de Tool/Extension/Stack seguem `[a-z0-9-]` (começam e terminam com letra/dígito, até 64 caracteres; `shims` e `current` são reservados).
 

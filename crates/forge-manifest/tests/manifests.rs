@@ -301,6 +301,17 @@ fn every_invalid_fixture_has_matching_id_and_stem() {
 }
 
 #[test]
+fn unquoted_versions_keep_their_text() {
+    // The YAML scalar is read as text, so `8.10` never turns into the number 8.1.
+    let text =
+        read(&fixtures().join("valid/laravel.yaml")).replace("series: \"8.4\"", "series: 8.10");
+    let Manifest::Stack(stack) = load_str(&text).unwrap() else {
+        panic!("not a stack")
+    };
+    assert_eq!(stack.spec.tools[0].series.as_deref(), Some("8.10"));
+}
+
+#[test]
 fn temp_registry_helper_places_by_kind() {
     let registry = TempRegistry::new();
     assert_eq!(
