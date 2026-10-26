@@ -1,0 +1,60 @@
+[workspace]
+# apps/desktop/src-tauri entra no workspace em M2-E1 (ver docs/02-project-structure.md).
+members = ["crates/*", "xtask"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/deverity/Forgebox"
+rust-version = "1.85"
+authors = ["Forgebox Team"]
+
+[workspace.dependencies]
+tokio = { version = "1.54.1", features = ["full"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+# serde_yml está deprecado; ver docs/adr/0012-yaml-crate-serde-yaml-ng.md
+serde_yaml_ng = "0.10.0"
+toml = "1.1.8"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+ulid = { version = "3.0.0", features = ["serde"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
+schemars = { version = "1.2.3", features = ["derive"] }
+# specta ainda está em release candidate: versão exata para evitar quebra silenciosa.
+specta = "=2.0.0-rc.27"
+specta-typescript = "=0.0.14"
+minijinja = "3.0.3"
+clap = { version = "4.6.7", features = ["derive"] }
+# features Win32 são adicionadas nos crates que usam a API (somente forge-core/platform/windows).
+windows = "0.62.2"
+junction = "2.1.0"
+parking_lot = "0.13.0"
+futures = "0.3.34"
+bytes = "1.12.1"
+camino = "1.2.6"
+tempfile = "3.27.0"
+pretty_assertions = "1.4.1"
+insta = "1.49.0"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Mutex segurado através de .await trava atores; é erro (CLAUDE.md, ADR-0011).
+await_holding_lock = "deny"
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+# Mantemos unwind: catch_unwind é usado pelos atores (ADR-0011).
+panic = "unwind"
