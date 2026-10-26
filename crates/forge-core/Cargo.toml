@@ -38,14 +38,21 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 # Win32 only behind `platform::windows` (CLAUDE.md). `junction` wraps
-# CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile.
+# CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile, Job Objects,
+# CreateProcessW, console control events and EnumWindows/PostMessageW.
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
+    "Win32_System_Console",
     "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 [dev-dependencies]

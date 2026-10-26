@@ -54,7 +54,7 @@ use tokio::sync::mpsc;
 
 use crate::event::EventBus;
 
-pub use mailbox::{ActorRef, AskError, DEFAULT_MAILBOX_CAPACITY, Reply, TellError};
+pub use mailbox::{ActorRef, AskError, DEFAULT_MAILBOX_CAPACITY, Reply, TellError, WeakActorRef};
 pub use supervisor::{
     ACTOR_EVENT_VERSION, ActorFailedPayload, ActorHandle, ActorRestartedPayload, ActorSpec,
     ActorStatus, ActorSupervisor, ChildStatus, DEFAULT_STOP_TIMEOUT, RestartPolicy, StopOutcome,
@@ -140,6 +140,11 @@ impl<A: Actor> Context<A> {
     /// reference was dropped (the actor is then winding down).
     pub fn myself(&self) -> Option<ActorRef<A::Msg>> {
         ActorRef::from_weak(Arc::clone(&self.name), &self.myself)
+    }
+
+    /// Address of this actor that does not keep it alive, for the tasks it spawns.
+    pub fn myself_weak(&self) -> WeakActorRef<A::Msg> {
+        WeakActorRef::new(Arc::clone(&self.name), self.myself.clone())
     }
 
     /// Event bus of the supervisor, for domain events.
