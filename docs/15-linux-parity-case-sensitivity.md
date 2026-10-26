@@ -10,8 +10,9 @@ Windows é case-insensitive no sistema de arquivos. Um projeto funciona no Larag
 Desde o Windows 10 1803 o NTFS suporta a flag **por diretório** `FILE_CS_FLAG_CASE_SENSITIVE_DIR`, a mesma usada pelo WSL. Dentro de um diretório marcado, `Header.php` e `header.php` são arquivos distintos e `open("header.php")` falha se só existir `Header.php`, exatamente como no Linux. Novos subdiretórios **herdam** a flag.
 
 - API: `NtSetInformationFile(handle, FileCaseSensitiveInformation { Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR })` (via `windows` crate / `ntdll`). Equivalente de linha de comando: `fsutil file setCaseSensitiveInfo <dir> enable`.
-- Pré-condições: NTFS (não FAT/exFAT), Windows 10 1803+, **diretório vazio** no momento de marcar, permissão de escrita no diretório. Se o sistema exigir elevação em alguma edição/política, a operação é roteada pelo `forgebox-helper` (op `fs.set_case_sensitive {path}` validada para estar dentro de parked dirs/raiz do Forgebox).
-- Implementação em `forge-core::platform::windows::CaseSensitiveFs` atrás do trait `platform::CaseSensitiveFs { is_supported(dir), get(dir), set(dir, bool) }`. Em Linux/macOS: `get` devolve o estado real do FS; `set` é no-op.
+- Pré-condições: NTFS (não FAT/exFAT/ReFS), Windows 10 1803+, permissão de escrita de atributos no diretório. Se o sistema exigir elevação em alguma edição/política, a operação é roteada pelo `forgebox-helper` (op `fs.set_case_sensitive {path}` validada para estar dentro de parked dirs/raiz do Forgebox).
+- Comportamento medido no Windows 10 22H2 (19045), NTFS, sem elevação (M0-E1-T4): a flag **pode** ser ligada em diretório não vazio, mas vale **só para o próprio diretório** (não é recursiva): subdiretórios já existentes mantêm a flag que tinham e só os criados depois herdam. Desligar falha com `STATUS_CASE_DIFFERING_NAMES_IN_DIR` enquanto houver nomes que diferem só por caixa. Por isso o Forgebox marca diretórios **vazios, antes de criar conteúdo** (`ForgeRoot::init()`), e a conversão de diretórios existentes (§3.1) é "mover para um diretório novo já marcado", o que torna toda a subárvore case-sensitive.
+- Implementação em `forge-core::platform::windows::WindowsCaseSensitiveFs` (`NtQueryInformationFile`/`NtSetInformationFile`, `FileCaseSensitiveInformation` = classe 71) atrás do trait `platform::CaseSensitiveFs { support(dir) / is_supported(dir), get(dir), set(dir, bool) }`. Erros tipados: `unsupported_platform` (volume/SO sem suporte, nunca pânico), `needs_elevation` (acesso negado → helper), `conflict` (nomes que diferem só por caixa). Em Linux/macOS (port futuro): `get` devolve o estado real do FS; `set` é no-op; até lá o stub responde `unsupported_platform`.
 
 ### 3.1 Onde aplicamos
 | Diretório | Quando | Como |
@@ -21,7 +22,7 @@ Desde o Windows 10 1803 o NTFS suporta a flag **por diretório** `FILE_CS_FLAG_C
 | Projeto linkado fora de parked dir (`forge site add D:\x\proj`) | Ao criar o site | Diagnóstico mostra "diretório case-insensitive"; botão **Converter** igual acima; pode recusar |
 | `www/<novo projeto>` via `forge new` | Herdado automaticamente | — |
 | `data/` dos bancos | Na criação da instância (vazio) | direto (ver §5) |
-| `etc/`, `logs/`, `tmp/` | Onboarding | direto, por consistência |
+| `etc/`, `logs/`, `tmp/`, `backups/` | Onboarding (`ForgeRoot::init()`, que também marca as subpastas que cria: `etc/templates`, `etc/sites`, `tmp/downloads`, `tmp/stage`) | direto, por consistência |
 | `bin/` | **Não** | Tools Windows esperam FS normal; sem benefício |
 
 Em cada site a UI mostra badge **`Aa` case-sensitive** ou **`aA` insensitive** com tooltip explicando. O estado é re-verificado no boot (`fs.case_sensitivity_applied|unavailable`).

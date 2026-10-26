@@ -22,14 +22,16 @@ Forgebox/
 │   ├── forge-core/
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── ids.rs            # ToolId, VersionId, InstanceId, SiteId (newtypes ULID)
-│   │       ├── paths.rs          # ForgeRoot + resolução de todos os caminhos (bin/, etc/, data/...)
-│   │       ├── error.rs          # ForgeError (thiserror), códigos estáveis para API
-│   │       ├── event.rs          # Event, EventKind, EventBus (tokio broadcast)
-│   │       ├── store/            # SQLite: migrations/*.sql, repos por agregado
+│   │       ├── ids.rs            # ToolId (slug [a-z0-9-]) + newtypes ULID: VersionId, InstanceId, SiteId, JobId, EventId,
+│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts)
+│   │       ├── paths.rs          # ForgeRoot + todos os caminhos (bin/, etc/, data/...), discover(), init() com flag CS
+│   │       ├── error.rs          # ForgeError (thiserror), code() estável para API, exit_code() da CLI (docs/09)
+│   │       ├── event.rs          # Event{id, seq, ts, kind, payload}, EventKind (nomes de docs/03 §8), EventBus (tokio broadcast)
+│   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs...)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
-│   │       ├── config.rs         # forgebox.toml (preferências)
-│   │       └── platform/         # traits + impl windows/ (ProcessGroup, LinkFs, TrustStore, DnsPolicy)
+│   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, ProcessGroup, TrustStore, DnsPolicy) + current();
+│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema

@@ -127,6 +127,7 @@ Sites com `runtime: frankenphp` não usam pool: o Forgebox sobe um `frankenphp.e
   - PHP pools: 19000–19999. Xdebug: 9003 (reservada).
   - Bancos: MySQL 3306+, MariaDB 3307+ (sugerido quando ambos), PostgreSQL 5432+, Mongo 27017+, Redis 6379+, Memcached 11211.
   - Mail: SMTP 1025, UI 8025. Storage: MinIO 9000/9001. Apps: 3000–3999.
+- Em `forgebox.toml` as faixas são nomeadas e referenciadas pelos manifestos (`port_range: php-pools`, `ports[].range: databases`): `[ports.ranges]` com `web = [80, 443]`, `web-alt = [8080, 8443]`, `php-pools = ["19000-19999"]`, `xdebug = [9003]`, `databases = ["3306-3399", "5432-5499", "6379-6399", "11211-11299", "27017-27099"]`, `apps = ["3000-3999"]`, `mail = [1025, 8025]`, `storage = [9000, 9001]`; `[ports] reserved = [9003]` (nunca alocada automaticamente). Faixas ausentes no arquivo mantêm o padrão (`forge_core::config`).
 - Alocação persistida em `ports` (SQLite). Uma porta nunca é "adivinhada" duas vezes.
 - Conflito externo: `GetExtendedTcpTable` → PID → nome do exe → UI mostra "Porta 3306 em uso por `mysqld.exe` (C:\xampp\mysql\bin) — PID 4412". Ações: encerrar (se do usuário), mudar porta (re-render automático), ignorar.
 
@@ -198,5 +199,7 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor 
 
 ## 8. Eventos (nomes canônicos)
 `daemon.ready`, `daemon.shutdown`, `job.started|progress|done|failed|cancelled`, `actor.restarted`, `fs.case_sensitivity_applied|unavailable`, `tool.install.started|progress|completed|failed`, `tool.updated`, `tool.rollback`, `service.starting|running|stopping|stopped|crashed|failed`, `pool.scaled`, `pool.worker.recycled`, `site.created|updated|removed`, `site.php_changed`, `config.rendered`, `config.drift_detected`, `dns.policy_applied`, `tls.ca_created|leaf_issued|renewed`, `port.conflict`, `helper.op{name, ok}`.
+
+Cada evento é `{id: ULID, seq, ts (RFC 3339 UTC), kind, payload}` (`forge_core::event`). `seq` cresce de 1 em 1 e continua após restart (o daemon semeia o `EventBus` com o maior `seq` da tabela `events`), o que permite `resume_from(seq)`. O bus é `tokio::sync::broadcast` (4096 por assinante): publicar nunca bloqueia; um assinante lento perde os mais antigos (drop-oldest) e recebe a contagem de perdidos para ressincronizar pelo SQLite.
 
 Payloads são structs serde versionadas em `forge-ipc`. A GUI é 100% reativa a esses eventos; nenhuma tela faz polling além de métricas.
