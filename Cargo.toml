@@ -31,6 +31,11 @@ ulid = { version = "3.0.0", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 schemars = { version = "1.2.3", features = ["derive"] }
+# Manifest durations ("15s", "1h") and version constraints (docs/04, forge-manifest).
+humantime = "2.4.0"
+semver = "1.0.28"
+# Regexes declared in manifests (verify, discover, assets) are compiled by the validator.
+regex = "1.12.3"
 # specta ainda está em release candidate: versão exata para evitar quebra silenciosa.
 specta = "=2.0.0-rc.27"
 specta-typescript = "=0.0.14"
