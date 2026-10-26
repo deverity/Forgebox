@@ -1,9 +1,13 @@
 //! Forgebox download providers, sha256 verification, extraction and versioned layout with current junction.
 //!
 //! Crate of the Forgebox workspace, see docs/02-project-structure.md. Implemented so
-//! far: [`download`] (M1-E2-T1). The rest is placeholder until its roadmap task (docs/10).
+//! far: [`download`] (M1-E2-T1), [`verify`] and [`extract`] (M1-E2-T2). The rest is
+//! placeholder until its roadmap task (docs/10).
 
 pub mod download;
+pub mod extract;
+mod messages;
+pub mod verify;
 
 #[cfg(test)]
 mod tests {
