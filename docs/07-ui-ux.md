@@ -137,7 +137,12 @@ Button (primary/secondary/ghost/destructive, com loading), IconButton, Toggle, S
 ## 7. Bandeja (tray)
 - Ícone muda por estado agregado: tudo ok (monocromático), iniciando (animado), algum falhou (ponto vermelho), update disponível (ponto azul).
 - Menu nativo: Abrir Forgebox · Start/Stop all · Serviços (submenu com toggle por instância) · Sites (submenu: abrir no navegador) · PHP CLI (submenu radio) · Mail (n não lidos) · Terminal · Sair (pergunta se para serviços).
-- Hover mostra tooltip com resumo.
+- Contexto ([13](13-remote-mode.md)): primeira linha do menu mostra o contexto ativo ("● Local" ou "● hml (Linux)") com submenu para trocar; todas as ações do tray agem sobre o contexto ativo; com remoto selecionado o ícone ganha um pequeno indicador e o tooltip diz o nome do remoto, para nunca parar um serviço na máquina errada.
+- Hover mostra tooltip com resumo (serviços rodando/falhos, PHP CLI ativo, contexto).
+- Clique esquerdo abre/foca a janela; clique direito abre o menu; clique do meio abre o terminal global.
+- Notificações nativas do Windows (toast) para: serviço caiu e foi reiniciado, update instalado, download concluído, alerta de desempenho, túnel pronto (com URL copiável). Agrupadas e com "não mostrar de novo" por tipo.
+- O tray pertence ao processo da GUI (`Forgebox.exe`). Se a GUI não estiver aberta, o daemon continua rodando sem tray; `forgeboxd` nunca cria UI. Opção "Iniciar com o Windows" sobe a GUI minimizada na bandeja.
+- Implementação: `tray-icon` do Tauri 2 (`apps/desktop/src-tauri/src/tray.rs`), ícones por estado em `app/icons/tray/*.ico` (16/20/24/32 px, light e dark do tema do Windows), menu reconstruído a partir dos eventos do daemon (não por polling).
 
 ## 8. Atalhos
 `Ctrl+K` palette · `Ctrl+1..9` seções · `Ctrl+Shift+S` start all · `Ctrl+Shift+X` stop all · `Ctrl+N` novo site · `Ctrl+L` logs · `` Ctrl+` `` terminal · `Ctrl+,` configurações · `Ctrl+Alt+T` terminal global (compatível com Laragon). Todos reconfiguráveis.
