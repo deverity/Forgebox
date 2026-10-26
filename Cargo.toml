@@ -45,6 +45,11 @@ junction = { version = "2.1.0", default-features = false }
 parking_lot = "0.13.0"
 futures = "0.3.34"
 bytes = "1.12.1"
+# HTTP client for downloads: rustls only (no native-tls/OpenSSL), system proxy by default.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "system-proxy"] }
+sha2 = "0.11.1"
+url = "2.5.8"
+axum = "0.8.9"
 camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"

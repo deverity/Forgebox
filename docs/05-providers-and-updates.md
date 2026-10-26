@@ -26,11 +26,16 @@ Todos os providers:
 - Devolvem **todas** as variantes para que a UI mostre NTS/TS, VS16/VS17 com explicação ("NTS é o recomendado para FastCGI").
 
 ## 2. Download
-- Fila com prioridade (ação do usuário > auto-update), paralelismo 2 downloads × 4 conexões.
-- Retomada por `Range`; arquivo parcial em `tmp/downloads/<sha-prefix>.part`.
-- Progresso: bytes, velocidade (EMA), ETA → evento `tool.install.progress` a cada 250 ms.
-- Limite de banda configurável; pausa em conexão medida (Windows `NetworkCostManager`).
-- Mirrors: tenta em ordem; cada falha registra motivo; a UI mostra "fonte: downloads.php.net".
+Implementação: `forge-provider::download` (`DownloadManager`, ator da fila; cada download é um job de `forge_core::jobs`).
+- API: `download(DownloadRequest { urls, expected_size, expected_sha256, dest, priority }) -> JobId`. Resultado em `job.done`: `{path, size, sha256, source, mirror_failures[]}` (`sha256` é o calculado). Erros de pedido (sem URL, esquema não http/https, sha256 que não tem 64 hex) e `prefs.offline` falham na hora, sem criar job (offline = `conflict`).
+- Fila com prioridade (`UserAction` > `AutoUpdate`, FIFO dentro da prioridade), paralelismo 2 downloads × 4 conexões. Cancelar um job ainda na fila não ocupa vaga. O mesmo arquivo pedido de novo para o mesmo destino devolve o job existente; se ele ainda espera vaga e o novo pedido tem prioridade maior (ex.: `UserAction` sobre um `AutoUpdate` já enfileirado), a prioridade da entrada na fila sobe; outro destino é `conflict` (um `.part` por arquivo).
+- Retomada por `Range`; arquivo parcial em `tmp/downloads/<chave>.part`, onde `<chave>` são os 16 primeiros hex do sha256 esperado (ou do sha256 da primeira URL, sem sha). Ao retomar, o `.part` é re-hasheado (`spawn_blocking`); se a verificação final falhar após uma retomada, o parcial é descartado e o download recomeça uma vez antes de culpar o mirror. Servidor que ignora `Range` (200) reinicia do zero.
+- Arquivos ≥ 50 MB cujo servidor anuncia `Accept-Ranges: bytes` usam até 4 conexões `Range` escrevendo cada uma sua fatia do `.part` pré-alocado; as posições ficam em `<chave>.part.json` para retomar só o que falta. O sha256 desses é calculado no fim (streaming só no modo de uma conexão). Buffers de 1 MiB; escrita e hash sempre em `spawn_blocking`.
+- Progresso: `job.progress` a cada 250 ms com `bytes_done`, `bytes_total`, `pct`, `speed_bps` (EMA, alfa 0,3) e `eta_secs` (campos `speed_bps`/`eta_secs` foram acrescentados a `JobProgress`); a mensagem traz a fonte ("Baixando de downloads.php.net").
+- Falhas transitórias (conexão cortada, timeout, 408/429/502/503/504) retomam no mesmo mirror até 3 vezes (espera 1 s × tentativa); outros erros HTTP passam ao mirror seguinte. Cada falha de mirror é registrada com o motivo (`mirror_failures`) e entra na mensagem de erro final (`io`, ou `verification_failed` se todos serviram bytes inválidos).
+- Limite de banda opcional (token bucket compartilhado, rajada de 1 s, alterável em execução); pausa em conexão medida (Windows `NetworkCostManager`) fica para o scheduler de updates (M1-E2-T5).
+- Proxy: sistema por padrão (reqwest com a feature `system-proxy`: Internet Settings/WinHTTP do Windows e depois variáveis `HTTP(S)_PROXY`), `Direct` ou manual (`DownloadConfig.proxy`, vindo de `prefs.proxy`).
+- Cancelamento (`job.cancel`): mantém o `.part` e não emite `job.done`.
 
 ## 3. Verificação
 1. Tamanho (quando conhecido).
