@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=../schema/extension.v1.json
+# verified: 2026-10-26 3.5.3 php 8.4 nts vs17 a94d4fcfe4086a300b2decaf7c04e59f4981aa5e56992d48b55c5e49dfd9b9ee
+# verified: 2026-10-26 3.5.3 php 8.5 nts vs17 0a0d52bf276dad7e5f90ac30a5110b3119d291b20c118be0cb7f5752064f1811
+# verified: 2026-10-26 3.5.3 php 8.3 nts vs16 4c80487592484c36d21a7006a53738dfc07884fc6867720ddc5c11559371cdce
+# verified: 2026-10-26 3.5.3 php 8.2 nts vs16 b449eda7eeefc80c651fac334582c5f0877cd72cfe55fc1c5f0f98bf6a4edb94
+# verified: 2026-10-26 3.5.3 php 8.1 nts vs16 15bb3abcd0755af8378550793bcf7603636add31dc4a04d24bfd2a1f764399b4
+#   (all: SHA256 shown on https://xdebug.org/download == hash of the DLL downloaded and hashed
+#   locally; xdebug.org publishes no .sha256 files, so the hashes are curated in `releases:`)
+#
+# `releases[].variants` of an Extension are free-form keys (the target tool declares the real
+# variants): here `php_series` (placeholder {php_series}) distinguishes DLLs that share the same
+# ts/compiler (8.4 and 8.5 are both nts/vs17). TS builds are not curated yet.
+apiVersion: forgebox.dev/v1
+kind: Extension
+
+metadata:
+  id: xdebug
+  name: Xdebug
+  summary: Depurador e profiler para PHP
+  description: |
+    Extensão Xdebug do PHP: debug passo a passo (porta 9003), develop, coverage e profile.
+    Instalada dentro da versão alvo do PHP (`ext/php_xdebug.dll`) e ativada por conf.d.
+  category: devtool
+  tags: [php, debug, profiler]
+  homepage: https://xdebug.org
+  docs: https://xdebug.org/docs/
+  license: Xdebug-1.03
+  icon: xdebug.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  extends: php
+  compat:
+    - { tool: "~8.5", variant: { ts: nts, compiler: vs17 }, version: "3.5.*" }
+    - { tool: "~8.4", variant: { ts: nts, compiler: vs17 }, version: "3.5.*" }
+    - { tool: "~8.3", variant: { ts: nts, compiler: vs16 }, version: "3.5.*" }
+    - { tool: "~8.2", variant: { ts: nts, compiler: vs16 }, version: "3.5.*" }
+    - { tool: "~8.1", variant: { ts: nts, compiler: vs16 }, version: "3.5.*" }
+  source:
+    providers:
+      - type: http
+        url: "https://xdebug.org/files/php_xdebug-{version}-{php_series}-{ts_flag}{compiler}-x86_64.dll"
+        vars: { ts_flag: { nts: "nts-", ts: "" } }
+    releases:
+      - version: "3.5.3"
+        url: https://xdebug.org/files/php_xdebug-3.5.3-8.5-nts-vs17-x86_64.dll
+        sha256: "0a0d52bf276dad7e5f90ac30a5110b3119d291b20c118be0cb7f5752064f1811"
+        size: 331776
+        variants: { php_series: "8.5", ts: nts, compiler: vs17 }
+      - version: "3.5.3"
+        url: https://xdebug.org/files/php_xdebug-3.5.3-8.4-nts-vs17-x86_64.dll
+        sha256: "a94d4fcfe4086a300b2decaf7c04e59f4981aa5e56992d48b55c5e49dfd9b9ee"
+        size: 331776
+        variants: { php_series: "8.4", ts: nts, compiler: vs17 }
+      - version: "3.5.3"
+        url: https://xdebug.org/files/php_xdebug-3.5.3-8.3-nts-vs16-x86_64.dll
+        sha256: "4c80487592484c36d21a7006a53738dfc07884fc6867720ddc5c11559371cdce"
+        size: 330240
+        variants: { php_series: "8.3", ts: nts, compiler: vs16 }
+      - version: "3.5.3"
+        url: https://xdebug.org/files/php_xdebug-3.5.3-8.2-nts-vs16-x86_64.dll
+        sha256: "b449eda7eeefc80c651fac334582c5f0877cd72cfe55fc1c5f0f98bf6a4edb94"
+        size: 330240
+        variants: { php_series: "8.2", ts: nts, compiler: vs16 }
+      - version: "3.5.3"
+        url: https://xdebug.org/files/php_xdebug-3.5.3-8.1-nts-vs16-x86_64.dll
+        sha256: "15bb3abcd0755af8378550793bcf7603636add31dc4a04d24bfd2a1f764399b4"
+        size: 331264
+        variants: { php_series: "8.1", ts: nts, compiler: vs16 }
+  install:
+    archive: file
+    target: "{{ paths.version }}/ext/php_xdebug.dll"
+    post_install:
+      - render: { template: "php/xdebug.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/20-xdebug.ini" }
+    size_estimate_mb: 1
+  config:
+    quick_settings:
+      - { key: mode, label: Mode, ini: "xdebug.mode", type: multi, options: [off, debug, develop, coverage, profile, trace], default: [debug, develop], apply: reload }
+      - { key: start_with_request, label: Start with request, ini: "xdebug.start_with_request", type: select, options: [yes, trigger, no], default: trigger, apply: reload }
+      - { key: client_port, label: Client port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true, apply: reload }
+  toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }
