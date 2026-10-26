@@ -1,11 +1,26 @@
-//! Forgebox manifest schema (forgebox.yaml), parser, semantic validation and version rules.
+//! Forgebox manifest schema (`forgebox.yaml`), parser, semantic validation, version rules
+//! and registry lint (docs/04, ADR-0006).
 //!
-//! Crate of the Forgebox workspace, see docs/02-project-structure.md.
-//! Only the provisional schema stubs and lint exist so far (M0-E1-T2); the real ones
-//! come in M1-E1-T1.
+//! - [`schema`]: serde + schemars structs of the five kinds (`Tool`, `Extension`, `Stack`,
+//!   `Project`, `Registry`) and [`schema::json_schemas`] (`cargo xtask schema`).
+//! - [`parse`]: [`parse::load_str`] (errors with line/column) and [`parse::validate`].
+//! - [`version`]: versions, constraints, channels, series and build ordering.
+//! - [`lint`]: the seven rules of docs/04 §6 over a registry folder.
+//! - [`yaml`]: the only module that touches the YAML crate (ADR-0012).
+//!
+//! No tool-specific logic lives here: everything is data from the manifests.
 
+pub mod issue;
 pub mod lint;
+pub mod parse;
 pub mod schema;
+pub mod template;
+pub mod version;
+pub mod yaml;
+
+pub use issue::{IssueCode, ValidationIssue};
+pub use parse::{ManifestError, ValidateOptions, load_file, load_str, validate, validate_with};
+pub use schema::Manifest;
 
 #[cfg(test)]
 mod tests {
