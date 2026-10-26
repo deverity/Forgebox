@@ -1,0 +1,3 @@
+apiVersion: forgebox.dev/v1
+kind: Tool
+id: example
