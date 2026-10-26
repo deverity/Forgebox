@@ -5,7 +5,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 
 | ID | Tarefa | Estado | Branch | Observações |
 |---|---|---|---|---|
-| M0-E1-T1 | Workspace Cargo | doing | feature/M0-E1-T1-workspace | |
+| M0-E1-T1 | Workspace Cargo | review | feature/M0-E1-T1-workspace | 16 crates + xtask com testes; cargo deny ok (warnings de allowances de licença ainda não usadas, previstas); ADR-0012 (serde_yaml_ng) |
 | M0-E1-T2 | xtask | todo | — | |
 | M0-E1-T3 | CI | todo | — | |
 | M0-E1-T4 | forge-core base | todo | — | |
