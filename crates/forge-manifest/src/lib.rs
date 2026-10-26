@@ -6,10 +6,12 @@
 //! - [`parse`]: [`parse::load_str`] (errors with line/column) and [`parse::validate`].
 //! - [`version`]: versions, constraints, channels, series and build ordering.
 //! - [`lint`]: the seven rules of docs/04 §6 over a registry folder.
+//! - [`index`]: `index.yaml` generation (`cargo xtask registry-index`) and file hashing.
 //! - [`yaml`]: the only module that touches the YAML crate (ADR-0012).
 //!
 //! No tool-specific logic lives here: everything is data from the manifests.
 
+pub mod index;
 pub mod issue;
 pub mod lint;
 pub mod parse;

@@ -5,6 +5,9 @@ use std::process::Command as Process;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use forge_core::Timestamp;
+use forge_manifest::Manifest;
+use forge_manifest::index::{build_entries, build_index, render_index};
 use forge_manifest::lint::{LintContext, RegistryDir};
 
 #[derive(Debug, Parser)]
@@ -22,6 +25,8 @@ enum Command {
     GenTs,
     /// Lint the manifests in registry/.
     LintRegistry,
+    /// Regenerate registry/index.yaml (sha256 of every manifest, placeholder signature).
+    RegistryIndex,
     /// Run fmt-check, clippy, test, deny and lint-registry; stops at the first failure.
     Ci,
 }
@@ -128,6 +133,48 @@ fn lint_registry(root: &Path) -> Result<usize> {
     Ok(report.issues.len())
 }
 
+/// Name and URL written in `metadata` of the official index.
+const REGISTRY_NAME: &str = "official";
+const REGISTRY_URL: &str = "https://github.com/forgebox/registry";
+
+/// Regenerates `registry/index.yaml`. `updated_at` only moves when the listed entries change,
+/// so running it twice leaves no diff. Returns whether the file was (re)written.
+fn registry_index(root: &Path) -> Result<bool> {
+    let registry = root.join("registry");
+    let dir = RegistryDir::new(&registry);
+    let (tools, stacks) = build_entries(&dir).context("indexing registry/")?;
+    let path = dir.index_path();
+    let previous = forge_manifest::load_file(&path).ok().and_then(|m| match m {
+        Manifest::Registry(r) => Some(r),
+        _ => None,
+    });
+    let unchanged = previous.as_ref().filter(|r| {
+        r.spec.tools == tools
+            && r.spec.stacks == stacks
+            && r.metadata.name == REGISTRY_NAME
+            && r.metadata.url.as_deref() == Some(REGISTRY_URL)
+    });
+    if let Some(previous) = unchanged {
+        let text = render_index(previous)?;
+        if std::fs::read_to_string(&path).is_ok_and(|current| current == text) {
+            println!("registry/index.yaml is up to date");
+            return Ok(false);
+        }
+    }
+    let updated_at = match unchanged {
+        Some(r) => r.spec.updated_at,
+        None => Timestamp::from_second(Timestamp::now().as_second())?,
+    };
+    let index = build_index(&dir, REGISTRY_NAME, Some(REGISTRY_URL), updated_at)?;
+    write_file(&path, &render_index(&index)?)?;
+    println!(
+        "wrote registry/index.yaml ({} tool(s), {} stack(s))",
+        index.spec.tools.len(),
+        index.spec.stacks.len()
+    );
+    Ok(true)
+}
+
 fn run_step(root: &Path, program: &str, args: &[&str]) -> Result<()> {
     println!("==> {program} {}", args.join(" "));
     let status = Process::new(program)
@@ -176,6 +223,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::RegistryIndex => registry_index(&root).map(|_| ()),
         Command::Ci => ci(&root),
     }
 }
@@ -186,7 +234,7 @@ mod tests {
 
     #[test]
     fn parses_all_subcommands() {
-        for arg in ["schema", "gen-ts", "lint-registry", "ci"] {
+        for arg in ["schema", "gen-ts", "lint-registry", "registry-index", "ci"] {
             assert!(Cli::try_parse_from(["xtask", arg]).is_ok(), "{arg}");
         }
     }
@@ -290,5 +338,88 @@ spec:
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// A registry folder with one tool and one stack, plus the stub icon.
+    fn sample_registry(dir: &Path) {
+        let tools = dir.join("registry/tools");
+        let stacks = dir.join("registry/stacks");
+        std::fs::create_dir_all(&tools).unwrap();
+        std::fs::create_dir_all(&stacks).unwrap();
+        let extra = r#"    releases:
+      - { version: "1.2.0", url: "https://example.org/a.zip", sha256: "1111111111111111111111111111111111111111111111111111111111111111" }
+      - { version: "1.10.0", url: "https://example.org/b.zip", sha256: "2222222222222222222222222222222222222222222222222222222222222222" }
+      - { version: "2.0.0-rc1", url: "https://example.org/c.zip", sha256: "3333333333333333333333333333333333333333333333333333333333333333" }
+"#;
+        let text = format!(
+            "apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: {{ id: zeta, name: Zeta, category: devtool }}
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: mysql
+{extra}"
+        );
+        std::fs::write(tools.join("zeta.yaml"), text).unwrap();
+        std::fs::write(tools.join("alpha.yaml"), tool_yaml("alpha", "")).unwrap();
+        std::fs::write(
+            stacks.join("s1.yaml"),
+            "apiVersion: forgebox.dev/v1
+kind: Stack
+metadata: { id: s1, name: S1 }
+spec:
+  tools:
+    - { id: alpha }
+",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn registry_index_lists_sorted_entries_with_latest_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        sample_registry(dir.path());
+        assert!(registry_index(dir.path()).unwrap());
+        let path = dir.path().join("registry/index.yaml");
+        let first = std::fs::read_to_string(&path).unwrap();
+        assert!(first.starts_with("# generated by cargo xtask registry-index"));
+        assert!(first.contains("key_id: dev"), "{first}");
+        let alpha = first.find("id: alpha").unwrap();
+        let zeta = first.find("id: zeta").unwrap();
+        assert!(alpha < zeta, "{first}");
+        assert!(first.contains("latest: 1.10.0"), "{first}");
+        assert!(!first.contains("2.0.0-rc1"), "{first}");
+        // Same inputs: nothing is rewritten and updated_at does not move.
+        assert!(!registry_index(dir.path()).unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), first);
+        // A changed manifest changes its hash in the index.
+        let alpha_path = dir.path().join("registry/tools/alpha.yaml");
+        let mut text = std::fs::read_to_string(&alpha_path).unwrap();
+        text.push_str(
+            "# touched
+",
+        );
+        std::fs::write(&alpha_path, text).unwrap();
+        assert!(registry_index(dir.path()).unwrap());
+        assert_ne!(std::fs::read_to_string(&path).unwrap(), first);
+    }
+
+    #[test]
+    fn generated_index_passes_the_lint() {
+        let dir = tempfile::tempdir().unwrap();
+        sample_registry(dir.path());
+        registry_index(dir.path()).unwrap();
+        assert_eq!(lint_registry(dir.path()).unwrap(), 0);
+        // Editing a manifest after indexing is caught by the sha256 check.
+        let path = dir.path().join("registry/tools/alpha.yaml");
+        let mut text = std::fs::read_to_string(&path).unwrap();
+        text.push_str(
+            "# edited
+",
+        );
+        std::fs::write(&path, text).unwrap();
+        assert_eq!(lint_registry(dir.path()).unwrap(), 1);
     }
 }

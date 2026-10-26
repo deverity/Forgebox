@@ -594,6 +594,28 @@ fn index_entries(
             match item {
                 Some(item) => {
                     let kind = item.manifest.kind();
+                    match std::fs::read(&item.path) {
+                        Ok(bytes) => {
+                            let actual = crate::index::sha256_hex(&bytes);
+                            if actual != entry.sha256.as_str() {
+                                issues.push(LintIssue::new(
+                                    index,
+                                    IssueCode::IndexMismatch,
+                                    Some(format!("{field}.sha256")),
+                                    format!(
+                                        "sha256 of {} is {actual}, the index says {}",
+                                        entry.path, entry.sha256
+                                    ),
+                                ));
+                            }
+                        }
+                        Err(e) => issues.push(LintIssue::new(
+                            index,
+                            IssueCode::Io,
+                            Some(field.clone()),
+                            format!("cannot read {}: {e}", entry.path),
+                        )),
+                    }
                     if item.id() != Some(&entry.id) || !kinds.contains(&kind) {
                         issues.push(LintIssue::new(
                             index,

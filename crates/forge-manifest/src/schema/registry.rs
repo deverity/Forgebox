@@ -63,6 +63,10 @@ pub struct RegistryEntry {
     pub latest: Option<String>,
 }
 
+/// `key_id` of the placeholder signature of unsigned development indexes (`sig` may be empty).
+/// Real signatures come with M1-E1-T3; a loader must only accept `dev` in development mode.
+pub const DEV_KEY_ID: &str = "dev";
+
 /// `spec.signature`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
