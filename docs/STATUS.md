@@ -23,7 +23,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E3-T2 | Health probes + estados + restart + métricas | todo | — | |
 | M1-E3-T3 | Pré-checagens | todo | — | |
 | M1-E3-T4 | PhpPool | todo | — | |
-| M1-E4-T1 | Templates de servidor web | todo | — | |
+| M1-E4-T1 | Templates de servidor web | doing | feature/M1-E4-T1-templates | |
 | M1-E4-T2 | Drivers de framework | todo | — | |
 | M1-E4-T3 | DNS server + NRPT | todo | — | |
 | M1-E4-T4 | TLS | todo | — | |
