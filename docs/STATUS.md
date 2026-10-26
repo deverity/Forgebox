@@ -8,7 +8,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M0-E1-T1 | Workspace Cargo | done | feature/M0-E1-T1-workspace | 16 crates + xtask com testes; cargo deny ok (warnings de allowances de licença ainda não usadas, previstas); ADR-0012 (serde_yaml_ng) |
 | M0-E1-T2 | xtask | done | feature/M0-E1-T2-xtask | schema, gen-ts, lint-registry, ci. Contratos em `forge_ipc::api::contracts` (docs/02: `api/`); specta-serde adicionado (necessário como Format do exporter). CI futuro: rodar `cargo xtask schema` e `gen-ts` e falhar se `git diff --exit-code` acusar mudança. |
 | M0-E1-T3 | CI | todo | — | |
-| M0-E1-T4 | forge-core base | doing | feature/M0-E1-T4-forge-core-base | |
+| M0-E1-T4 | forge-core base | review | feature/M0-E1-T4-forge-core-base | paths/ids/error/event/store/config/platform; junction (crate `junction`) e flag CS (`NtSetInformationFile`) testados de verdade em NTFS/Win10 19045; `RequestId` movido para `forge_core::ids` (feature `specta`); ADR-0013 (jiff); docs/15 §3 corrigido (flag não é recursiva). |
 | M0-E1-T5 | Esqueleto de concorrência | todo | — | |
 | M1-E1-T1 | Schema v1 (manifesto) | todo | — | |
 | M1-E1-T2 | Manifestos iniciais | todo | — | |
