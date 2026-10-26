@@ -1,0 +1,31 @@
+[package]
+name = "forge-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox daemon (forgeboxd): composes the domain crates and serves the API."
+publish = false
+
+[[bin]]
+name = "forgeboxd"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-core = { path = "../forge-core" }
+forge-manifest = { path = "../forge-manifest" }
+forge-registry = { path = "../forge-registry" }
+forge-provider = { path = "../forge-provider" }
+forge-supervisor = { path = "../forge-supervisor" }
+forge-fcgi = { path = "../forge-fcgi" }
+forge-render = { path = "../forge-render" }
+forge-sites = { path = "../forge-sites" }
+forge-net = { path = "../forge-net" }
+forge-tls = { path = "../forge-tls" }
+forge-metrics = { path = "../forge-metrics" }
+forge-ipc = { path = "../forge-ipc" }

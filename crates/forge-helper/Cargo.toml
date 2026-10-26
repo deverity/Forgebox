@@ -1,0 +1,20 @@
+[package]
+name = "forge-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox elevated helper (forgebox-helper): allowlisted privileged operations with logging."
+publish = false
+
+[[bin]]
+name = "forgebox-helper"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-core = { path = "../forge-core" }

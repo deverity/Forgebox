@@ -1,0 +1,16 @@
+[package]
+name = "forge-supervisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox process supervisor: Job Objects, stdio capture, health probes and restart policies."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-core = { path = "../forge-core" }

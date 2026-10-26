@@ -1,0 +1,16 @@
+[package]
+name = "forge-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox manifest registry: sources, cache, search and discovery of folders in bin."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-manifest = { path = "../forge-manifest" }
