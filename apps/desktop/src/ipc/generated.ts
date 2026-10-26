@@ -1736,9 +1736,12 @@ export type SubscriptionDto = {
 	/**  Stream name (`events`, `logs`, `metrics`). */
 	stream: string,
 	/**
-	 *  Last `seq` of the stream when the subscription was taken (0 if none). A value
-	 *  below the `resume_from` sent means the stream restarted (daemon state reset):
-	 *  clients drop their cursor and resynchronise.
+	 *  Last `seq` of the stream when the subscription was taken (0 if none), captured
+	 *  atomically with it: every item with a greater `seq` is delivered or reported as
+	 *  lagged. A client that subscribed without `resume_from` keeps it as its resume
+	 *  point until the first item arrives (a drop before that must not lose items). A
+	 *  value below the `resume_from` sent means the stream restarted (daemon state
+	 *  reset): clients drop their cursor and resynchronise.
 	 */
 	last_seq: number,
 };

@@ -1,8 +1,11 @@
-//! Client side of streams: a [`Subscription`] survives reconnections. The client keeps
-//! the last `seq` received; when the connection drops it reconnects (with backoff) and
-//! subscribes again with `resume_from = last seq`, so the consumer sees every item once
-//! and in order (duplicates from the overlap are discarded by `seq`). Items the consumer
-//! is too slow to take are dropped oldest-first locally and reported as lag.
+//! Client side of streams: a [`Subscription`] survives reconnections. The client keeps a
+//! resume cursor: the last `seq` received or, before the first item, the stream's `seq`
+//! when the subscription was taken (the answer's `last_seq`, the *resume floor*). When
+//! the connection drops it reconnects (with backoff) and subscribes again with
+//! `resume_from = cursor`, so the consumer sees every item once and in order (duplicates
+//! from the overlap are discarded by `seq`), even when the drop happens before anything
+//! matched the subscription. Items the consumer is too slow to take are dropped
+//! oldest-first locally and reported as lag.
 
 use std::future::Future;
 use std::marker::PhantomData;
@@ -25,10 +28,28 @@ use crate::stream_queue::{DropOldestQueue, Popped};
 
 struct SubState {
     queue: DropOldestQueue<Value>,
+    /// Last `seq` delivered; items at or below it are overlap duplicates.
     last_seq: Option<u64>,
+    /// Stream `seq` when a subscription without cursor was taken (the answer's
+    /// `last_seq`): every item after it reaches this subscription. It is the resume point
+    /// until the first item arrives. Kept apart from `last_seq` because a
+    /// `logs.subscribe {tail}` backlog has `seq`s at or below it and must not be
+    /// discarded as duplicates.
+    resume_floor: Option<u64>,
     closed: bool,
     server_id: Option<SubscriptionId>,
     generation: u64,
+}
+
+impl SubState {
+    /// Where to resume: after the last item received or, before the first one, after
+    /// the resume floor. While a `tail` backlog is arriving the last item is below the
+    /// floor; resuming from it asks the daemon for the rest of the backlog instead of
+    /// skipping it. For every other stream the items are above the floor, so this is
+    /// `max(last_seq, resume_floor)`.
+    fn cursor(&self) -> Option<u64> {
+        self.last_seq.or(self.resume_floor)
+    }
 }
 
 /// Shared state of one subscription (consumer handle, reader task, resubscriber).
@@ -58,6 +79,7 @@ impl SubShared {
                 SubState {
                     queue: DropOldestQueue::new(capacity),
                     last_seq,
+                    resume_floor: None,
                     closed: false,
                     server_id: None,
                     generation: 0,
@@ -75,12 +97,15 @@ impl SubShared {
         self.method.lagged_notification.unwrap_or("")
     }
 
-    /// Params for (re)subscribing: the original ones with `resume_from` = last seq.
+    /// Params for (re)subscribing: the original ones with `resume_from` = cursor.
     pub(crate) fn resume_params(&self) -> Value {
-        let last = self.state.lock().last_seq;
+        let cursor = self.state.lock().cursor();
         let mut params = self.params.clone();
         if let Value::Object(map) = &mut params {
-            map.insert("resume_from".into(), last.map_or(Value::Null, Value::from));
+            map.insert(
+                "resume_from".into(),
+                cursor.map_or(Value::Null, Value::from),
+            );
         }
         params
     }
@@ -89,19 +114,35 @@ impl SubShared {
         self.state.lock().last_seq
     }
 
-    /// Records the subscription answer of a connection. If the stream's sequence is
-    /// behind our cursor, the daemon's state was reset (new database): the cursor is
-    /// dropped and a gap is reported, otherwise every new item would look like a
-    /// duplicate.
+    pub(crate) fn resume_point(&self) -> Option<u64> {
+        self.state.lock().cursor()
+    }
+
+    /// Records the subscription answer of a connection.
+    ///
+    /// * Without a cursor (subscribed live), the answer's `last_seq` becomes the resume
+    ///   floor: a reconnection before the first item then resumes from where the
+    ///   subscription started instead of subscribing live again, which would lose what
+    ///   was published in between without any `lagged`. With a cursor (or a floor) the
+    ///   answer does not move it: the daemon is still replaying what follows it.
+    /// * If the stream's sequence is behind the cursor, the daemon's state was reset
+    ///   (new database): the cursor is dropped, a gap is reported and the floor becomes
+    ///   the answer's `last_seq` (the daemon streams live from there); otherwise every
+    ///   new item would look like a duplicate.
     pub(crate) fn attach(&self, generation: u64, answer: &SubscriptionDto) {
         let reset = {
             let mut state = self.state.lock();
             state.generation = generation;
             state.server_id = Some(answer.subscription_id);
-            let reset = state.last_seq.is_some_and(|last| answer.last_seq < last);
+            let reset = state
+                .cursor()
+                .is_some_and(|cursor| answer.last_seq < cursor);
             if reset {
                 state.last_seq = None;
+                state.resume_floor = Some(answer.last_seq);
                 state.queue.push_lagged(1);
+            } else if state.cursor().is_none() {
+                state.resume_floor = Some(answer.last_seq);
             }
             reset
         };
@@ -189,6 +230,7 @@ impl<T> std::fmt::Debug for Subscription<T> {
         f.debug_struct("Subscription")
             .field("method", &self.shared.method.name)
             .field("last_seq", &self.shared.last_seq())
+            .field("resume_point", &self.shared.resume_point())
             .field("missed", &self.missed)
             .finish()
     }
@@ -205,9 +247,17 @@ impl<T: DeserializeOwned> Subscription<T> {
         }
     }
 
-    /// Last `seq` received from the daemon (resume point).
+    /// Last `seq` received from the daemon (`None` before the first item).
     pub fn last_seq(&self) -> Option<u64> {
         self.shared.last_seq()
+    }
+
+    /// Where this subscription resumes after a reconnection: the last `seq` received
+    /// or, before the first item, the stream's `seq` when it was subscribed (`None` only
+    /// until the daemon answers). Pass it as `resume_from` to continue in another
+    /// process without losing or repeating items.
+    pub fn resume_point(&self) -> Option<u64> {
+        self.shared.resume_point()
     }
 
     /// Items lost so far.
@@ -317,13 +367,36 @@ mod tests {
 
     use super::*;
 
+    fn sub_with(method: &str, params: Value, capacity: usize) -> SubShared {
+        SubShared::new(1, method_info(method).unwrap(), params, capacity)
+    }
+
     fn sub() -> SubShared {
-        SubShared::new(
-            1,
-            method_info("events.subscribe").unwrap(),
+        sub_with(
+            "events.subscribe",
             json!({"filter": {}, "resume_from": 5}),
             3,
         )
+    }
+
+    fn answer(stream: &str, last_seq: u64) -> SubscriptionDto {
+        SubscriptionDto {
+            subscription_id: SubscriptionId::new(),
+            stream: stream.into(),
+            last_seq,
+        }
+    }
+
+    /// Pops everything: item `seq`s, lags as `lag{n}`.
+    fn drain(s: &SubShared) -> Vec<String> {
+        let mut out = Vec::new();
+        while let (Some(popped), _) = s.pop() {
+            out.push(match popped {
+                Popped::Item(v) => v["seq"].to_string(),
+                Popped::Lagged(n) => format!("lag{n}"),
+            });
+        }
+        out
     }
 
     #[test]
@@ -348,20 +421,66 @@ mod tests {
         }
         assert!(matches!(s.pop(), (Some(Popped::Lagged(3)), false)));
         // The daemon answers with a sequence behind our cursor: state was reset.
-        let id = SubscriptionId::new();
-        s.attach(
-            2,
-            &SubscriptionDto {
-                subscription_id: id,
-                stream: "events".into(),
-                last_seq: 3,
-            },
-        );
-        assert_eq!(s.attachment(), Some((2, id)));
+        let reset = answer("events", 3);
+        s.attach(2, &reset);
+        assert_eq!(s.attachment(), Some((2, reset.subscription_id)));
         assert_eq!(s.last_seq(), None);
-        assert_eq!(s.resume_params()["resume_from"], Value::Null);
+        // The daemon streams live from its new head: that is the resume point now.
+        assert_eq!(s.resume_point(), Some(3));
+        assert_eq!(s.resume_params()["resume_from"], 3);
+        assert_eq!(drain(&s), ["9", "10", "11", "lag1"]);
+        s.deliver(json!({"seq": 4}));
+        assert_eq!(s.last_seq(), Some(4));
+        assert_eq!(drain(&s), ["4"]);
         s.close();
         assert!(s.is_closed());
+    }
+
+    #[test]
+    fn a_live_subscription_resumes_from_where_it_was_taken() {
+        let s = sub_with(
+            "events.subscribe",
+            json!({"filter": {}, "resume_from": null}),
+            16,
+        );
+        assert_eq!(s.resume_point(), None);
+        assert_eq!(s.resume_params()["resume_from"], Value::Null);
+        s.attach(1, &answer("events", 7));
+        assert_eq!((s.last_seq(), s.resume_point()), (None, Some(7)));
+        assert_eq!(s.resume_params()["resume_from"], 7);
+        // Reconnected before any item: the daemon is replaying what follows 7, so a
+        // newer head does not move the floor.
+        s.attach(2, &answer("events", 12));
+        assert_eq!(s.resume_params()["resume_from"], 7);
+        s.deliver(json!({"seq": 8}));
+        assert_eq!((s.last_seq(), s.resume_point()), (Some(8), Some(8)));
+        s.attach(3, &answer("events", 20));
+        assert_eq!(s.resume_params()["resume_from"], 8);
+        assert_eq!(drain(&s), ["8"]);
+    }
+
+    #[test]
+    fn a_tail_backlog_below_the_floor_is_kept_and_resumable() {
+        let s = sub_with("logs.subscribe", json!({"target": "daemon", "tail": 3}), 16);
+        s.attach(1, &answer("logs", 100));
+        s.deliver(json!({"seq": 98}));
+        // Part of the backlog arrived: resume right after it, not after the floor.
+        assert_eq!(s.resume_params()["resume_from"], 98);
+        for seq in [98, 99, 100, 101] {
+            s.deliver(json!({ "seq": seq }));
+        }
+        assert_eq!(drain(&s), ["98", "99", "100", "101"]);
+        assert_eq!(s.resume_params()["resume_from"], 101);
+    }
+
+    #[test]
+    fn a_reset_is_detected_against_the_floor_too() {
+        let s = sub_with("events.subscribe", json!({"filter": {}}), 16);
+        s.attach(1, &answer("events", 50));
+        // The daemon came back with a fresh database before any item arrived.
+        s.attach(2, &answer("events", 2));
+        assert_eq!(drain(&s), ["lag1"]);
+        assert_eq!(s.resume_point(), Some(2));
     }
 
     #[test]

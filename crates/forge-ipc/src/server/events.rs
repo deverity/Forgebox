@@ -7,6 +7,10 @@
 //! the live subscription are taken atomically ([`EventBus::subscribe_from`]). Holes
 //! (pruned rows, more than `replay_limit` events behind, no store) are reported with
 //! `events.lagged` at the place they occur. Live events use drop-oldest per subscriber.
+//!
+//! The answer's `last_seq` is captured atomically with the live subscription, so every
+//! matching event after it is delivered (or reported as lag). Clients that subscribed
+//! without a cursor resume from it when the connection drops before their first event.
 
 use std::ops::RangeInclusive;
 use std::time::Duration;
@@ -65,18 +69,12 @@ pub(crate) async fn subscribe(
     ctx: Ctx,
 ) -> Result<SubscriptionDto> {
     let sender = ctx.open_stream(None)?;
-    let resume = match params.resume_from {
-        Some(after) => source.bus.subscribe_from(after),
-        None => {
-            let stream = source.bus.subscribe();
-            Resume {
-                replay: Vec::new(),
-                stream,
-                gap: None,
-                last_seq: source.bus.last_seq(),
-            }
-        }
-    };
+    // Live only = resume past the head: replays nothing, and the live stream and
+    // `last_seq` come from the same critical section (`subscribe()` followed by
+    // `last_seq()` could count an event in `last_seq` that only the stream carries).
+    let resume = source
+        .bus
+        .subscribe_from(params.resume_from.unwrap_or(u64::MAX));
     let last_seq = resume.last_seq;
     tokio::spawn(run_stream(
         source,

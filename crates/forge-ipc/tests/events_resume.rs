@@ -1,6 +1,6 @@
 //! Event streams: resubscription from `seq` (explicit and automatic after a dropped
-//! connection), replay from the store, and slow subscribers (drop-oldest + lagged)
-//! never affecting other clients.
+//! connection, also before the first event), replay from the store, and slow
+//! subscribers (drop-oldest + lagged) never affecting other clients.
 
 mod common;
 
@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 use common::{bus, eventually, fast_options, spawn_on};
 use forge_core::event::{EventBus, EventKind};
+use forge_core::ids::SubscriptionId;
 use forge_core::store::Store;
 use forge_ipc::ClientOptions;
 use forge_ipc::api::{EventEnvelope, EventFilter, NoParams};
@@ -46,6 +47,17 @@ async fn assert_quiet(sub: &mut Subscription<EventEnvelope>) {
 
 fn publish(bus: &EventBus, kind: EventKind, n: u64) {
     bus.publish(kind, json!({ "n": n }));
+}
+
+/// Waits until `sub` is attached to a server subscription other than `before`.
+async fn wait_resubscribed(sub: &Subscription<EventEnvelope>, before: SubscriptionId) {
+    assert!(
+        eventually(WAIT, || sub
+            .subscription_id()
+            .is_some_and(|id| id != before))
+        .await,
+        "resubscribed on a new connection"
+    );
 }
 
 #[tokio::test]
@@ -147,6 +159,111 @@ async fn the_client_reconnects_and_resumes_transparently() {
     assert_eq!(sub.missed(), 0);
     // Calls work on the new connection too.
     client.system_ping(NoParams {}).await.unwrap();
+}
+
+// Current-thread runtime on purpose (here and below): no other task runs between
+// `disconnect_all` and the publications, so the events are certainly published while
+// the client is disconnected, before it resubscribes.
+#[tokio::test]
+async fn a_drop_before_the_first_event_resumes_from_the_subscription_point() {
+    let bus = bus(1024);
+    let server = spawn_on(InMemoryTransport::new(), |b| {
+        b.events(EventSource::new(bus.clone()))
+    })
+    .await;
+    // History the subscriber did not ask for: it subscribes live.
+    for n in 1..=3 {
+        publish(&bus, EventKind::JobProgress, n);
+    }
+    let client = server.client();
+    let mut sub = client
+        .subscribe_events(EventFilter::default(), None)
+        .await
+        .unwrap();
+    // No item yet, but the resume point is where the subscription was taken.
+    assert_eq!((sub.last_seq(), sub.resume_point()), (None, Some(3)));
+    let before = sub.subscription_id().unwrap();
+
+    // The daemon drops the connection before any event; 4..=8 are published meanwhile
+    // (e.g. a GUI watching a quiet daemon that restarts).
+    server.handle.disconnect_all();
+    publish(&bus, EventKind::DaemonReady, 4);
+    for n in 5..=8 {
+        publish(&bus, EventKind::ServiceRunning, n);
+    }
+    wait_resubscribed(&sub, before).await;
+    publish(&bus, EventKind::ServiceStopped, 9);
+
+    let first = next_event(&mut sub).await;
+    assert_eq!((first.seq, first.event.kind.as_str()), (4, "daemon.ready"));
+    for seq in 5..=9 {
+        let envelope = next_event(&mut sub).await;
+        assert_eq!(envelope.seq, seq, "exactly once, in order");
+        assert_eq!(envelope.event.payload["n"], seq);
+    }
+    assert_quiet(&mut sub).await;
+    assert_eq!(sub.missed(), 0);
+    assert_eq!(sub.resume_point(), Some(9));
+}
+
+#[tokio::test]
+async fn a_filter_that_matched_nothing_yet_resumes_across_reconnections() {
+    let bus = bus(1024);
+    let server = spawn_on(InMemoryTransport::new(), |b| {
+        b.events(EventSource::new(bus.clone()))
+    })
+    .await;
+    let client = server.client();
+    let mut sub = client
+        .subscribe_events(EventFilter::kinds(["site.*"]), None)
+        .await
+        .unwrap();
+    assert_eq!(sub.resume_point(), Some(0));
+
+    // Only events the filter rejects, across a first drop.
+    for n in 1..=3 {
+        publish(&bus, EventKind::JobProgress, n);
+    }
+    let first = sub.subscription_id().unwrap();
+    server.handle.disconnect_all();
+    publish(&bus, EventKind::JobProgress, 4);
+    wait_resubscribed(&sub, first).await;
+    // Still nothing received: the resume point stays where the subscription started
+    // (the daemon is replaying what follows it).
+    assert_eq!((sub.last_seq(), sub.resume_point()), (None, Some(0)));
+
+    // A second drop; matching events are published while disconnected.
+    let second = sub.subscription_id().unwrap();
+    server.handle.disconnect_all();
+    for n in 5..=7 {
+        publish(&bus, EventKind::SiteUpdated, n);
+        publish(&bus, EventKind::JobProgress, n);
+    }
+    wait_resubscribed(&sub, second).await;
+    publish(&bus, EventKind::SiteCreated, 8);
+
+    let mut last = 0;
+    for (kind, n) in [
+        ("site.updated", 5),
+        ("site.updated", 6),
+        ("site.updated", 7),
+        ("site.created", 8),
+    ] {
+        let envelope = next_event(&mut sub).await;
+        assert_eq!(
+            (
+                envelope.event.kind.as_str(),
+                envelope.event.payload["n"].as_u64()
+            ),
+            (kind, Some(n)),
+            "exactly once, in order"
+        );
+        assert!(envelope.seq > last);
+        last = envelope.seq;
+    }
+    assert_quiet(&mut sub).await;
+    assert_eq!(sub.missed(), 0);
+    assert_eq!(sub.resume_point(), Some(last));
 }
 
 #[tokio::test]

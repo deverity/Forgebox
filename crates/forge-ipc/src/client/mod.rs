@@ -8,7 +8,8 @@
 //!   answer, the call is retried on a new connection **with the same `request_id`**, so
 //!   the daemon does not act twice (ADR-0009, rule 4).
 //! * Streams ([`Client::subscribe`], [`Client::subscribe_events`]) resume after a
-//!   reconnection from the last `seq` received ([`subscription`]).
+//!   reconnection from the last `seq` received, or from where they were taken when
+//!   nothing arrived yet ([`subscription`]).
 
 mod conn;
 mod methods;
