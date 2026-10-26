@@ -54,7 +54,7 @@ Forgebox/
 │   │   └── src/
 │   │       ├── provider/         # trait Provider + impls: http, github_release, php_windows, apache_lounge,
 │   │       │                     #   nginx_org, mysql, mariadb, postgresql_edb, nodejs_dist, python, composer, mailpit...
-│   │       ├── download.rs       # fila, paralelismo, resume (Range), progresso, mirrors
+│   │       ├── download.rs       # fila (ator), paralelismo, resume (Range), progresso, mirrors; submódulos download/{transfer,limiter,progress,messages}.rs
 │   │       ├── verify.rs         # sha256/sha512, minisign/gpg quando disponível, tamanho
 │   │       ├── extract.rs        # zip/7z/tar.*; strip_root; staging em tmp/ e move atômico
 │   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims

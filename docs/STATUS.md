@@ -14,7 +14,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E1-T2 | Manifestos iniciais | todo | — | |
 | M1-E1-T3 | Registry loader | todo | — | |
 | M1-E1-T4 | Discover | todo | — | |
-| M1-E2-T1 | Download engine | doing | feature/M1-E2-T1-download-engine | |
+| M1-E2-T1 | Download engine | review | feature/M1-E2-T1-download-engine | `forge-provider::download` (DownloadManager = ator de fila + jobs), 25 testes de integração com axum local (Range, corte+retomada, mirrors, cancelamento, progresso, prioridade, 2 paralelos, proxy manual, offline, banda). Deps novas: reqwest 0.13 (rustls, aws-lc-rs), sha2, url, axum (dev). `JobProgress` ganhou `speed_bps`/`eta_secs`. Docs 02/03/05 atualizados. |
 | M1-E2-T2 | Verify + extract | todo | — | |
 | M1-E2-T3 | Providers | todo | — | |
 | M1-E2-T4 | Layout + current | todo | — | |
