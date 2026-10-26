@@ -14,22 +14,10 @@ pub struct ApiVersion {
     pub minor: u16,
 }
 
-/// Idempotency key present in every API operation (ADR-0009, rule 4): a ULID string.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
-pub struct RequestId(pub String);
-
-impl RequestId {
-    /// Generates a fresh request id.
-    pub fn new() -> Self {
-        Self(ulid::Ulid::generate().to_string())
-    }
-}
-
-impl Default for RequestId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// Idempotency key of every API operation. Defined in `forge_core::ids` (with the other
+/// ULID newtypes) and re-exported here; its `specta::Type` comes from forge-core's
+/// `specta` feature.
+pub use forge_core::ids::RequestId;
 
 /// All types exported to TypeScript. Add new contract types here.
 pub fn type_collection() -> Types {
@@ -67,8 +55,17 @@ mod tests {
     }
 
     #[test]
-    fn request_id_is_a_ulid() {
+    fn request_id_is_a_ulid_string_on_the_wire() {
         let id = RequestId::new();
-        assert!(id.0.parse::<ulid::Ulid>().is_ok());
+        let json = serde_json::to_string(&id).unwrap();
+        let text: String = serde_json::from_str(&json).unwrap();
+        assert!(text.parse::<ulid::Ulid>().is_ok());
+        assert_eq!(serde_json::from_str::<RequestId>(&json).unwrap(), id);
+    }
+
+    #[test]
+    fn request_id_exports_as_string() {
+        let ts = export_typescript().unwrap();
+        assert!(ts.contains("export type RequestId = string;"), "{ts}");
     }
 }
