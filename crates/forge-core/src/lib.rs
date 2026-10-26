@@ -13,6 +13,7 @@ pub mod config;
 pub mod error;
 pub mod event;
 pub mod ids;
+pub mod jobs;
 pub mod paths;
 pub mod platform;
 pub mod runtime;
