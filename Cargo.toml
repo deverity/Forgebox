@@ -28,6 +28,8 @@ schemars = { version = "1.2.3", features = ["derive"] }
 # specta ainda está em release candidate: versão exata para evitar quebra silenciosa.
 specta = "=2.0.0-rc.27"
 specta-typescript = "=0.0.14"
+# Format::serde maps #[serde] attributes; versão exata pelo mesmo motivo do specta (rc).
+specta-serde = "=0.0.14"
 minijinja = "3.0.3"
 clap = { version = "4.6.7", features = ["derive"] }
 # features Win32 são adicionadas nos crates que usam a API (somente forge-core/platform/windows).

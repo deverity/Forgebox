@@ -1,7 +1,9 @@
 //! Forgebox API contracts: JSON-RPC 2.0 types, transport abstraction, event streams and client.
 //!
 //! Crate of the Forgebox workspace, see docs/02-project-structure.md.
-//! Placeholder: the implementation starts in its roadmap task (see docs/10).
+//! Only `api::contracts` exists so far (M0-E1-T2); the rest starts in M1-E5-T1.
+
+pub mod api;
 
 #[cfg(test)]
 mod tests {
