@@ -7,7 +7,7 @@ targets = [
 ]
 
 [advisories]
-# Vulnerabilidades são sempre erro; unmaintained só para deps diretas do workspace.
+# Vulnerabilidades são sempre erro (chave removida no cargo-deny atual); unmaintained só para deps diretas do workspace.
 unmaintained = "workspace"
 yanked = "warn"
 ignore = []
@@ -35,6 +35,8 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Dependências entre crates do workspace são path deps sem versão (ver docs/02 §3).
+allow-wildcard-paths = true
 highlight = "all"
 
 [sources]
