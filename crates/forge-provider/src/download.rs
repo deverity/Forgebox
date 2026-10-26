@@ -362,7 +362,8 @@ fn build_client(config: &DownloadConfig) -> Result<reqwest::Client> {
         .user_agent(config.user_agent.clone())
         .connect_timeout(config.connect_timeout);
     builder = match &config.proxy {
-        // reqwest's default: system proxy (Windows settings, then environment).
+        // reqwest's default with the `system-proxy` feature: Windows Internet Settings,
+        // then the environment variables.
         ProxySetting::System => builder,
         ProxySetting::Direct => builder.no_proxy(),
         ProxySetting::Manual(url) => {
@@ -499,11 +500,27 @@ impl QueueActor {
         }
     }
 
+    /// Raises the priority of a still-waiting entry (a user asking for a file that a
+    /// background update already queued must not wait behind other background jobs).
+    fn raise_priority(&mut self, key: &str, priority: Priority) {
+        let mut entries = std::mem::take(&mut self.waiting).into_vec();
+        for entry in &mut entries {
+            if entry.key == key && priority > entry.priority {
+                entry.priority = priority;
+            }
+        }
+        self.waiting = BinaryHeap::from(entries);
+    }
+
     fn enqueue(&mut self, req: DownloadRequest, myself: ActorRef<Msg>) -> Result<JobId> {
         let key = part_key(&req);
         if let Some(existing) = self.active.get(&key) {
             if existing.dest == req.dest {
-                return Ok(existing.job);
+                let job = existing.job;
+                if !existing.granted {
+                    self.raise_priority(&key, req.priority);
+                }
+                return Ok(job);
             }
             return Err(ForgeError::Conflict(format!(
                 "{} is already being downloaded to {}",

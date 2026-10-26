@@ -525,6 +525,51 @@ async fn a_job_cancelled_while_queued_never_starts_and_frees_its_entry() {
 }
 
 #[tokio::test]
+async fn requesting_a_queued_file_as_user_action_raises_its_priority() {
+    let server = TestServer::start().await;
+    server.add(
+        "/busy",
+        Behavior::new(payload(10 * KIB)).delay(Duration::from_millis(400)),
+    );
+    for p in ["/a", "/x"] {
+        server.add(p, Behavior::new(payload(10 * KIB)));
+    }
+    let h = Harness::new(|c| c.max_parallel_downloads = 1);
+    let mut events = h.events();
+    let mk = |p: &str, prio| {
+        DownloadRequest::new(vec![server.url(p)], h.dest(p.trim_start_matches('/'))).priority(prio)
+    };
+    let j0 = h
+        .manager
+        .download(mk("/busy", Priority::AutoUpdate))
+        .await
+        .unwrap();
+    server.wait_for_hit("/busy").await;
+    let ja = h
+        .manager
+        .download(mk("/a", Priority::AutoUpdate))
+        .await
+        .unwrap();
+    let jx = h
+        .manager
+        .download(mk("/x", Priority::AutoUpdate))
+        .await
+        .unwrap();
+    let jx2 = h
+        .manager
+        .download(mk("/x", Priority::UserAction))
+        .await
+        .unwrap();
+    assert_eq!(jx, jx2, "same job is returned");
+
+    for job in [j0, ja, jx] {
+        let seen = h.wait_terminal(&mut events, job).await;
+        assert_eq!(seen.last().unwrap().kind, EventKind::JobDone);
+    }
+    assert_eq!(server.arrival_order(), ["/busy", "/x", "/a"]);
+}
+
+#[tokio::test]
 async fn same_file_requested_twice_returns_the_same_job() {
     let server = TestServer::start().await;
     server.add(
@@ -650,9 +695,9 @@ async fn manual_proxy_is_used_for_requests() {
 }
 
 #[tokio::test]
-async fn system_proxy_setting_builds_a_working_client() {
-    // With the system setting reqwest consults the OS/environment; here we only
-    // check that the manager starts and works for a direct (loopback) server.
+async fn system_proxy_setting_still_serves_the_api() {
+    // Smoke test only: it does not prove the system proxy is consulted (see
+    // tests/system_proxy.rs for that). It checks the manager works with that setting.
     let server = TestServer::start().await;
     server.add("/sys", Behavior::new(payload(1000)));
     let h = Harness::new(|c| c.proxy = ProxySetting::System);
