@@ -8,6 +8,7 @@
 //! `job.*` events), [`store`] (dedicated SQLite writer thread + read pool) and
 //! [`runtime`] (tokio runtime configuration, opt-in tokio-console).
 
+pub mod actor;
 pub mod config;
 pub mod error;
 pub mod event;
