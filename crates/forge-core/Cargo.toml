@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-description = "Forgebox domain base: IDs, errors, events, SQLite store, paths and platform traits."
+description = "Forgebox domain base: IDs, errors, events, actors, jobs, SQLite store, runtime, paths and platform traits."
 publish = false
 
 [lints]
@@ -17,8 +17,13 @@ default = []
 # Derives `specta::Type` for API-facing types (IDs). Enabled by forge-ipc so that
 # `cargo xtask gen-ts` can export them; domain crates do not need it.
 specta = ["dep:specta", "specta/ulid", "specta/jiff"]
+# tokio-console instrumentation for development (`runtime::init_console`). Requires
+# RUSTFLAGS="--cfg tokio_unstable"; the default build does not.
+console = ["dep:console-subscriber"]
 
 [dependencies]
+console-subscriber = { workspace = true, optional = true }
+futures = { workspace = true }
 jiff = { workspace = true }
 parking_lot = { workspace = true }
 rusqlite = { workspace = true }
@@ -27,6 +32,7 @@ serde_json = { workspace = true }
 specta = { workspace = true, features = ["derive"], optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }

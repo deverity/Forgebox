@@ -1,2 +1,7 @@
 msrv = "1.85"
 too-many-arguments-threshold = 8
+# Guards that must never live across an `.await` (lint `await_holding_invalid_type`,
+# denied in [workspace.lints.clippy]). Lock order: forge_core::sync and actor/mod.rs.
+await-holding-invalid-types = [
+    { path = "forge_core::sync::OrderedMutexGuard", reason = "short critical sections only (docs/03 §7.2); release the lock before awaiting" },
+]

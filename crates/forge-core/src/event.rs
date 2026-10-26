@@ -3,7 +3,9 @@
 //! Every [`Event`] carries a ULID, a `seq` that grows strictly by one per published
 //! event (ADR-0009, rule 3: clients resume with "since seq N"), a UTC timestamp, a
 //! canonical [`EventKind`] (docs/03 §8) and a JSON payload. Typed payload structs are
-//! versioned in `forge-ipc` (M1-E5-T1); the bus only transports them.
+//! serde structs with a version field `v`: the ones produced by forge-core itself live
+//! next to their producer ([`crate::jobs::payload`], [`crate::actor::ActorRestartedPayload`]);
+//! the others are versioned in `forge-ipc` (M1-E5-T1). The bus only transports them.
 //!
 //! [`EventBus`] wraps `tokio::sync::broadcast`: publishing never blocks and never waits
 //! for subscribers. A subscriber that falls behind loses the oldest events
@@ -15,11 +17,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use parking_lot::Mutex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use tokio::sync::broadcast;
 
 use crate::ids::EventId;
+use crate::sync::{LockLevel, OrderedMutex};
 
 /// Default number of events buffered per subscriber before the oldest are dropped.
 pub const DEFAULT_EVENT_CAPACITY: usize = 4096;
@@ -67,6 +69,8 @@ event_kinds! {
     JobFailed => "job.failed",
     JobCancelled => "job.cancelled",
     ActorRestarted => "actor.restarted",
+    /// An actor exceeded its restart budget and stays down (docs/03 §7.2).
+    ActorFailed => "actor.failed",
     FsCaseSensitivityApplied => "fs.case_sensitivity_applied",
     FsCaseSensitivityUnavailable => "fs.case_sensitivity_unavailable",
     ToolInstallStarted => "tool.install.started",
@@ -145,8 +149,9 @@ struct Inner {
     sender: broadcast::Sender<Event>,
     /// Next `seq` to assign. Held only while numbering and handing the event to the
     /// channel (non-blocking), so subscribers always observe `seq` in order. Never held
-    /// across `.await` (ADR-0011).
-    next_seq: Mutex<u64>,
+    /// across `.await` (ADR-0011). Innermost lock ([`LockLevel::EVENT_BUS_SEQ`]): callers
+    /// may publish while holding an outer lock (e.g. the job table) but never the reverse.
+    next_seq: OrderedMutex<u64>,
 }
 
 impl fmt::Debug for EventBus {
@@ -185,7 +190,7 @@ impl EventBus {
         Self {
             inner: Arc::new(Inner {
                 sender,
-                next_seq: Mutex::new(next_seq.max(1)),
+                next_seq: OrderedMutex::new(LockLevel::EVENT_BUS_SEQ, next_seq.max(1)),
             }),
         }
     }
