@@ -36,8 +36,11 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, ProcessGroup, TrustStore, DnsPolicy) + current();
-│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile)
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, TrustStore, DnsPolicy) + current();
+│   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE)
+│   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
+│   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
+│   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0015), window_close.rs (EnumWindows + WM_CLOSE)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema
@@ -60,14 +63,19 @@ Forgebox/
 │   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
-│   │   └── src/
-│   │       ├── job.rs            # Job Object raiz e por instância
-│   │       ├── process.rs        # spawn com env/cwd/stdio capturado, console oculto
-│   │       ├── stop.rs           # estratégias: ctrl-c (GenerateConsoleCtrlEvent), comando, WM_CLOSE, kill
-│   │       ├── health.rs         # probes tcp/http/command/pid com backoff
-│   │       ├── policy.rs         # restart: never|on-failure|always; limites; cooldown
-│   │       ├── metrics.rs        # cpu/rss/handles por pid
-│   │       └── service.rs        # máquina de estados da Instance
+│   │   ├── src/
+│   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância
+│   │   │   ├── process.rs        # SpawnSpec: env mínimo + PATH determinístico, stdio Capture|Discard|File, console oculto
+│   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
+│   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
+│   │   │   ├── events.rs         # payloads service.* (v1)
+│   │   │   ├── health.rs         # probes tcp/http/command/pid com backoff (M1-E3-T2)
+│   │   │   ├── policy.rs         # restart: never|on-failure|always; limites; cooldown (M1-E3-T2)
+│   │   │   ├── metrics.rs        # cpu/rss/handles por pid (M1-E3-T2)
+│   │   │   ├── service.rs        # InstanceActor (máquina de estados da Instance), InstanceHandle, Supervisor
+│   │   │   └── bin/forgebox-ctrl.rs  # auxiliar que entrega CTRL_BREAK ao console de um serviço (ADR-0015)
+│   │   └── tests/
+│   │       └── fake_service/     # projeto cargo independente (sem deps) compilado pelos testes: serviço falso
 │   ├── forge-fcgi/
 │   │   └── src/
 │   │       ├── pool.rs           # PhpPool: workers php-cgi.exe, portas, scaling

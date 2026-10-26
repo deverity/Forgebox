@@ -8,29 +8,43 @@ O motor é o `forgeboxd`. Este documento define o comportamento interno que os c
 - No boot, o daemon cria um Job Object raiz com `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK`.
 - Cada `Instance` e cada `PhpPool` recebe um **Job Object filho** (aninhado, suportado desde Windows 8). Isso permite matar um serviço inteiro e seus netos (ex. `httpd.exe` pai + filhos) com uma chamada, sem varrer a árvore de processos.
 - Processos que o usuário quer que sobrevivam ao daemon (raro; ex. um terminal aberto) são lançados fora do Job via `CREATE_BREAKAWAY_FROM_JOB`.
+- Implementação (`forge_core::platform::{ProcessControl, ProcessGroup}`, impl em `platform/windows/process.rs`; `forge_supervisor::JobTree`):
+  - Job de instância: `KILL_ON_JOB_CLOSE | BREAKAWAY_OK | DIE_ON_UNHANDLED_EXCEPTION` (um serviço que quebra sai com o código da exceção em vez de ficar preso no diálogo do WER).
+  - O aninhamento nasce na primeira atribuição: todo processo é atribuído da raiz para baixo (`AssignProcessToJobObject` raiz → … → job da instância). Funciona igual com o daemon dentro de um Job externo (cargo, terminais e IDEs fazem isso): a raiz vira filha desse Job.
+  - `QueryInformationJobObject(JobObjectBasicProcessIdList)` lista os PIDs (inclui jobs aninhados). O `conhost.exe` do console oculto do serviço também é membro do Job.
 
 ### 1.2 Spawn
 ```
-SpawnSpec {
-  exe: PathBuf,              # absoluto, dentro de bin/<tool>/<version>/
+SpawnSpec {                  # forge_supervisor::SpawnSpec
+  exe: PathBuf,              # absoluto, dentro de bin/<tool>/<version>/ (.bat/.cmd recusados)
   args: Vec<String>,         # já renderizados (templates podem usar {{ paths.etc }} etc.)
   cwd: PathBuf,
-  env: EnvMap,               # herda env mínimo + PATH montado pelo Forgebox + vars do manifesto
+  env: EnvMap,               # vars do manifesto (nomes case-insensitive); PATH proibido aqui
+  path: Vec<PathBuf>,        # <root>/bin/<tool>/<version> + pastas de depends_on, nesta ordem
   stdio: Capture | Discard | File(path),
   console: Hidden,           # CREATE_NO_WINDOW; serviços não abrem janela de console
-  job: JobHandle,
+  new_process_group: bool,   # CREATE_NEW_PROCESS_GROUP (manifesto console_group, padrão true)
 }
 ```
-- `PATH` do processo filho é **determinístico**: `<root>/bin/<tool>/<version>` + dependências declaradas (`depends_on`) + `%SystemRoot%\System32`. Nunca herda o PATH do usuário (evita "funciona na minha máquina" por causa de um `php.exe` perdido em `C:\xampp`).
-- stdout/stderr capturados em pipes assíncronos → `logs/<tool>/<instance>.out.log` com rotação (10 MB × 5) e broadcast em tempo real para assinantes IPC.
+- O Job não faz parte do spec: o ator da instância cria o processo no seu próprio Job (§1.1).
+- `PATH` do processo filho é **determinístico**: `SpawnSpec::path` + `%SystemRoot%\System32` (`GetSystemDirectoryW`). Nunca herda o PATH do usuário (evita "funciona na minha máquina" por causa de um `php.exe` perdido em `C:\xampp`).
+- Ambiente = allowlist mínima herdada do daemon (`ProcessControl::base_env`: `SystemRoot`, `windir`, `SystemDrive`, `ComSpec`, `PATHEXT`, `TEMP`/`TMP`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, `ProgramData`, `ProgramFiles*`, `CommonProgramFiles*`, `PUBLIC`, `ALLUSERSPROFILE`, `HOMEDRIVE`/`HOMEPATH`, `USERNAME`/`USERDOMAIN`/`COMPUTERNAME`, `OS`, `NUMBER_OF_PROCESSORS`, `PROCESSOR_*`) + vars do manifesto + `PATH`. Nada mais vaza do ambiente do daemon.
+- `CreateProcessW(CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_UNICODE_ENVIRONMENT)` → atribuição aos Jobs → `ResumeThread`: nenhum filho roda (nem cria netos) fora do Job. Se a atribuição falhar, o processo é terminado ainda suspenso.
+- stdin é sempre `NUL`. A herança de handles é restrita aos três handles de stdio (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`): spawns concorrentes nunca herdam os pipes uns dos outros (o que atrasaria o EOF).
+- stdout/stderr capturados em named pipes (nosso lado overlapped no reator do tokio, sem thread por pipe; lado do filho síncrono) → `logs/<tool>/<instance>.out.log` com rotação (10 MiB × 5 arquivos no total: `.out.log`, `.out.log.1` … `.out.log.4`) e broadcast em tempo real para assinantes IPC (§7.3). `File(path)`: o próprio filho anexa ao arquivo (sem rotação, sem visão ao vivo).
+- A saída do processo é observada por `RegisterWaitForSingleObject` (pool de threads do SO), sem thread bloqueada por processo. Quando o processo principal sai, o que restar no Job da instância (netos, e o `conhost.exe` que eles mantêm vivo) ganha 300 ms para sair sozinho e então é terminado; a contagem vai em `leftovers_killed` de `service.stopped`/`service.crashed`.
 
 ### 1.3 Parada graciosa (ordem de tentativa)
-1. `stop.command` do manifesto (ex. `mysqladmin --port {{port}} shutdown`, `nginx -s quit`, `httpd -k stop`, `pg_ctl stop -m fast`). Timeout `stop.timeout` (padrão 15 s).
-2. `CTRL_BREAK_EVENT` via `GenerateConsoleCtrlEvent` para o grupo do processo (requer `CREATE_NEW_PROCESS_GROUP` no spawn). Funciona para `php-cgi`, `node`, `mailpit`, `redis-server`.
-3. `WM_CLOSE` para janelas top-level do PID (GUIs como HeidiSQL).
+1. `stop.command` do manifesto (ex. `mysqladmin --port {{port}} shutdown`, `nginx -s quit`, `httpd -k stop`, `pg_ctl stop -m fast`). Roda num Job próprio, stdio descartado, mesmo `PATH`/ambiente do serviço. Saída ≠ 0 escala na hora; saída 0 continua esperando o serviço sair.
+2. `CTRL_BREAK_EVENT` via `GenerateConsoleCtrlEvent` para o grupo do processo (requer `CREATE_NEW_PROCESS_GROUP` no spawn). Funciona para `php-cgi`, `node`, `mailpit`, `redis-server`. Entregue pelo auxiliar `forgebox-ctrl.exe` (ver abaixo); pulada se o serviço não tem grupo próprio.
+3. `WM_CLOSE` para janelas top-level dos processos do Job da instância (GUIs como HeidiSQL). Só roda (e só espera) se houver janela.
 4. `TerminateJobObject`. Sempre funciona, nunca deixa órfão.
 
-Cada etapa é um evento (`service.stopping{strategy}`), para que a UI mostre "Pedindo ao MySQL para desligar… (8 s)".
+Esperas: a **primeira** etapa graciosa que roda espera `stop.timeout` (padrão 15 s); cada etapa graciosa seguinte espera `followup_grace` (5 s). Um serviço sem `stop.command` que ignora `CTRL_BREAK` (e não tem janela) é terminado `stop.timeout` depois do pedido. `StopPlan::worst_case()` dá o limite da cascata inteira.
+
+Cada etapa que roda é um evento (`service.stopping{strategy, step, timeout_ms}`, publicado antes de agir), para que a UI mostre "Pedindo ao MySQL para desligar… (8 s)"; ao fim, `service.stopped{strategy, exit_code, elapsed_ms, leftovers_killed}`. A cascata roda em task própria: o ator da instância continua respondendo `Status` durante uma parada travada (§7.6).
+
+**`CTRL_BREAK` e consoles ([ADR-0015](adr/0015-ctrl-break-helper-process.md)).** `GenerateConsoleCtrlEvent` só alcança processos no console de quem chama, e anexar-se a outro console é estado do processo inteiro. O daemon nunca troca de console: executa `forgebox-ctrl.exe break <pid>` (sem console próprio, `DETACHED_PROCESS`), que se anexa ao console oculto do serviço, gera o evento para o grupo e sai (resultado no código de saída). Limitações: o serviço precisa de console (`console: Hidden`, padrão) e grupo próprio; o evento atinge o grupo inteiro naquele console (como Ctrl+Break num terminal); custa um processo de vida curta (dezenas de ms) por parada; se o auxiliar faltar, a etapa falha com log e a cascata segue.
 
 ### 1.4 Máquina de estados da Instance
 ```
@@ -44,6 +58,7 @@ Qualquer estado ──install/upgrade em curso──▶ Maintenance
 - `Starting` tem deadline (`health.start_timeout`, padrão 30 s). Health precisa passar `health.success_threshold` vezes.
 - Políticas de restart: `never`, `on-failure{max: 3, window: 60s, backoff: 1s..30s}`, `always`.
 - `Failed(reason)` carrega diagnóstico estruturado: porta ocupada (e por quem), DLL faltando (ex. VC++ Redist: detectado por exit code `0xC0000135` → UI oferece instalar), config inválida (saída do `-t`), permissão.
+- Implementação (`forge_supervisor::InstanceActor`, um ator por Instance): M1-E3-T1 entrega `Stopped`, `Starting`, `Running` (assim que o processo foi criado e retomado; health em M1-E3-T2), `Stopping{strategy}`, `Crashed{exit_code}` e `Failed{code, reason}` (`code` = `ForgeError::code`). Mensagens: `Start`, `Stop`, `Restart`, `Status`, `SubscribeLogs`; `Start`/`Stop`/`Restart` respondem quando a operação termina (pid ou `StopReport`), mas o ator nunca espera: spawn, observação da saída e cascata de parada rodam em tasks e voltam por mensagens internas. Políticas de restart e `Maintenance` ficam para M1-E3-T2.
 
 ### 1.5 Pré-checagens antes de `Starting`
 - **Validação de config**: se o manifesto declara `service.check` (`httpd -t`, `nginx -t`, `mysqld --validate-config`), roda antes. Falha = `Failed(ConfigInvalid)` com stderr anexado. Nunca derruba um serviço que estava funcionando por uma config quebrada.
@@ -189,6 +204,7 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor 
 
 ### 7.3 Pipes de processo
 - stdout/stderr de cada processo têm tasks bombeadoras próprias. Escrita em arquivo é garantida (fila limitada com backpressure para o processo, como um terminal faria); broadcast para assinantes da UI é *drop-oldest* (um cliente lento nunca segura o daemon).
+- Implementação (`forge_supervisor::logs`): bomba por pipe (leitura overlapped, quebra de linha em `\n`, `\r` final removido, linhas > 16 KiB cortadas) → hub único por execução (numera `seq` por instância, contínuo entre reinícios; carimba `ts`) → `tokio::sync::broadcast` (1024 linhas por assinante; `LogItem::Lagged{missed}` para quem atrasou) e fila limitada (1024 linhas) → escritor de arquivo em lotes via `spawn_blocking` com rotação. Arquivo lento enche a fila, o hub espera, as bombas param de ler, o buffer de 64 KiB do pipe enche e o processo bloqueia no `WriteFile`; o broadcast nunca espera.
 - Health probes, sampler de métricas e watchers de arquivos rodam em tasks de intervalo com jitter; chamadas Win32 dentro deles vão para `spawn_blocking`.
 
 ### 7.4 API assíncrona por natureza
@@ -213,4 +229,4 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor 
 
 Cada evento é `{id: ULID, seq, ts (RFC 3339 UTC), kind, payload}` (`forge_core::event`). `seq` cresce de 1 em 1 e continua após restart (o daemon semeia o `EventBus` com o maior `seq` da tabela `events`), o que permite `resume_from(seq)`. O bus é `tokio::sync::broadcast` (4096 por assinante): publicar nunca bloqueia; um assinante lento perde os mais antigos (drop-oldest) e recebe a contagem de perdidos para ressincronizar pelo SQLite.
 
-Payloads são structs serde versionadas (campo `v`). As de `job.*` (`forge_core::jobs::payload`) e `actor.*` (`forge_core::actor::{ActorRestartedPayload, ActorFailedPayload}`) ficam em `forge-core`, junto de quem as publica, e serão re-exportadas por `forge-ipc` nos contratos (M1-E5-T1); as demais nascem em `forge-ipc`. A GUI é 100% reativa a esses eventos; nenhuma tela faz polling além de métricas.
+Payloads são structs serde versionadas (campo `v`). As de `job.*` (`forge_core::jobs::payload`) e `actor.*` (`forge_core::actor::{ActorRestartedPayload, ActorFailedPayload}`) ficam em `forge-core`, e as de `service.*` em `forge_supervisor::events` (`ServiceStartingPayload`, `…RunningPayload`, `…StoppingPayload`, `…StoppedPayload`, `…CrashedPayload`, `…FailedPayload`; todas começam com `instance_id`, `tool`, `instance`), junto de quem as publica, e serão re-exportadas por `forge-ipc` nos contratos (M1-E5-T1); as demais nascem em `forge-ipc`. A GUI é 100% reativa a esses eventos; nenhuma tela faz polling além de métricas.

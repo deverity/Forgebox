@@ -18,3 +18,4 @@ Formato: contexto → decisão → alternativas rejeitadas → consequências. U
 | [0012](0012-yaml-crate-serde-yaml-ng.md) | YAML com `serde_yaml_ng` (`serde_yml` deprecado), atrás de `forge_manifest::yaml` | aceito |
 | [0013](0013-jiff-timestamps.md) | Timestamps UTC com `jiff::Timestamp` (re-export `forge_core::Timestamp`), RFC 3339 no fio | aceito |
 | [0014](0014-concurrency-skeleton.md) | Esqueleto de concorrência: supervisão no task do ator, travas ordenadas, writer SQLite em lotes com `SAVEPOINT` | aceito |
+| [0015](0015-ctrl-break-helper-process.md) | `CTRL_BREAK` entregue por processo auxiliar (`forgebox-ctrl.exe`), nunca trocando o console do daemon | aceito |
