@@ -45,6 +45,10 @@ junction = { version = "2.1.0", default-features = false }
 parking_lot = "0.13.0"
 futures = "0.3.34"
 bytes = "1.12.1"
+# OS CSPRNG for the API token (state/ipc.token).
+getrandom = "0.4.3"
+# fs.read/fs.write binary content.
+base64 = "0.22.1"
 camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"

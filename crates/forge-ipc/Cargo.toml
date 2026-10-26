@@ -13,14 +13,23 @@ publish = false
 workspace = true
 
 [dependencies]
-# `specta` derives TS types for the IDs defined in forge-core (RequestId...).
+# `specta` derives TS types for the IDs and payloads defined in forge-core.
 forge-core = { path = "../forge-core", features = ["specta"] }
-serde = { workspace = true }
-specta = { workspace = true, features = ["derive"] }
-specta-typescript = { workspace = true }
-specta-serde = { workspace = true }
-ulid = { workspace = true }
 anyhow = { workspace = true }
+base64 = { workspace = true }
+futures = { workspace = true }
+getrandom = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+specta = { workspace = true, features = ["derive"] }
+specta-serde = { workspace = true }
+specta-typescript = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true, features = ["codec"] }
+tracing = { workspace = true }
+ulid = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

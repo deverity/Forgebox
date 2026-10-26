@@ -466,6 +466,7 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+ "specta-typescript",
  "tempfile",
  "thiserror",
  "tokio",
@@ -513,12 +514,21 @@ name = "forge-ipc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "forge-core",
+ "futures",
+ "getrandom",
+ "pretty_assertions",
  "serde",
  "serde_json",
  "specta",
  "specta-serde",
  "specta-typescript",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "ulid",
 ]
 
