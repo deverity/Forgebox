@@ -20,7 +20,7 @@ jobs:
     name: rust (fmt, clippy, build, test, deny, registry, generated artifacts)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -61,7 +61,7 @@ jobs:
     name: desktop (pnpm build)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: probe desktop app
         id: probe
