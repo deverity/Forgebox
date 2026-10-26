@@ -378,11 +378,11 @@ async fn cancelled_download_can_be_resumed_by_a_new_request() {
 
 #[tokio::test]
 async fn progress_has_growing_bytes_speed_eta_and_increasing_seq() {
-    let data = payload(1200 * KIB);
+    let data = payload(2400 * KIB);
     let server = TestServer::start().await;
     server.add(
         "/p.bin",
-        Behavior::new(data.clone()).throttle(64 * KIB, Duration::from_millis(30)),
+        Behavior::new(data.clone()).throttle(64 * KIB, Duration::from_millis(40)),
     );
     let h = Harness::new(|c| c.progress_interval = Duration::from_millis(250));
     let mut events = h.events();
@@ -721,4 +721,134 @@ fn sha256_helper_matches_a_known_vector() {
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
     let _ = Sha256::new();
+}
+
+#[tokio::test]
+async fn requeue_after_cancel_while_queued_does_not_stall_single_slot() {
+    let server = TestServer::start().await;
+    server.add(
+        "/busy",
+        Behavior::new(payload(10 * 1024)).delay(Duration::from_millis(300)),
+    );
+    server.add("/k", Behavior::new(payload(10 * 1024)));
+    let h = Harness::new(|c| c.max_parallel_downloads = 1);
+    let mut events = h.events();
+
+    let busy = h
+        .manager
+        .download(DownloadRequest::new(
+            vec![server.url("/busy")],
+            h.dest("busy"),
+        ))
+        .await
+        .unwrap();
+    server.wait_for_hit("/busy").await;
+    let a = h
+        .manager
+        .download(DownloadRequest::new(vec![server.url("/k")], h.dest("k")))
+        .await
+        .unwrap();
+    assert!(h.manager.cancel(a).unwrap());
+    let seen_a = h.wait_terminal(&mut events, a).await;
+    assert_eq!(seen_a.last().unwrap().kind, EventKind::JobCancelled);
+    // User clicks "download" again for the same file.
+    let b = h
+        .manager
+        .download(DownloadRequest::new(vec![server.url("/k")], h.dest("k")))
+        .await
+        .unwrap();
+    assert_ne!(a, b);
+    h.wait_terminal(&mut events, busy).await;
+    let r = tokio::time::timeout(Duration::from_secs(5), h.wait_terminal(&mut events, b)).await;
+    let stats = h.manager.stats().await.unwrap();
+    eprintln!(
+        "stats after busy ended: running={} queued={} hits(/k)={}",
+        stats.running,
+        stats.queued,
+        server.hits("/k").len()
+    );
+    assert!(
+        r.is_ok(),
+        "re-enqueued job B never started: queue stalled (stats running={} queued={})",
+        stats.running,
+        stats.queued
+    );
+}
+
+#[tokio::test]
+async fn requeue_after_cancel_while_queued_does_not_leak_a_slot_with_two_slots() {
+    let server = TestServer::start().await;
+    for p in ["/b1", "/b2"] {
+        server.add(
+            p,
+            Behavior::new(payload(10 * 1024)).delay(Duration::from_millis(300)),
+        );
+    }
+    server.add("/k", Behavior::new(payload(10 * 1024)));
+    server.add(
+        "/z",
+        Behavior::new(payload(10 * 1024)).delay(Duration::from_millis(300)),
+    );
+    let h = Harness::new(|_| {});
+    let mut events = h.events();
+    let b1 = h
+        .manager
+        .download(DownloadRequest::new(vec![server.url("/b1")], h.dest("b1")))
+        .await
+        .unwrap();
+    let b2 = h
+        .manager
+        .download(DownloadRequest::new(vec![server.url("/b2")], h.dest("b2")))
+        .await
+        .unwrap();
+    server.wait_for_hit("/b1").await;
+    server.wait_for_hit("/b2").await;
+    let a = h
+        .manager
+        .download(DownloadRequest::new(vec![server.url("/k")], h.dest("k")))
+        .await
+        .unwrap();
+    h.manager.cancel(a).unwrap();
+    h.wait_terminal(&mut events, a).await;
+    let b = h
+        .manager
+        .download(DownloadRequest::new(vec![server.url("/k")], h.dest("k")))
+        .await
+        .unwrap();
+    for j in [b1, b2] {
+        h.wait_terminal(&mut events, j).await;
+    }
+    let r = tokio::time::timeout(Duration::from_secs(5), h.wait_terminal(&mut events, b)).await;
+    assert!(r.is_ok(), "B never finished");
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let stats = h.manager.stats().await.unwrap();
+    eprintln!(
+        "idle stats: running={} queued={}",
+        stats.running, stats.queued
+    );
+    assert_eq!(
+        (stats.running, stats.queued),
+        (0, 0),
+        "slot leaked while idle"
+    );
+}
+
+#[tokio::test]
+async fn big_resume_survives_server_ignoring_range_with_accept_ranges() {
+    let data = payload(5 * MIB);
+    let sha = sha256_hex(&data);
+    let server = TestServer::start().await;
+    // 200 + Accept-Ranges: bytes even for Range requests (e.g. CDN cache miss).
+    server.add("/big.bin", Behavior::new(data.clone()).ignore_range());
+    let h = Harness::new(|c| c.multi_connection_threshold = 2 * MIB as u64);
+    let mut events = h.events();
+    h.write_part(&sha, &data[..512 * 1024]); // sequential .part left by a previous run
+    {
+        let req = DownloadRequest::new(vec![server.url("/big.bin")], h.dest("big.bin"))
+            .expected_sha256(&sha);
+        let job = h.manager.download(req).await.unwrap();
+        let seen = h.wait_terminal(&mut events, job).await;
+        let last = seen.last().unwrap();
+        assert_eq!(last.kind, EventKind::JobDone, "{}", last.payload);
+    }
 }

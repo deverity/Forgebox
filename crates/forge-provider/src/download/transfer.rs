@@ -632,6 +632,9 @@ impl Transfer<'_> {
 
     /// Single connection, resuming at `existing` bytes.
     async fn sequential(&self, url: &Url, mut existing: u64) -> Step<Seq> {
+        // Segments are only proposed for a transfer that began from zero; a server that
+        // ignores Range on a resume just restarts the sequential download.
+        let started_fresh = existing == 0;
         let host = host_of(url);
         let buffer_size = self.cfg().buffer_size;
         let mut rq = self.env.client.get(url.clone());
@@ -678,7 +681,7 @@ impl Transfer<'_> {
                 status_fail(status)
             });
         }
-        if existing == 0 && status == StatusCode::OK && self.wants_segments(&resp, total) {
+        if started_fresh && status == StatusCode::OK && self.wants_segments(&resp, total) {
             // Drop this response (closing the connection) and fetch with Range.
             return Ok(Seq::Segments(total.unwrap_or_default()));
         }

@@ -98,7 +98,9 @@ pub(crate) fn spawn_reporter(
     interval: Duration,
 ) -> ReporterGuard {
     let task = tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(interval);
+        // First report one interval from now: an immediate tick would race with the
+        // job's first message update and be swallowed by the registry's throttle.
+        let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut meter = SpeedMeter::new(progress.done());
         let mut last = Instant::now();

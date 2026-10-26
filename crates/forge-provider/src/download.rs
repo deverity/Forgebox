@@ -437,6 +437,9 @@ struct Waiting {
     priority: Priority,
     seq: u64,
     key: String,
+    /// Job this entry belongs to; a stale entry (job ended while queued) must never
+    /// be matched with a newer job that reuses the same key.
+    job: JobId,
     grant: oneshot::Sender<()>,
 }
 
@@ -493,6 +496,9 @@ impl QueueActor {
             let Some(active) = self.active.get_mut(&next.key) else {
                 continue;
             };
+            if active.job != next.job || active.granted {
+                continue;
+            }
             active.granted = true;
             self.running += 1;
             // If the job vanished meanwhile, its EndGuard frees the slot.
@@ -559,6 +565,7 @@ impl QueueActor {
             priority,
             seq: self.next_seq,
             key,
+            job,
             grant: grant_tx,
         });
         self.next_seq += 1;
