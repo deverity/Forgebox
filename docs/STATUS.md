@@ -14,7 +14,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E1-T2 | Manifestos iniciais | todo | — | |
 | M1-E1-T3 | Registry loader | todo | — | |
 | M1-E1-T4 | Discover | todo | — | |
-| M1-E2-T1 | Download engine | todo | — | |
+| M1-E2-T1 | Download engine | doing | feature/M1-E2-T1-download-engine | |
 | M1-E2-T2 | Verify + extract | todo | — | |
 | M1-E2-T3 | Providers | todo | — | |
 | M1-E2-T4 | Layout + current | todo | — | |
