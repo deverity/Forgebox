@@ -29,7 +29,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E4-T4 | TLS | todo | — | |
 | M1-E4-T5 | Proxies + processes | todo | — | |
 | M1-E4-T6 | Paridade Linux | todo | — | |
-| M1-E5-T1 | Contratos IPC | todo | — | |
+| M1-E5-T1 | Contratos IPC | doing | feature/M1-E5-T1-ipc-contracts | |
 | M1-E5-T2 | Daemon | todo | — | |
 | M1-E5-T3 | CLI completa | todo | — | |
 | M1-E5-T4 | Helper elevado | todo | — | |
