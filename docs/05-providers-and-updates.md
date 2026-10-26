@@ -15,7 +15,7 @@ Um provider resolve `(tool, constraint, variants) → Vec<Release{version, url, 
 | `postgresql-edb` | enterprisedb.com | Lista curada (`postgresql-<ver>-windows-x64-binaries.zip`); sha256 curado | sha256 curado | EDB não publica índice; bot do registry atualiza |
 | `nodejs-dist` | nodejs.org/dist | `index.json` oficial (versões, lts, files) + `SHASUMS256.txt` por versão → `node-vX-win-x64.zip` | sha256 oficial | Canais `lts`, `current` |
 | `python-embed` | python.org | `python-3.X.Y-embed-amd64.zip` + também "nuget" `python.3.X.Y.nupkg` (contém pip) | sha256 (via `/ftp/python/3.X.Y/` listagem md5 → curado) | |
-| `http` | genérico | URL com placeholders `{version}`, `{variant.*}`; versões via `releases:` estático ou `version_source: {url, regex|json_path}` | obrigatório | Para tudo que não tem API |
+| `http` | genérico | URL com placeholders `{version}`, `{series}`, chaves de variante (`{compiler}`) e `vars` ([04](04-tool-manifest-spec.md) §1.5); versões via `releases:` estático ou `version_source: {url, regex|json_path}` | obrigatório | Para tudo que não tem API |
 | `local` | arquivo local/zip | `forge tool add-local <zip>` com manifesto embutido | sha256 calculado e exibido | |
 | `wsl` / `docker` *(v2)* | WSL2 / Docker Desktop | Para tools sem build Windows (Valkey, DragonflyDB, KeyDB, RabbitMQ) | imagem digest | Ver [12-stacks-compat.md](12-stacks-compat.md) |
 
