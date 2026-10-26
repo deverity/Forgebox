@@ -4,7 +4,7 @@ Monorepo Cargo workspace + app Tauri + registry de manifestos. Tudo que um agent
 
 ```
 Forgebox/
-├── Cargo.toml                    # workspace: members = ["crates/*", "apps/desktop/src-tauri", "xtask"]
+├── Cargo.toml                    # workspace: members = ["crates/*", "xtask"]; apps/desktop/src-tauri entra no workspace em M2-E1
 ├── Cargo.lock
 ├── rust-toolchain.toml           # channel = "stable", components = [rustfmt, clippy]
 ├── rustfmt.toml / clippy.toml / deny.toml (cargo-deny: licenças e advisories)

@@ -1,0 +1,16 @@
+[package]
+name = "forge-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox API contracts: JSON-RPC 2.0 types, transport abstraction, event streams and client."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-core = { path = "../forge-core" }

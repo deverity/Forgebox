@@ -1,0 +1,16 @@
+[package]
+name = "forge-fcgi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox PHP FastCGI pool manager: one pool per PHP version, ports, workers and blue/green swap."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-supervisor = { path = "../forge-supervisor" }

@@ -38,7 +38,7 @@ Regras:
 | Linguagem do motor | **Rust 2024 edition**, stable | Binário único, sem runtime, controle fino de processos/Win32 via crate `windows` |
 | Runtime assíncrono | **tokio** | Supervisão de dezenas de processos, I/O de rede, timers |
 | Persistência | **SQLite** via `rusqlite` (bundled) | Estado, sites, portas, histórico de eventos, cache de registry. Um arquivo, zero servidor |
-| Config do usuário | **YAML** (`serde_yml`) + **TOML** para preferências simples | YAML é o formato do manifesto; preferências em `forgebox.toml` |
+| Config do usuário | **YAML** (`serde_yaml_ng`, ver [ADR-0012](adr/0012-yaml-crate-serde-yaml-ng.md)) + **TOML** para preferências simples | YAML é o formato do manifesto; preferências em `forgebox.toml` |
 | Templates de config | **minijinja** | Sintaxe Jinja2 conhecida, sandbox, sem dependências pesadas |
 | HTTP client | **reqwest** (rustls) + resume + mirrors | Downloads grandes com retomada |
 | Extração | `zip`, `sevenz-rust`, `tar` + `flate2`/`xz2` | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz |
