@@ -175,12 +175,12 @@ Forgebox/
 │   └── assets/                   # banners, ícones do instalador
 │
 ├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry
-├── scripts/                      # dev: setup.ps1, run-daemon.ps1, smoke.ps1
+├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)
 │   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout
 └── .github/
-    └── workflows/                # ci.yml (fmt, clippy, test, lint-registry), release.yml (build, sign, latest.json)
+    └── workflows/                # ci.yml (fmt, clippy, build, test, deny, lint-registry, artefatos gerados, pnpm build), dependabot.yml, PULL_REQUEST_TEMPLATE.md, release.yml (build, sign, latest.json)
 ```
 
 ## Regras de organização
