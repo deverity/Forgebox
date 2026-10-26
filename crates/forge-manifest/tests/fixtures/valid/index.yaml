@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../../../../registry/schema/registry.v1.json
+# docs/04 §5, complete. Fixture only: hashes and signature are placeholders.
+apiVersion: forgebox.dev/v1
+kind: Registry
+metadata: { name: official, url: https://github.com/forgebox/registry }
+spec:
+  schema_version: 1
+  updated_at: 2026-10-26T00:00:00Z
+  tools:
+    - { id: php, path: tools/php.yaml, sha256: "2222222222222222222222222222222222222222222222222222222222222222", categories: [runtime], latest: "8.4.14" }
+    - { id: nginx, path: tools/nginx.yaml, sha256: "3333333333333333333333333333333333333333333333333333333333333333" }
+  stacks:
+    - { id: laravel, path: stacks/laravel.yaml, sha256: "4444444444444444444444444444444444444444444444444444444444444444" }
+  signature: { type: minisign, key_id: "RWR0000000000000", sig: "RWQ0000000000000000000000000000000000000000000000000000000000000" }

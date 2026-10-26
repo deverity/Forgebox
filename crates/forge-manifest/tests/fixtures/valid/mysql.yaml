@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=../../../../../registry/schema/tool.v1.json
+# docs/04 §1.2 (service.daemon), complete. Fixture only: URL and hash are not real.
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata:
+  id: mysql
+  name: MySQL
+  summary: MySQL Community Server
+  category: database
+  homepage: https://dev.mysql.com
+  license: GPL-2.0-only
+  icon: mysql.svg
+spec:
+  platforms: [windows-x64]
+  runtime_deps: [vcredist-vs17]
+  versioning:
+    channels:
+      lts: { constraint: "~8.4" }
+      innovation: { constraint: ">=9" }
+  source:
+    providers:
+      - type: mysql
+    releases:
+      - version: "8.4.3"
+        url: https://cdn.mysql.com/archives/mysql-8.4/mysql-8.4.3-winx64.zip
+        sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        size: 270000000
+  install:
+    archive: zip
+    current_link: false
+    post_install:
+      - mkdir: "{{ paths.data }}/mysql"
+  config:
+    files:
+      - { id: my_ini, path: "{{ paths.etc }}/mysql/{{ instance.name }}/my.ini", format: ini, label: my.ini }
+    quick_settings:
+      - { key: max_connections, file: my_ini, ini: "mysqld.max_connections", type: number, default: 151, min: 1, max: 100000 }
+  service:
+    kind: daemon
+    daemon:
+      multi_instance: true
+      exe: bin/mysqld.exe
+      args: ["--defaults-file={{ instance.config.my_ini }}", "--console"]
+      cwd: "{{ paths.version }}"
+      env: {}
+      console_group: true
+      ports:
+        - { name: main, default: 3306, env: null, range: databases }
+      check: { command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --validate-config" }
+      start_timeout: 45s
+      health:
+        tcp: "127.0.0.1:{{ instance.ports.main }}"
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop:
+        command: "bin/mysqladmin.exe --port={{ instance.ports.main }} -uroot shutdown"
+        timeout: 20s
+        then: ctrl-break
+      reload: null
+      restart_policy: { on: failure, max: 3, window: 60s }
+      logs:
+        - { label: Error log, path: "{{ paths.logs }}/mysql/{{ instance.name }}/error.log", format: mysql }
+      data:
+        dir: "{{ paths.data }}/mysql/{{ instance.name }}"
+        init:
+          command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --initialize-insecure"
+      depends_on: []
+      autostart: true
+  discover:
+    match_files: [bin/mysqld.exe]
+    version_command: "bin/mysqld.exe --version"
+    version_regex: "Ver (\\d+\\.\\d+\\.\\d+)"
+  update:
+    policy: notify
+    retention: 1
