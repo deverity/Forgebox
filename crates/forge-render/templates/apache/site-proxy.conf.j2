@@ -1,0 +1,39 @@
+{% set s = site %}
+{% set primary = s.hosts | first %}
+{% set p = s.proxy %}
+{% if s.ssl and s.http_redirect %}
+<VirtualHost 127.0.0.1:{{ prefs.http_port }}>
+    ServerName {{ primary }}
+{% if s.hosts | length > 1 %}
+    ServerAlias {{ s.hosts[1:] | join(' ') }}
+{% endif %}
+    RewriteEngine On
+    RewriteRule ^ https://%{HTTP_HOST}{% if prefs.https_port != 443 %}:{{ prefs.https_port }}{% endif %}%{REQUEST_URI} [R=301,L]
+</VirtualHost>
+
+{% endif %}
+<VirtualHost 127.0.0.1:{{ prefs.https_port if s.ssl else prefs.http_port }}>
+    ServerName {{ primary }}
+{% if s.hosts | length > 1 %}
+    ServerAlias {{ s.hosts[1:] | join(' ') }}
+{% endif %}
+{% if s.ssl %}
+    Include "{{ paths.etc }}/apache/snippets/ssl-{{ primary }}.conf"
+{% endif %}
+{% for name, value in s.headers | items %}
+    Header always set {{ name }} {{ value | quote }}
+{% endfor %}
+    ProxyRequests Off
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto {{ 'https' if s.ssl else 'http' }}
+    RequestHeader set FORGEBOX_SITE {{ primary | quote }}
+{% if p.start_on_visit %}
+    ErrorDocument 502 "http://127.0.0.1:{{ prefs.internal_port }}/_forgebox/starting?host={{ primary }}"
+{% endif %}
+    ProxyPass "/" "{{ p.upstream }}/"{% if p.websocket %} upgrade=websocket{% endif %} timeout={{ p.read_timeout_secs }}
+    ProxyPassReverse "/" "{{ p.upstream }}/"
+{% if s.extra.apache %}
+
+{{ s.extra.apache | indent(4) }}
+{% endif %}
+</VirtualHost>

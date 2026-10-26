@@ -1,0 +1,41 @@
+worker_processes 1;
+error_log "{{ paths.logs }}/nginx/error.log";
+pid "{{ paths.tmp }}/nginx/nginx.pid";
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include "{{ tool.dir }}/conf/mime.types";
+    default_type application/octet-stream;
+    sendfile off;
+    keepalive_timeout 65;
+    server_tokens off;
+    server_names_hash_bucket_size 128;
+    client_body_temp_path "{{ paths.tmp }}/nginx/client_body";
+    proxy_temp_path "{{ paths.tmp }}/nginx/proxy";
+    fastcgi_temp_path "{{ paths.tmp }}/nginx/fastcgi";
+    uwsgi_temp_path "{{ paths.tmp }}/nginx/uwsgi";
+    scgi_temp_path "{{ paths.tmp }}/nginx/scgi";
+
+    # Structured access log consumed by forge-metrics (docs/14 section 2).
+    log_format forgebox escape=json '{"t":"$msec","host":"$host","s":$status,"rt":$request_time,"ut":"$upstream_response_time","b":$body_bytes_sent,"m":"$request_method","u":"$uri","up":"$upstream_addr"}';
+    access_log "{{ paths.logs }}/nginx/access.json" forgebox;
+
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # Unknown hosts never fall into a real site.
+    server {
+        listen 127.0.0.1:{{ prefs.http_port }} default_server;
+        server_name _;
+        return 404;
+    }
+
+    include conf.d/*.conf;
+    include upstreams/*.conf;
+    include sites/*.conf;
+}

@@ -1,0 +1,14 @@
+data_directory = '{{ instance.data_dir }}'
+hba_file = '{{ paths.etc }}/postgresql/{{ instance.name }}/pg_hba.conf'
+ident_file = '{{ paths.etc }}/postgresql/{{ instance.name }}/pg_ident.conf'
+listen_addresses = '127.0.0.1'
+port = {{ instance.ports.main }}
+max_connections = {{ instance.settings.max_connections | default('100') }}
+shared_buffers = {{ instance.settings.shared_buffers | default('128MB') }}
+timezone = 'UTC'
+log_timezone = 'UTC'
+log_destination = 'stderr'
+logging_collector = on
+log_directory = '{{ paths.logs }}/postgresql/{{ instance.name }}'
+log_filename = 'postgresql.log'
+log_min_duration_statement = {{ instance.settings.log_min_duration_statement | default('-1') }}

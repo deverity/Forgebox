@@ -1,0 +1,7 @@
+# Shared FastCGI tuning for every PHP site. Upstream pools use keepalive.
+fastcgi_keep_conn on;
+fastcgi_read_timeout 300s;
+fastcgi_send_timeout 300s;
+fastcgi_buffer_size 16k;
+fastcgi_buffers 16 16k;
+fastcgi_intercept_errors off;

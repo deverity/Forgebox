@@ -1,0 +1,62 @@
+{% set s = site %}
+{% set primary = s.hosts | first %}
+{% if s.ssl and s.http_redirect %}
+server {
+    listen 127.0.0.1:{{ prefs.http_port }};
+    server_name {{ s.hosts | join(' ') }};
+    return 301 https://$host{% if prefs.https_port != 443 %}:{{ prefs.https_port }}{% endif %}$request_uri;
+}
+
+{% endif %}
+server {
+{% if s.ssl %}
+    listen 127.0.0.1:{{ prefs.https_port }} ssl;
+    http2 on;
+{% else %}
+    listen 127.0.0.1:{{ prefs.http_port }};
+{% endif %}
+    server_name {{ s.hosts | join(' ') }};
+    root {{ s.root | quote }};
+    index {{ s.index | join(' ') }};
+{% if s.ssl %}
+    include snippets/ssl-{{ primary }}.conf;
+{% endif %}
+    include snippets/php-common.conf;
+    client_max_body_size {{ s.client_max_body }};
+{% for name, value in s.headers | items %}
+    add_header {{ name }} {{ value | quote }} always;
+{% endfor %}
+
+    location / {
+        try_files {{ s.try_files | join(' ') }};
+    }
+{% for re in s.deny %}
+
+    location ~ {{ re }} {
+        deny all;
+    }
+{% endfor %}
+{% for loc in s.static_locations %}
+
+    location ~ {{ loc.pattern }} {
+{% if loc.cache_control %}
+        add_header Cache-Control {{ loc.cache_control | quote }};
+{% endif %}
+        try_files $uri =404;
+    }
+{% endfor %}
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param FORGEBOX_SITE {{ primary }};
+{% for name, value in s.env | items %}
+        fastcgi_param {{ name }} {{ value | quote }};
+{% endfor %}
+        fastcgi_pass {{ s.php_upstream }};
+    }
+{% if s.extra.nginx %}
+
+{{ s.extra.nginx | indent(4) }}
+{% endif %}
+}

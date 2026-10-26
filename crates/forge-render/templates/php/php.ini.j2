@@ -1,0 +1,38 @@
+; Forgebox overlay for PHP {{ php.series }}. Scanned through PHP_INI_SCAN_DIR (docs/04).
+; Quick settings come from php.settings; everything else is fixed parity with Linux (docs/15 section 7).
+extension_dir = "{{ tool.dir }}/ext"
+
+[PHP]
+date.timezone = {{ php.settings.timezone | default('UTC') }}
+memory_limit = {{ php.settings.memory_limit | default('512M') }}
+upload_max_filesize = {{ php.settings.upload_max_filesize | default('128M') }}
+post_max_size = {{ php.settings.post_max_size | default(php.settings.upload_max_filesize | default('128M')) }}
+max_execution_time = {{ php.settings.max_execution_time | default('120') }}
+display_errors = {{ php.settings.display_errors | default('On') }}
+error_reporting = E_ALL
+log_errors = On
+error_log = "{{ paths.logs }}/php/{{ php.series }}/error.log"
+sys_temp_dir = "{{ paths.tmp }}"
+upload_tmp_dir = "{{ paths.tmp }}/uploads"
+cgi.fix_pathinfo = 1
+default_charset = "UTF-8"
+
+[Session]
+session.save_path = "{{ paths.tmp }}/sessions/php/{{ php.series }}"
+
+[opcache]
+zend_extension = opcache
+opcache.enable = {{ php.settings.opcache | default('1') }}
+opcache.enable_cli = 0
+opcache.memory_consumption = 192
+opcache.interned_strings_buffer = 16
+opcache.max_accelerated_files = 20000
+opcache.validate_timestamps = 1
+opcache.revalidate_freq = 1
+{% if php.extensions %}
+
+; Extensions (docs/04 config.extensions.defaults_on).
+{% for ext in php.extensions %}
+extension = {{ ext }}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,25 @@
+[client]
+port = {{ instance.ports.main }}
+host = 127.0.0.1
+default-character-set = utf8mb4
+
+[mysql]
+default-character-set = utf8mb4
+
+[mysqld]
+basedir = "{{ tool.dir }}"
+datadir = "{{ instance.data_dir }}"
+port = {{ instance.ports.main }}
+bind-address = 127.0.0.1
+mysqlx = OFF
+pid-file = "{{ paths.tmp }}/mysql/{{ instance.name }}.pid"
+log-error = "{{ paths.logs }}/mysql/{{ instance.name }}/error.log"
+character-set-server = utf8mb4
+collation-server = utf8mb4_0900_ai_ci
+lower_case_table_names = {{ instance.settings.lower_case_table_names | default('0') }}
+max_allowed_packet = {{ instance.settings.max_allowed_packet | default('256M') }}
+max_connections = {{ instance.settings.max_connections | default('200') }}
+innodb_buffer_pool_size = {{ instance.settings.innodb_buffer_pool_size | default('256M') }}
+slow_query_log = {{ instance.settings.slow_query_log | default('0') }}
+slow_query_log_file = "{{ paths.logs }}/mysql/{{ instance.name }}/slow.log"
+long_query_time = {{ instance.settings.long_query_time | default('1') }}

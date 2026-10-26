@@ -1,0 +1,6 @@
+<Proxy "balancer://{{ upstream.name }}/">
+{% for s in upstream.servers %}
+    BalancerMember "fcgi://{{ s.host }}:{{ s.port }}" enablereuse=on max={{ upstream.max_conns }} timeout={{ upstream.timeout_secs }}
+{% endfor %}
+    ProxySet lbmethod=bybusyness
+</Proxy>

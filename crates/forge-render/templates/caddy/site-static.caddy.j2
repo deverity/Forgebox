@@ -1,0 +1,34 @@
+{% set s = site %}
+{% set scheme = 'https' if s.ssl else 'http' %}
+{% set port = prefs.https_port if s.ssl else prefs.http_port %}
+{% if s.ssl and s.http_redirect %}
+{% for h in s.hosts %}http://{{ h }}{% if prefs.http_port != 80 %}:{{ prefs.http_port }}{% endif %}{{ ', ' if not loop.last else '' }}{% endfor %} {
+    redir https://{host}{% if prefs.https_port != 443 %}:{{ prefs.https_port }}{% endif %}{uri} permanent
+}
+
+{% endif %}
+{% for h in s.hosts %}{{ scheme }}://{{ h }}{% if port != (443 if s.ssl else 80) %}:{{ port }}{% endif %}{{ ', ' if not loop.last else '' }}{% endfor %} {
+    import forgebox_log
+    root * {{ s.root | quote }}
+{% if s.ssl %}
+    tls {{ s.ssl.cert | quote }} {{ s.ssl.key | quote }}
+{% endif %}
+{% for name, value in s.headers | items %}
+    header {{ name }} {{ value | quote }}
+{% endfor %}
+{% if s.deny %}
+    @forgebox_deny path_regexp ({{ s.deny | join('|') }})
+    respond @forgebox_deny 403
+{% endif %}
+{% for loc in s.static_locations %}
+{% if loc.cache_control %}
+    @forgebox_static_{{ loop.index }} path_regexp {{ loc.pattern }}
+    header @forgebox_static_{{ loop.index }} Cache-Control {{ loc.cache_control | quote }}
+{% endif %}
+{% endfor %}
+    file_server
+{% if s.extra.caddy %}
+
+{{ s.extra.caddy | indent(4) }}
+{% endif %}
+}
