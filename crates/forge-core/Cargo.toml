@@ -42,12 +42,17 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 # Win32 only behind `platform::windows` (CLAUDE.md). `junction` wraps
-# CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile.
+# CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile and the
+# Authenticode APIs (WinVerifyTrust, catalogs, CryptQueryObject).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_WinTrust",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
 ] }

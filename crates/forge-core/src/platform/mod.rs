@@ -5,9 +5,10 @@
 //! slow volumes, antivirus or network shares): async code calls them from
 //! `tokio::task::spawn_blocking` (ADR-0011).
 //!
-//! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows.
-//! [`ProcessGroup`] (M1-E3-T1), [`TrustStore`] (M1-E4-T4) and [`DnsPolicy`]
-//! (M1-E4-T3) are declared only; their signatures may still grow in those tasks.
+//! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows;
+//! [`CodeSign`] (Authenticode, M1-E2-T2) too. [`ProcessGroup`] (M1-E3-T1), [`TrustStore`]
+//! (M1-E4-T4) and [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still
+//! grow in those tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -15,6 +16,8 @@ use std::fmt;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(windows))]
 use crate::error::ForgeError;
@@ -75,6 +78,43 @@ pub trait CaseSensitiveFs: Send + Sync {
     fn set(&self, dir: &Path, enabled: bool) -> Result<()>;
 }
 
+/// Where the Authenticode signature of a file was found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodeSignKind {
+    /// PKCS#7 signature embedded in the file (security directory of a PE).
+    Embedded,
+    /// The file hash is listed in a signed system catalog (`System32\CatRoot`), as for
+    /// most binaries shipped with Windows.
+    Catalog,
+}
+
+/// Result of [`CodeSign::verify`] (docs/05 §3 item 4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeSignInfo {
+    /// The file carries a signature (embedded or through a catalog), valid or not.
+    pub signed: bool,
+    /// The signature is intact and chains to a trusted root.
+    pub trusted: bool,
+    /// Simple display name of the signer certificate (`Microsoft Windows`,
+    /// `Cloudflare, Inc.`), when a signature could be read.
+    pub publisher: Option<String>,
+    pub kind: Option<CodeSignKind>,
+    /// Why the file is not trusted (`CERT_E_UNTRUSTEDROOT (0x800B0109)`...); `None` when
+    /// trusted.
+    pub status: Option<String>,
+}
+
+/// Code signing verification of executables (Authenticode on Windows).
+pub trait CodeSign: Send + Sync {
+    /// Checks the signature of `path`: embedded first, then the system catalogs.
+    /// Revocation is not checked (works offline and never stalls on CRL/OCSP servers);
+    /// the downloaded file is already pinned by its sha256 (docs/11 §2).
+    /// Unsigned or untrusted files are `Ok` with `signed`/`trusted` false; `Err` only when
+    /// the file cannot be opened or the OS has no such mechanism.
+    fn verify(&self, path: &Path) -> Result<CodeSignInfo>;
+}
+
 /// Group of processes that die together (Job Object on Windows, cgroup on Linux).
 /// Implemented in M1-E3-T1.
 pub trait ProcessGroup: Send + Sync {
@@ -131,6 +171,7 @@ pub struct Platform {
     name: &'static str,
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
+    code_sign: Arc<dyn CodeSign>,
 }
 
 impl fmt::Debug for Platform {
@@ -142,7 +183,8 @@ impl fmt::Debug for Platform {
 }
 
 impl Platform {
-    /// Assembles a platform from parts (tests use fakes).
+    /// Assembles a platform from parts (tests use fakes). Code signing defaults to the
+    /// implementation of the running OS; see [`Platform::with_code_sign`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -152,7 +194,14 @@ impl Platform {
             name,
             link_fs,
             case_sensitive_fs,
+            code_sign: default_code_sign(),
         }
+    }
+
+    /// Replaces the code signing verifier (fakes in tests).
+    pub fn with_code_sign(mut self, code_sign: Arc<dyn CodeSign>) -> Self {
+        self.code_sign = code_sign;
+        self
     }
 
     /// `"windows"`, `"linux"`, `"macos"`...
@@ -167,6 +216,21 @@ impl Platform {
     pub fn case_sensitive_fs(&self) -> &dyn CaseSensitiveFs {
         self.case_sensitive_fs.as_ref()
     }
+
+    /// Authenticode verification (shared, so it can move into `spawn_blocking`).
+    pub fn code_sign(&self) -> &Arc<dyn CodeSign> {
+        &self.code_sign
+    }
+}
+
+#[cfg(windows)]
+fn default_code_sign() -> Arc<dyn CodeSign> {
+    Arc::new(windows::WindowsCodeSign)
+}
+
+#[cfg(not(windows))]
+fn default_code_sign() -> Arc<dyn CodeSign> {
+    Arc::new(unsupported::Unsupported)
 }
 
 /// Implementations for the OS this binary runs on.
@@ -221,6 +285,12 @@ mod unsupported {
         }
     }
 
+    impl CodeSign for Unsupported {
+        fn verify(&self, _: &Path) -> Result<CodeSignInfo> {
+            err("code signing verification")
+        }
+    }
+
     impl CaseSensitiveFs for Unsupported {
         fn support(&self, _: &Path) -> CaseSensitivitySupport {
             CaseSensitivitySupport::Unsupported(format!(
@@ -256,5 +326,23 @@ mod tests {
         assert!(!platform.case_sensitive_fs().is_supported(&dir));
         let err = platform.link_fs().is_junction(&dir).unwrap_err();
         assert_eq!(err.code(), "unsupported_platform");
+        let err = platform.code_sign().verify(&dir).unwrap_err();
+        assert_eq!(err.code(), "unsupported_platform");
+    }
+
+    #[test]
+    fn code_sign_info_wire_format() {
+        let info = CodeSignInfo {
+            signed: true,
+            trusted: false,
+            publisher: Some("Example, Inc.".into()),
+            kind: Some(CodeSignKind::Catalog),
+            status: Some("CERT_E_UNTRUSTEDROOT (0x800B0109)".into()),
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["kind"], "catalog");
+        assert_eq!(json["publisher"], "Example, Inc.");
+        let back: CodeSignInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(back, info);
     }
 }

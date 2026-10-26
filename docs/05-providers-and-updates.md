@@ -38,10 +38,11 @@ Implementação: `forge-provider::download` (`DownloadManager`, ator da fila; ca
 - Cancelamento (`job.cancel`): mantém o `.part` e não emite `job.done`.
 
 ## 3. Verificação
+Implementação: `forge_provider::verify` (`Verifier::verify(path, Expect) -> VerifyReport`, tudo em `spawn_blocking`, buffers de 1 MiB; [ADR-0017](adr/0017-verify-extract-stack.md)). Divergências são `verification_failed` (a CLI sai com 6); expectativas malformadas (hex com tamanho errado, chave pública inválida) são `invalid_input`.
 1. Tamanho (quando conhecido).
-2. SHA-256 (ou SHA-512). Obrigatório. Sem hash → só com `--allow-unverified` e aviso persistente no card.
-3. Assinatura quando disponível: PGP (nginx, PostgreSQL via EDB não; Node via SHASUMS256.txt.sig; Composer via `.sig`), minisign (registry e o próprio Forgebox).
-4. Authenticode do `.exe`/`.dll` principal (quando assinado pelo upstream: Memurai, HeidiSQL, cloudflared) → exibimos o publisher.
+2. SHA-256 (ou SHA-512). Obrigatório. Sem hash → só com `--allow-unverified` (`Expect::unverified()`): o sha256 é calculado mesmo assim e o relatório sai com `unverified: true` para o aviso persistente no card.
+3. Assinatura quando disponível: PGP destacado (`.asc` armored ou `.sig` binário: nginx `.zip.asc`, Node `SHASUMS256.txt.sig`, Composer `.sig`; PostgreSQL via EDB não tem), verificado com keyring **embutido** (`nginx`, `nodejs`: chaves atuais listadas pelo upstream em 26/10/2026, em `crates/forge-provider/keys/`) ou armored vindo do registry; minisign (registry e o próprio Forgebox; só assinaturas *prehashed*, verificadas no mesmo passe do hash). Releases antigas de Node assinadas por releasers que saíram da lista ativa falham no PGP: o provider trata PGP de versões antigas como opcional (o sha256 continua obrigatório) ou o registry fornece as chaves antigas.
+4. Authenticode do `.exe`/`.dll` principal (quando assinado pelo upstream: Memurai, HeidiSQL, cloudflared) via `forge_core::platform::CodeSign` (`WinVerifyTrust`, assinatura embutida e catálogos do sistema, sem checagem de revogação) → exibimos o publisher; o chamador pode fixar o nome exato (`Signature::Authenticode { expected_publisher }`; o campo correspondente no manifesto chega com os providers, M1-E2-T3). Não assinado, não confiável ou de outro publisher → `verification_failed`.
 
 ## 4. Políticas de atualização (por tool, sobrescrevível por versão/instância)
 

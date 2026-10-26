@@ -140,7 +140,7 @@ resolve(version) → fetch(url, sha256, size) → verify → stage(tmp/stage/<id
 ```
 - Download com retomada (`Range`), 4 conexões paralelas para arquivos > 50 MB, mirrors em ordem, limite de banda configurável.
 - Verificação **obrigatória**: SHA-256 do manifesto/provider. Sem hash = instalação só com `--allow-unverified` e aviso vermelho na UI.
-- Staging fora do destino + `MoveFileEx` garante que `bin/<tool>/<version>` nunca fica meio instalado.
+- Staging fora do destino + `MoveFileEx` garante que `bin/<tool>/<version>` nunca fica meio instalado. Implementação (`forge_provider::extract`, [ADR-0017](adr/0017-verify-extract-stack.md)): `tmp/stage/<ulid>/` novo por extração, com a sensibilidade a maiúsculas do pai do destino (a flag viaja com o diretório no rename; `bin/` fica insensitive, docs/15); cada entrada validada antes de ser escrita (zip e 7z varridos por inteiro antes do primeiro byte); orçamento de bytes realmente escritos (padrão 4 GiB) e de entradas (200 000); `strip_root`; rename do diretório (repetido por até ~1,4 s em violação de acesso/compartilhamento, comum com antivírus); entre volumes, cópia para `.<versão>.forgebox-partial-<id>` ao lado do destino, conferência de caminhos e tamanhos e rename. Substituir um destino existente só com pedido explícito (o antigo vai para `.<versão>.forgebox-old-<id>` e volta se a troca falhar). Progresso por entrada em `job.progress` ("Extraindo 120/2400"); cancelamento entre entradas e buffers; staging sempre removido.
 - `post_install` restrito a ações declarativas do manifesto (copiar arquivo, renderizar template, rodar comando **da própria tool** como `mysqld --initialize-insecure`), nunca scripts arbitrários baixados.
 
 ### 5.2 Layout versionado + `current`
