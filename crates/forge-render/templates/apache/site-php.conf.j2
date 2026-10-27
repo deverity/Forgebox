@@ -1,0 +1,63 @@
+{% set s = site %}
+{% set primary = s.hosts | first %}
+{% if s.ssl and s.http_redirect %}
+<VirtualHost 127.0.0.1:{{ prefs.http_port }}>
+    ServerName {{ primary }}
+{% if s.hosts | length > 1 %}
+    ServerAlias {{ s.hosts[1:] | join(' ') }}
+{% endif %}
+    RewriteEngine On
+    RewriteRule ^ https://%{HTTP_HOST}{% if prefs.https_port != 443 %}:{{ prefs.https_port }}{% endif %}%{REQUEST_URI} [R=301,L]
+</VirtualHost>
+
+{% endif %}
+<VirtualHost 127.0.0.1:{{ prefs.https_port if s.ssl else prefs.http_port }}>
+    ServerName {{ primary }}
+{% if s.hosts | length > 1 %}
+    ServerAlias {{ s.hosts[1:] | join(' ') }}
+{% endif %}
+    DocumentRoot {{ s.root | quote }}
+{% if s.ssl %}
+    Include "{{ paths.etc }}/apache/snippets/ssl-{{ primary }}.conf"
+{% endif %}
+    DirectoryIndex {{ s.index | join(' ') }}
+{% for name, value in s.headers | items %}
+    Header always set {{ name }} {{ value | quote }}
+{% endfor %}
+    <Directory {{ s.root | quote }}>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+{% if s.fallback_resource %}
+        FallbackResource {{ s.fallback_resource }}
+{% endif %}
+    </Directory>
+{% for re in s.deny %}
+    <LocationMatch {{ re | quote }}>
+        Require all denied
+    </LocationMatch>
+{% endfor %}
+{% for loc in s.static_locations %}
+{% if loc.cache_control %}
+    <LocationMatch {{ loc.pattern | quote }}>
+        Header set Cache-Control {{ loc.cache_control | quote }}
+    </LocationMatch>
+{% endif %}
+{% endfor %}
+    <FilesMatch "\.php$">
+        SetHandler "proxy:balancer://{{ s.php_upstream }}/"
+    </FilesMatch>
+    # php-cgi is the only backend on Windows (docs/03 section 2.1). Without GENERIC the
+    # SCRIPT_FILENAME is "proxy:fcgi://host:port/C:/..."; with it, "/C:/...". Strip the
+    # slash before the drive letter or php-cgi answers "No input file specified.".
+    ProxyFCGIBackendType GENERIC
+    ProxyFCGISetEnvIf "reqenv('SCRIPT_FILENAME') =~ m#^/([A-Za-z]:/.*)$#" SCRIPT_FILENAME "$1"
+    ProxyFCGISetEnvIf "true" FORGEBOX_SITE {{ primary | quote }}
+{% for name, value in s.env | items %}
+    ProxyFCGISetEnvIf "true" {{ name }} {{ value | quote }}
+{% endfor %}
+{% if s.extra.apache %}
+
+{{ s.extra.apache | indent(4) }}
+{% endif %}
+</VirtualHost>

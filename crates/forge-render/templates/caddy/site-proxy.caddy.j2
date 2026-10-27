@@ -1,0 +1,42 @@
+{% set s = site %}
+{% set primary = s.hosts | first %}
+{% set p = s.proxy %}
+{% set scheme = 'https' if s.ssl else 'http' %}
+{% set port = prefs.https_port if s.ssl else prefs.http_port %}
+{% if s.ssl and s.http_redirect %}
+{% for h in s.hosts %}http://{{ h }}{% if prefs.http_port != 80 %}:{{ prefs.http_port }}{% endif %}{{ ', ' if not loop.last else '' }}{% endfor %} {
+    redir https://{host}{% if prefs.https_port != 443 %}:{{ prefs.https_port }}{% endif %}{uri} permanent
+}
+
+{% endif %}
+{% for h in s.hosts %}{{ scheme }}://{{ h }}{% if port != (443 if s.ssl else 80) %}:{{ port }}{% endif %}{{ ', ' if not loop.last else '' }}{% endfor %} {
+    import forgebox_log
+{% if s.ssl %}
+    tls {{ s.ssl.cert | quote }} {{ s.ssl.key | quote }}
+{% endif %}
+{% for name, value in s.headers | items %}
+    header {{ name }} {{ value | quote }}
+{% endfor %}
+    # WebSocket upgrades are handled by reverse_proxy itself; flush_interval -1 keeps HMR streams alive.
+    reverse_proxy {{ p.upstream }} {
+        flush_interval -1
+        header_up FORGEBOX_SITE {{ primary | quote }}
+        transport http {
+            read_timeout {{ p.read_timeout_secs }}s
+        }
+    }
+{% if p.start_on_visit %}
+
+    handle_errors {
+        @forgebox_down expression {err.status_code} == 502
+        handle @forgebox_down {
+            rewrite * /_forgebox/starting?host={{ primary }}
+            reverse_proxy 127.0.0.1:{{ prefs.internal_port }}
+        }
+    }
+{% endif %}
+{% if s.extra.caddy %}
+
+{{ s.extra.caddy | indent(4) }}
+{% endif %}
+}

@@ -33,16 +33,17 @@ Forgebox/
 │   │       ├── sync.rs           # OrderedMutex/LockLevel: travas curtas com ordem verificada por debug_assert
 │   │       ├── runtime.rs        # build_runtime (max(4, núcleos) workers, 2 × núcleos blocking, threads nomeadas); feature `console`;
 │   │       │                     #   spawn_blocking_timeout (chamada bloqueante com prazo)
-│   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs...),
+│   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
 │   │       │                     #   ports.rs (PortRepo: reservas de porta)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder)
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, DnsPolicy) + current();
-│   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE)
-│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID)
-│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta)
+│   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
+│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
+│   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
+│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta);
 │   │                             #   runtime_deps.rs: RuntimeDeps, RuntimeDep, VcRedistFlavor (vc15/vs16/vs17/vs18 → versão mínima)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
@@ -70,7 +71,7 @@ Forgebox/
 │   │       ├── service.rs        # `Registry`: refresh(name) -> JobId, load, find, search, list; metadados em `registries`
 │   │       ├── messages.rs       # strings pt-BR (badges "não verificado", "terceiro")
 │   │       ├── search.rs         # busca por id/nome/tag/categoria, ranking
-│   │       └── discover.rs       # heurísticas para pastas soltas em bin/ (php.exe, httpd.exe, mysqld.exe...)
+│   │       └── discover.rs       # discover() + import_discovered(): pastas soltas em bin/ reconhecidas só pelos manifestos (spec.discover)
 │   ├── forge-provider/
 │   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
 │   │   └── src/

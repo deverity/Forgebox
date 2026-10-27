@@ -26,6 +26,7 @@ pub mod events;
 pub mod migrations;
 pub mod ports;
 mod reader;
+pub mod tool_versions;
 pub mod writer;
 
 use std::path::{Path, PathBuf};
@@ -38,6 +39,9 @@ pub use events::EventRepo;
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;
+pub use tool_versions::{
+    NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,
+};
 pub use writer::{StoreWriter, WriterStats};
 
 /// How long a statement waits for a lock held by another connection.

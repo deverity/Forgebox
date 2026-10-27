@@ -1,0 +1,63 @@
+---
+source: crates/forge-render/tests/snapshots.rs
+expression: content
+---
+# forgebox:begin main (hash=5512ee67f30689c0)
+ServerRoot "C:/fb-test/bin/apache/2.4.69"
+ServerName 127.0.0.1
+ServerTokens Prod
+ServerSignature Off
+Listen 127.0.0.1:80
+Listen 127.0.0.1:443
+PidFile "C:/fb-test/tmp/apache/httpd.pid"
+
+LoadModule alias_module modules/mod_alias.so
+LoadModule authz_core_module modules/mod_authz_core.so
+LoadModule authz_host_module modules/mod_authz_host.so
+LoadModule dir_module modules/mod_dir.so
+LoadModule env_module modules/mod_env.so
+LoadModule headers_module modules/mod_headers.so
+LoadModule http2_module modules/mod_http2.so
+LoadModule lbmethod_bybusyness_module modules/mod_lbmethod_bybusyness.so
+LoadModule log_config_module modules/mod_log_config.so
+LoadModule mime_module modules/mod_mime.so
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_balancer_module modules/mod_proxy_balancer.so
+LoadModule proxy_fcgi_module modules/mod_proxy_fcgi.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule proxy_wstunnel_module modules/mod_proxy_wstunnel.so
+LoadModule rewrite_module modules/mod_rewrite.so
+LoadModule setenvif_module modules/mod_setenvif.so
+LoadModule slotmem_shm_module modules/mod_slotmem_shm.so
+LoadModule socache_shmcb_module modules/mod_socache_shmcb.so
+LoadModule ssl_module modules/mod_ssl.so
+
+<Directory />
+    AllowOverride None
+    Require all denied
+</Directory>
+
+TypesConfig "C:/fb-test/bin/apache/2.4.69/conf/mime.types"
+DirectoryIndex index.php index.html
+AddDefaultCharset UTF-8
+EnableSendfile Off
+Mutex default
+SSLProtocol -all +TLSv1.2 +TLSv1.3
+SSLSessionCache "shmcb:C:/fb-test/tmp/apache/ssl_scache(512000)"
+
+ErrorLog "C:/fb-test/logs/apache/error.log"
+LogLevel warn
+# Structured access log consumed by forge-metrics (docs/14 section 2). rt_us is in microseconds.
+LogFormat "{\"t\":\"%{msec}t\",\"host\":\"%{Host}i\",\"s\":%s,\"rt_us\":%D,\"b\":%B,\"m\":\"%m\",\"u\":\"%U\",\"up\":\"%{BALANCER_WORKER_NAME}e\"}" forgebox_json
+CustomLog "C:/fb-test/logs/apache/access.json" forgebox_json
+
+# Unknown hosts never fall into a real site (first VirtualHost of a port is its default).
+<VirtualHost 127.0.0.1:80>
+    ServerName _default_
+    RedirectMatch 404 ^
+</VirtualHost>
+
+IncludeOptional "C:/fb-test/etc/apache/conf.d/*.conf"
+IncludeOptional "C:/fb-test/etc/apache/upstreams/*.conf"
+IncludeOptional "C:/fb-test/etc/apache/sites/*.conf"
+# forgebox:end main

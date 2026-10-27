@@ -7,17 +7,17 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-27T02:48:02Z
+  updated_at: 2026-10-27T04:35:28Z
   tools:
   - id: apache
     path: tools/apache.yaml
-    sha256: f4e6cc6b4516d313cb338d5b572db592faaba0a3fdb1ffbdf5fbfeaa33e1e567
+    sha256: fe80dec7a6923d3cd296327f10a01c76e3aae907a38ed72730763cc5ae079905
     categories:
     - webserver
     latest: 2.4.69
   - id: caddy
     path: tools/caddy.yaml
-    sha256: b6008769465a03951c43b4b03de763699a83d54e089af733fc746ef15bb4e86c
+    sha256: 8f2bf214a48041506335dc0e71540986d047b2772d43bd461ee3a64121b42671
     categories:
     - webserver
     latest: 2.11.7
@@ -53,7 +53,7 @@ spec:
     latest: 8.4.13
   - id: nginx
     path: tools/nginx.yaml
-    sha256: 5381e4155a4b532f7fbd496a0bca2b7ed3d38a60c2fd60b510a1293425bf8396
+    sha256: e46718dde824618345dada0c2b8e40f1724f2ce8720c87f2d5856fbeeb92e145
     categories:
     - webserver
     latest: 1.31.8
@@ -65,7 +65,7 @@ spec:
     latest: 22.23.4
   - id: php
     path: tools/php.yaml
-    sha256: b339c1e6ff670539caca427323cb9ec0a8ed19d249461260ef753263ae1fdd0f
+    sha256: 313246cb661bb200abd2a3ba555b807bbe2e96ae07f0c6ed11f50cd7e56a65c8
     categories:
     - runtime
   - id: postgresql

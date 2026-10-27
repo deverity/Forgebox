@@ -5,8 +5,7 @@
 #   registered as curated, see docs/05 section 6.)
 # verified: 2026-10-26 1.31.8 fbb1501009be34655cc238d460714cf20391b639013f4c73859813d7938783fd
 #   (single download of https://nginx.org/download/nginx-1.31.8.zip, curated, no PGP check)
-# Config templates (nginx.conf, sites, upstreams) arrive with M1-E4-T1, which adds the `render`
-# actions; until then `nginx_conf` is only declared.
+# Config files are rendered by forge-render targets, not by manifest actions (docs/03 section 3.2.1).
 apiVersion: forgebox.dev/v1
 kind: Tool
 
@@ -62,16 +61,16 @@ spec:
       regex: "nginx/(\\d+\\.\\d+\\.\\d+)"
     post_install:
       - mkdir: "{{ paths.logs }}/nginx"
-      - mkdir: "{{ paths.etc }}/nginx/{{ version }}"
+      - mkdir: "{{ paths.etc }}/nginx"
       - mkdir: "{{ paths.tmp }}/nginx"
     uninstall:
-      keep: ["{{ paths.etc }}/nginx/{{ version }}"]
+      keep: ["{{ paths.etc }}/nginx"]
     size_estimate_mb: 6
 
   config:
     files:
       - id: nginx_conf
-        path: "{{ paths.etc }}/nginx/{{ version }}/nginx.conf"
+        path: "{{ paths.etc }}/nginx/nginx.conf"
         format: conf-directive
         label: nginx.conf
         editable: true
@@ -127,7 +126,7 @@ spec:
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
         - { label: Error log, path: "{{ paths.logs }}/nginx/error.log", format: nginx-error }
-        - { label: Access log (JSON), path: "{{ paths.logs }}/nginx/access.log", format: forgebox-json }
+        - { label: Access log (JSON), path: "{{ paths.logs }}/nginx/access.json", format: forgebox-json }
       autostart: true
 
   discover:

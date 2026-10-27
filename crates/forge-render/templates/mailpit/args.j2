@@ -1,0 +1,6 @@
+--listen
+127.0.0.1:{{ instance.ports.http }}
+--smtp
+127.0.0.1:{{ instance.ports.smtp }}
+--database
+{{ instance.data_dir }}/mailpit.db

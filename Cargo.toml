@@ -58,6 +58,9 @@ base64 = "0.22.1"
 # HTTP client for downloads: rustls only (no native-tls/OpenSSL), system proxy by default.
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "system-proxy"] }
 sha2 = "0.11.1"
+# Config rendering (forge-render): embedded templates and fake certs for e2e tests.
+include_dir = "0.7.4"
+rcgen = "0.14"
 url = "2.5.8"
 # Verification and extraction (forge-provider verify/extract, ADR-0017). Pure Rust only:
 # no C toolchain (sequoia/nettle, liblzma-sys, zstd-sys, bzip2) and no non-allowed licenses.

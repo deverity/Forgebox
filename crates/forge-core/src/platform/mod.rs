@@ -32,6 +32,7 @@ use crate::error::ForgeError;
 use crate::error::Result;
 
 pub mod net_table;
+pub mod probe;
 pub mod process;
 pub mod process_stats;
 pub mod runtime_deps;
@@ -39,6 +40,7 @@ pub mod runtime_deps;
 pub mod windows;
 
 pub use net_table::{PortOwner, PortProto, PortTable, port_table};
+pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
