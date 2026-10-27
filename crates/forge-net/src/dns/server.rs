@@ -202,8 +202,21 @@ impl RequestHandler for Handler {
 struct Running {
     addr: SocketAddr,
     token: CancellationToken,
-    task: JoinHandle<()>,
+    /// `None` once a graceful stop took it to wait on it.
+    task: Option<JoinHandle<()>>,
     generation: u64,
+}
+
+impl Drop for Running {
+    /// An instance dropped without a graceful stop (panic caught by the supervisor)
+    /// must not leave the hickory tasks serving and holding the sockets: cancel them and
+    /// abort the task that owns the server (its `JoinSet` aborts the listeners).
+    fn drop(&mut self) {
+        self.token.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
 }
 
 enum Msg {
@@ -225,6 +238,9 @@ enum Msg {
         generation: u64,
         error: Option<String>,
     },
+    /// Test only: makes the actor panic (supervisor restart path).
+    #[cfg(test)]
+    Panic,
 }
 
 struct DnsActor {
@@ -314,23 +330,25 @@ impl DnsActor {
         self.running = Some(Running {
             addr,
             token,
-            task,
+            task: Some(task),
             generation,
         });
     }
 
     async fn stop(&mut self) {
-        let Some(running) = self.running.take() else {
+        let Some(mut running) = self.running.take() else {
             return;
         };
         running.token.cancel();
-        let abort = running.task.abort_handle();
-        if tokio::time::timeout(self.shared.config.stop_timeout, running.task)
-            .await
-            .is_err()
-        {
-            tracing::warn!(addr = %running.addr, "dns: server did not stop in time; aborted");
-            abort.abort();
+        if let Some(task) = running.task.take() {
+            let abort = task.abort_handle();
+            if tokio::time::timeout(self.shared.config.stop_timeout, task)
+                .await
+                .is_err()
+            {
+                tracing::warn!(addr = %running.addr, "dns: server did not stop in time; aborted");
+                abort.abort();
+            }
         }
         tracing::info!(addr = %running.addr, "dns: stopped");
     }
@@ -375,6 +393,8 @@ impl Actor for DnsActor {
             Msg::Stats { reply } => {
                 let _ = reply.send(self.stats());
             }
+            #[cfg(test)]
+            Msg::Panic => panic!("dns actor panic requested by a test"),
             Msg::Ended { generation, error } => {
                 if self
                     .running
@@ -489,5 +509,65 @@ impl DnsServer {
     /// Stops the actor for good (graceful, bounded).
     pub async fn shutdown(&self) {
         self.handle.stop().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+
+    use forge_core::actor::ActorStatus;
+    use forge_core::event::EventBus;
+
+    use super::*;
+    use crate::dns::client::resolve;
+
+    #[tokio::test]
+    async fn a_restarted_actor_listens_again_on_the_same_address() {
+        // A port usable for UDP and TCP right now (an ephemeral UDP port may fall in a TCP
+        // range Hyper-V excludes): found by a throwaway server on port 0.
+        let supervisor = ActorSupervisor::new(EventBus::new());
+        let probe = DnsServer::spawn(
+            &supervisor,
+            DnsServerConfig::on(vec![(Ipv4Addr::LOCALHOST, 0).into()]),
+            ZoneSet::new(),
+        );
+        let addr = probe.start().await.unwrap();
+        probe.shutdown().await;
+        let server = DnsServer::spawn(
+            &supervisor,
+            DnsServerConfig::on(vec![addr]),
+            ZoneSet::local(&[".test".into()]).unwrap(),
+        );
+        assert_eq!(server.start().await.unwrap(), addr);
+        server.actor.tell(Msg::Panic).ok().unwrap();
+        // The old instance is dropped (its sockets released) and the new one re-binds.
+        let mut stats = server.stats().await;
+        for _ in 0..50 {
+            if stats.as_ref().is_ok_and(|s| s.running) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            stats = server.stats().await;
+        }
+        let stats = stats.unwrap();
+        assert!(stats.running, "{stats:?}");
+        assert_eq!(
+            stats.listen,
+            Some(addr),
+            "same address: the old sockets were released"
+        );
+        assert!(matches!(server.handle.status(), ActorStatus::Running));
+        let ips = resolve(addr, "loja.test", Duration::from_secs(3))
+            .await
+            .unwrap();
+        assert!(ips.contains(&IpAddr::V4(Ipv4Addr::LOCALHOST)));
+
+        // After an explicit stop, a restart does not listen again.
+        server.stop().await.unwrap();
+        server.actor.tell(Msg::Panic).ok().unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!server.stats().await.unwrap().running);
+        server.shutdown().await;
     }
 }

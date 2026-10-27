@@ -24,6 +24,20 @@ fn zones() -> ZoneSet {
     ZoneSet::local(&[".test".into()]).unwrap()
 }
 
+/// A port usable for both UDP and TCP on `ip` right now. A bare ephemeral UDP port may
+/// fall in a TCP range Hyper-V excludes (bind fails with WSAEACCES), so a throwaway
+/// server on port 0 finds one (`bind` retries until both protocols accept the port).
+async fn free_port(ip: Ipv4Addr) -> u16 {
+    let probe = DnsServer::spawn(
+        &supervisor(),
+        DnsServerConfig::on(vec![(ip, 0).into()]),
+        ZoneSet::new(),
+    );
+    let port = probe.start().await.unwrap().port();
+    probe.shutdown().await;
+    port
+}
+
 /// A server on an ephemeral port of 127.0.0.1.
 async fn running(zones: ZoneSet) -> (DnsServer, SocketAddr) {
     let config = DnsServerConfig::on(vec![(Ipv4Addr::LOCALHOST, 0).into()]);
@@ -88,9 +102,9 @@ async fn answers_the_zone_and_nxdomain_outside() {
 
 #[tokio::test]
 async fn falls_back_to_the_next_address_when_taken() {
-    // Take a UDP port on 127.0.0.1 and keep it: the first candidate is busy.
-    let squatter = StdUdp::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let port = squatter.local_addr().unwrap().port();
+    // Take the UDP port on 127.0.0.1 and keep it: the first candidate is busy.
+    let port = free_port(FALLBACK_IP).await;
+    let _squatter = StdUdp::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
     let config = DnsServerConfig::on(vec![
         (Ipv4Addr::LOCALHOST, port).into(),
         (FALLBACK_IP, port).into(),
@@ -109,8 +123,8 @@ async fn falls_back_to_the_next_address_when_taken() {
 
 #[tokio::test]
 async fn reports_port_in_use_when_every_address_is_taken() {
-    let squatter = StdUdp::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let port = squatter.local_addr().unwrap().port();
+    let port = free_port(Ipv4Addr::LOCALHOST).await;
+    let squatter = StdUdp::bind((Ipv4Addr::LOCALHOST, port)).unwrap();
     let squatter2 = StdUdp::bind((FALLBACK_IP, port)).unwrap();
     let config = DnsServerConfig::on(vec![
         (Ipv4Addr::LOCALHOST, port).into(),
