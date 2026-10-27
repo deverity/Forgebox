@@ -47,6 +47,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "registry_loader",
         sql: include_str!("migrations/0002_registry_loader.sql"),
     },
+    Migration {
+        version: 3,
+        name: "update_history_rollback",
+        sql: include_str!("migrations/0003_update_history_rollback.sql"),
+    },
 ];
 
 /// Highest schema version this build knows.

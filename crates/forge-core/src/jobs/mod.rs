@@ -284,6 +284,20 @@ impl JobRegistry {
         table.jobs.get(&id).map(|entry| entry.info.borrow().clone())
     }
 
+    /// Handle of a retained job, to [`JobHandle::wait`] for a job started elsewhere (the
+    /// install job an engine returned by id, for instance).
+    pub fn handle(&self, id: JobId) -> Option<JobHandle> {
+        let info = {
+            let table = self.inner.table.lock();
+            table.jobs.get(&id).map(|entry| entry.info.subscribe())
+        };
+        info.map(|info| JobHandle {
+            id,
+            info,
+            registry: self.clone(),
+        })
+    }
+
     /// Snapshots of every retained job, in start order.
     pub fn list(&self) -> Vec<JobInfo> {
         let mut jobs: Vec<(u64, JobInfo)> = {

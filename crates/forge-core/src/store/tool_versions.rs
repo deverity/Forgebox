@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use jiff::Timestamp;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{ForgeError, Result};
 use crate::ids::{ToolId, VersionId};
@@ -232,6 +232,88 @@ impl<'c> ToolVersionRepo<'c> {
             .find(|row| row.canonical_name == canonical_name))
     }
 
+    /// The row with id `id`, if any.
+    pub fn get(&self, id: VersionId) -> Result<Option<ToolVersionRow>> {
+        let tool: Option<ToolId> = self
+            .conn
+            .query_row(
+                "SELECT tool_id FROM tool_versions WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(match tool {
+            Some(tool) => self.list(Some(&tool))?.into_iter().find(|r| r.id == id),
+            None => None,
+        })
+    }
+
+    /// Changes the state of a row (`removing` while its folder is deleted). `NotFound` if
+    /// the row does not exist.
+    pub fn set_state(&self, id: VersionId, state: VersionState) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE tool_versions SET state = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, state.as_str(), Timestamp::now().to_string()],
+        )?;
+        if changed == 0 {
+            return Err(ForgeError::NotFound(format!("tool version {id}")));
+        }
+        Ok(())
+    }
+
+    /// Service instances bound to the version (`instances.version_id`).
+    pub fn instance_count(&self, id: VersionId) -> Result<u64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM instances WHERE version_id = ?1",
+            [id],
+            |r| r.get(0),
+        )?;
+        Ok(u64::try_from(count).unwrap_or(0))
+    }
+
+    /// Deletes a row (its folder is the caller's business). `Conflict` while instances
+    /// still use it; `Ok(false)` if it did not exist. History rows keep their version
+    /// text (`update_history.*_version_id` become `NULL`).
+    pub fn delete(&self, id: VersionId) -> Result<bool> {
+        if self.instance_count(id)? > 0 {
+            return Err(ForgeError::Conflict(format!(
+                "tool version {id} is used by service instances"
+            )));
+        }
+        Ok(self
+            .conn
+            .execute("DELETE FROM tool_versions WHERE id = ?1", [id])?
+            > 0)
+    }
+
+    /// `tools.update_policy`: the user's override of the manifest's `update.policy`
+    /// (`manual`, `notify`, `auto-patch`, `auto-minor`, `auto`); `None` when not set or
+    /// the tool is unknown.
+    pub fn update_policy(&self, tool: &ToolId) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT update_policy FROM tools WHERE id = ?1",
+                [tool],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// Sets (or clears, with `None`) the override of [`ToolVersionRepo::update_policy`].
+    /// `NotFound` if the tool has no row yet; the column `CHECK` refuses unknown values.
+    pub fn set_update_policy(&self, tool: &ToolId, policy: Option<&str>) -> Result<()> {
+        let changed = self.conn.execute(
+            "UPDATE tools SET update_policy = ?2, updated_at = ?3 WHERE id = ?1",
+            params![tool, policy, Timestamp::now().to_string()],
+        )?;
+        if changed == 0 {
+            return Err(ForgeError::NotFound(format!("tool {tool}")));
+        }
+        Ok(())
+    }
+
     /// Versions of `tool` (all tools when `None`), ordered by tool and folder name.
     pub fn list(&self, tool: Option<&ToolId>) -> Result<Vec<ToolVersionRow>> {
         let mut stmt = self.conn.prepare(
@@ -346,5 +428,55 @@ mod tests {
         let manual = new_version("8.3.21-nts", "C:/fb/bin/php/8.3.21-nts");
         assert!(repo.register_if_absent(&manual).unwrap().is_none());
         assert_eq!(repo.list(None).unwrap()[0].source, VersionSource::Registry);
+    }
+
+    #[test]
+    fn get_state_delete_and_policy_override() {
+        let store = Store::open_in_memory().unwrap();
+        let repo = ToolVersionRepo::new(store.conn());
+        let v = new_version("8.3.21-nts", "C:/fb/bin/php/8.3.21-nts");
+        let (id, _) = repo.record_install(&v, None, None).unwrap();
+        assert_eq!(repo.get(id).unwrap().unwrap().canonical_name, "8.3.21-nts");
+        repo.set_state(id, VersionState::Removing).unwrap();
+        assert_eq!(repo.get(id).unwrap().unwrap().state, VersionState::Removing);
+        assert_eq!(
+            repo.set_state(VersionId::new(), VersionState::Broken)
+                .unwrap_err()
+                .code(),
+            "not_found"
+        );
+
+        assert_eq!(repo.update_policy(&v.tool_id).unwrap(), None);
+        repo.set_update_policy(&v.tool_id, Some("manual")).unwrap();
+        assert_eq!(
+            repo.update_policy(&v.tool_id).unwrap().as_deref(),
+            Some("manual")
+        );
+        assert!(
+            repo.set_update_policy(&v.tool_id, Some("sometimes"))
+                .is_err()
+        );
+        let ghost = ToolId::new("ghost").unwrap();
+        assert_eq!(repo.update_policy(&ghost).unwrap(), None);
+        assert_eq!(
+            repo.set_update_policy(&ghost, None).unwrap_err().code(),
+            "not_found"
+        );
+
+        // An instance pins the version.
+        let now = Timestamp::now().to_string();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO instances (id, tool_id, version_id, name, created_at, updated_at)                  VALUES ('01J00000000000000000000000', 'php', ?1, 'default', ?2, ?2)",
+                params![id, now],
+            )
+            .unwrap();
+        assert_eq!(repo.instance_count(id).unwrap(), 1);
+        assert_eq!(repo.delete(id).unwrap_err().code(), "conflict");
+        store.conn().execute("DELETE FROM instances", []).unwrap();
+        assert!(repo.delete(id).unwrap());
+        assert!(!repo.delete(id).unwrap());
+        assert!(repo.get(id).unwrap().is_none());
     }
 }

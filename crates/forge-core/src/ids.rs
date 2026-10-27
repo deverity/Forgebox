@@ -136,6 +136,11 @@ ulid_id!(
     "job id"
 );
 ulid_id!(
+    /// A row of `update_history` (an update or the rollback of one, docs/05 §4).
+    UpdateId,
+    "update id"
+);
+ulid_id!(
     /// A persisted or streamed event.
     EventId,
     "event id"
