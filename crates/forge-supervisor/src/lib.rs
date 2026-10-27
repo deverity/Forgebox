@@ -8,7 +8,7 @@
 //!   the system folder only.
 //! * [`logs`]: pipe pumps → `logs/<tool>/<instance>.out.log` (10 MiB × 5, backpressure
 //!   to the process) and a drop-oldest broadcast for clients.
-//! * [`stop`]: `stop.command` → `CTRL_BREAK` (via the `forgebox-ctrl` helper, ADR-0015)
+//! * [`stop`]: `stop.command` → `CTRL_BREAK` (via the `forgebox-ctrl` helper, ADR-0016)
 //!   → `WM_CLOSE` → `TerminateJobObject`, each step announced by `service.stopping`.
 //! * [`service`]: [`InstanceActor`] (Start/Stop/Restart/Status/SubscribeLogs) behind
 //!   [`InstanceHandle`], created by [`Supervisor::spawn_instance`]. Health probes and

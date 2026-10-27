@@ -36,6 +36,7 @@ const MIN_ON_STOP: Duration = Duration::from_millis(100);
 pub const ACTOR_EVENT_VERSION: u32 = 1;
 
 /// Payload of `actor.restarted`.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorRestartedPayload {
     /// Payload version ([`ACTOR_EVENT_VERSION`]).
@@ -46,10 +47,12 @@ pub struct ActorRestartedPayload {
     /// Restarts of this actor so far, this one included.
     pub restart_count: u32,
     /// Delay before the new instance starts.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub backoff_ms: u64,
 }
 
 /// Payload of `actor.failed`: the restart budget is exhausted and the actor stays down.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActorFailedPayload {
     /// Payload version ([`ACTOR_EVENT_VERSION`]).

@@ -4,7 +4,7 @@
 //!    `mysqladmin shutdown`…) runs in its own Job Object; a non-zero exit escalates at
 //!    once, a zero exit keeps waiting for the service to go away.
 //! 2. [`StopStrategy::CtrlBreak`]: `CTRL_BREAK_EVENT` to the service's process group,
-//!    through the `forgebox-ctrl` helper (ADR-0015). Skipped when the service was not
+//!    through the `forgebox-ctrl` helper (ADR-0016). Skipped when the service was not
 //!    started in its own process group.
 //! 3. [`StopStrategy::WmClose`]: `WM_CLOSE` to the top-level windows of the instance's
 //!    processes; only when they have windows.

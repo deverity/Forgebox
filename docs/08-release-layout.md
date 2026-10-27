@@ -23,7 +23,7 @@ C:\Forgebox\
 ├── forgeboxd.exe                 # daemon (motor). ~7 MB
 ├── forge.exe                     # CLI. ~4 MB
 ├── forgebox-helper.exe           # helper elevado (manifest requireAdministrator; só roda sob demanda)
-├── forgebox-ctrl.exe             # auxiliar interno do daemon, sem elevação: entrega CTRL_BREAK a um serviço (ADR-0015)
+├── forgebox-ctrl.exe             # auxiliar interno do daemon, sem elevação: entrega CTRL_BREAK a um serviço (ADR-0016)
 ├── forge-mcp.exe                 # servidor MCP (opcional)
 ├── uninstall.exe                 # NSIS
 ├── portable.flag                 # presente só no portátil: força tudo relativo e sem registro/PATH

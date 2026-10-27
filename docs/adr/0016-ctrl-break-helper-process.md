@@ -1,4 +1,4 @@
-# ADR-0015 — `CTRL_BREAK` entregue por processo auxiliar (`forgebox-ctrl.exe`)
+# ADR-0016 — `CTRL_BREAK` entregue por processo auxiliar (`forgebox-ctrl.exe`)
 
 **Status:** aceito · **Data:** 2026-10-26
 

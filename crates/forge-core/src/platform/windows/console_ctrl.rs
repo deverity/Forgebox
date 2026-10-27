@@ -1,4 +1,4 @@
-//! `CTRL_BREAK` delivery to a supervised process (docs/03 §1.3 step 2, ADR-0015).
+//! `CTRL_BREAK` delivery to a supervised process (docs/03 §1.3 step 2, ADR-0016).
 //!
 //! `GenerateConsoleCtrlEvent` only reaches processes attached to the **caller's**
 //! console. Every service runs with its own windowless console (`CREATE_NO_WINDOW`), so

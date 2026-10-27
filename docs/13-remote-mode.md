@@ -18,6 +18,8 @@ Isso é viável porque, desde a v1, GUI e CLI já são **clientes finos** da API
 | Download de tools é feito **pelo daemon remoto**, nunca pelo cliente | O servidor baixa de windows.php.net/apt/github diretamente |
 | Ações que abrem coisas no SO (`open in editor`, `browse`) são marcadas `local_only` ou traduzidas (abrir `https://loja.test` do remoto = abrir `https://loja.<remote>.test` ou túnel) | Evita botões quebrados na GUI remota |
 
+Implementado em M1-E5-T1 ([ADR-0015](adr/0015-ipc-protocol.md)): `forge_ipc::transport::Transport` (named pipe, unix socket mínimo, em memória; `WebSocketTls` é placeholder até M6), `request_id` obrigatório em todo request com cache de idempotência no servidor, papéis e `local_only` na tabela `METHODS` (conexões não locais recebem `forbidden` nos métodos `local_only`), streams `events|logs|metrics.subscribe` com `seq`, fila drop-oldest + `*.lagged` e `resume_from`, e `fs.read|write|tail|list` restritos a `etc/`, `logs/`, `www/`. O cliente reconecta e reassina sozinho a partir do último `seq` recebido (ou, se nada chegou ainda, do `last_seq` devolvido pelo subscribe), sem perder nem repetir eventos.
+
 ## 3. Arquitetura do modo remoto
 
 ```

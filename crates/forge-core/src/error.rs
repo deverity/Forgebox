@@ -80,6 +80,17 @@ pub enum ForgeError {
     /// panicked. Never caused by user input; always worth a bug report.
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// The API caller is not authenticated: missing `system.hello`, wrong token
+    /// (docs/11 §4).
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+
+    /// The API caller is authenticated but not allowed to do this: its role is below the
+    /// method's `min_role`, the method is `local_only` on a remote connection, or a path
+    /// is outside the `fs.*` scope (ADR-0009, rules 5-7).
+    #[error("forbidden: {0}")]
+    Forbidden(String),
 }
 
 fn owner_suffix(owner: Option<&str>) -> String {
@@ -102,7 +113,23 @@ pub const ERROR_CODES: &[&str] = &[
     "not_implemented",
     "cancelled",
     "internal",
+    "unauthorized",
+    "forbidden",
 ];
+
+/// CLI exit code for a stable error code (docs/09-cli.md). Unknown codes (sent by a newer
+/// daemon) map to `1`. Clients that only see the code on the wire (`forge` talking to the
+/// API) use this instead of [`ForgeError::exit_code`]; both always agree.
+pub fn exit_code_for(code: &str) -> i32 {
+    match code {
+        "config_invalid" | "invalid_input" => 2,
+        "not_found" => 3,
+        "conflict" | "port_in_use" => 4,
+        "needs_elevation" => 5,
+        "verification_failed" => 6,
+        _ => 1,
+    }
+}
 
 impl ForgeError {
     /// Stable machine-readable code, used by the API and by `forge --json`.
@@ -122,26 +149,14 @@ impl ForgeError {
             Self::NotImplemented(_) => "not_implemented",
             Self::Cancelled(_) => "cancelled",
             Self::Internal(_) => "internal",
+            Self::Unauthorized(_) => "unauthorized",
+            Self::Forbidden(_) => "forbidden",
         }
     }
 
-    /// Process exit code for the CLI (docs/09-cli.md).
+    /// Process exit code for the CLI (docs/09-cli.md), see [`exit_code_for`].
     pub fn exit_code(&self) -> i32 {
-        match self {
-            Self::ConfigInvalid(_) | Self::InvalidInput(_) => 2,
-            Self::NotFound(_) => 3,
-            Self::Conflict(_) | Self::PortInUse { .. } => 4,
-            Self::NeedsElevation(_) => 5,
-            Self::VerificationFailed(_) => 6,
-            Self::Io { .. }
-            | Self::Db(_)
-            | Self::Schema(_)
-            | Self::UnsupportedPlatform(_)
-            | Self::Timeout { .. }
-            | Self::NotImplemented(_)
-            | Self::Cancelled(_)
-            | Self::Internal(_) => 1,
-        }
+        exit_code_for(self.code())
     }
 
     /// I/O error with context.
@@ -206,6 +221,8 @@ mod tests {
             ForgeError::NotImplemented("x".into()),
             ForgeError::Cancelled("x".into()),
             ForgeError::Internal("x".into()),
+            ForgeError::Unauthorized("x".into()),
+            ForgeError::Forbidden("x".into()),
         ]
     }
 
@@ -232,7 +249,9 @@ mod tests {
                 _ => 1,
             };
             assert_eq!(err.exit_code(), expected, "{}", err.code());
+            assert_eq!(exit_code_for(err.code()), expected, "{}", err.code());
         }
+        assert_eq!(exit_code_for("code_from_a_newer_daemon"), 1);
     }
 
     #[test]

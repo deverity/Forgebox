@@ -1809,7 +1809,10 @@ impl Checker<'_> {
         self.registry_entries("stacks", &m.spec.stacks);
         if let Some(signature) = &m.spec.signature {
             self.not_empty("spec.signature.key_id", &signature.key_id);
-            self.not_empty("spec.signature.sig", &signature.sig);
+            // Only the unsigned development index (`key_id: dev`) may leave `sig` empty.
+            if signature.key_id != crate::schema::registry::DEV_KEY_ID {
+                self.not_empty("spec.signature.sig", &signature.sig);
+            }
         }
     }
 }

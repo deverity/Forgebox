@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../schema/stack.v1.json
+# The dev server (`npm run dev`, HMR over WebSocket) and the reverse proxy site are declared by
+# the project (`kind: Project`, `processes.web` with `proxy: true`, docs/04 section 4); a Stack
+# only prepares the tools and creates the project.
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata:
+  id: nextjs
+  name: Next.js
+  summary: "Node 22 + Nginx como proxy reverso"
+  description: |
+    Projeto Next.js servido por proxy reverso (Nginx) com HTTPS local e WebSocket para o HMR.
+  tags: [node, nextjs, react, proxy]
+  icon: nextjs.svg
+  homepage: https://nextjs.org
+spec:
+  tools:
+    - { id: nodejs, series: "22" }
+    - { id: nginx }
+  site:
+    create_with: "npx create-next-app@latest {{ dir }} --ts --eslint --app --use-npm --yes"
+    secure: true

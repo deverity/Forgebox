@@ -13,7 +13,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
   | `firewall.add {name, port, exe}` / `remove` | exe dentro de `<root>/bin/`, nome prefixado `Forgebox-` |
   | `defender.exclude {path}` / `remove` | path = raiz do Forgebox |
   | `vcredist.install {path, sha256}` | arquivo baixado pelo daemon, hash conferido, Authenticode Microsoft verificado |
-- **`forgebox-ctrl.exe`** é um auxiliar interno do daemon, **sem** elevação e sem rede: só se anexa ao console de um serviço do próprio usuário e gera `CTRL_BREAK` para o grupo dele (`forgebox-ctrl break <pid>`; [ADR-0015](adr/0015-ctrl-break-helper-process.md)).
+- **`forgebox-ctrl.exe`** é um auxiliar interno do daemon, **sem** elevação e sem rede: só se anexa ao console de um serviço do próprio usuário e gera `CTRL_BREAK` para o grupo dele (`forgebox-ctrl break <pid>`; [ADR-0016](adr/0016-ctrl-break-helper-process.md)).
 - O helper é invocado por processo (ShellExecute `runas`, um UAC por operação ou por lote agrupado no onboarding). Modo opcional "serviço helper" (como HerdHelper) para quem não quer UAC: serviço Windows ouvindo em named pipe com ACL restrita ao SID do usuário instalador, mesma allowlist. Padrão: **sem serviço**.
 - Tudo que o helper faz vai para `logs/helper.log` e para o histórico de eventos.
 
@@ -31,7 +31,10 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 - Rotação em 1 clique; thumbprint salvo para remoção limpa na desinstalação.
 
 ## 4. API local (IPC)
-- Named pipe `\\.\pipe\forgebox` com DACL = usuário atual. WebSocket (`127.0.0.1:<porta>`) desligado por padrão; quando ligado exige token de `state/ipc.token` (ACL do usuário) em header. Sem CORS para origens não-locais; a GUI Tauri usa o pipe.
+- Named pipe `\\.\pipe\forgebox` (raiz padrão; outras raízes usam `\\.\pipe\forgebox-<hash da raiz>`) com descritor `O:<SID>D:P(A;;GA;;;<SID>)`: dono e único acesso = usuário atual, `PIPE_REJECT_REMOTE_CLIENTS` e primeira instância exclusiva (`FILE_FLAG_FIRST_PIPE_INSTANCE`: um segundo daemon ou um posseiro não compartilha o nome). O cliente confere que o pipe pertence ao usuário atual antes de enviar qualquer coisa (`forge_core::platform::windows::pipe_security`).
+- Toda conexão começa com `system.hello {token, client, api_version}`; o token (256 bits, `state/ipc.token`) é criado pelo daemon: arquivo vazio → DACL protegida só do usuário (`FileAcl`) → segredo escrito → rename. No pipe é defesa em profundidade; token errado fecha a conexão. Conexão local = papel `admin`. Detalhes em [ADR-0015](adr/0015-ipc-protocol.md).
+- WebSocket (`127.0.0.1:<porta>`) desligado por padrão; quando ligado exige o mesmo token em header. Sem CORS para origens não-locais; a GUI Tauri usa o pipe.
+- `fs.*` da API só alcança `etc/`, `logs/` e `www/` (validação de sintaxe + prefixo canônico; links que escapam são recusados com `forbidden`).
 - MCP server (`forge mcp serve`) via stdio apenas; ferramentas destrutivas (`remove`, `drop`) exigem `confirm: true` explícito no payload.
 
 ## 5. Serviços expostos

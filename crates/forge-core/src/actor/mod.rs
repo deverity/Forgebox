@@ -33,6 +33,10 @@
 //! | 10 | `actor.children` ([`ActorSupervisor`]) | registering or listing children; publishes nothing |
 //! | 10 | `jobs.table` ([`crate::jobs::JobRegistry`]) | updating a job; publishes `job.*`, so it takes `event_bus.seq` inside |
 //! | 10 | `store.readers` ([`crate::store::StoreReader`]) | checking a read connection in or out; never runs a query |
+//! | 10 | `ipc.outbox` (`forge_ipc` server connection) | queueing a response or stream item, or taking a batch for the writer; publishes nothing |
+//! | 10 | `ipc.idempotency` (`forge_ipc` server) | looking up or recording a `request_id`; never runs a handler |
+//! | 10 | `ipc.connections` (`forge_ipc` server) | registering, listing or cancelling connections |
+//! | 10 | `ipc.client` (`forge_ipc` client: connection slot, pending calls, routes, subscription queues) | map/queue operations only; each is a separate mutex, never nested |
 //! | 200 | `event_bus.seq` ([`crate::event::EventBus`]) | numbering an event and handing it to the broadcast channel |
 //!
 //! Rules: no lock is ever held across `.await` (clippy `await_holding_lock` and
@@ -180,7 +184,7 @@ impl<A: Actor> fmt::Debug for Context<A> {
 }
 
 /// Human readable message of a caught panic payload.
-pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> String {
+pub fn panic_message(payload: &(dyn Any + Send)) -> String {
     if let Some(text) = payload.downcast_ref::<&'static str>() {
         (*text).to_owned()
     } else if let Some(text) = payload.downcast_ref::<String>() {

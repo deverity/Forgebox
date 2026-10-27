@@ -28,7 +28,7 @@ use tokio::io::AsyncRead;
 use crate::error::{ForgeError, Result};
 
 /// File name (without extension) of the helper that delivers `CTRL_BREAK` to a
-/// supervised process' console (docs/03 §1.3, ADR-0015). Shipped next to `forgeboxd`.
+/// supervised process' console (docs/03 §1.3, ADR-0016). Shipped next to `forgeboxd`.
 pub const CTRL_BREAK_HELPER_NAME: &str = "forgebox-ctrl";
 
 /// How long [`ProcessGroup::terminate_all`] waits for the killed processes to be gone.
