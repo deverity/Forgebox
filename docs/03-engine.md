@@ -109,12 +109,12 @@ Sites com `runtime: frankenphp` não usam pool: o Forgebox sobe um `frankenphp.e
 ### 3.2 Alvos por tool (exemplos)
 | Tool | Arquivos renderizados | Reload |
 |---|---|---|
-| Apache | `etc/apache/<ver>/httpd.conf` (include fixo), `etc/apache/conf.d/*.conf`, `etc/apache/sites/<host>.conf`, `etc/apache/upstreams/php_<ver>.conf` | `httpd -k graceful` |
-| Nginx | `etc/nginx/<ver>/nginx.conf`, `etc/nginx/conf.d/*.conf`, `etc/nginx/sites/<host>.conf`, `etc/nginx/upstreams/php_<ver>.conf` | `nginx -s reload` |
+| Apache | `etc/apache/httpd.conf` (include fixo; a versão exata entra por `tool.dir`), `etc/apache/conf.d/*.conf`, `etc/apache/sites/<host>.conf`, `etc/apache/upstreams/php_<ver>.conf` | `httpd -k graceful` |
+| Nginx | `etc/nginx/nginx.conf`, `etc/nginx/conf.d/*.conf`, `etc/nginx/sites/<host>.conf`, `etc/nginx/upstreams/php_<ver>.conf` | `nginx -s reload` |
 | Caddy | `etc/caddy/Caddyfile` (import sites/*) | `caddy reload` |
 | PHP | `etc/php/<major.minor>/php.ini`, `conf.d/10-forgebox.ini`, `conf.d/20-xdebug.ini` | recycle do pool |
 | MySQL/MariaDB | `etc/mysql/<instance>/my.ini` | restart |
-| PostgreSQL | `etc/postgresql/<instance>/postgresql.conf`, `pg_hba.conf` | `pg_ctl reload` |
+| PostgreSQL | `etc/postgresql/<instance>/postgresql.conf`, `pg_hba.conf`, `pg_ident.conf` | `pg_ctl reload` |
 | Mailpit | argumentos de linha de comando | restart |
 
 ### 3.2.1 Implementação (M1-E4-T1)
@@ -128,7 +128,7 @@ Sites com `runtime: frankenphp` não usam pool: o Forgebox sobe um `frankenphp.e
 - `StaticLocation.cache_control` substitui o `expires` do rascunho (uniforme nos três servidores).
 
 ### 3.3 Contexto disponível nos templates
-`paths.*` (root, bin, etc, data, logs, tmp, www, certs), `tool`, `version`, `instance` (name, ports, data_dir, settings), `sites[]` (host, root, php_pool, ssl, aliases, env), `pools[]`, `prefs` (document_root, tld...). Filtros: `win_path`, `posix_path`, `quote`, `indent`, `to_yaml`.
+`paths.*` (root, bin, etc, data, logs, tmp, www, certs), `tool`, `version`, `instance` (name, ports, data_dir, settings), `sites[]` (cada um um `VhostModel`: `kind` php/static/proxy, `hosts`, `root`, `index`, `php_upstream`, `try_files`, `static_locations`, `deny`, `headers`, `client_max_body`, `ssl`, `http_redirect`, `proxy`, `env`, `extra`, `fallback_resource` derivado), `pools[]` (`UpstreamModel`), `php` (`PhpModel`: série, `zend_extensions`, extensões, xdebug), `prefs` (portas http/https/internal, document_root, tld...). Nos templates por site, `site` é o `VhostModel` atual e `upstream` o pool atual. Valores de `env`/`headers` não podem conter `$` nem `%{` (interpolados por nginx/Apache): `VhostModel::normalized` os rejeita com `invalid_input`. Filtros: `win_path`, `posix_path`, `quote`, `indent`, `to_yaml`.
 
 ## 4. Portas
 

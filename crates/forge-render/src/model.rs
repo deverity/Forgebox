@@ -181,6 +181,18 @@ fn check_token(field: &str, value: &str, extra_forbidden: &str) -> Result<()> {
     Ok(())
 }
 
+/// Like [`check_text`] for values that nginx/Apache would interpolate: `$name` (nginx
+/// variables, Apache back-references) and `%{...}` (Apache expressions) are rejected.
+fn check_literal(field: &str, value: &str) -> Result<()> {
+    check_text(field, value)?;
+    if value.contains('$') || value.contains("%{") {
+        return Err(invalid(format!(
+            "invalid {field}: '$' and '%{{' are interpolated by the web server"
+        )));
+    }
+    Ok(())
+}
+
 fn check_text(field: &str, value: &str) -> Result<()> {
     if value.is_empty() || has_control(value) || value.contains('"') {
         return Err(invalid(format!("invalid {field}: '{value}'")));
@@ -289,12 +301,12 @@ impl VhostModel {
         for l in &m.static_locations {
             check_token("static location pattern", &l.pattern, "")?;
             if let Some(cc) = &l.cache_control {
-                check_text("cache_control", cc)?;
+                check_literal("cache_control", cc)?;
             }
         }
         for (k, v) in &m.headers {
             check_token("header name", k, ":()<>@,\\[]?=")?;
-            check_text("header value", v)?;
+            check_literal("header value", v)?;
         }
         for (k, v) in &m.env {
             let ok = k
@@ -305,7 +317,7 @@ impl VhostModel {
             if !ok {
                 return Err(invalid(format!("invalid env name: '{k}'")));
             }
-            check_text("env value", v)?;
+            check_literal("env value", v)?;
         }
         check_token("client_max_body", &m.client_max_body, "")?;
         if let Some(ssl) = &mut m.ssl {
@@ -614,6 +626,18 @@ mod tests {
         .unwrap();
         assert_eq!(m.try_files.last().unwrap(), "=404");
         assert_eq!(m.fallback_resource, None);
+    }
+
+    #[test]
+    fn rejects_interpolated_env_and_header_values() {
+        for bad in ["base64:ab$cd", "x%{HTTP_HOST}e", "$1"] {
+            let mut m = php_site();
+            m.env.insert("APP_KEY".into(), bad.into());
+            assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+            let mut m = php_site();
+            m.headers.insert("X-Test".into(), bad.into());
+            assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+        }
     }
 
     #[test]

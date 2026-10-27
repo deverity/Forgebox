@@ -35,12 +35,16 @@ Driver = detecção + regras (root, rewrites, variáveis). Implementados em Rust
 
 ```
 VhostModel {
+  kind: php | static | proxy,
   hosts, root, index: [index.php, index.html],
   php_upstream: "php_8_3" | None,
   try_files: ["$uri", "$uri/", "/index.php?$query_string"],
   static_locations: [...], deny: ["/\\.ht", "/.env"],
   headers, client_max_body: "256M",
-  ssl: { cert, key } | None,
+  ssl: { cert, key } | None, http_redirect: bool,   # http→https
+  proxy: { upstream, websocket, start_on_visit, read_timeout_secs } | None,   # kind: proxy
+  env: { NOME: valor },                  # fastcgi_param/SetEnv; sem `$` nem `%{`
+  fallback_resource,                     # derivado do último try_files (Apache)
   extra: { apache: "...", nginx: "...", caddy: "..." }   # escape hatch por servidor (do usuário)
 }
 ```

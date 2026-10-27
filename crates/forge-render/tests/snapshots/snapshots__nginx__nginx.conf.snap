@@ -2,7 +2,7 @@
 source: crates/forge-render/tests/snapshots.rs
 expression: content
 ---
-# forgebox:begin main (hash=15c74bc3dac0baf6)
+# forgebox:begin main (hash=df8d752a991d379d)
 worker_processes 1;
 error_log "C:/fb-test/logs/nginx/error.log";
 pid "C:/fb-test/tmp/nginx/nginx.pid";
@@ -38,6 +38,13 @@ http {
         listen 127.0.0.1:80 default_server;
         server_name _;
         return 404;
+    }
+
+    # Unknown SNI/Host on TLS: refuse the handshake instead of serving the first TLS site.
+    server {
+        listen 127.0.0.1:443 ssl default_server;
+        server_name _;
+        ssl_reject_handshake on;
     }
 
     include conf.d/*.conf;

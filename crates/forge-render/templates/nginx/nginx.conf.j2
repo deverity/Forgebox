@@ -35,6 +35,13 @@ http {
         return 404;
     }
 
+    # Unknown SNI/Host on TLS: refuse the handshake instead of serving the first TLS site.
+    server {
+        listen 127.0.0.1:{{ prefs.https_port }} ssl default_server;
+        server_name _;
+        ssl_reject_handshake on;
+    }
+
     include conf.d/*.conf;
     include upstreams/*.conf;
     include sites/*.conf;

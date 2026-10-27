@@ -100,7 +100,9 @@ fn nginx_log_format_and_site_param_follow_docs() {
     let php_loc = &loja.body[loja.body.find(r"location ~ \.php$").unwrap()..];
     assert!(php_loc.contains("try_files $fastcgi_script_name =404;"));
     assert!(php_loc.contains(r"fastcgi_split_path_info ^(.+?\.php)(/.*)$;"));
-    assert!(php_loc.contains("fastcgi_param PATH_INFO $fastcgi_path_info;"));
+    assert!(php_loc.contains("set $path_info $fastcgi_path_info;"));
+    assert!(php_loc.contains("fastcgi_param PATH_INFO $path_info;"));
+    assert!(main.contains("ssl_reject_handshake on;"));
     assert!(
         loja.body
             .contains("server_name loja.test *.loja.test admin.loja.test;")
@@ -214,6 +216,7 @@ fn databases_and_mail() {
     assert!(hba.body.contains("127.0.0.1/32  trust"));
     assert!(hba.body.contains("::1/128       trust"));
     assert_eq!(hba.body.matches("trust").count(), 3); // two rules + the comment
+    assert!(pg.iter().any(|f| f.path.ends_with("pg_ident.conf")));
     snapshot_all("mailpit", &common::mailpit_context(&r));
 }
 

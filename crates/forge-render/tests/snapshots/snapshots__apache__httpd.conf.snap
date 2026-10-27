@@ -2,7 +2,7 @@
 source: crates/forge-render/tests/snapshots.rs
 expression: content
 ---
-# forgebox:begin main (hash=a81ca6c16095659a)
+# forgebox:begin main (hash=5512ee67f30689c0)
 ServerRoot "C:/fb-test/bin/apache/2.4.69"
 ServerName 127.0.0.1
 ServerTokens Prod
@@ -50,6 +50,12 @@ LogLevel warn
 # Structured access log consumed by forge-metrics (docs/14 section 2). rt_us is in microseconds.
 LogFormat "{\"t\":\"%{msec}t\",\"host\":\"%{Host}i\",\"s\":%s,\"rt_us\":%D,\"b\":%B,\"m\":\"%m\",\"u\":\"%U\",\"up\":\"%{BALANCER_WORKER_NAME}e\"}" forgebox_json
 CustomLog "C:/fb-test/logs/apache/access.json" forgebox_json
+
+# Unknown hosts never fall into a real site (first VirtualHost of a port is its default).
+<VirtualHost 127.0.0.1:80>
+    ServerName _default_
+    RedirectMatch 404 ^
+</VirtualHost>
 
 IncludeOptional "C:/fb-test/etc/apache/conf.d/*.conf"
 IncludeOptional "C:/fb-test/etc/apache/upstreams/*.conf"

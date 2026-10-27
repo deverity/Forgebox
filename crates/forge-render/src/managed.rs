@@ -10,7 +10,7 @@
 //! the `begin` line is the hash of the body Forgebox wrote last, so an edit made by the
 //! user inside the block is detectable ([`crate::drift`]).
 //!
-//! Everything here is pure text manipulation except [`write_file`], which is blocking
+//! Everything here is pure text manipulation except [`write_block_file`], which is blocking
 //! file I/O: async callers use `spawn_blocking`.
 
 use std::fmt::Write as _;

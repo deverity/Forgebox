@@ -41,10 +41,12 @@ server {
         # Path-info guard: php-cgi has no security.limit_extensions, so never let it
         # walk back from /x.jpg/y.php to an existing non-PHP file.
         fastcgi_split_path_info ^(.+?\.php)(/.*)$;
+        # try_files resets $fastcgi_path_info (nginx trac #321): keep it in a variable first.
+        set $path_info $fastcgi_path_info;
         try_files $fastcgi_script_name =404;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        fastcgi_param PATH_INFO $fastcgi_path_info;
+        fastcgi_param PATH_INFO $path_info;
         fastcgi_param FORGEBOX_SITE loja.test;
         fastcgi_param APP_ENV "local";
         fastcgi_pass php_8_3;

@@ -46,6 +46,12 @@ LogLevel warn
 LogFormat "{\"t\":\"%{msec}t\",\"host\":\"%{Host}i\",\"s\":%s,\"rt_us\":%D,\"b\":%B,\"m\":\"%m\",\"u\":\"%U\",\"up\":\"%{BALANCER_WORKER_NAME}e\"}" forgebox_json
 CustomLog "{{ paths.logs }}/apache/access.json" forgebox_json
 
+# Unknown hosts never fall into a real site (first VirtualHost of a port is its default).
+<VirtualHost 127.0.0.1:{{ prefs.http_port }}>
+    ServerName _default_
+    RedirectMatch 404 ^
+</VirtualHost>
+
 IncludeOptional "{{ paths.etc }}/apache/conf.d/*.conf"
 IncludeOptional "{{ paths.etc }}/apache/upstreams/*.conf"
 IncludeOptional "{{ paths.etc }}/apache/sites/*.conf"

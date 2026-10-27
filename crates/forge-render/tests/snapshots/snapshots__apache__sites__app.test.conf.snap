@@ -16,7 +16,11 @@ expression: content
     ProxyPreserveHost On
     RequestHeader set X-Forwarded-Proto https
     RequestHeader set FORGEBOX_SITE "app.test"
-    ErrorDocument 502 "http://127.0.0.1:19000/_forgebox/starting?host=app.test"
+    # mod_proxy answers 503 when the backend refuses the connection (AH00957), 502 on bad replies.
+    # A local path keeps the error document an internal redirect (an absolute URL would redirect the client).
+    ProxyPass "/_forgebox/starting" "http://127.0.0.1:19000/_forgebox/starting"
+    ErrorDocument 502 "/_forgebox/starting?host=app.test"
+    ErrorDocument 503 "/_forgebox/starting?host=app.test"
     ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket timeout=3600
     ProxyPassReverse "/" "http://127.0.0.1:3000/"
 </VirtualHost>

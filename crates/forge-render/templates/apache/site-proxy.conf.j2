@@ -28,7 +28,11 @@
     RequestHeader set X-Forwarded-Proto {{ 'https' if s.ssl else 'http' }}
     RequestHeader set FORGEBOX_SITE {{ primary | quote }}
 {% if p.start_on_visit %}
-    ErrorDocument 502 "http://127.0.0.1:{{ prefs.internal_port }}/_forgebox/starting?host={{ primary }}"
+    # mod_proxy answers 503 when the backend refuses the connection (AH00957), 502 on bad replies.
+    # A local path keeps the error document an internal redirect (an absolute URL would redirect the client).
+    ProxyPass "/_forgebox/starting" "http://127.0.0.1:{{ prefs.internal_port }}/_forgebox/starting"
+    ErrorDocument 502 "/_forgebox/starting?host={{ primary }}"
+    ErrorDocument 503 "/_forgebox/starting?host={{ primary }}"
 {% endif %}
     ProxyPass "/" "{{ p.upstream }}/"{% if p.websocket %} upgrade=websocket{% endif %} timeout={{ p.read_timeout_secs }}
     ProxyPassReverse "/" "{{ p.upstream }}/"

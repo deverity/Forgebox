@@ -4,9 +4,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::version::{Constraint, Version};
 use forge_core::Timestamp;
 use forge_core::ids::ToolId;
-use crate::version::{Constraint, Version};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 

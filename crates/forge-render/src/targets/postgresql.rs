@@ -26,5 +26,13 @@ pub static TARGET: Target = Target {
             style: CommentStyle::Hash,
             when: None,
         },
+        FileSpec {
+            scope: Scope::Global,
+            template: "postgresql/pg_ident.conf.j2",
+            out: "postgresql/{instance}/pg_ident.conf",
+            ownership: Ownership::Generated,
+            style: CommentStyle::Hash,
+            when: None,
+        },
     ],
 };
