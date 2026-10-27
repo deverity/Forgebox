@@ -194,6 +194,15 @@ fn every_failure_reason_decodes_as_dto() {
         FailureReason::ConfigInvalid {
             stderr: "AH00526: Syntax error on line 3".into(),
         },
+        FailureReason::MissingRuntime {
+            flavor: "vs17".into(),
+            download_url: "https://aka.ms/vc14/vc_redist.x64.exe".into(),
+            installed: None,
+        },
+        FailureReason::DependencyNotRunning {
+            dependency: "mysql/default".into(),
+            state: "failed".into(),
+        },
         FailureReason::Permission {
             message: "access denied".into(),
         },
@@ -220,7 +229,7 @@ fn every_failure_reason_decodes_as_dto() {
         assert_eq!(serde_json::to_value(&dto).unwrap(), json);
         kinds.insert(reason.kind());
     }
-    assert_eq!(kinds.len(), 8, "one sample per variant");
+    assert_eq!(kinds.len(), 10, "one sample per variant");
 }
 
 /// `service.metrics` decodes as the API payload, nothing lost.

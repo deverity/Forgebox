@@ -15,9 +15,14 @@
 //! trigger that is not allowed is an error, never a panic, and every accepted transition
 //! publishes its `service.*` event ([`crate::events`]). Summary:
 //!
-//! * `Start` → `Starting`; the process is created; without a [`HealthSpec`] it is
+//! * `Start` → `Starting`; the pre-checks run first ([`crate::precheck`]: runtime deps,
+//!   dependencies, ports, configuration; a failure ends in `Failed(reason)` before any
+//!   process exists); then the process is created; without a [`HealthSpec`] it is
 //!   `Running` at once, with one it is `Running` after `success_threshold` passing
 //!   probes. `Start` is answered with the pid when the instance is `Running`.
+//! * `Restart` of a running instance validates first (runtime deps, dependencies,
+//!   configuration): when that fails the restart is refused and the instance keeps
+//!   running (a broken configuration never takes down a working service).
 //! * Past `start_timeout` the instance is stopped with the cascade and ends
 //!   `Failed(HealthTimeout)`; a process that exits while `Starting` ends
 //!   `Failed(ExitedDuringStart | MissingDll | Permission)`.
@@ -44,6 +49,7 @@
 
 pub mod state;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -57,8 +63,10 @@ use forge_core::event::EventBus;
 use forge_core::ids::{InstanceId, ToolId};
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::{
-    ProcessControl, ProcessGroup, ProcessStats, SpawnedProcess, TERMINATE_TIMEOUT, process_stats,
+    PortTable, ProcessControl, ProcessGroup, ProcessStats, RuntimeDeps, SpawnedProcess,
+    TERMINATE_TIMEOUT, port_table, process_stats, runtime_deps,
 };
+use forge_core::runtime::spawn_blocking_timeout;
 use forge_core::{ForgeError, Result, Timestamp};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -74,6 +82,9 @@ use crate::job::JobTree;
 use crate::logs::{LogHub, LogOptions, LogSubscription};
 use crate::metrics::{InstanceMetrics, MetricsOptions, SamplerOutput, sample_run};
 use crate::policy::{Failure, RestartDecision, RestartPolicy, RestartTracker};
+use crate::precheck::{
+    self, DependencyLookup, NoDependencies, PrecheckEnv, PrecheckScope, PrecheckSpec,
+};
 use crate::process::SpawnSpec;
 use crate::stop::{
     Cascade, ExitInfo, StepObserver, StopPlan, StopReport, StopStrategy, TERMINATED_EXIT_CODE,
@@ -97,11 +108,14 @@ pub struct InstanceSpec {
     pub health: Option<HealthSpec>,
     pub restart: RestartPolicy,
     pub metrics: MetricsOptions,
+    /// Checked before each run creates its process (docs/03 §1.5); empty by default.
+    pub precheck: PrecheckSpec,
 }
 
 impl InstanceSpec {
     /// Spec with the default stop plan, live-only logs (no file), no health check, the
-    /// default restart policy (`on-failure`, 3 in 60 s) and metrics every 2 s.
+    /// default restart policy (`on-failure`, 3 in 60 s), metrics every 2 s and no
+    /// pre-checks.
     pub fn new(id: InstanceId, tool: ToolId, name: impl Into<String>, spawn: SpawnSpec) -> Self {
         Self {
             id,
@@ -113,6 +127,7 @@ impl InstanceSpec {
             health: None,
             restart: RestartPolicy::default(),
             metrics: MetricsOptions::default(),
+            precheck: PrecheckSpec::default(),
         }
     }
 
@@ -131,6 +146,12 @@ impl InstanceSpec {
     /// Sets the restart policy.
     pub fn with_restart(mut self, restart: RestartPolicy) -> Self {
         self.restart = restart;
+        self
+    }
+
+    /// Sets the pre-checks.
+    pub fn with_precheck(mut self, precheck: PrecheckSpec) -> Self {
+        self.precheck = precheck;
         self
     }
 }
@@ -229,6 +250,16 @@ enum Notice {
     RestartDue {
         generation: u64,
     },
+    /// The pre-checks of `run` ended (before its process is created).
+    Prechecked {
+        run: u64,
+        result: std::result::Result<(), FailureReason>,
+    },
+    /// The validation before restarting `run` (still running) ended.
+    RestartValidated {
+        run: u64,
+        result: std::result::Result<(), FailureReason>,
+    },
 }
 
 /// State shared by every incarnation of an instance actor.
@@ -242,6 +273,7 @@ struct Shared {
     logs: LogHub,
     metrics: Arc<watch::Sender<Option<InstanceMetrics>>>,
     runs: AtomicU64,
+    precheck: PrecheckEnv,
 }
 
 /// What follows the stop in progress.
@@ -292,6 +324,10 @@ pub struct InstanceActor {
     /// Identifies the scheduled automatic restart (older timers are ignored).
     restart_generation: u64,
     next_restart_at: Option<Timestamp>,
+    /// The pre-checks of the current run (`Starting`, no process yet).
+    prechecks: Option<TaskGuard>,
+    /// The validation of a restart requested while `Running`.
+    validation: Option<TaskGuard>,
 }
 
 /// Publishes `payload` under its kind (`service.<state>`).
@@ -523,6 +559,40 @@ async fn run_process(
     deliver(&me, Notice::Exited { run, info }).await;
 }
 
+/// Budget of listing the processes of the instance's job for the port pre-check.
+const OWN_PIDS_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Pre-checks of `run` (scope `Start`) or validation of its restart (scope `Restart`);
+/// reports the outcome to the actor. Aborted when the actor drops its guard.
+async fn precheck_task(
+    shared: Arc<Shared>,
+    me: WeakActorRef<InstanceMsg>,
+    run: u64,
+    scope: PrecheckScope,
+) {
+    let own_pids: BTreeSet<u32> = match scope {
+        PrecheckScope::Restart => BTreeSet::new(),
+        PrecheckScope::Start => {
+            let job = Arc::clone(&shared.job);
+            spawn_blocking_timeout(
+                "listing the processes of the instance",
+                OWN_PIDS_TIMEOUT,
+                move || job.pids(),
+            )
+            .await
+            .map(|pids| pids.into_iter().collect())
+            .unwrap_or_default()
+        }
+    };
+    let result = precheck::run(&shared.spec.precheck, &shared.precheck, scope, &own_pids).await;
+    drop(shared);
+    let notice = match scope {
+        PrecheckScope::Start => Notice::Prechecked { run, result },
+        PrecheckScope::Restart => Notice::RestartValidated { run, result },
+    };
+    deliver(&me, notice).await;
+}
+
 /// Probes of one run until the task is aborted (the run left `Starting`/`Running`) or
 /// the actor is gone.
 async fn probe_loop(spec: HealthSpec, prober: Prober, me: WeakActorRef<InstanceMsg>, run: u64) {
@@ -573,6 +643,8 @@ impl InstanceActor {
             restart_timer: None,
             restart_generation: 0,
             next_restart_at: None,
+            prechecks: None,
+            validation: None,
         }
     }
 
@@ -666,12 +738,29 @@ impl InstanceActor {
         self.stop_failure = None;
         self.stop_after_spawn = None;
         self.probes = None;
+        self.validation = None;
         self.health = self
             .shared
             .spec
             .health
             .as_ref()
             .map(|h| HealthStatus::new(&h.probe));
+        if self.shared.spec.precheck.is_empty() {
+            self.launch(ctx);
+        } else {
+            self.prechecks = Some(TaskGuard(tokio::spawn(precheck_task(
+                Arc::clone(&self.shared),
+                ctx.myself_weak(),
+                run,
+                PrecheckScope::Start,
+            ))));
+        }
+    }
+
+    /// Creates the process of the current run (the pre-checks passed): the start
+    /// deadline counts from here.
+    fn launch(&mut self, ctx: &mut Context<Self>) {
+        let run = self.run;
         self.start_deadline = self.shared.spec.health.as_ref().map(|h| {
             deliver_after(
                 ctx.myself_weak(),
@@ -686,6 +775,94 @@ impl InstanceActor {
             std::mem::take(&mut self.job_cleanups),
             ctx.events().clone(),
         ));
+    }
+
+    /// End of the pre-checks of the current run.
+    fn on_prechecked(
+        &mut self,
+        result: std::result::Result<(), FailureReason>,
+        ctx: &mut Context<Self>,
+    ) {
+        self.prechecks = None;
+        match result {
+            Ok(()) => self.launch(ctx),
+            Err(reason) => {
+                tracing::warn!(
+                    instance = %self.shared.service.instance,
+                    tool = %self.shared.service.tool,
+                    %reason,
+                    "pre-check failed; the instance is not started"
+                );
+                self.fail(reason, None, ctx);
+            }
+        }
+    }
+
+    /// The current run is stopped while its pre-checks run: it ends `Stopped` without
+    /// ever creating a process (then restarts or enters maintenance if that was asked).
+    fn abort_unspawned(&mut self, cause: StopCause, ctx: &mut Context<Self>) {
+        self.prechecks = None;
+        self.start_deadline = None;
+        // Unhealthy and start-timeout stops need a process; anything else ends Stopped.
+        let cause = match cause {
+            StopCause::Restart | StopCause::Maintenance => cause,
+            _ => StopCause::User,
+        };
+        if cause == StopCause::Restart {
+            let waiting = std::mem::take(&mut self.pending_start);
+            self.pending_restart.extend(waiting);
+        } else {
+            self.cancel_start_waiters("a stop was requested before the instance was running");
+        }
+        if self.enter(Trigger::Stop { cause }, None, ctx).is_err() {
+            return;
+        }
+        let payload = ServiceEventPayload::idle(self.service());
+        let _ = self.enter(Trigger::StopFinished { exit_code: 0 }, Some(payload), ctx);
+        self.answer_stops(&StopReport::not_running());
+        match std::mem::replace(&mut self.after_stop, AfterStop::Nothing) {
+            AfterStop::Nothing => {}
+            AfterStop::Start => {
+                self.restarts.reset();
+                self.pending_start.append(&mut self.pending_restart);
+                self.begin_start(ctx);
+            }
+            AfterStop::Maintenance => self.enter_maintenance(ctx),
+        }
+    }
+
+    /// Whether a restart has something to validate before stopping the running process.
+    fn restart_needs_validation(&self) -> bool {
+        let spec = &self.shared.spec.precheck;
+        spec.check.is_some() || !spec.depends_on.is_empty() || !spec.runtime_deps.is_empty()
+    }
+
+    /// End of the validation of a restart requested while `Running`.
+    fn on_restart_validated(
+        &mut self,
+        result: std::result::Result<(), FailureReason>,
+        ctx: &mut Context<Self>,
+    ) {
+        self.validation = None;
+        if self.state != InstanceState::Running || self.after_stop != AfterStop::Start {
+            return;
+        }
+        match result {
+            Ok(()) => self.begin_stop(StopCause::Restart, ctx),
+            Err(reason) => {
+                tracing::warn!(
+                    instance = %self.shared.service.instance,
+                    tool = %self.shared.service.tool,
+                    %reason,
+                    "restart refused by the pre-checks; the instance keeps running"
+                );
+                self.after_stop = AfterStop::Nothing;
+                fail_all(
+                    std::mem::take(&mut self.pending_restart),
+                    &reason.to_error(),
+                );
+            }
+        }
     }
 
     /// `Starting` → `Running`: health passed (or there is none).
@@ -706,11 +883,18 @@ impl InstanceActor {
     /// waits for the spawn.
     fn begin_stop(&mut self, cause: StopCause, ctx: &mut Context<Self>) {
         let (Some(pid), Some(exited)) = (self.pid, self.exited.clone()) else {
-            self.stop_after_spawn = Some(cause);
+            if self.prechecks.is_some() {
+                // Still pre-checking: no process will be created.
+                self.abort_unspawned(cause, ctx);
+            } else {
+                self.stop_after_spawn = Some(cause);
+            }
             return;
         };
         self.probes = None;
         self.start_deadline = None;
+        // Any stop supersedes the validation of a restart.
+        self.validation = None;
         match cause {
             StopCause::Restart => {
                 // They asked for a started instance: they get the next run.
@@ -978,6 +1162,8 @@ impl InstanceActor {
     fn on_stop(&mut self, reply: Reply<Result<StopReport>>, ctx: &mut Context<Self>) {
         match self.state {
             InstanceState::Running => {
+                // A restart still being validated is superseded.
+                self.cancel_queued_start("a stop was requested before the restart");
                 self.pending_stop.push(reply);
                 self.begin_stop(StopCause::User, ctx);
             }
@@ -1014,7 +1200,17 @@ impl InstanceActor {
             InstanceState::Running => {
                 self.pending_restart.push(reply);
                 self.after_stop = AfterStop::Start;
-                self.begin_stop(StopCause::Restart, ctx);
+                if !self.restart_needs_validation() {
+                    self.begin_stop(StopCause::Restart, ctx);
+                } else if self.validation.is_none() {
+                    self.validation = Some(TaskGuard(tokio::spawn(precheck_task(
+                        Arc::clone(&self.shared),
+                        ctx.myself_weak(),
+                        self.run,
+                        PrecheckScope::Restart,
+                    ))));
+                }
+                // Otherwise a validation is already running for an earlier request.
             }
             InstanceState::Starting | InstanceState::Stopping { .. } => {
                 if self.after_stop == AfterStop::Maintenance {
@@ -1217,6 +1413,9 @@ impl InstanceActor {
     fn on_exited(&mut self, info: ExitInfo, ctx: &mut Context<Self>) {
         match self.state {
             InstanceState::Running => {
+                if self.validation.take().is_some() {
+                    self.cancel_queued_start("the instance exited before it could be restarted");
+                }
                 let pid = self.pid.take();
                 self.crashed(
                     Trigger::Exited {
@@ -1268,6 +1467,18 @@ impl InstanceActor {
             }
             Notice::Probe { run, outcome } if run == self.run => self.on_probe(outcome, ctx),
             Notice::StartDeadline { run } if run == self.run => self.on_start_deadline(ctx),
+            Notice::Prechecked { run, result }
+                if run == self.run
+                    && self.state == InstanceState::Starting
+                    && self.prechecks.is_some() =>
+            {
+                self.on_prechecked(result, ctx);
+            }
+            Notice::RestartValidated { run, result }
+                if run == self.run && self.validation.is_some() =>
+            {
+                self.on_restart_validated(result, ctx);
+            }
             Notice::RestartDue { generation } => {
                 if generation == self.restart_generation
                     && matches!(self.state, InstanceState::Crashed { .. })
@@ -1331,6 +1542,8 @@ impl Actor for InstanceActor {
         self.probes = None;
         self.start_deadline = None;
         self.restart_timer = None;
+        self.prechecks = None;
+        self.validation = None;
         self.terminate_job().await;
     }
 
@@ -1486,6 +1699,9 @@ pub struct Supervisor {
     jobs: JobTree,
     actors: ActorSupervisor,
     stats: Arc<dyn ProcessStats>,
+    ports: Arc<dyn PortTable>,
+    runtimes: Arc<dyn RuntimeDeps>,
+    dependencies: Arc<dyn DependencyLookup>,
 }
 
 impl std::fmt::Debug for Supervisor {
@@ -1498,14 +1714,37 @@ impl std::fmt::Debug for Supervisor {
 }
 
 impl Supervisor {
-    /// Supervisor reading process counters from the running OS
-    /// ([`forge_core::platform::process_stats`]).
+    /// Supervisor reading process counters, the TCP table and the installed runtimes of
+    /// the running OS ([`forge_core::platform`]). Dependencies are unknown until
+    /// [`Supervisor::with_dependencies`] (every `depends_on` pre-check fails).
     pub fn new(jobs: JobTree, actors: ActorSupervisor) -> Self {
         Self {
             jobs,
             actors,
             stats: process_stats(),
+            ports: port_table(),
+            runtimes: runtime_deps(),
+            dependencies: Arc::new(NoDependencies),
         }
+    }
+
+    /// Replaces the TCP table of the port pre-check (fakes in tests).
+    pub fn with_port_table(mut self, ports: Arc<dyn PortTable>) -> Self {
+        self.ports = ports;
+        self
+    }
+
+    /// Replaces the runtime detection of the runtime pre-check (fakes in tests).
+    pub fn with_runtime_deps(mut self, runtimes: Arc<dyn RuntimeDeps>) -> Self {
+        self.runtimes = runtimes;
+        self
+    }
+
+    /// How the `depends_on` pre-check learns the state of other services (the daemon
+    /// answers from its instance actors).
+    pub fn with_dependencies(mut self, dependencies: Arc<dyn DependencyLookup>) -> Self {
+        self.dependencies = dependencies;
+        self
     }
 
     /// Replaces the process counters (fakes in tests).
@@ -1536,6 +1775,7 @@ impl Supervisor {
         if let Some(health) = &spec.health {
             health.validate()?;
         }
+        spec.precheck.validate()?;
         let job = self.jobs.instance_job()?;
         let service = ServiceRef {
             instance_id: spec.id,
@@ -1555,6 +1795,13 @@ impl Supervisor {
             stats: Arc::clone(&self.stats),
             metrics: Arc::new(watch::channel(None).0),
             runs: AtomicU64::new(0),
+            precheck: PrecheckEnv {
+                ports: Arc::clone(&self.ports),
+                runtimes: Arc::clone(&self.runtimes),
+                dependencies: Arc::clone(&self.dependencies),
+                processes: Arc::clone(self.jobs.processes()),
+                root: Arc::clone(self.jobs.root()),
+            },
         });
         let actor_spec = ActorSpec::new(format!("instance/{tool}/{name}"));
         let handle = self

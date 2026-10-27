@@ -17,8 +17,12 @@
 //! `unlistened`), `--burn <pct>` (one thread using <pct> % of one CPU, metered by its own
 //! CPU time), `--alloc <MiB>` (allocates and keeps touching that much memory, prints
 //! `allocated <bytes>`).
-//! One-shot modes for stop commands: `--touch <path>` (create the file, exit 0),
-//! `--exit-code <n>` (exit at once with n; `0x…` accepted).
+//! One-shot modes for stop and check commands: `--touch <path>` (create the file, exit
+//! 0), `--exit-code <n>` (exit at once with n; `0x…` accepted). Switches are handled in
+//! order, so these combine with `--say <text>` / `--say-err <text>` (print a line on
+//! stdout / stderr) and `--fail-if-exists <path>` (print `config broken: <path>` on stderr
+//! and exit 1 when the file exists), e.g. a configuration check:
+//! `--fail-if-exists flag --say "syntax ok" --exit-code 0`.
 
 use std::ffi::c_void;
 use std::io::Write;
@@ -206,6 +210,15 @@ fn main() {
                 std::process::exit(0);
             }
             "--exit-code" => std::process::exit(parse_code(&value())),
+            "--say" => println!("{}", value()),
+            "--say-err" => eprintln!("{}", value()),
+            "--fail-if-exists" => {
+                let path = value();
+                if std::path::Path::new(&path).exists() {
+                    eprintln!("config broken: {path}");
+                    std::process::exit(1);
+                }
+            }
             other => panic!("unknown argument {other}"),
         }
     }

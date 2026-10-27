@@ -540,16 +540,32 @@ export type ExternalPortDto = {
  *  Structured diagnosis of a `failed` instance (docs/03 §1.4), tagged by `kind`.
  * 
  *  Published by `forge_supervisor::FailureReason` (same shape). Exit codes are the bits
- *  of the Windows `DWORD` as `i32`. `kind` decides the UI action (`missing_dll` → offer
- *  the VC++ Redistributable, `port_in_use` → stop the holder or change the port).
+ *  of the Windows `DWORD` as `i32`. `kind` decides the UI action (`missing_dll` /
+ *  `missing_runtime` → offer the VC++ Redistributable, `port_in_use` → stop the holder or
+ *  change the port, `dependency_not_running` → start the dependency).
  */
 export type FailureReasonDto = 
 /**  A declared port is taken (by `pid`/`exe` when known). */
 { kind: "port_in_use"; port: number; pid: number | null; exe: string | null } | 
 /**  A DLL (or an entry point in one) is missing: exit `0xC0000135` / `0xC0000139`. */
 { kind: "missing_dll"; exit_code: number } | 
-/**  The configuration check failed; its output. */
+/**  The configuration check failed; its output (stderr, then stdout). */
 { kind: "config_invalid"; stderr: string } | 
+/**
+ *  The VC++ Redistributable needed by `flavor` builds is missing or too old
+ *  (pre-checks, docs/03 §1.5).
+ */
+{ kind: "missing_runtime"; 
+/**  `vc15`, `vs16`, `vs17`, `vs18`. */
+flavor: string; download_url: string; 
+/**  Older runtime found (`14.29.30133.0`). */
+installed: string | null } | 
+/**  A `depends_on` service is not running (pre-checks). */
+{ kind: "dependency_not_running"; 
+/**  `mysql` or `mysql/default`. */
+dependency: string; 
+/**  `stopped`, `failed`...; `unknown` when not found. */
+state: string } | 
 /**  Access denied starting or running the executable. */
 { kind: "permission"; message: string } | 
 /**  Health did not pass within `start_timeout`. */
