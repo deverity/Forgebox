@@ -157,6 +157,21 @@ async fn loose_folder_directly_in_bin_is_recognized() {
 }
 
 #[tokio::test]
+async fn mariadb_kept_under_bin_mysql_is_not_taken_for_mysql() {
+    let fx = Fixture::new();
+    fx.garbage("mysql/mariadb-11.8.9-winx64/bin", "mysqld.exe");
+    fx.garbage("mysql/mariadb-11.8.9-winx64/bin", "mariadbd.exe");
+    fx.garbage("mysql/mysql-8.4.0-winx64/bin", "mysqld.exe");
+
+    let mut found = fx.discover().await;
+    found.sort_by(|a, b| a.path.cmp(&b.path));
+    assert_eq!(found.len(), 2, "{found:#?}");
+    assert_eq!(found[0].tool_id.as_str(), "mariadb", "{found:#?}");
+    assert_eq!(found[0].version.as_deref(), Some("11.8.9"));
+    assert_eq!(found[1].tool_id.as_str(), "mysql", "{found:#?}");
+}
+
+#[tokio::test]
 async fn thread_safety_comes_from_the_tool_not_the_name() {
     let fx = Fixture::new();
     let name = "php/php-8.3-Win32-vs16-x64";

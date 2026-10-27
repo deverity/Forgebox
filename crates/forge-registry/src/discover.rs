@@ -329,21 +329,34 @@ fn candidates(bin: &Path, manifests: &[ToolManifest]) -> Vec<Candidate> {
             .iter()
             .position(|m| m.metadata.id.as_str() == name && m.spec.discover.is_some());
         if let Some(index) = tool_dir {
-            // bin/<tool>/<folder>: only this tool's manifest applies.
-            let discover = manifests[index]
-                .spec
-                .discover
-                .as_ref()
-                .expect("checked above");
-            out.extend(
-                subdirs(&entry)
-                    .into_iter()
-                    .filter(|d| files_match(d, discover))
-                    .map(|dir| Candidate {
-                        dir,
-                        manifest: index,
-                    }),
-            );
+            // bin/<tool>/<folder>: the parent tool is a tie-breaker, not the only manifest
+            // tried (Laragon keeps MariaDB under `bin/mysql/mariadb-*`, and its zip also
+            // ships `mysqld.exe`). A folder name that is an alias of another matching
+            // manifest wins; otherwise the parent tool keeps it.
+            for dir in subdirs(&entry) {
+                let matches = matching(&dir);
+                let hint = parse_folder_name(&folder_name(&dir));
+                let named: Vec<usize> = matches
+                    .iter()
+                    .copied()
+                    .filter(|&i| i != index)
+                    .filter(|&i| {
+                        manifests[i]
+                            .spec
+                            .discover
+                            .as_ref()
+                            .is_some_and(|d| aliases(&manifests[i], d).contains(&hint.prefix))
+                    })
+                    .collect();
+                let chosen = match named.as_slice() {
+                    [one] => Some(*one),
+                    _ if matches.contains(&index) => Some(index),
+                    _ => None,
+                };
+                if let Some(manifest) = chosen {
+                    out.push(Candidate { dir, manifest });
+                }
+            }
         } else if manifests.iter().any(|m| m.metadata.id.as_str() == name) {
             // A tool without discover rules: nothing to recognize under it.
         } else if let Some(manifest) = loose(&entry) {
