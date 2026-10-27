@@ -994,7 +994,7 @@ impl Checker<'_> {
     }
 
     /// Returns the ids of `config.files`.
-    fn config(&mut self, config: &Config) -> BTreeSet<String> {
+    fn config(&mut self, config: &Config, scheme: VersionScheme) -> BTreeSet<String> {
         let mut ids = BTreeSet::new();
         for (i, file) in config.files.iter().enumerate() {
             let f = format!("spec.config.files[{i}]");
@@ -1050,6 +1050,19 @@ impl Checker<'_> {
                 );
             }
             self.not_empty("spec.config.extensions.ini_dir", &ext.ini_dir);
+            for (i, z) in ext.zend_extensions.iter().enumerate() {
+                let f = format!("spec.config.extensions.zend_extensions[{i}]");
+                self.not_empty(&format!("{f}.name"), z.name());
+                if let Some(c) = z.constraint()
+                    && let Err(e) = Constraint::parse(scheme, c)
+                {
+                    self.push(
+                        IssueCode::InvalidConstraint,
+                        format!("{f}.constraint"),
+                        e.to_string(),
+                    );
+                }
+            }
         }
         self.env_names("spec.config.env", config.env.keys());
         ids
@@ -1488,7 +1501,7 @@ impl Checker<'_> {
             Some(&spec.versioning.variants),
         );
         self.install(&spec.install);
-        let config_ids = self.config(&spec.config);
+        let config_ids = self.config(&spec.config, spec.versioning.scheme);
         let port_names = self.service(&spec.service, &m.metadata.id);
         if let Some(discover) = &spec.discover {
             self.discover(discover, &spec.versioning.variants);
@@ -1562,7 +1575,7 @@ impl Checker<'_> {
         }
         self.post_install("spec.install.post_install", &install.post_install);
         self.uninstall_keep("spec.install.uninstall.keep", &install.uninstall.keep);
-        self.config(&spec.config);
+        self.config(&spec.config, VersionScheme::Semver);
         if let Some(toggle) = &spec.toggle {
             self.not_empty("spec.toggle.enable", &toggle.enable);
             self.not_empty("spec.toggle.disable", &toggle.disable);

@@ -1,0 +1,4 @@
+SSLEngine on
+SSLCertificateFile {{ site.ssl.cert | quote }}
+SSLCertificateKeyFile {{ site.ssl.key | quote }}
+Protocols h2 http/1.1

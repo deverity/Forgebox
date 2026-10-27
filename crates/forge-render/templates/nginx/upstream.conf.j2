@@ -1,0 +1,6 @@
+upstream {{ upstream.name }} {
+    least_conn;
+{% for s in upstream.servers %}
+    server {{ s.host }}:{{ s.port }};
+{% endfor %}
+}
