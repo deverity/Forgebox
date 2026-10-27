@@ -37,6 +37,7 @@
 //! | 10 | `ipc.idempotency` (`forge_ipc` server) | looking up or recording a `request_id`; never runs a handler |
 //! | 10 | `ipc.connections` (`forge_ipc` server) | registering, listing or cancelling connections |
 //! | 10 | `ipc.client` (`forge_ipc` client: connection slot, pending calls, routes, subscription queues) | map/queue operations only; each is a separate mutex, never nested |
+//! | 10 | `registry.state` (`forge_registry` service: slots, snapshots, refresh marks) | map operations only; leaf lock: never held while starting a job, awaiting or publishing |
 //! | 200 | `event_bus.seq` ([`crate::event::EventBus`]) | numbering an event and handing it to the broadcast channel |
 //!
 //! Rules: no lock is ever held across `.await` (clippy `await_holding_lock` and

@@ -36,11 +36,18 @@ impl Migration {
 }
 
 /// Every migration of this build, in order.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "init",
-    sql: include_str!("migrations/0001_init.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "init",
+        sql: include_str!("migrations/0001_init.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "registry_loader",
+        sql: include_str!("migrations/0002_registry_loader.sql"),
+    },
+];
 
 /// Highest schema version this build knows.
 pub fn latest_version() -> u32 {

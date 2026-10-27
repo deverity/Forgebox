@@ -69,7 +69,7 @@ tar = "0.4.46"
 flate2 = "1.1.10"
 # Same version as sevenz-rust2 uses: one LZMA implementation for 7z and tar.xz.
 lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz"] }
-# Test only: signs minisign fixtures; RNG of the same major as pgp (key generation in tests).
+# Signs minisign fixtures in tests and the dev registry index in xtask (never shipped); RNG of the same major as pgp (key generation in tests).
 minisign = "0.10.0"
 rand = "0.8.6"
 axum = "0.8.9"

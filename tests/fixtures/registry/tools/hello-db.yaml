@@ -1,0 +1,13 @@
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata:
+  id: hello-db
+  name: Hello DB
+  summary: Minimal database used by the registry loader tests
+  category: database
+  tags: [sql, demo]
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
