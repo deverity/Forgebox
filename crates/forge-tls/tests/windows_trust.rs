@@ -251,6 +251,13 @@ fn trust_store_calls_on_a_scratch_user_store() {
             .remove_root(&thumbprint, TrustScope::CurrentUser)
             .unwrap()
     );
+
+    assert!(WindowsTrustStore::user_store_exists(&name).unwrap());
+    WindowsTrustStore::delete_user_store(&name).unwrap();
+    assert!(
+        !WindowsTrustStore::user_store_exists(&name).unwrap(),
+        "the scratch store is gone, not just emptied"
+    );
 }
 
 /// Manual: adds a throwaway, name-constrained root (`.invalid`, `localhost`, loopback;

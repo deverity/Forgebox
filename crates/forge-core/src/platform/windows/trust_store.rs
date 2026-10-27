@@ -39,9 +39,10 @@ use ::windows::Win32::Security::Cryptography::{
     CertAddEncodedCertificateToStore, CertCloseStore, CertCreateCertificateChainEngine,
     CertCreateCertificateContext, CertDeleteCertificateFromStore, CertFindCertificateInStore,
     CertFreeCertificateChain, CertFreeCertificateChainEngine, CertFreeCertificateContext,
-    CertGetCertificateChain, CertOpenStore, CertVerifyCertificateChainPolicy, HCERTCHAINENGINE,
-    HCERTSTORE, HTTPSPolicyCallbackData, HTTPSPolicyCallbackData_0, PKCS_7_ASN_ENCODING,
-    USAGE_MATCH_TYPE_AND, X509_ASN_ENCODING, szOID_PKIX_KP_SERVER_AUTH,
+    CertGetCertificateChain, CertOpenStore, CertUnregisterSystemStore,
+    CertVerifyCertificateChainPolicy, HCERTCHAINENGINE, HCERTSTORE, HTTPSPolicyCallbackData,
+    HTTPSPolicyCallbackData_0, PKCS_7_ASN_ENCODING, USAGE_MATCH_TYPE_AND, X509_ASN_ENCODING,
+    szOID_PKIX_KP_SERVER_AUTH,
 };
 use ::windows::core::{HSTRING, PSTR, PWSTR};
 
@@ -100,8 +101,9 @@ impl WindowsTrustStore {
         self
     }
 
-    /// Deletes the `CurrentUser` system store `name` (registry key and certificates).
-    /// Refuses `Root`. Missing store is success.
+    /// Deletes the `CurrentUser` system store `name` (certificates and the store itself,
+    /// `CertUnregisterSystemStore` with `CERT_STORE_DELETE_FLAG`; opening with that flag
+    /// only empties it). Refuses `Root`. Missing store is success.
     pub fn delete_user_store(name: &str) -> Result<()> {
         if name.eq_ignore_ascii_case(ROOT_STORE) {
             return Err(ForgeError::Forbidden(
@@ -109,26 +111,28 @@ impl WindowsTrustStore {
             ));
         }
         let wide = HSTRING::from(name);
-        let flags =
-            CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_CURRENT_USER | CERT_STORE_DELETE_FLAG.0);
-        // SAFETY: `wide` is a NUL-terminated store name alive for the call. With
-        // CERT_STORE_DELETE_FLAG the function deletes the store and returns NULL; success
-        // is reported through a zero last error.
-        match unsafe {
-            CertOpenStore(
-                CERT_STORE_PROV_SYSTEM_REGISTRY_W,
-                Default::default(),
-                None,
-                flags,
-                Some(wide.as_ptr().cast()),
+        // SAFETY: `wide` is a NUL-terminated store name alive for the call; with
+        // CERT_SYSTEM_STORE_CURRENT_USER the parameter is that name.
+        let deleted = unsafe {
+            CertUnregisterSystemStore(
+                wide.as_ptr().cast(),
+                CERT_SYSTEM_STORE_CURRENT_USER | CERT_STORE_DELETE_FLAG.0,
             )
-        } {
-            Ok(_) => Ok(()),
-            Err(err) if err.code().is_ok() || win32_code(&err) == Some(ERROR_FILE_NOT_FOUND.0) => {
-                Ok(())
-            }
-            Err(err) => Err(cert_error(&format!("deleting the store {name}"), &err)),
+        };
+        if deleted.as_bool() {
+            return Ok(());
         }
+        let err = ::windows::core::Error::from_thread();
+        if err.code().is_ok() || win32_code(&err) == Some(ERROR_FILE_NOT_FOUND.0) {
+            Ok(())
+        } else {
+            Err(cert_error(&format!("deleting the store {name}"), &err))
+        }
+    }
+
+    /// Whether the `CurrentUser` system store `name` exists (tests).
+    pub fn user_store_exists(name: &str) -> Result<bool> {
+        Ok(Store::open_registry(CERT_SYSTEM_STORE_CURRENT_USER, name, true, true)?.is_some())
     }
 
     /// `(location flag, store name)` of `scope`.
