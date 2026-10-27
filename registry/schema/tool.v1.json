@@ -552,39 +552,12 @@
         "source": {
           "description": "Default `bundled`.",
           "$ref": "#/$defs/ExtensionSource"
-        },
-        "zend_extensions": {
-          "description": "`zend_extension=` lines of the overlay (`opcache`), optionally gated by a version\nconstraint (same syntax as `versioning.channels.*.constraint`).",
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ZendExtension"
-          }
         }
       },
       "additionalProperties": false,
       "required": [
         "ini_dir",
         "pattern"
-      ]
-    },
-    "GatedZendExtension": {
-      "description": "Object form of [`ZendExtension`].",
-      "type": "object",
-      "properties": {
-        "constraint": {
-          "description": "Version constraint in the tool scheme (`\"<8.5\"`); absent = always.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "name"
       ]
     },
     "Health": {
@@ -2319,19 +2292,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "ZendExtension": {
-      "description": "An item of `config.extensions.zend_extensions`: `opcache` or `{ name, constraint }`.",
-      "anyOf": [
-        {
-          "description": "Always emitted.",
-          "type": "string"
-        },
-        {
-          "description": "Emitted only when `constraint` matches the installed version.",
-          "$ref": "#/$defs/GatedZendExtension"
-        }
-      ]
     }
   }
 }
