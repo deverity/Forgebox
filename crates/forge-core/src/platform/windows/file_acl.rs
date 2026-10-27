@@ -30,41 +30,48 @@ impl FileAcl for WindowsFileAcl {
             )));
         }
         let sid = current_user_sid()?;
-        let sd = OwnedDescriptor::from_sddl(&format!("D:P(A;;FA;;;{sid})"))?;
-        let mut present = BOOL::default();
-        let mut defaulted = BOOL::default();
-        let mut dacl: *mut ACL = std::ptr::null_mut();
-        // SAFETY: `sd` is a valid descriptor; `dacl` receives a pointer into it, used
-        // only while `sd` is alive.
-        unsafe { GetSecurityDescriptorDacl(sd.as_psd(), &mut present, &mut dacl, &mut defaulted) }
-            .map_err(|e| win_err("reading the DACL of a new descriptor", e))?;
-        // SAFETY: the path string and `dacl` are valid for the call; no owner, group or
-        // SACL is changed.
-        let status = unsafe {
-            SetNamedSecurityInfoW(
-                &HSTRING::from(path),
-                SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-                None,
-                None,
-                Some(dacl),
-                None,
-            )
-        };
-        if status != ERROR_SUCCESS {
-            return Err(ForgeError::io_at(
-                "restricting the ACL of",
-                path,
-                std::io::Error::from_raw_os_error(status.0 as i32),
-            ));
-        }
-        Ok(())
+        set_protected_dacl(path, &format!("D:P(A;;FA;;;{sid})"))
     }
 
     fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool> {
         let sddl = path_sddl(path, DACL_SECURITY_INFORMATION)?;
         Ok(dacl_grants_only(&sddl, &current_user_sid()?))
     }
+}
+
+/// Replaces the DACL of the existing `path` by the protected DACL written in SDDL
+/// (`D:P(A;;FA;;;<sid>)...`). Owner, group and SACL are not changed. Also used for the
+/// exchange files of the elevated helper (user + Administrators, ADR-0022).
+pub(crate) fn set_protected_dacl(path: &Path, dacl_sddl: &str) -> Result<()> {
+    let sd = OwnedDescriptor::from_sddl(dacl_sddl)?;
+    let mut present = BOOL::default();
+    let mut defaulted = BOOL::default();
+    let mut dacl: *mut ACL = std::ptr::null_mut();
+    // SAFETY: `sd` is a valid descriptor; `dacl` receives a pointer into it, used only
+    // while `sd` is alive.
+    unsafe { GetSecurityDescriptorDacl(sd.as_psd(), &mut present, &mut dacl, &mut defaulted) }
+        .map_err(|e| win_err("reading the DACL of a new descriptor", e))?;
+    // SAFETY: the path string and `dacl` are valid for the call; no owner, group or SACL
+    // is changed.
+    let status = unsafe {
+        SetNamedSecurityInfoW(
+            &HSTRING::from(path),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            Some(dacl),
+            None,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return Err(ForgeError::io_at(
+            "restricting the ACL of",
+            path,
+            std::io::Error::from_raw_os_error(status.0 as i32),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

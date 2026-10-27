@@ -8,10 +8,11 @@
 //! [`PortTable::connections`] gives the pools every connection of their workers' ports,
 //! `TIME_WAIT` included, from which they estimate how many requests each worker served.
 //!
-//! Both methods are **blocking** (Windows: `GetExtendedTcpTable`, then
+//! All methods are **blocking** (Windows: `GetExtendedTcpTable`, then
 //! `QueryFullProcessImageNameW` per owning process) and belong in `spawn_blocking`
-//! ([`crate::runtime::spawn_blocking_timeout`], ADR-0011). Only TCP is covered: UDP has
-//! no listeners and no Forgebox service declares UDP ports yet.
+//! ([`crate::runtime::spawn_blocking_timeout`], ADR-0011). [`PortTable::udp_endpoints`]
+//! lists bound UDP sockets (UDP has no listen state) for the DNS diagnosis: who holds port
+//! 53 (docs/06 §5.2).
 
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
@@ -23,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
-/// Address family of a TCP endpoint.
+/// Protocol and address family of an endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PortProto {
@@ -31,9 +32,14 @@ pub enum PortProto {
     Tcp,
     /// TCP over IPv6 (dual-stack sockets listening on `[::]` appear here only).
     Tcp6,
+    /// UDP over IPv4.
+    Udp,
+    /// UDP over IPv6.
+    Udp6,
 }
 
-/// A TCP socket in the `LISTEN` state and the process that owns it.
+/// A TCP socket in the `LISTEN` state (or a bound UDP socket) and the process that owns
+/// it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PortOwner {
     pub port: u16,
@@ -117,6 +123,15 @@ pub trait PortTable: Send + Sync + fmt::Debug {
         let _ = ports;
         Err(ForgeError::NotImplemented(
             "listing TCP connections with this port table".to_owned(),
+        ))
+    }
+
+    /// Every bound UDP socket of the machine with its owning process, IPv4 and IPv6,
+    /// sorted by port then address. Blocking. Implementations without a UDP table answer
+    /// `unsupported_platform`.
+    fn udp_endpoints(&self) -> Result<Vec<PortOwner>> {
+        Err(ForgeError::UnsupportedPlatform(
+            "this port table has no UDP view".to_owned(),
         ))
     }
 }

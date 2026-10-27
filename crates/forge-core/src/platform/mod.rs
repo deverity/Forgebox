@@ -12,16 +12,17 @@
 //! `WM_CLOSE`; M1-E3-T1), the per-process counters of [`process_stats`]
 //! ([`ProcessStats`]: CPU time, working set, handles; M1-E3-T2), the TCP table of
 //! [`net_table`] ([`PortTable`]: listeners with owning PID/exe, established connections
-//! per port) and the system runtimes of [`runtime_deps`] ([`RuntimeDeps`]: VC++
-//! Redistributable; both M1-E3-T3) are implemented for Windows. [`TrustStore`]
-//! (M1-E4-T4) and
-//! [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still grow in those
-//! tasks.
+//! per port; every connection of a set of ports, `TIME_WAIT` included, since M1-E3-T4)
+//! and the system runtimes of [`runtime_deps`] ([`RuntimeDeps`]: VC++
+//! Redistributable; both M1-E3-T3) are implemented for Windows, as are the DNS side of
+//! M1-E4-T3: [`Elevation`] (launching `forgebox-helper` through UAC), [`DnsPolicy`] (NRPT
+//! rules and `hosts`, changed through the helper; resolver cache flush), [`NetAdapters`]
+//! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`].
+//! [`TrustStore`] (M1-E4-T4) is declared only; its signature may still grow in that task.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
 use std::fmt;
-use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -31,6 +32,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
+pub mod dns_policy;
+pub mod elevation;
+pub mod net_adapters;
 pub mod net_table;
 pub mod probe;
 pub mod process;
@@ -39,6 +43,11 @@ pub mod runtime_deps;
 #[cfg(windows)]
 pub mod windows;
 
+pub use dns_policy::{
+    DnsPolicy, DnsPolicyStatus, NrptRule, NrptSource, dns_policy, effective_nrpt_rules,
+};
+pub use elevation::{Elevation, elevation};
+pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
 pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
 pub use process::{
@@ -171,26 +180,6 @@ pub trait TrustStore: Send + Sync {
     fn remove_root(&self, cert_der: &[u8], scope: TrustScope) -> Result<()>;
 }
 
-/// State of the OS resolver policy for a TLD.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DnsPolicyStatus {
-    /// Queries for the TLD go to `nameserver`.
-    Applied {
-        nameserver: IpAddr,
-    },
-    NotApplied,
-}
-
-/// OS resolver policy (NRPT on Windows, docs/06 §5). Implemented in M1-E4-T3.
-pub trait DnsPolicy: Send + Sync {
-    /// Current policy for `tld` (`.test`).
-    fn status(&self, tld: &str) -> Result<DnsPolicyStatus>;
-    /// Routes `tld` to `nameserver` (needs elevation through the helper).
-    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<()>;
-    /// Removes the policy for `tld`.
-    fn remove(&self, tld: &str) -> Result<()>;
-}
-
 /// Implementations for the running OS. Cheap to clone.
 #[derive(Clone)]
 pub struct Platform {
@@ -203,6 +192,8 @@ pub struct Platform {
     file_acl: Arc<dyn FileAcl>,
     port_table: Arc<dyn PortTable>,
     runtime_deps: Arc<dyn RuntimeDeps>,
+    elevation: Arc<dyn Elevation>,
+    net_adapters: Arc<dyn NetAdapters>,
 }
 
 impl fmt::Debug for Platform {
@@ -216,10 +207,12 @@ impl fmt::Debug for Platform {
 impl Platform {
     /// Assembles a platform from parts (tests use fakes). Process operations default to
     /// [`process_control`] with default options; process counters, code signing, file
-    /// ACLs, the TCP table and runtime detection to the implementations of the running
-    /// OS. See [`Platform::with_processes`], [`Platform::with_process_stats`],
-    /// [`Platform::with_code_sign`], [`Platform::with_file_acl`],
-    /// [`Platform::with_port_table`] and [`Platform::with_runtime_deps`].
+    /// ACLs, the TCP table, runtime detection, elevation and network adapters to the
+    /// implementations of the running OS. See [`Platform::with_processes`],
+    /// [`Platform::with_process_stats`], [`Platform::with_code_sign`],
+    /// [`Platform::with_file_acl`], [`Platform::with_port_table`],
+    /// [`Platform::with_runtime_deps`], [`Platform::with_elevation`] and
+    /// [`Platform::with_net_adapters`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -235,6 +228,8 @@ impl Platform {
             file_acl: default_file_acl(),
             port_table: port_table(),
             runtime_deps: runtime_deps(),
+            elevation: elevation(),
+            net_adapters: net_adapters(),
         }
     }
 
@@ -271,6 +266,18 @@ impl Platform {
     /// Replaces the runtime detection (fakes in tests).
     pub fn with_runtime_deps(mut self, runtime_deps: Arc<dyn RuntimeDeps>) -> Self {
         self.runtime_deps = runtime_deps;
+        self
+    }
+
+    /// Replaces the elevation mechanism ([`crate::helper::FakeElevation`] in tests).
+    pub fn with_elevation(mut self, elevation: Arc<dyn Elevation>) -> Self {
+        self.elevation = elevation;
+        self
+    }
+
+    /// Replaces the adapter listing (fakes in tests).
+    pub fn with_net_adapters(mut self, net_adapters: Arc<dyn NetAdapters>) -> Self {
+        self.net_adapters = net_adapters;
         self
     }
 
@@ -317,6 +324,17 @@ impl Platform {
     /// VC++ Redistributable detection (shared, so it can move into `spawn_blocking`).
     pub fn runtime_deps(&self) -> &Arc<dyn RuntimeDeps> {
         &self.runtime_deps
+    }
+
+    /// Launches `forgebox-helper` elevated (shared, so it can move into `spawn_blocking`).
+    pub fn elevation(&self) -> &Arc<dyn Elevation> {
+        &self.elevation
+    }
+
+    /// Network adapters and their DNS servers (shared, so it can move into
+    /// `spawn_blocking`).
+    pub fn net_adapters(&self) -> &Arc<dyn NetAdapters> {
+        &self.net_adapters
     }
 }
 

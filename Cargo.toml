@@ -82,6 +82,12 @@ pretty_assertions = "1.4.1"
 insta = "1.49.0"
 # Filesystem watcher of parked directories (forge-sites). CC0-1.0, allowed by deny.toml.
 notify = { version = "8.2.0", default-features = false }
+# DNS server for the local zones (forge-net::dns, ADR-0004). No default features: plain UDP/TCP
+# only (no DNSSEC, DoT/DoH/DoQ, resolver or sqlite store). Its `proto` re-export is the DNS
+# message codec of the server and of the diagnostic client.
+hickory-server = { version = "0.26.3", default-features = false }
+# hickory-server's RequestHandler is an #[async_trait] trait.
+async-trait = "0.1.89"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
