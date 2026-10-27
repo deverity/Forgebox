@@ -1,5 +1,5 @@
 # Fixture of the forge-core elevation tests: a stand-in for forgebox-helper.exe that speaks
-# the file exchange of ADR-0021 (reads --request, writes into the existing --response).
+# the file exchange of ADR-0022 (reads --request, writes into the existing --response).
 # Independent cargo project (own [workspace], no dependencies), built by the tests into
 # their own target dir (see tests/elevation_windows.rs). Not a member of the workspace.
 [package]

@@ -1189,23 +1189,54 @@ export type PoolListDto = {
 	pools: PoolDto[],
 };
 
-/**  `pool.scaled`. */
+/**
+ *  `pool.scaled`: the backends of a pool changed (workers added, removed or replaced).
+ *  Produced by `forge_fcgi::PoolScaledEvent` (same fields).
+ */
 export type PoolScaledPayload = {
 	v: number,
 	version_id: VersionId,
 	series: string,
 	from_workers: number,
 	to_workers: number,
+	/**  Exact PHP version of the pool (`8.3.36`). */
+	version?: string | null,
+	/**  Upstream name in the web server configs (`php_8_3`). */
+	upstream?: string | null,
+	/**  Backends now in the upstream (`127.0.0.1:19083`). */
+	backends?: string[],
+	/**  Balancing policy of the upstream (`least_conn`). */
+	policy?: string | null,
+	/**
+	 *  `start`, `scale_up`, `scale_down`, `recycle`, `worker_exit`, `reload`, `drain`,
+	 *  `stop`.
+	 */
+	reason?: string | null,
 };
 
-/**  `pool.worker.recycled`. */
+/**
+ *  `pool.worker.recycled`: a worker was replaced or removed for a recycle reason.
+ *  Produced by `forge_fcgi::WorkerRecycledEvent` (same fields).
+ */
 export type PoolWorkerRecycledPayload = {
 	v: number,
 	version_id: VersionId,
 	series: string,
 	port: number,
-	/**  `max_requests`, `max_rss`, `max_age`, `crashed`. */
+	/**  `max_requests`, `max_rss`, `max_age`, `crashed`, `reload`. */
 	reason: string,
+	/**  Exact PHP version of the pool (`8.3.36`). */
+	version?: string | null,
+	/**  Process of the recycled worker. */
+	pid?: number | null,
+	/**  Requests it served (estimated from its connections, docs/03 §2.1). */
+	requests?: number | null,
+	/**  Last working set sampled. */
+	rss_bytes?: number | null,
+	/**  Time it served. */
+	age_ms?: number | null,
+	/**  Port of the worker that took its place, if one did. */
+	replacement_port?: number | null,
 };
 
 /**  `port.conflict`. */

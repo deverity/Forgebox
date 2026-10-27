@@ -1,4 +1,4 @@
-//! Running `forgebox-helper` with administrator rights (docs/11 §1, ADR-0021).
+//! Running `forgebox-helper` with administrator rights (docs/11 §1, ADR-0022).
 //!
 //! The only elevation path of Forgebox: one helper process per request, started by the
 //! OS consent mechanism (UAC on Windows). The request and the response are the JSON

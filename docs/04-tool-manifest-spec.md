@@ -166,12 +166,12 @@ spec:
     # kind: pool → gerenciado pelo forge-fcgi (só faz sentido para PHP)
     pool:
       exe: php-cgi.exe
-      args: ["-b", "127.0.0.1:{{ port }}", "-c", "{{ paths.etc }}/php/{{ series }}/php.ini"]
+      args: ["-b", "127.0.0.1:{{ port }}", "-c", "{{ paths.etc }}/php/{{ series }}/php.ini"]  # {{ port }}: um por worker, preenchido pelo pool; exatamente um `<ip de loopback>:{{ port }}`
       protocol: fastcgi
       port_range: php-pools      # nome de faixa definida em forgebox.toml (regra 3)
       scaling: { min: 2, max: 12, idle_timeout: 120s }
       recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
-      env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }
+      env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }  # o forge-fcgi sobrescreve com um teto acima de max_requests (docs/03 §2.1)
       health: { fastcgi: "/_forgebox/health.php" }
 
   # ---------- Descoberta de instalação manual ----------

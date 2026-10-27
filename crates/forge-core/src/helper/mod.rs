@@ -1,4 +1,4 @@
-//! Protocol of `forgebox-helper`, the only elevated binary (docs/11 §1, ADR-0021). Shared
+//! Protocol of `forgebox-helper`, the only elevated binary (docs/11 §1, ADR-0022). Shared
 //! by the daemon (client side, [`HelperClient`]) and the helper itself (M1-E5-T4).
 //!
 //! * [`HelperOp`]: the closed allowlist of privileged operations, one variant per row of

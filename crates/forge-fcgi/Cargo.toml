@@ -13,4 +13,21 @@ publish = false
 workspace = true
 
 [dependencies]
+forge-core = { path = "../forge-core" }
 forge-supervisor = { path = "../forge-supervisor" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Contract test of the pool.* payloads (tests/pool_payload_contract.rs); forge-ipc does not
+# depend on forge-fcgi, so there is no cycle.
+forge-ipc = { path = "../forge-ipc" }
+# Renders the upstream block of a running pool with the real templates
+# (tests/pool_fake.rs); the daemon does that mapping at runtime (docs/01 §3).
+forge-render = { path = "../forge-render" }
+pretty_assertions = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }

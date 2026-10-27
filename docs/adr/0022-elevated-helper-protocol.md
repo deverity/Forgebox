@@ -1,4 +1,4 @@
-# ADR-0021 — Protocolo do `forgebox-helper`: allowlist tipada, JSON versionado, troca por arquivos em `state/locks/`
+# ADR-0022 — Protocolo do `forgebox-helper`: allowlist tipada, JSON versionado, troca por arquivos em `state/locks/`
 
 **Status:** aceito · **Data:** 2026-10-27
 

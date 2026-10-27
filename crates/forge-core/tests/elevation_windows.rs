@@ -1,4 +1,4 @@
-//! The Windows elevation transport (ADR-0021) end to end, without a UAC prompt:
+//! The Windows elevation transport (ADR-0022) end to end, without a UAC prompt:
 //! `WindowsElevation::without_elevation()` starts a fake helper (built from
 //! `tests/fake_helper`) through the same `ShellExecuteExW` + exchange files path as the
 //! real `runas` launch. The elevated launch itself needs a human (smoke M1).

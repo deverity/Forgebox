@@ -1,4 +1,4 @@
-//! [`Elevation`] for Windows (docs/11 §1, ADR-0021): `ShellExecuteExW` with the verb
+//! [`Elevation`] for Windows (docs/11 §1, ADR-0022): `ShellExecuteExW` with the verb
 //! `runas` starts `forgebox-helper.exe --request <file> --response <file>` elevated (one
 //! UAC prompt).
 //!

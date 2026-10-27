@@ -18,7 +18,7 @@ pub const MAX_LABEL_LEN: usize = 63;
 /// `corp`) plus the de facto private `lan`.
 ///
 /// The elevated helper only routes (NRPT) or maps (`hosts`) names under these suffixes,
-/// whatever `forgebox.toml` says (docs/11 §1, ADR-0021): the file is writable by the user,
+/// whatever `forgebox.toml` says (docs/11 §1, ADR-0022): the file is writable by the user,
 /// the machine-wide resolver policy is not.
 pub const LOCAL_USE_SUFFIXES: &[&str] = &[
     "test",

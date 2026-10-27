@@ -37,10 +37,11 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
 │   │       │                     #   ports.rs (PortRepo: reservas de porta)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
-│   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder)
+│   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder e o trait
+│   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas, [dns] extra_tlds/remote_zones)
 │   │       ├── dns_name.rs       # sintaxe de nomes DNS (rótulos minúsculos), sufixos de uso local (test, localhost, home.arpa...)
-│   │       ├── helper/           # protocolo do forgebox-helper (ADR-0021): op.rs (HelperOp allowlist + HelperPolicy/validate),
+│   │       ├── helper/           # protocolo do forgebox-helper (ADR-0022): op.rs (HelperOp allowlist + HelperPolicy/validate),
 │   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts), client.rs (HelperClient, FakeElevation)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore) + current();
@@ -49,7 +50,9 @@ Forgebox/
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
-│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta, sockets UDP);
+│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
+│   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;
+│   │                             #   udp_endpoints: sockets UDP v4/v6 com PID/exe);
 │   │                             #   runtime_deps.rs: RuntimeDeps, RuntimeDep, VcRedistFlavor (vc15/vs16/vs17/vs18 → versão mínima)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
@@ -95,7 +98,7 @@ Forgebox/
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
 │   │   ├── src/
-│   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância
+│   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância; nested() = Job de um pool (workers aninhados)
 │   │   │   ├── process.rs        # SpawnSpec: env mínimo + PATH determinístico, stdio Capture|Discard|File, console oculto
 │   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
 │   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
@@ -111,11 +114,17 @@ Forgebox/
 │   │   └── tests/
 │   │       └── fake_service/     # projeto cargo independente (sem deps) compilado pelos testes: serviço falso
 │   ├── forge-fcgi/
-│   │   └── src/
-│   │       ├── pool.rs           # PhpPool: workers php-cgi.exe, portas, scaling
-│   │       ├── worker.rs         # ciclo de vida de um worker, max_requests, env PHPRC/PHP_INI_SCAN_DIR
-│   │       ├── probe.rs          # FCGI_GET_VALUES / request de health
-│   │       └── swap.rs           # blue/green entre versões, drenagem
+│   │   ├── src/
+│   │   │   ├── pool.rs           # ator PhpPool + PoolHandle: PoolSpec (scaling, recycle, timing), portas via PortReservations,
+│   │   │   │                     #   amostragem da tabela TCP, recycle proativo, scaling, drenagem, Start/standby/Promote/Drain/Stop
+│   │   │   ├── worker.rs         # um php-cgi.exe: InstanceSpec (env PHPRC/PHP_INI_SCAN_DIR/PHP_FCGI_MAX_REQUESTS/FORGEBOX_SITE),
+│   │   │   │                     #   launch (porta, spawn, warmup), ConnTracker (requests estimadas), retire
+│   │   │   ├── probe.rs          # cliente FastCGI mínimo: FCGI_GET_VALUES, GET, health.php (HEALTH_SCRIPT)
+│   │   │   ├── upstream.rs       # UpstreamModel {name, backends, policy}, UpstreamListener (re-render + reload pelo daemon)
+│   │   │   ├── events.rs         # payloads pool.scaled / pool.worker.recycled (forma de forge_ipc::api::events)
+│   │   │   └── swap.rs           # blue/green entre pools (standby → listener → promote → drain), Switcher por VersionId
+│   │   └── tests/
+│   │       └── fake_php_cgi/     # projeto cargo independente (sem deps) compilado pelos testes: php-cgi falso (FastCGI)
 │   ├── forge-render/
 │   │   ├── templates/            # *.j2 embutidos (include_dir): apache/, nginx/, caddy/, php/, mysql/, mariadb/, postgresql/, redis/, mailpit/
 │   │   └── src/
@@ -163,7 +172,7 @@ Forgebox/
 │   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
 │   ├── forge-daemon/             # bin forgeboxd.exe: main.rs, boot.rs, scheduler.rs, tray-less
 │   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
-│   ├── forge-helper/             # bin forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0021), manifest UAC, logging
+│   ├── forge-helper/             # bin forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022), manifest UAC, logging
 │   └── forge-mcp/                # bin forge-mcp.exe: expõe tools MCP (list_sites, create_site, logs, ...)
 │
 ├── apps/

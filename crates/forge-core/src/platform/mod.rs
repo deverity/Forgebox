@@ -12,7 +12,8 @@
 //! `WM_CLOSE`; M1-E3-T1), the per-process counters of [`process_stats`]
 //! ([`ProcessStats`]: CPU time, working set, handles; M1-E3-T2), the TCP table of
 //! [`net_table`] ([`PortTable`]: listeners with owning PID/exe, established connections
-//! per port) and the system runtimes of [`runtime_deps`] ([`RuntimeDeps`]: VC++
+//! per port; every connection of a set of ports, `TIME_WAIT` included, since M1-E3-T4)
+//! and the system runtimes of [`runtime_deps`] ([`RuntimeDeps`]: VC++
 //! Redistributable; both M1-E3-T3) are implemented for Windows, as are the DNS side of
 //! M1-E4-T3: [`Elevation`] (launching `forgebox-helper` through UAC), [`DnsPolicy`] (NRPT
 //! rules and `hosts`, changed through the helper; resolver cache flush), [`NetAdapters`]
@@ -47,7 +48,7 @@ pub use dns_policy::{
 };
 pub use elevation::{Elevation, elevation};
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
-pub use net_table::{PortOwner, PortProto, PortTable, port_table};
+pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
 pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,

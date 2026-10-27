@@ -41,7 +41,7 @@ impl FileAcl for WindowsFileAcl {
 
 /// Replaces the DACL of the existing `path` by the protected DACL written in SDDL
 /// (`D:P(A;;FA;;;<sid>)...`). Owner, group and SACL are not changed. Also used for the
-/// exchange files of the elevated helper (user + Administrators, ADR-0021).
+/// exchange files of the elevated helper (user + Administrators, ADR-0022).
 pub(crate) fn set_protected_dacl(path: &Path, dacl_sddl: &str) -> Result<()> {
     let sd = OwnedDescriptor::from_sddl(dacl_sddl)?;
     let mut present = BOOL::default();
