@@ -150,7 +150,7 @@ fn not_implemented_is_1_and_names_the_roadmap_task() {
         (&["db", "list"][..], "M2-E3"),
         (&["stats"][..], "M2-E5"),
         (&["remote", "pair"][..], "M6-E3"),
-        (&["import", "laragon", "."][..], "M1-E5-T5"),
+        (&["backup", "now"][..], "M3-E3"),
         (&["self-update", "--check"][..], "M4-E1"),
     ] {
         let mut all = vec!["--json"];

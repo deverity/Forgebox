@@ -201,6 +201,8 @@ messages! {
     NoLogLines => ("(sem linhas)", "(no lines)"),
     NothingToDiscover => ("Nada novo em bin/.", "Nothing new in bin/."),
     NothingImported => ("Nada importado.", "Nothing imported."),
+    ImportDryRun => ("Simulação: nada foi gravado.", "Dry run: nothing was written."),
+    ImportTotals => ("{0} item(ns) importado(s), {1} ignorado(s).", "{0} item(s) imported, {1} skipped."),
     AllUpToDate => ("Tudo atualizado.", "Everything is up to date."),
     // states
     StateRunning => ("rodando", "running"),

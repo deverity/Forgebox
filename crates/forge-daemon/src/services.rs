@@ -303,6 +303,31 @@ impl ServiceManager {
         Ok(created)
     }
 
+    /// Builds the entries of rows that someone else stored (the Laragon import) and the
+    /// table does not know yet. Returns the ids adopted.
+    pub async fn adopt_stored(&self) -> Result<Vec<InstanceId>> {
+        let _turn = self.turn().await?;
+        let rows = self
+            .inner
+            .reader
+            .query(|conn| InstanceRepo::new(conn).list())
+            .await?;
+        let mut adopted = Vec::new();
+        for row in rows {
+            let known = self.inner.table.lock().contains_key(&row.id);
+            if known {
+                continue;
+            }
+            let entry = self.build(row).await;
+            if let Some(err) = &entry.error {
+                tracing::warn!(instance = %entry.label(), %err, "adopted instance not runnable");
+            }
+            adopted.push(entry.row.id);
+            self.inner.table.lock().insert(entry.row.id, entry);
+        }
+        Ok(adopted)
+    }
+
     /// `services.create`: a new instance of `version` of `tool`.
     pub async fn create(
         &self,
@@ -515,9 +540,12 @@ impl ServiceManager {
             ports: ports.clone(),
             config: BTreeMap::new(),
         });
-        let data_dir = match &daemon.data {
-            Some(data) => vars.substitute(&data.dir)?,
-            None => entry.row.data_dir.clone().unwrap_or_default(),
+        // A data folder that is a reference (`forge import laragon`) is used where it is;
+        // otherwise the manifest decides, so a moved root keeps working.
+        let data_dir = match (entry.row.external_data_dir(), &daemon.data) {
+            (Some(external), _) => external.to_owned(),
+            (None, Some(data)) => vars.substitute(&data.dir)?,
+            (None, None) => entry.row.data_dir.clone().unwrap_or_default(),
         };
         if let Some(instance) = vars.instance.as_mut() {
             instance.data_dir = data_dir.clone();

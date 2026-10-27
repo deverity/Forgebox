@@ -13,6 +13,8 @@
 //!   the files on disk, with fixes (rename or edit) and a dry-run preview.
 //! - [`case_parity`]: case sensitivity per site (badge state, boot re-verification,
 //!   `forge site case-sensitive` and `forge site lint-case` as jobs).
+//! - [`import`]: `forge import laragon` (scan a Laragon installation into an `ImportPlan`,
+//!   apply it, structured report).
 //! - [`parity`]: Git/`.gitattributes`/`.editorconfig` parity for `forge new`/`site add`.
 //!
 //! - [`proxy`]: reverse-proxy sites (`ProxyModel`: upstream, WebSocket, headers, TLS).
@@ -22,6 +24,7 @@
 pub mod apps;
 pub mod case_parity;
 pub mod drivers;
+pub mod import;
 pub mod lint_case;
 pub mod messages;
 pub mod parity;
@@ -35,6 +38,9 @@ pub mod vhost;
 pub use apps::{AppManager, AppSite, AppSpec};
 pub use case_parity::{CaseParity, SiteCaseCheck};
 pub use drivers::{Confidence, Detection, Driver, VhostContext};
+pub use import::{
+    ApplyEnv, ApplyOutcome, ImportOptions, ImportPlan, ImportReport, LaragonImporter,
+};
 pub use parity::{GitParityOptions, GitParityReport, git_parity_init};
 pub use parked::{ParkedConfig, ParkedDir, ParkedSync, ParkedWatcher};
 pub use project_file::ProjectPlan;

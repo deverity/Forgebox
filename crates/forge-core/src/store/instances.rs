@@ -37,6 +37,12 @@ impl DesiredState {
     }
 }
 
+/// `instances.settings` key marking `data_dir` as a **reference** to a folder outside
+/// `data/` (`forge import laragon` leaves `C:\laragon\data\mysql-8` where it is). The
+/// daemon then uses `data_dir` as is instead of the manifest's `data.dir`; without the
+/// marker the manifest wins, so a moved root keeps working.
+pub const EXTERNAL_DATA_DIR_KEY: &str = "forgebox.external_data_dir";
+
 /// A stored instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceRow {
@@ -56,6 +62,18 @@ pub struct InstanceRow {
 }
 
 impl InstanceRow {
+    /// The data folder when it is a reference to a folder outside the root
+    /// ([`EXTERNAL_DATA_DIR_KEY`]); `None` for managed instances.
+    pub fn external_data_dir(&self) -> Option<&str> {
+        let marked = self
+            .settings
+            .get(EXTERNAL_DATA_DIR_KEY)
+            .is_some_and(|v| v == "true");
+        self.data_dir
+            .as_deref()
+            .filter(|d| marked && !d.trim().is_empty())
+    }
+
     /// A new row (fresh id, timestamps now, desired state `stopped`).
     pub fn new(tool_id: ToolId, version_id: VersionId, name: impl Into<String>) -> Self {
         let now = Timestamp::now();
@@ -311,6 +329,22 @@ mod tests {
         assert!(repo.delete(row.id).unwrap());
         assert!(!repo.delete(row.id).unwrap());
         assert!(repo.get(row.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn external_data_dir_needs_the_marker_and_a_path() {
+        let store = Store::open_in_memory().unwrap();
+        let (tool, version_id) = version(&store);
+        let mut row = InstanceRow::new(tool, version_id, "mysql-8");
+        row.data_dir = Some("C:/laragon/data/mysql-8".into());
+        assert_eq!(row.external_data_dir(), None, "unmarked: managed");
+        row.settings
+            .insert(EXTERNAL_DATA_DIR_KEY.into(), "true".into());
+        assert_eq!(row.external_data_dir(), Some("C:/laragon/data/mysql-8"));
+        row.data_dir = Some("  ".into());
+        assert_eq!(row.external_data_dir(), None);
+        row.data_dir = None;
+        assert_eq!(row.external_data_dir(), None);
     }
 
     #[test]

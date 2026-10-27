@@ -105,7 +105,7 @@ Forgebox/
 │   │       ├── service.rs        # `Registry`: refresh(name) -> JobId, load, find, search, list; metadados em `registries`
 │   │       ├── messages.rs       # strings pt-BR (badges "não verificado", "terceiro")
 │   │       ├── search.rs         # busca por id/nome/tag/categoria, ranking
-│   │       └── discover.rs       # discover() + import_discovered(): pastas soltas em bin/ reconhecidas só pelos manifestos (spec.discover)
+│   │       └── discover.rs       # discover()/discover_in(bin) + import_discovered(): pastas soltas em bin/ reconhecidas só pelos manifestos (spec.discover)
 │   ├── forge-provider/
 │   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
 │   │   └── src/
@@ -168,6 +168,9 @@ Forgebox/
 │   │       ├── service.rs        # CRUD de sites + eventos site.created/updated/removed
 │   │       ├── drivers/          # trait Driver + mod.rs (detecção/desempate), php.rs (laravel, symfony, wordpress, cakephp, drupal, magento, generic-php), web.rs (static, spa)
 │   │       ├── parked.rs         # watcher (notify) em diretórios "parked" → sites implícitos (ignora *.cs-tmp/*.cs-old)
+│   │       ├── import/           # `forge import laragon` (ADR-0031): laragon.rs (LaragonImporter::scan → ImportPlan, só leitura), apply.rs (apply: tools
+│   │       │                     #   por referência/cópia, instâncias de banco, parked, sites, dry-run), plan.rs (ImportPlan/ImportOptions/ImportReport),
+│   │       │                     #   conf.rs (Apache `auto.*.conf` com Define/${VAR}, Nginx server{}), ini.rs (usr/laragon.ini), messages.rs (pt-BR)
 │   │       ├── lint_case/        # Case Mismatch Finder (docs/15 §6): mod.rs (varredura, relatório = CaseLintReportDto),
 │   │       │                     #   refs.rs (extração por regex por tipo de arquivo, manifestos, PSR-4), resolve.rs (listagens
 │   │       │                     #   exatas, candidatos .js/index/_parcial/.blade.php), fix.rs (renomear/editar, auto, prévia)

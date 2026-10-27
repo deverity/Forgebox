@@ -829,10 +829,15 @@ export type HelperOpPayload = {
 
 /**  One imported item. */
 export type ImportItemDto = {
-	/**  `tool_version`, `site`, `database_dir`, `vhost`. */
+	/**
+	 *  `tool_version`, `site`, `database_dir`, `vhost`, `parked_dir`, `pref`,
+	 *  `case_conversion`, `tool`.
+	 */
 	kind: string,
 	name: string,
+	/**  Imported; in a dry run, would be imported. */
 	imported: boolean,
+	/**  Why it was not imported, or a remark about what was. */
 	note: string | null,
 };
 
@@ -840,10 +845,23 @@ export type ImportItemDto = {
 export type ImportLaragonParams = {
 	/**  Laragon folder on the daemon's machine (`C:/laragon`); only read. */
 	path: string,
+	/**  Decide and report, write nothing. */
+	dry_run?: boolean,
+	/**
+	 *  Copy the tool folders into `bin/<tool>/` instead of registering them where they
+	 *  are.
+	 */
+	copy_tools?: boolean,
+	/**  Move the `data/` folders into the root (same volume) instead of referencing them. */
+	move_data?: boolean,
+	/**  Convert the parked folders to case-sensitive (docs/15 §3.3) after importing. */
+	convert_case_sensitive?: boolean,
 };
 
 /**  Result of the `system.import_laragon` job. */
 export type ImportReportDto = {
+	/**  Nothing was written: `imported` means "would be imported". */
+	dry_run?: boolean,
 	items: ImportItemDto[],
 };
 

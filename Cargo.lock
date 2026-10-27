@@ -1575,6 +1575,7 @@ dependencies = [
  "forge-ipc",
  "forge-manifest",
  "forge-net",
+ "forge-registry",
  "forge-render",
  "forge-supervisor",
  "futures",

@@ -101,13 +101,26 @@ pub async fn registry(ctx: &Context, command: RegistryCmd) -> CliResult<()> {
 // --- import / bundle / backup -------------------------------------------------------
 
 pub async fn import(ctx: &Context, command: ImportCmd) -> CliResult<()> {
-    let ImportCmd::Laragon { path } = command;
+    let ImportCmd::Laragon {
+        path,
+        dry_run,
+        copy_tools,
+        move_data,
+        convert_case,
+    } = command;
     let report: ImportReportDto = ctx
         .job::<system_import_laragon, ImportReportDto>(ImportLaragonParams {
             path: parse::absolute(&path)?,
+            dry_run,
+            copy_tools,
+            move_data,
+            convert_case_sensitive: convert_case,
         })
         .await?;
     ctx.out.emit(&report, |out| {
+        if report.dry_run {
+            out.info(out.t(Msg::ImportDryRun));
+        }
         let rows = report
             .items
             .iter()
@@ -134,6 +147,11 @@ pub async fn import(ctx: &Context, command: ImportCmd) -> CliResult<()> {
             rows,
             Msg::NothingImported,
         );
+        let imported = report.items.iter().filter(|i| i.imported).count();
+        out.success(out.tf(
+            Msg::ImportTotals,
+            &[&imported, &(report.items.len() - imported)],
+        ));
     });
     Ok(())
 }

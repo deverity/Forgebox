@@ -102,15 +102,15 @@ fn folder_name(dir: &Path) -> String {
 
 // ------------------------------------------------------------------- name hints
 
-/// What can be read from a folder name.
+/// What can be read from a folder name (`php-8.3-Win32-vs16-x64`, `mysql-8`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-struct NameHint {
+pub struct NameHint {
     /// Lowercase text before the version (`php`, `httpd`, `node`); empty when absent.
-    prefix: String,
+    pub prefix: String,
     /// `8.3`, `2.4.62`, `18`.
-    version: Option<String>,
+    pub version: Option<String>,
     /// Lowercase words after the version (`win32`, `vs16`, `x64`).
-    tokens: Vec<String>,
+    pub tokens: Vec<String>,
 }
 
 fn name_regex() -> &'static Regex {
@@ -124,7 +124,8 @@ fn name_regex() -> &'static Regex {
     })
 }
 
-fn parse_folder_name(name: &str) -> NameHint {
+/// Splits a folder name into prefix, version and trailing words (see [`NameHint`]).
+pub fn parse_folder_name(name: &str) -> NameHint {
     let Some(caps) = name_regex().captures(name) else {
         // No version: keep the words so variants and prefixes can still be read.
         return NameHint {
@@ -449,8 +450,16 @@ fn evaluate(candidate: &Candidate, manifest: &ToolManifest) -> Option<Discovered
 /// that cannot be read or recognized are skipped. Version commands run in
 /// `spawn_blocking`, in parallel, each with a 5 s timeout. Sorted by tool and path.
 pub async fn discover(root: &ForgeRoot, manifests: &[ToolManifest]) -> Vec<DiscoveredVersion> {
+    discover_in(&root.bin(), manifests).await
+}
+
+/// [`discover`] over any `bin`-shaped folder (`<bin>/<tool>/<version>` or loose folders),
+/// e.g. the `bin` of an installation of another environment that is being imported
+/// (`C:\laragon\bin`). Read-only: the only side effect is running the manifests'
+/// version commands inside the found folders.
+pub async fn discover_in(bin: &Path, manifests: &[ToolManifest]) -> Vec<DiscoveredVersion> {
     let manifests: Arc<[ToolManifest]> = manifests.to_vec().into();
-    let bin = root.bin();
+    let bin = bin.to_path_buf();
     let found = {
         let manifests = Arc::clone(&manifests);
         tokio::task::spawn_blocking(move || candidates(&bin, &manifests)).await
