@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 18.6 fbe23da234ee31547bf8a36d29dfd81e82b849df2d2b78d2eecb43d360252f8c
+# verified: 2026-10-26 17.11 6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3
+#   (EDB publishes no checksum or index: sha256 computed locally from
+#   get.enterprisedb.com/postgresql/postgresql-<ver>-1-windows-x64-binaries.zip, curated)
+# Daemon sequence exercised on 17.11 (2026-10-26): initdb -U postgres -A trust -E UTF8 --locale=C,
+# postgres -D <data> -c config_file=... -c hba_file=... (config outside the data dir), psql over
+# TCP, pg_ctl reload, pg_ctl stop -m fast: all worked; `create table Foo` is stored as `foo`.
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: postgresql
+  name: PostgreSQL
+  summary: PostgreSQL (binários EDB)
+  description: |
+    PostgreSQL com os binários zip da EDB. Várias instâncias com data dir e porta próprios. Já é
+    sensível a maiúsculas/minúsculas como no Linux (nada a configurar).
+  category: database
+  tags: [postgresql, postgres, sql, database]
+  homepage: https://www.postgresql.org
+  docs: https://www.postgresql.org/docs/
+  license: PostgreSQL
+  icon: postgresql.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+  runtime_deps: [vcredist-vs17]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=14" }
+    series_key: "{major}"
+
+  source:
+    providers:
+      - type: postgresql-edb
+    releases:
+      - version: "18.6"
+        url: https://get.enterprisedb.com/postgresql/postgresql-18.6-1-windows-x64-binaries.zip
+        sha256: "fbe23da234ee31547bf8a36d29dfd81e82b849df2d2b78d2eecb43d360252f8c"
+        size: 343808005
+      - version: "17.11"
+        url: https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip
+        sha256: "6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3"
+        size: 340719294
+
+  install:
+    archive: zip
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "bin"
+    shims: [psql, pg_dump, pg_dumpall, pg_restore, createdb, dropdb]
+    verify:
+      command: "bin/postgres.exe --version"
+      regex: "\\(PostgreSQL\\) (\\d+\\.\\d+)"
+    post_install:
+      - mkdir: "{{ paths.data }}/postgresql"
+      - mkdir: "{{ paths.logs }}/postgresql/{{ instance.name }}"
+      - render: { template: "postgresql/postgresql.conf.j2", to: "{{ paths.etc }}/postgresql/{{ instance.name }}/postgresql.conf" }
+      - render: { template: "postgresql/pg_hba.conf.j2", to: "{{ paths.etc }}/postgresql/{{ instance.name }}/pg_hba.conf" }
+    uninstall:
+      keep: ["{{ paths.etc }}/postgresql", "{{ paths.data }}/postgresql"]
+    size_estimate_mb: 1000
+
+  config:
+    files:
+      - id: postgresql_conf
+        path: "{{ paths.etc }}/postgresql/{{ instance.name }}/postgresql.conf"
+        format: conf-directive
+        label: postgresql.conf
+        editable: true
+      - id: pg_hba
+        path: "{{ paths.etc }}/postgresql/{{ instance.name }}/pg_hba.conf"
+        format: text
+        label: pg_hba.conf
+        editable: true
+    quick_settings:
+      - key: max_connections
+        label: Max connections
+        file: postgresql_conf
+        directive: "max_connections"
+        type: number
+        min: 1
+        max: 10000
+        default: 100
+      - key: shared_buffers
+        label: Shared buffers
+        file: postgresql_conf
+        directive: "shared_buffers"
+        type: select
+        options: [128MB, 256MB, 512MB, 1GB, 2GB]
+        default: 128MB
+      - key: synchronous_commit
+        label: Commit síncrono (mais seguro, mais lento)
+        file: postgresql_conf
+        directive: "synchronous_commit"
+        type: toggle
+        on: "on"
+        off: "off"
+        default: off
+        apply: reload
+
+  service:
+    kind: daemon
+    daemon:
+      multi_instance: true
+      exe: bin/postgres.exe
+      args:
+        - "-D"
+        - "{{ instance.data_dir }}"
+        - "-c"
+        - "config_file={{ instance.config.postgresql_conf }}"
+        - "-c"
+        - "hba_file={{ instance.config.pg_hba }}"
+      cwd: "{{ paths.version }}"
+      console_group: true
+      ports:
+        - { name: main, default: 5432, range: databases }
+      start_timeout: 60s
+      health:
+        tcp: "127.0.0.1:{{ instance.ports.main }}"
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop:
+        command: "bin/pg_ctl.exe stop -D {{ instance.data_dir }} -m fast -t 20"
+        timeout: 30s
+        then: ctrl-break
+      reload:
+        command: "bin/pg_ctl.exe reload -D {{ instance.data_dir }}"
+      restart_policy: { on: failure, max: 3, window: 60s }
+      logs:
+        - { label: Server log, path: "{{ paths.logs }}/postgresql/{{ instance.name }}/postgresql.log", format: postgresql }
+      data:
+        dir: "{{ paths.data }}/postgresql/{{ instance.name }}"
+        init:
+          command: "bin/initdb.exe -D {{ instance.data_dir }} -U postgres -A trust -E UTF8 --locale=C"
+      autostart: true
+
+  discover:
+    match_files: [bin/postgres.exe, bin/pg_ctl.exe]
+    version_command: "bin/postgres.exe --version"
+    version_regex: "\\(PostgreSQL\\) (\\d+\\.\\d+)"
+
+  update:
+    policy: notify
+    retention: 1
+    check_interval: 12h
+
+  ui:
+    color: "#336791"
+    actions:
+      - { label: "postgresql.conf", icon: file-text, open: config:postgresql_conf }
+      - { label: "pg_hba.conf", icon: file-text, open: config:pg_hba }
+      - { label: "Cliente psql", icon: terminal, shell: { path_prepend: ["{{ paths.version }}/bin"] } }

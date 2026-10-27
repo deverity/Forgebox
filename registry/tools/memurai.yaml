@@ -1,0 +1,115 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 4.1.2 11d009c8e93912e1899b5263d0e7d78907903913e1672b30020612ada6d27446
+#   (InstallerSha256 of microsoft/winget-pkgs Memurai.MemuraiDeveloper 4.1.2 == local hash of the
+#   MSI downloaded from dist.memurai.com)
+# verified: 2026-10-26 4.3.2 5642cbe181d6a2dbce97300f44b5d58505bf592fc2879d75852a792dda946100
+#   (computed locally from dist.memurai.com; Memurai publishes no checksum, curated)
+# Distribution is an MSI. It is unpacked as an administrative image (`msiexec /a`, no system
+# install, docs/12), which yields a `Memurai/` folder with memurai.exe and memurai-cli.exe; the
+# extraction is NOT implemented: M1-E2-T2 supports only zip/7z/tar.gz/tar.xz/single file and no
+# roadmap task covers `msiexec /a` yet (gap: Memurai is not installable until one exists). So
+# `install.archive` is deduced (.msi) and not declared: the lint refuses an explicit
+# `archive: msi` in v1.
+# The command line below uses the standard Redis options; it was NOT executed here.
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: memurai
+  name: Memurai Developer
+  summary: Redis-compatível nativo para Windows (Memurai Developer)
+  description: |
+    Servidor compatível com a API do Redis 7.x. A licença Developer é para desenvolvimento local
+    (proíbe uso em produção). Padrão do Forgebox para cache/fila no Windows.
+  category: cache
+  tags: [redis, cache, queue, memurai]
+  homepage: https://www.memurai.com
+  docs: https://docs.memurai.com
+  license: LicenseRef-Memurai-Developer
+  icon: memurai.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=4 <5" }
+    series_key: "{major}.{minor}"
+
+  source:
+    providers:
+      - type: http
+        url: "https://dist.memurai.com/releases/Memurai-Developer/{version}/Memurai-Developer-v{version}.msi"
+    releases:
+      - version: "4.3.2"
+        sha256: "5642cbe181d6a2dbce97300f44b5d58505bf592fc2879d75852a792dda946100"
+        size: 8749056
+      - version: "4.1.2"
+        sha256: "11d009c8e93912e1899b5263d0e7d78907903913e1672b30020612ada6d27446"
+        size: 8761344
+
+  install:
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "."
+    shims: [memurai-cli]
+    verify:
+      command: "memurai.exe --version"
+      regex: "v=(\\d+\\.\\d+\\.\\d+)"
+    post_install:
+      - mkdir: "{{ paths.data }}/memurai"
+    uninstall:
+      keep: ["{{ paths.data }}/memurai"]
+    size_estimate_mb: 25
+
+  service:
+    kind: daemon
+    daemon:
+      multi_instance: true
+      exe: memurai.exe
+      args:
+        - "--port"
+        - "{{ instance.ports.main }}"
+        - "--bind"
+        - "127.0.0.1"
+        - "--dir"
+        - "{{ instance.data_dir }}"
+        - "--save"
+        - "60 1"
+      cwd: "{{ paths.version }}"
+      console_group: true
+      ports:
+        - { name: main, default: 6379, range: databases }
+      start_timeout: 20s
+      health:
+        tcp: "127.0.0.1:{{ instance.ports.main }}"
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop:
+        command: "memurai-cli.exe -h 127.0.0.1 -p {{ instance.ports.main }} shutdown"
+        timeout: 15s
+        then: ctrl-c
+      restart_policy: { on: failure, max: 3, window: 60s }
+      data:
+        dir: "{{ paths.data }}/memurai/{{ instance.name }}"
+      autostart: true
+
+  discover:
+    match_files: [memurai.exe]
+    version_command: "memurai.exe --version"
+    version_regex: "v=(\\d+\\.\\d+\\.\\d+)"
+
+  update:
+    policy: notify
+    retention: 1
+    check_interval: 24h
+
+  ui:
+    color: "#D82C20"
+    actions:
+      - { label: "Terminal com memurai-cli", icon: terminal, shell: { path_prepend: ["{{ paths.version }}"] } }

@@ -31,7 +31,7 @@ cargo test --workspace                                     # testes unitários e
 cargo clippy --workspace --all-targets -- -D warnings      # lint, warnings são erro
 cargo fmt --all -- --check                                 # formatação
 cargo deny check                                           # licenças, advisories, bans e fontes
-cargo xtask schema | gen-ts | lint-registry                # tarefas de desenvolvimento (placeholders até M0-E1-T2)
+cargo xtask schema | gen-ts | lint-registry | registry-index # tarefas de desenvolvimento (placeholders até M0-E1-T2)
 ```
 
 Antes de começar uma tarefa, leia [CLAUDE.md](CLAUDE.md) e o [índice da documentação](docs/README.md). O estado das tarefas do roadmap fica em [docs/STATUS.md](docs/STATUS.md).

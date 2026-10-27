@@ -1274,6 +1274,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror",
 ]
@@ -4560,6 +4561,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "forge-core",
  "forge-ipc",
  "forge-manifest",
  "serde_json",
