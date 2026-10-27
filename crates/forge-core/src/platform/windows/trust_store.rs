@@ -28,23 +28,26 @@
 
 use std::ffi::c_void;
 
-use ::windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_CANCELLED, ERROR_FILE_NOT_FOUND};
+use ::windows::Win32::Foundation::{
+    CRYPT_E_NOT_FOUND, ERROR_ACCESS_DENIED, ERROR_CANCELLED, ERROR_FILE_NOT_FOUND, GetLastError,
+    SetLastError, WIN32_ERROR,
+};
 use ::windows::Win32::Security::Cryptography::{
     AUTHTYPE_SERVER, CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL, CERT_CHAIN_CONTEXT,
     CERT_CHAIN_DISABLE_AIA, CERT_CHAIN_ENGINE_CONFIG, CERT_CHAIN_PARA, CERT_CHAIN_POLICY_PARA,
     CERT_CHAIN_POLICY_SSL, CERT_CHAIN_POLICY_STATUS, CERT_CHAIN_REVOCATION_CHECK_END_CERT,
-    CERT_CONTEXT, CERT_FIND_SHA1_HASH, CERT_OPEN_STORE_FLAGS, CERT_STORE_ADD_USE_EXISTING,
-    CERT_STORE_DELETE_FLAG, CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_MEMORY,
-    CERT_STORE_PROV_SYSTEM_REGISTRY_W, CERT_STORE_PROV_SYSTEM_W, CERT_STORE_READONLY_FLAG,
-    CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE, CERT_USAGE_MATCH,
-    CRYPT_INTEGER_BLOB, CTL_USAGE, CertAddEncodedCertificateToStore, CertCloseStore,
-    CertCreateCertificateChainEngine, CertCreateCertificateContext, CertDeleteCertificateFromStore,
-    CertEnumCertificatesInStore, CertFindCertificateInStore, CertFreeCertificateChain,
-    CertFreeCertificateChainEngine, CertFreeCertificateContext, CertGetCertificateChain,
-    CertOpenStore, CertUnregisterSystemStore, CertVerifyCertificateChainPolicy,
-    CertVerifyTimeValidity, HCERTCHAINENGINE, HCERTSTORE, HTTPSPolicyCallbackData,
-    HTTPSPolicyCallbackData_0, PKCS_7_ASN_ENCODING, USAGE_MATCH_TYPE_AND, X509_ASN_ENCODING,
-    szOID_PKIX_KP_SERVER_AUTH,
+    CERT_CONTEXT, CERT_FIND_PROP_ONLY_ENHKEY_USAGE_FLAG, CERT_FIND_SHA1_HASH,
+    CERT_OPEN_STORE_FLAGS, CERT_STORE_ADD_USE_EXISTING, CERT_STORE_DELETE_FLAG,
+    CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_MEMORY, CERT_STORE_PROV_SYSTEM_REGISTRY_W,
+    CERT_STORE_PROV_SYSTEM_W, CERT_STORE_READONLY_FLAG, CERT_SYSTEM_STORE_CURRENT_USER,
+    CERT_SYSTEM_STORE_LOCAL_MACHINE, CERT_USAGE_MATCH, CRYPT_INTEGER_BLOB, CTL_USAGE,
+    CertAddEncodedCertificateToStore, CertCloseStore, CertCreateCertificateChainEngine,
+    CertCreateCertificateContext, CertDeleteCertificateFromStore, CertEnumCertificatesInStore,
+    CertFindCertificateInStore, CertFreeCertificateChain, CertFreeCertificateChainEngine,
+    CertFreeCertificateContext, CertGetCertificateChain, CertGetEnhancedKeyUsage, CertOpenStore,
+    CertUnregisterSystemStore, CertVerifyCertificateChainPolicy, CertVerifyTimeValidity,
+    HCERTCHAINENGINE, HCERTSTORE, HTTPSPolicyCallbackData, HTTPSPolicyCallbackData_0,
+    PKCS_7_ASN_ENCODING, USAGE_MATCH_TYPE_AND, X509_ASN_ENCODING, szOID_PKIX_KP_SERVER_AUTH,
 };
 use ::windows::core::{HSTRING, PSTR, PWSTR};
 
@@ -62,6 +65,10 @@ const TRUSTED_ROOT_STORES: [(u32, &str); 2] = [
     (CERT_SYSTEM_STORE_CURRENT_USER, ROOT_STORE),
     (CERT_SYSTEM_STORE_LOCAL_MACHINE, "AuthRoot"),
 ];
+/// Logical store of the certificates the OS explicitly distrusts (user + machine).
+const DISALLOWED_STORE: &str = "Disallowed";
+/// `id-kp-serverAuth`.
+const SERVER_AUTH_OID: &str = "1.3.6.1.5.5.7.3.1";
 /// Budget of one CRL fetch when revocation is checked.
 const URL_TIMEOUT_MS: u32 = 5_000;
 
@@ -247,14 +254,31 @@ impl TrustStore for WindowsTrustStore {
     }
 
     fn system_roots(&self) -> Result<Vec<Vec<u8>>> {
+        // What Windows refuses whatever the root stores say (`Disallowed`, user and
+        // machine), and roots whose "enabled purposes" (the EKU property an admin or
+        // the automatic root update sets per certificate) exclude server authentication:
+        // OpenSSL ignores both, so they are left out of the bundle.
+        let disallowed: std::collections::BTreeSet<CertThumbprint> =
+            match Store::open_logical(CERT_SYSTEM_STORE_CURRENT_USER, DISALLOWED_STORE)? {
+                Some(store) => store
+                    .certificates(false)
+                    .iter()
+                    .map(|(der, _)| CertThumbprint::of_der(der))
+                    .collect(),
+                None => std::collections::BTreeSet::new(),
+            };
         let mut seen = std::collections::BTreeSet::new();
         let mut out = Vec::new();
         for (location, name) in TRUSTED_ROOT_STORES {
             let Some(store) = Store::open_logical(location, name)? else {
                 continue;
             };
-            for der in store.valid_certificates() {
-                if seen.insert(CertThumbprint::of_der(&der)) {
+            for (der, purposes) in store.certificates(true) {
+                let thumbprint = CertThumbprint::of_der(&der);
+                if disallowed.contains(&thumbprint) || !purposes.allows(SERVER_AUTH_OID) {
+                    continue;
+                }
+                if seen.insert(thumbprint) {
                     out.push(der);
                 }
             }
@@ -379,6 +403,79 @@ pub(crate) fn machine_root_der(thumbprint: &CertThumbprint) -> Result<Option<Vec
     Ok(store.find(thumbprint).map(|context| context.der()))
 }
 
+/// The "enabled purposes" Windows keeps per certificate
+/// (`CERT_ENHKEY_USAGE_PROP_ID`, read with `CERT_FIND_PROP_ONLY_ENHKEY_USAGE_FLAG`): it
+/// narrows what the certificate's own extension allows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Purposes {
+    /// No property: every purpose the certificate itself allows.
+    All,
+    /// Only these OIDs (empty: disabled for every purpose).
+    Only(Vec<String>),
+}
+
+impl Purposes {
+    fn allows(&self, oid: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(oids) => oids.iter().any(|o| o == oid),
+        }
+    }
+
+    /// The property of `ctx`. A failure to read it keeps the certificate (`All`): the
+    /// stores already list it as trusted.
+    ///
+    /// # Safety
+    /// `ctx` is a valid certificate context for the duration of the call.
+    unsafe fn of(ctx: *const CERT_CONTEXT) -> Self {
+        let flags = CERT_FIND_PROP_ONLY_ENHKEY_USAGE_FLAG.0;
+        let mut size = 0_u32;
+        // SAFETY: valid context; size query only. Fails with CRYPT_E_NOT_FOUND when the
+        // certificate has no such property.
+        if unsafe { CertGetEnhancedKeyUsage(ctx, flags, None, &mut size) }.is_err()
+            || (size as usize) < size_of::<CTL_USAGE>()
+        {
+            return Self::All;
+        }
+        // 8-byte aligned buffer for the CTL_USAGE and the OID strings after it.
+        let mut buf = vec![0_u64; (size as usize).div_ceil(8)];
+        let usage = buf.as_mut_ptr().cast::<CTL_USAGE>();
+        // SAFETY: plain thread-local write, so a successful call with no OIDs can be told
+        // apart (below).
+        unsafe { SetLastError(WIN32_ERROR(0)) };
+        // SAFETY: `buf` holds `size` writable bytes, aligned for CTL_USAGE.
+        if unsafe { CertGetEnhancedKeyUsage(ctx, flags, Some(usage), &mut size) }.is_err() {
+            return Self::All;
+        }
+        // SAFETY: filled by the successful call above; `buf` outlives `usage`.
+        let usage = unsafe { &*usage };
+        if usage.cUsageIdentifier == 0 {
+            // "If GetLastError returns CRYPT_E_NOT_FOUND, the certificate is good for all
+            // uses. If it returns zero, the certificate has no valid uses."
+            // SAFETY: plain thread-local read.
+            let last = unsafe { GetLastError() };
+            return if last.0 == CRYPT_E_NOT_FOUND.0 as u32 {
+                Self::All
+            } else {
+                Self::Only(Vec::new())
+            };
+        }
+        let oids = (0..usage.cUsageIdentifier as usize)
+            .filter_map(|i| {
+                // SAFETY: `cUsageIdentifier` pointers to NUL-terminated ANSI strings, all
+                // inside `buf`.
+                let oid = unsafe { *usage.rgpszUsageIdentifier.add(i) };
+                if oid.is_null() {
+                    return None;
+                }
+                // SAFETY: non-null NUL-terminated string (above).
+                unsafe { oid.to_string() }.ok()
+            })
+            .collect();
+        Self::Only(oids)
+    }
+}
+
 /// An open certificate store, closed on drop.
 struct Store(HCERTSTORE);
 
@@ -442,8 +539,9 @@ impl Store {
         }
     }
 
-    /// DER of every certificate of the store that is valid now.
-    fn valid_certificates(&self) -> Vec<Vec<u8>> {
+    /// DER and enabled purposes of every certificate of the store (`only_valid`: only
+    /// those within their validity period now).
+    fn certificates(&self, only_valid: bool) -> Vec<(Vec<u8>, Purposes)> {
         let mut out = Vec::new();
         let mut previous: *const CERT_CONTEXT = std::ptr::null();
         loop {
@@ -459,11 +557,12 @@ impl Store {
             // `pCertInfo` and encoded bytes live as long as it does.
             unsafe {
                 let ctx = &*next;
-                if CertVerifyTimeValidity(None, ctx.pCertInfo) == 0 {
-                    out.push(
+                if !only_valid || CertVerifyTimeValidity(None, ctx.pCertInfo) == 0 {
+                    out.push((
                         std::slice::from_raw_parts(ctx.pbCertEncoded, ctx.cbCertEncoded as usize)
                             .to_vec(),
-                    );
+                        Purposes::of(next),
+                    ));
                 }
             }
             previous = next;
@@ -755,6 +854,54 @@ mod tests {
         for der in &roots {
             CertContext::from_der(der).unwrap();
         }
+    }
+
+    #[test]
+    fn enabled_purposes_filter_server_authentication() {
+        assert!(Purposes::All.allows(SERVER_AUTH_OID));
+        assert!(
+            Purposes::Only(vec!["1.3.6.1.5.5.7.3.2".into(), SERVER_AUTH_OID.into()])
+                .allows(SERVER_AUTH_OID)
+        );
+        // Code signing only, or disabled for every purpose.
+        assert!(!Purposes::Only(vec!["1.3.6.1.5.5.7.3.3".into()]).allows(SERVER_AUTH_OID));
+        assert!(!Purposes::Only(Vec::new()).allows(SERVER_AUTH_OID));
+    }
+
+    #[test]
+    fn system_roots_leave_out_disallowed_and_non_tls_roots() {
+        let disallowed: std::collections::BTreeSet<CertThumbprint> =
+            Store::open_logical(CERT_SYSTEM_STORE_CURRENT_USER, DISALLOWED_STORE)
+                .unwrap()
+                .map(|s| {
+                    s.certificates(false)
+                        .iter()
+                        .map(|(der, _)| CertThumbprint::of_der(der))
+                        .collect()
+                })
+                .unwrap_or_default();
+        let roots = WindowsTrustStore::new(None).system_roots().unwrap();
+        let kept: std::collections::BTreeSet<_> =
+            roots.iter().map(|d| CertThumbprint::of_der(d)).collect();
+        assert!(kept.is_disjoint(&disallowed));
+        // Every root listed is enabled for server authentication.
+        let store = Store::open_logical(CERT_SYSTEM_STORE_CURRENT_USER, ROOT_STORE)
+            .unwrap()
+            .unwrap();
+        let mut restricted = 0;
+        for (der, purposes) in store.certificates(true) {
+            if purposes != Purposes::All {
+                restricted += 1;
+            }
+            if kept.contains(&CertThumbprint::of_der(&der)) {
+                assert!(purposes.allows(SERVER_AUTH_OID), "{purposes:?}");
+            }
+        }
+        println!(
+            "{} roots kept, {} disallowed, {restricted} with enabled purposes",
+            kept.len(),
+            disallowed.len()
+        );
     }
 
     #[test]

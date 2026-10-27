@@ -159,7 +159,8 @@ pub trait TrustStore: Send + Sync + fmt::Debug {
     ) -> Result<()>;
 
     /// Every root certificate the OS trusts for TLS right now (DER, deduplicated,
-    /// unexpired), read without elevation or dialog: on Windows the `Root` logical store
+    /// unexpired, not explicitly distrusted, enabled for server authentication), read
+    /// without elevation or dialog: on Windows the `Root` logical store
     /// of the user (the user's, the machine's, group policy and enterprise roots) and the
     /// machine's third-party roots (`AuthRoot`). Tools with their own TLS stack (PHP's
     /// OpenSSL and curl, Composer) get them as `certs/ca-bundle.pem`, so they trust what
