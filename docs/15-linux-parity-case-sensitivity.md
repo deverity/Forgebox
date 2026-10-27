@@ -18,7 +18,7 @@ Desde o Windows 10 1803 o NTFS suporta a flag **por diretório** `FILE_CS_FLAG_C
 | Diretório | Quando | Como |
 |---|---|---|
 | `www/` (parked padrão) e qualquer parked dir criado pelo Forgebox | Onboarding (criado vazio → flag antes de qualquer arquivo) | direto |
-| Parked dir **existente** com conteúdo (ex. `C:\laragon\www` importado) | `forge park` / import | Oferece **Converter** (§3.3): cria `<dir>.cs-tmp` com a flag, recria as pastas dentro dele e move cada arquivo (rename no mesmo volume, só metadados), troca os nomes, verifica. Reversível. Arquivos abertos abortam e restauram |
+| Parked dir **existente** com conteúdo (ex. `C:\laragon\www` importado) | `forge park` / `forge import laragon` (oferece; `--convert-case` converte, [08](08-release-layout.md) §6) | Oferece **Converter** (§3.3): cria `<dir>.cs-tmp` com a flag, recria as pastas dentro dele e move cada arquivo (rename no mesmo volume, só metadados), troca os nomes, verifica. Reversível. Arquivos abertos abortam e restauram |
 | Projeto linkado fora de parked dir (`forge site add D:\x\proj`) | Ao criar o site | Diagnóstico mostra "diretório case-insensitive"; botão **Converter** igual acima; pode recusar |
 | `www/<novo projeto>` via `forge new` | Herdado automaticamente | — |
 | `data/` dos bancos | Na criação da instância (vazio) | direto (ver §5) |

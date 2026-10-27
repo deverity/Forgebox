@@ -224,7 +224,7 @@ async fn tools(
         }
 
         let note = if options.copy_tools {
-            if target_path.exists() {
+            if tokio::fs::try_exists(&target_path).await.unwrap_or(false) {
                 report.push(
                     kind::TOOL_VERSION,
                     name,
@@ -336,7 +336,7 @@ async fn databases(
         if options.move_data {
             let dest = env.root.data().join(db.tool_id.as_str()).join(&db.name);
             let dest_text = posix_string(&dest);
-            if dest.exists() {
+            if tokio::fs::try_exists(&dest).await.unwrap_or(false) {
                 note = msg::data_move_dest_exists(&dest_text).1;
             } else if options.dry_run {
                 (data_dir, external, note) =

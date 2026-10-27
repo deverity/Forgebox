@@ -128,7 +128,7 @@ pub fn php_selection(value: &str) -> Result<SitePhp> {
     })
 }
 
-async fn reconcile_quietly(daemon: &Daemon, reason: &str) {
+pub(super) async fn reconcile_quietly(daemon: &Daemon, reason: &str) {
     if let Err(err) = daemon.web.reconcile(reason).await {
         tracing::warn!(%err, reason, "reconcile failed");
     }
@@ -371,7 +371,10 @@ fn parked_path(daemon: &Daemon, dir: &str) -> PathBuf {
     }
 }
 
-async fn save_config(daemon: &Daemon, config: forge_core::config::ForgeConfig) -> Result<()> {
+pub(super) async fn save_config(
+    daemon: &Daemon,
+    config: forge_core::config::ForgeConfig,
+) -> Result<()> {
     let path = daemon.root.forgebox_toml();
     let saved = config.clone();
     forge_core::runtime::spawn_blocking_timeout(
@@ -384,7 +387,7 @@ async fn save_config(daemon: &Daemon, config: forge_core::config::ForgeConfig) -
     Ok(())
 }
 
-async fn reconcile_parked(daemon: &Daemon) {
+pub(super) async fn reconcile_parked(daemon: &Daemon) {
     let config = daemon.config();
     let dirs: Vec<forge_sites::ParkedDir> = config
         .parked_dirs

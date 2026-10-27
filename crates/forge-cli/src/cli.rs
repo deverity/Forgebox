@@ -918,8 +918,22 @@ pub enum RegistryCmd {
 
 #[derive(Debug, Subcommand)]
 pub enum ImportCmd {
-    /// Importa uma instalação do Laragon (somente leitura).
-    Laragon { path: PathBuf },
+    /// Importa uma instalação do Laragon (a pasta do Laragon só é lida).
+    Laragon {
+        path: PathBuf,
+        /// Mostra o que seria importado, sem gravar nada.
+        #[arg(long)]
+        dry_run: bool,
+        /// Copia as ferramentas para bin/<tool>/ em vez de usá-las onde estão.
+        #[arg(long)]
+        copy_tools: bool,
+        /// Move os data dirs para data/<tool>/<nome> (mesmo volume) em vez de referenciá-los.
+        #[arg(long)]
+        move_data: bool,
+        /// Converte as pastas de projetos para case-sensitive depois de importar.
+        #[arg(long)]
+        convert_case: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

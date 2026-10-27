@@ -246,6 +246,8 @@ service:
       dir: "{{ paths.data }}/mysql/{{ instance.name }}"
       init:                          # inicialização de data dir na 1ª vez
         command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --initialize-insecure"
+                                     # (uma instância importada do Laragon aponta para o data dir de lá: `settings`
+                                     #  `forgebox.external_data_dir`, ADR-0031; sem a marca vale `data.dir`)
     depends_on: []
     autostart: true
 ```

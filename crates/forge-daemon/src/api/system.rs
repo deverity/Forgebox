@@ -1,20 +1,109 @@
 //! `system.*` (`system.hello`/`system.ping` are server built-ins): preferences
-//! (`forgebox.toml` by dotted key). Import, bundles, backups and self-update are later
-//! tasks (see `not_implemented`).
+//! (`forgebox.toml` by dotted key) and the Laragon import. Bundles, backups and
+//! self-update are later tasks (see `not_implemented`).
+
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use forge_core::config::ForgeConfig;
 use forge_core::error::{ForgeError, Result};
-use forge_ipc::api::methods::{system_config_get, system_config_set};
-use forge_ipc::api::{ConfigGetParams, ConfigSetParams, ConfigValueDto};
+use forge_ipc::api::methods::{system_config_get, system_config_set, system_import_laragon};
+use forge_ipc::api::{
+    ConfigGetParams, ConfigSetParams, ConfigValueDto, ImportItemDto, ImportLaragonParams,
+    ImportReportDto, JobDto,
+};
 use forge_ipc::server::{Ctx, Router};
+use forge_sites::import::{ApplyEnv, CaseConvertFn};
+use forge_sites::{ImportOptions, LaragonImporter};
+use futures::FutureExt;
 use serde_json::Value;
 
 use super::route;
+use super::sites::{reconcile_parked, reconcile_quietly, save_config};
+use crate::catalog;
 use crate::daemon::Daemon;
 
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, system_config_get, get);
     route!(router, daemon, system_config_set, set);
+    route!(router, daemon, system_import_laragon, import_laragon);
+}
+
+/// `system.import_laragon`: scans the Laragon folder (read-only), registers what the
+/// plan holds and wires the result into the running daemon (preferences saved, parked
+/// folders reconciled, imported database instances adopted, web servers re-rendered).
+/// With `dry_run` it stops after deciding.
+async fn import_laragon(daemon: Daemon, params: ImportLaragonParams, ctx: Ctx) -> Result<JobDto> {
+    let path = PathBuf::from(&params.path);
+    if !path.is_absolute() {
+        return Err(ForgeError::InvalidInput(format!(
+            "{} must be an absolute folder on the daemon's machine",
+            params.path
+        )));
+    }
+    let d = daemon.clone();
+    daemon.job(&ctx, "system.import_laragon", move |job| async move {
+        let manifests: Vec<_> = catalog::tools(&d.registry)
+            .into_iter()
+            .map(|t| (*t.manifest).clone())
+            .collect();
+        let importer = LaragonImporter::new(manifests);
+        let plan = importer.scan(&path).await?;
+
+        let case = d.case.clone();
+        let case_job = job.clone();
+        let convert: CaseConvertFn = Arc::new(move |dir| {
+            let (case, job) = (case.clone(), case_job.clone());
+            async move { case.run(&job, dir, true, None).await.map(|_| ()) }.boxed()
+        });
+        let env = ApplyEnv {
+            root: d.root.clone(),
+            writer: d.writer.clone(),
+            reader: d.reader.clone(),
+            sites: d.sites.clone(),
+            config: (*d.config()).clone(),
+            convert_case: Some(convert),
+        };
+        let options = ImportOptions {
+            dry_run: params.dry_run,
+            copy_tools: params.copy_tools,
+            move_data: params.move_data,
+            convert_case_sensitive: params.convert_case_sensitive,
+        };
+        let outcome = LaragonImporter::apply(&plan, &options, &env).await?;
+
+        if !params.dry_run {
+            if outcome.config_changed {
+                save_config(&d, outcome.config.clone()).await?;
+                reconcile_parked(&d).await;
+            }
+            if outcome.instances > 0 {
+                d.services.adopt_stored().await?;
+            }
+            if outcome.tool_versions > 0 {
+                if let Err(err) = d.services.ensure_defaults().await {
+                    tracing::warn!(%err, "default instances after the Laragon import");
+                }
+            }
+            if outcome.tool_versions + outcome.sites > 0 || outcome.config_changed {
+                reconcile_quietly(&d, "laragon import").await;
+            }
+        }
+        Ok(ImportReportDto {
+            dry_run: outcome.report.dry_run,
+            items: outcome
+                .report
+                .items
+                .into_iter()
+                .map(|i| ImportItemDto {
+                    kind: i.kind.to_owned(),
+                    name: i.name,
+                    imported: i.imported,
+                    note: i.note,
+                })
+                .collect(),
+        })
+    })
 }
 
 /// `prefs.default_server` and `default_server` name the same key (the CLI documents

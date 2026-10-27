@@ -72,7 +72,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("remote.listen", "M6-E3", "remote mode listener"),
     ("remote.clients", "M6-E3", "remote mode clients"),
     ("remote.revoke", "M6-E3", "remote mode clients"),
-    ("system.import_laragon", "M1-E5-T5", "Laragon import"),
     ("system.bundle_export", "M3-E3", "offline bundles"),
     ("system.bundle_import", "M3-E3", "offline bundles"),
     ("system.backup_now", "M3-E3", "database backups"),

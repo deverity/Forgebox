@@ -247,7 +247,11 @@ fn table() -> Vec<Case> {
         case(&["registry", "add", "{REGISTRY}", "--name", "extra"], OK),
         case(&["registry", "remove", "extra"], OK),
         case(&["registry", "update"], OK),
-        case(&["import", "laragon", "{TMP}/laragon"], NI),
+        case(&["import", "laragon", "{TMP}/laragon"], E("not_found")),
+        case(
+            &["import", "laragon", "{TMP}", "--dry-run"],
+            E("invalid_input"),
+        ),
         case(&["bundle", "export", "nginx", "-o", "{TMP}/stack.fbx"], NI),
         case(&["bundle", "import", "{TMP}/stack.fbx"], NI),
         case(&["backup", "now"], NI),

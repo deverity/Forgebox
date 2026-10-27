@@ -138,7 +138,7 @@ forge remote pair | listen --addr 0.0.0.0:7788 | clients | revoke <id>   # no la
 ### registry / sistema
 ```
 forge registry list | add <url> | remove <nome> | update
-forge import laragon C:\laragon
+forge import laragon C:\laragon [--dry-run] [--copy-tools] [--move-data] [--convert-case]
 forge bundle export php@8.3 nginx -o stack.fbx | forge bundle import stack.fbx
 forge backup now [mysql/default] | forge backup schedule daily 02:00
 forge config get|set <chave> [valor]               # forgebox.toml

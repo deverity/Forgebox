@@ -53,25 +53,44 @@ pub struct PongDto {
 }
 
 /// Params of `system.import_laragon`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ImportLaragonParams {
     /// Laragon folder on the daemon's machine (`C:/laragon`); only read.
     pub path: String,
+    /// Decide and report, write nothing.
+    #[serde(default)]
+    pub dry_run: bool,
+    /// Copy the tool folders into `bin/<tool>/` instead of registering them where they
+    /// are.
+    #[serde(default)]
+    pub copy_tools: bool,
+    /// Move the `data/` folders into the root (same volume) instead of referencing them.
+    #[serde(default)]
+    pub move_data: bool,
+    /// Convert the parked folders to case-sensitive (docs/15 §3.3) after importing.
+    #[serde(default)]
+    pub convert_case_sensitive: bool,
 }
 
 /// One imported item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ImportItemDto {
-    /// `tool_version`, `site`, `database_dir`, `vhost`.
+    /// `tool_version`, `site`, `database_dir`, `vhost`, `parked_dir`, `pref`,
+    /// `case_conversion`, `tool`.
     pub kind: String,
     pub name: String,
+    /// Imported; in a dry run, would be imported.
     pub imported: bool,
+    /// Why it was not imported, or a remark about what was.
     pub note: Option<String>,
 }
 
 /// Result of the `system.import_laragon` job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ImportReportDto {
+    /// Nothing was written: `imported` means "would be imported".
+    #[serde(default)]
+    pub dry_run: bool,
     pub items: Vec<ImportItemDto>,
 }
 
