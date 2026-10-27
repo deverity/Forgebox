@@ -77,7 +77,7 @@ Convenção de IDs: `M<milestone>-E<épico>-T<tarefa>`. Estados: `todo | doing |
 
 ## M6 — Modo remoto ([13](13-remote-mode.md))
 - **M6-E1** `platform::linux` (cgroups, symlinks, systemd-user, `update-ca-certificates`, `systemd-resolved`) + providers Linux (static-php-cli, apt) + build headless `forge-linux-x64.tar.gz`. **Aceite:** smoke M1 roda em Ubuntu 24.04 via CLI.
-- **M6-E2** Transporte SSH (`russh`) até unix socket remoto; perfis `state/remotes/*.toml`; seletor de contexto na GUI; `local_only` tratado; zona `*.<remote>.test` no resolver local. **Aceite:** GUI no Windows cria site e troca PHP em VM Linux; logs e métricas em tempo real.
+- **M6-E2** Transporte SSH (`russh`) até unix socket remoto; perfis em `remotes.toml` + `remotes/<nome>/` na pasta de dados do cliente (ver [13](13-remote-mode.md) §3.2); seletor de contexto na GUI; `local_only` tratado; zona `*.<remote>.test` no resolver local. **Aceite:** GUI no Windows cria site e troca PHP em VM Linux; logs e métricas em tempo real.
 - **M6-E3** WSS + mTLS com pareamento SPAKE2, perfis admin/operator/viewer, revogação, painel web mínimo em `/_forgebox/`. **Aceite:** testes de autorização por método; pareamento expira; fingerprint pinado.
 
 ---

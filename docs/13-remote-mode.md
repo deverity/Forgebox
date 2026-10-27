@@ -44,7 +44,7 @@ Windows (cliente)                                   Linux (remoto)
 no remoto:   forge remote pair            → imprime código de 8 dígitos + fingerprint da CA (válido 10 min)
 no cliente:  forge remote add hml wss://10.0.0.5:7788 --code 1234-5678
              → troca de chaves (SPAKE2 com o código), cliente recebe cert mTLS assinado pela CA remota
-             → perfil salvo em state/remotes/hml.toml (cert, chave com ACL, fingerprint pinado)
+             → perfil salvo na máquina do cliente (M1-E5-T3: entrada em remotes.toml na pasta de dados do cliente, `FORGE_CONFIG_DIR` ou %LOCALAPPDATA%/Forgebox; M6-E2 acrescenta remotes/hml/ ao lado dele com cert, chave com ACL, fingerprint pinado)
 ```
 Revogação no remoto: `forge remote clients` / `forge remote revoke <id>`.
 

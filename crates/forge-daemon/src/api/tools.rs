@@ -297,7 +297,9 @@ async fn check_updates(daemon: Daemon, params: ToolUpdateParams, ctx: Ctx) -> Re
     })
 }
 
-async fn wait_job(
+/// Waits for a job of another component; its failure keeps the code of the original
+/// error (a `not_found` stays `not_found`, exit code 3) instead of becoming `internal`.
+pub(super) async fn wait_job(
     daemon: &Daemon,
     id: forge_core::ids::JobId,
     timeout: Duration,
@@ -310,10 +312,9 @@ async fn wait_job(
     match info.state {
         JobState::Done => Ok(info.result.unwrap_or_default()),
         JobState::Cancelled => Err(ForgeError::Cancelled(format!("job {id}"))),
-        _ => Err(ForgeError::Internal(
-            info.error
-                .map(|e| format!("{}: {}", e.code, e.message))
-                .unwrap_or_else(|| format!("job {id} failed")),
+        _ => Err(info.error.map_or_else(
+            || ForgeError::Internal(format!("job {id} failed")),
+            |e| ForgeError::from_code(&e.code, &e.message),
         )),
     }
 }

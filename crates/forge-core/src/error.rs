@@ -132,6 +132,33 @@ pub fn exit_code_for(code: &str) -> i32 {
 }
 
 impl ForgeError {
+    /// Rebuilds an error from the `code` and `message` a finished job reports
+    /// (`JobErrorInfo`), so a handler that waits for another job fails with the same
+    /// code (and exit code) instead of `internal`. `message` is the job error's `Display`
+    /// text; its own prefix (`not found: `) is not repeated. Codes whose variant needs
+    /// more than text (`port_in_use`, `timeout`, `io`, `db`) come back as `Conflict`,
+    /// `Internal`... with the message kept; unknown codes are `Internal`.
+    pub fn from_code(code: &str, message: &str) -> Self {
+        let text = |prefix: &str| message.strip_prefix(prefix).unwrap_or(message).to_owned();
+        match code {
+            "not_found" => Self::NotFound(text("not found: ")),
+            "conflict" => Self::Conflict(text("conflict: ")),
+            "port_in_use" => Self::Conflict(message.to_owned()),
+            "needs_elevation" => Self::NeedsElevation(text("operation needs elevation: ")),
+            "verification_failed" => Self::VerificationFailed(text("verification failed: ")),
+            "config_invalid" => Self::ConfigInvalid(text("invalid configuration: ")),
+            "invalid_input" => Self::InvalidInput(text("invalid input: ")),
+            "unsupported_platform" => {
+                Self::UnsupportedPlatform(text("unsupported on this platform: "))
+            }
+            "not_implemented" => Self::NotImplemented(text("not implemented: ")),
+            "cancelled" => Self::Cancelled(text("cancelled: ")),
+            "unauthorized" => Self::Unauthorized(text("unauthorized: ")),
+            "forbidden" => Self::Forbidden(text("forbidden: ")),
+            _ => Self::Internal(format!("{code}: {message}")),
+        }
+    }
+
     /// Stable machine-readable code, used by the API and by `forge --json`.
     pub fn code(&self) -> &'static str {
         match self {
@@ -224,6 +251,24 @@ mod tests {
             ForgeError::Unauthorized("x".into()),
             ForgeError::Forbidden("x".into()),
         ]
+    }
+
+    #[test]
+    fn errors_are_rebuilt_from_a_job_failure_with_the_same_exit_code() {
+        for err in samples() {
+            let rebuilt = ForgeError::from_code(err.code(), &err.to_string());
+            assert_eq!(
+                rebuilt.exit_code(),
+                err.exit_code(),
+                "{} -> {}",
+                err.code(),
+                rebuilt.code()
+            );
+        }
+        let rebuilt = ForgeError::from_code("not_found", "not found: php 8.3");
+        assert_eq!(rebuilt.to_string(), "not found: php 8.3");
+        assert_eq!(rebuilt.code(), "not_found");
+        assert_eq!(ForgeError::from_code("brand_new", "x").code(), "internal");
     }
 
     #[test]

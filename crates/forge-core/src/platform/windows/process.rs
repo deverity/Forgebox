@@ -59,14 +59,15 @@ use ::windows::Win32::System::JobObjects::{
 };
 use ::windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 use ::windows::Win32::System::Threading::{
-    CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
-    CreateProcessW, DETACHED_PROCESS, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
-    GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-    OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_ACCESS_RIGHTS, PROCESS_CREATION_FLAGS,
-    PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE,
-    PROCESS_TERMINATE, RegisterWaitForSingleObject, ResumeThread, STARTF_USESTDHANDLES,
-    STARTUPINFOEXW, TerminateProcess, UnregisterWaitEx, UpdateProcThreadAttribute,
-    WORKER_THREAD_FLAGS, WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE, WaitForSingleObject,
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED,
+    CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DETACHED_PROCESS, DeleteProcThreadAttributeList,
+    EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList,
+    LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+    PROCESS_ACCESS_RIGHTS, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    RegisterWaitForSingleObject, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
+    TerminateProcess, UnregisterWaitEx, UpdateProcThreadAttribute, WORKER_THREAD_FLAGS,
+    WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE, WaitForSingleObject,
 };
 use ::windows::core::{PCWSTR, PWSTR};
 use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
@@ -865,6 +866,89 @@ pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<
         stdout: our_stdout,
         stderr: our_stderr,
     })
+}
+
+/// Starts `exe` detached from the caller (no console, own process group, outside the
+/// caller's Job Object when it allows breakaway) with stdin/stdout/stderr on the null
+/// device and **only those handles inherited** (`PROC_THREAD_ATTRIBUTE_HANDLE_LIST`).
+/// `std::process::Command` inherits every inheritable handle of the parent, including the
+/// pipe a shell or a test harness gave `forge` as stdout: a daemon started that way would
+/// keep the pipe open and `forge status | more` would never see EOF. The environment is the
+/// caller's. Returns the pid; the caller never waits for it.
+pub(crate) fn create_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Result<u32> {
+    let app = wide(exe.as_os_str());
+    let mut line = command_line(exe, args)?;
+    let cwd_wide = wide(cwd.as_os_str());
+    let stdin = open_null(false)?;
+    let stdout = open_null(true)?;
+    let inherit = [raw(&stdin), raw(&stdout)];
+    let mut attributes = AttributeList::new(1)?;
+    // SAFETY: `inherit` holds valid inheritable handles and outlives CreateProcessW.
+    unsafe {
+        UpdateProcThreadAttribute(
+            attributes.ptr(),
+            0,
+            PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
+            Some(inherit.as_ptr().cast()),
+            inherit.len() * size_of::<HANDLE>(),
+            None,
+            None,
+        )
+    }
+    .map_err(|e| win_err("restricting inherited handles", &e))?;
+    let mut info = STARTUPINFOEXW::default();
+    info.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+    info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    info.StartupInfo.hStdInput = raw(&stdin);
+    info.StartupInfo.hStdOutput = raw(&stdout);
+    info.StartupInfo.hStdError = raw(&stdout);
+    info.lpAttributeList = attributes.ptr();
+
+    let base = DETACHED_PROCESS.0 | CREATE_NEW_PROCESS_GROUP.0 | EXTENDED_STARTUPINFO_PRESENT.0;
+    let mut last = None;
+    // First outside the caller's job; a job that forbids breakaway gets the child inside.
+    for flags in [base | CREATE_BREAKAWAY_FROM_JOB.0, base] {
+        let mut pi = PROCESS_INFORMATION::default();
+        // SAFETY: `app`, `cwd_wide` are NUL-terminated; `line` is writable and
+        // NUL-terminated; `info` is a STARTUPINFOEXW (EXTENDED_STARTUPINFO_PRESENT) whose
+        // attribute list and handles outlive the call; a null environment inherits ours.
+        let created = unsafe {
+            CreateProcessW(
+                PCWSTR(app.as_ptr()),
+                Some(PWSTR(line.as_mut_ptr())),
+                None,
+                None,
+                true,
+                PROCESS_CREATION_FLAGS(flags),
+                None,
+                PCWSTR(cwd_wide.as_ptr()),
+                (&raw const info).cast(),
+                &mut pi,
+            )
+        };
+        match created {
+            Ok(()) => {
+                // SAFETY: CreateProcessW succeeded; both handles are ours to close.
+                drop(unsafe { owned(pi.hProcess) });
+                // SAFETY: as above.
+                drop(unsafe { owned(pi.hThread) });
+                return Ok(pi.dwProcessId);
+            }
+            Err(e) if win32_code(&e) == Some(ERROR_ACCESS_DENIED.0) => last = Some(e),
+            Err(e) => {
+                return Err(match win32_code(&e) {
+                    Some(c) if c == ERROR_FILE_NOT_FOUND.0 || c == ERROR_PATH_NOT_FOUND.0 => {
+                        ForgeError::NotFound(format!("executable {}", exe.display()))
+                    }
+                    _ => win_err(format!("starting {}", exe.display()), &e),
+                });
+            }
+        }
+    }
+    Err(last.map_or_else(
+        || ForgeError::Internal("process creation failed".into()),
+        |e| win_err(format!("starting {}", exe.display()), &e),
+    ))
 }
 
 // ---------------------------------------------------------------------------------------

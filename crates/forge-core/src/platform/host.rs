@@ -186,4 +186,19 @@ mod tests {
         // Any answer is fine (depends on the machine); it must not fail or panic.
         let _ = network_cost().is_metered();
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn detached_start_runs_the_program_and_reports_a_missing_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let shell = std::env::var_os("ComSpec")
+            .map(std::path::PathBuf::from)
+            .unwrap();
+        let args: Vec<OsString> = vec!["/c".into(), "exit".into(), "0".into()];
+        let pid = spawn_detached(&shell, &args, dir.path()).unwrap();
+        assert!(pid > 0);
+        let missing = dir.path().join("nope.exe");
+        let err = spawn_detached(&missing, &[], dir.path()).unwrap_err();
+        assert_eq!(err.code(), "not_found", "{err}");
+    }
 }

@@ -175,6 +175,11 @@ async fn add(ctx: &Context, params: SiteAddParams) -> CliResult<SiteDto> {
 
 fn created(ctx: &Context, site: &SiteDto) {
     ctx.out.emit(site, |out| {
+        if out.quiet {
+            // Scripts get the one thing they need: the host.
+            out.line(&site.host);
+            return;
+        }
         out.success(out.tf(Msg::SiteCreated, &[&site.host]));
         render::site_detail(out, site);
     });

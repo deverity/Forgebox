@@ -85,8 +85,9 @@ pub async fn try_connect(root: &ForgeRoot) -> Result<Client, Failure> {
 
 /// The daemon executable: next to this executable, else on `PATH`.
 pub fn find_daemon_exe() -> Option<PathBuf> {
+    // Explicit override (tests, unusual layouts): used only if it exists.
     if let Some(path) = std::env::var_os("FORGE_DAEMON_EXE").filter(|v| !v.is_empty()) {
-        return Some(PathBuf::from(path));
+        return Some(PathBuf::from(path)).filter(|p| p.is_file());
     }
     let sibling = std::env::current_exe()
         .ok()

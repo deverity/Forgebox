@@ -286,8 +286,8 @@ messages! {
     SharedAt => ("Publicado em {0}", "Shared at {0}"),
     LintFixed => ("corrigido", "fixed"),
     LintSummary => (
-        "{0} problemas ({1} arquivos verificados, {2} referências)",
-        "{0} issues ({1} files scanned, {2} references)"
+        "{0} problema(s) ({1} arquivos verificados, {2} referências)",
+        "{0} issue(s) ({1} files scanned, {2} references)"
     ),
     // case sensitivity
     CaseUnsupported => ("sem suporte", "unsupported"),

@@ -362,6 +362,86 @@ mod tests {
         assert_eq!((err.code.as_str(), err.exit), ("not_found", 3));
     }
 
+    fn envelope(kind: &str, payload: Value) -> EventEnvelope {
+        EventEnvelope {
+            subscription_id: forge_ipc::base::ids::SubscriptionId::new(),
+            seq: 1,
+            event: forge_ipc::api::EventDto {
+                id: forge_ipc::base::ids::EventId::new(),
+                seq: 1,
+                ts: "2026-10-27T12:00:00Z".parse().unwrap(),
+                kind: kind.into(),
+                payload,
+            },
+        }
+    }
+
+    fn ui() -> JobUi {
+        // Tests run without a terminal: nothing is drawn.
+        JobUi::new(
+            &Output::new(false, false, crate::messages::Lang::PtBr),
+            "test",
+        )
+    }
+
+    #[test]
+    fn events_of_the_job_end_it_and_events_of_others_are_ignored() {
+        let id = JobId::new();
+        let other = JobId::new();
+        let mut ui = ui();
+        let done = |job: JobId| serde_json::json!({"v": 1, "job_id": job, "name": "x", "duration_ms": 5, "result": {"n": 1}});
+        assert!(apply_event(&mut ui, &id, &envelope("job.done", done(other))).is_none());
+        let end = apply_event(&mut ui, &id, &envelope("job.done", done(id))).unwrap();
+        assert_eq!(end.unwrap(), serde_json::json!({"n": 1}));
+
+        let failed = serde_json::json!({
+            "v": 1, "job_id": id, "name": "x", "duration_ms": 5,
+            "error": {"code": "conflict", "message": "host taken"}
+        });
+        let err = apply_event(&mut ui, &id, &envelope("job.failed", failed))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!((err.code.as_str(), err.exit), ("conflict", 4));
+
+        let cancelled = serde_json::json!({"v": 1, "job_id": id, "name": "x", "duration_ms": 5, "forced": false});
+        let err = apply_event(&mut ui, &id, &envelope("job.cancelled", cancelled))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(err.code, "cancelled");
+    }
+
+    #[test]
+    fn progress_and_install_events_never_end_the_job() {
+        let id = JobId::new();
+        let mut ui = ui();
+        let progress =
+            serde_json::json!({"v": 1, "job_id": id, "pct": 40.0, "message": "downloading"});
+        assert!(apply_event(&mut ui, &id, &envelope("job.progress", progress)).is_none());
+        let install = serde_json::json!({
+            "v": 1, "job_id": id, "tool": "php", "version": "8.3.1",
+            "progress": {"pct": 10.0}, "step": "extract"
+        });
+        assert!(apply_event(&mut ui, &id, &envelope("tool.install.progress", install)).is_none());
+        // Kinds this client does not know are ignored (newer daemons).
+        assert!(
+            apply_event(
+                &mut ui,
+                &id,
+                &envelope("job.future_kind", serde_json::json!({}))
+            )
+            .is_none()
+        );
+        // A payload that does not parse is ignored too.
+        assert!(
+            apply_event(
+                &mut ui,
+                &id,
+                &envelope("job.done", serde_json::json!({"x": 1}))
+            )
+            .is_none()
+        );
+    }
+
     fn sample(state: JobState) -> JobDto {
         JobDto {
             id: JobId::new(),

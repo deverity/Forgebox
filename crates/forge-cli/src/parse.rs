@@ -81,12 +81,15 @@ pub fn tool_spec(text: &str) -> CliResult<(ToolId, Option<String>)> {
     Ok((id, version))
 }
 
-/// The path as the daemon wants it: absolute, with the `\\?\` prefix removed. The
-/// daemon runs on this machine (remote contexts are refused before reaching this).
+/// The path as the daemon wants it: absolute, without the verbatim prefix, and with 8.3
+/// short names (`GUSTAV~1`) expanded, because the daemon works with long names and
+/// compares paths textually. The daemon runs on this machine (remote contexts are refused
+/// before reaching this).
 pub fn absolute(path: &Path) -> CliResult<String> {
     let absolute = std::path::absolute(path)
         .map_err(|e| CliError::usage(format!("{}: {e}", path.display())))?;
-    Ok(forge_ipc::base::paths::plain_path(&absolute)
+    let long = forge_ipc::base::platform::long_path(&absolute);
+    Ok(forge_ipc::base::paths::plain_path(&long)
         .to_string_lossy()
         .into_owned())
 }
