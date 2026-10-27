@@ -70,6 +70,40 @@ pub fn child_path(prepend: &[String], current: Option<OsString>) -> OsString {
     std::env::join_paths(entries).unwrap_or_default()
 }
 
+/// The program `forge exec` starts: a bare name (`composer`, `php`) is looked up in the
+/// child's `PATH` with the extensions of `PATHEXT`, as a shell would, so `.cmd`/`.bat`
+/// shims are found too (the standard library only tries `.exe`); Rust then starts batch
+/// files through `cmd.exe` with its argument escaping. A name with a folder or an
+/// extension, or one not found, is left as is.
+pub fn resolve_program(
+    program: &str,
+    path: &std::ffi::OsStr,
+    pathext: Option<OsString>,
+) -> std::path::PathBuf {
+    let as_is = std::path::PathBuf::from(program);
+    if program.contains(['\\', '/', ':']) || as_is.extension().is_some() {
+        return as_is;
+    }
+    let pathext = pathext
+        .and_then(|p| p.into_string().ok())
+        .filter(|p| !p.trim().is_empty())
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_owned());
+    let extensions: Vec<&str> = pathext
+        .split(';')
+        .map(str::trim)
+        .filter(|e| e.starts_with('.'))
+        .collect();
+    for dir in std::env::split_paths(path) {
+        for ext in &extensions {
+            let candidate = dir.join(format!("{program}{}", ext.to_ascii_lowercase()));
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    as_is
+}
+
 /// Runs the command with the project's versions (and `--php`) in front of `PATH`, without
 /// changing `current`; the exit code is the child's.
 pub async fn exec(ctx: &Context, args: ExecArgs) -> CliResult<()> {
@@ -93,7 +127,8 @@ pub async fn exec(ctx: &Context, args: ExecArgs) -> CliResult<()> {
         let (program, rest) = (program.clone(), rest.to_vec());
         let vars = env.vars.clone();
         move || {
-            Command::new(&program)
+            let exe = resolve_program(&program, &path, std::env::var_os("PATHEXT"));
+            Command::new(&exe)
                 .args(&rest)
                 .env("PATH", path)
                 .envs(vars)
@@ -161,6 +196,37 @@ pub async fn path(ctx: &Context, command: PathCmd) -> CliResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exec_finds_batch_shims_like_a_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let (first, second) = (dir.path().join("a"), dir.path().join("b"));
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(second.join("composer.cmd"), "@echo off").unwrap();
+        std::fs::write(second.join("php.exe"), "").unwrap();
+        std::fs::write(first.join("php.cmd"), "@echo off").unwrap();
+        let path = std::env::join_paths([&first, &second]).unwrap();
+        let ext = Some(OsString::from(".COM;.EXE;.BAT;.CMD"));
+        assert_eq!(
+            resolve_program("composer", &path, ext.clone()),
+            second.join("composer.cmd")
+        );
+        assert_eq!(
+            resolve_program("php", &path, ext.clone()),
+            first.join("php.cmd"),
+            "PATH order first, then PATHEXT order"
+        );
+        assert_eq!(
+            resolve_program("nope", &path, ext.clone()),
+            std::path::PathBuf::from("nope")
+        );
+        assert_eq!(
+            resolve_program("php.exe", &path, ext),
+            std::path::PathBuf::from("php.exe"),
+            "an explicit extension is left to the standard library"
+        );
+    }
 
     #[test]
     fn child_path_puts_the_versions_first() {

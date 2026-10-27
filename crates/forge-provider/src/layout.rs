@@ -857,19 +857,14 @@ impl Layout {
 
     /// Install-time variables of an installed version (`paths.version` = its folder).
     pub fn vars_for(&self, manifest: &ToolManifest, row: &ToolVersionRow) -> TemplateVars {
-        let versioning = &manifest.spec.versioning;
-        let series = Version::parse(versioning.scheme, &row.version)
-            .ok()
-            .and_then(|v| v.series(&versioning.series_key).ok())
-            .unwrap_or_else(|| row.version.clone());
-        TemplateVars {
-            tool: row.tool_id.to_string(),
-            version: row.version.clone(),
-            series,
-            canonical_name: row.canonical_name.clone(),
-            variant: row.variant.clone(),
-            paths: PathVars::new(&self.inner.root, Path::new(&row.path)),
-        }
+        TemplateVars::of_version(
+            &self.inner.root,
+            manifest,
+            &row.version,
+            &row.canonical_name,
+            &row.variant,
+            Path::new(&row.path),
+        )
     }
 
     /// Runs the `render` actions of `install.post_install` again for the installed

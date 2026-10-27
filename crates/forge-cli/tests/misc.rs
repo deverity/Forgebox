@@ -144,6 +144,10 @@ fn env_prints_scripts_for_each_shell() {
     let json = fx.root.json(&["env"]);
     assert!(json["path_prepend"].is_array(), "{json}");
     assert!(json["script"].is_null());
+    // Commands that only exist as shims (`composer`) come last.
+    let last = json["path_prepend"].as_array().unwrap().last().unwrap();
+    assert!(last.as_str().unwrap().ends_with(r"bin\shims"), "{json}");
+    assert!(json["vars"].is_object(), "{json}");
     // Exclusive flags.
     let both = fx.root.run(&["env", "--cmd", "--bash"]);
     assert_eq!(both.code, 2, "{both:?}");
