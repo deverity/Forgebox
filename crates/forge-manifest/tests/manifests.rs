@@ -190,6 +190,8 @@ fn documented_defaults() {
     assert_eq!(spec.install.strip_root, StripRoot::Auto);
     assert_eq!(spec.install.layout, Layout::Versioned);
     assert!(spec.install.current_link);
+    assert!(spec.install.shims.is_empty() && spec.install.version_files.is_empty());
+    assert_eq!(spec.install.project_key, None);
     assert_eq!(spec.update.policy, UpdatePolicy::Notify);
     assert_eq!(spec.update.retention, 1);
     assert_eq!(spec.update.check_interval, Duration::from_secs(6 * 3600));
@@ -211,6 +213,29 @@ fn documented_defaults() {
     let pool = php.spec.service.pool.as_ref().unwrap();
     assert_eq!(pool.scaling.min, 2);
     assert_eq!(pool.recycle.max_age, Duration::from_secs(3600));
+}
+
+#[test]
+fn shims_take_names_or_objects() {
+    let text = "apiVersion: forgebox.dev/v1\nkind: Tool\n\
+                metadata: { id: composer, name: Composer, category: devtool }\n\
+                spec:\n  platforms: [windows-x64]\n  source:\n    providers:\n      - type: nodejs-dist\n\
+                \x20 install:\n    shims:\n      - composer-x\n\
+                \x20     - { name: composer, file: composer.phar, interpreter: php }\n\
+                \x20   version_files: [.composer-version]\n";
+    let manifest = load_str(text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+    assert!(validate(&manifest).is_empty(), "{:#?}", validate(&manifest));
+    let Manifest::Tool(tool) = &manifest else {
+        panic!("not a tool")
+    };
+    let shims = &tool.spec.install.shims;
+    assert_eq!(shims[0].name(), "composer-x");
+    assert_eq!(shims[0].file(), None);
+    assert_eq!(shims[1].name(), "composer");
+    assert_eq!(shims[1].file(), Some("composer.phar"));
+    assert_eq!(shims[1].interpreter(), Some("php"));
+    let yaml = forge_manifest::parse::to_yaml(&manifest).unwrap();
+    assert_eq!(load_str(&yaml).unwrap(), manifest);
 }
 
 #[test]

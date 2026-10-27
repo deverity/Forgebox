@@ -1,0 +1,18 @@
+# expect: invalid_value, invalid_path, duplicate
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: bad-shims, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  install:
+    shims:
+      - tool
+      - { name: tool }
+      - { name: runner, interpreter: php }
+      - { name: other, file: "../escape.phar", interpreter: php }
+      - "bad name"
+    version_files: [".tool-version", "forgebox.yaml", "sub/.x"]
+    project_key: "site.Tool"

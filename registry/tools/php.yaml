@@ -58,6 +58,8 @@ spec:
     path:
       - "."
     shims: [php, php-cgi, phpdbg, pear, pecl]
+    version_files: [".php-version"]   # shims: nearest file in the cwd or above selects the version (docs/06 2.3)
+    project_key: spec.site.php        # same from a project forgebox.yaml
     verify:
       command: "php.exe -v"
       regex: "^PHP (\\d+\\.\\d+\\.\\d+)"
