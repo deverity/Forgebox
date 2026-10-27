@@ -95,6 +95,11 @@ event_kinds! {
     ServiceStopped => "service.stopped",
     ServiceCrashed => "service.crashed",
     ServiceFailed => "service.failed",
+    /// Install/upgrade in progress: the instance is held down (docs/03 §1.4).
+    ServiceMaintenance => "service.maintenance",
+    /// Periodic CPU/memory sample of an instance; opt-in per instance, off by default
+    /// (docs/03 §6).
+    ServiceMetrics => "service.metrics",
     PoolScaled => "pool.scaled",
     PoolWorkerRecycled => "pool.worker.recycled",
     SiteCreated => "site.created",

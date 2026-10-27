@@ -148,7 +148,7 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 
 ## 6. Observabilidade
 - Cada operação do daemon gera `Event` persistido (ring buffer de 50k + arquivo).
-- Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `windows` PDH/`GetProcessTimes`).
+- Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `GetProcessTimes`/`GetProcessMemoryInfo`/`GetProcessHandleCount`, sem PDH; somadas por Job da instância, [03 §6](03-engine.md)).
 - Logs das tools são "tailados" sob demanda pelo daemon e enviados por stream para a GUI/CLI (`forge logs nginx -f`).
 - Health de cada Instance: `tcp`, `http`, `command`, `pid`. Resultados alimentam o estado exibido.
 

@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use forge_core::event::{EventKind, EventStream};
 use forge_supervisor::{
-    InstanceHandle, InstanceState, LogItem, QUICK_ASK_TIMEOUT, StopPlan, StopStrategy,
+    InstanceHandle, InstanceState, LogItem, QUICK_ASK_TIMEOUT, StopCause, StopPlan, StopStrategy,
 };
 use support::*;
 
@@ -261,6 +261,7 @@ async fn stuck_stop_reaches_terminate_and_actors_stay_responsive() {
     );
     let during_ctrl_break = InstanceState::Stopping {
         strategy: Some(StopStrategy::CtrlBreak),
+        cause: StopCause::User,
     };
     assert!(strategies.contains(&during_ctrl_break), "{strategies:?}");
 
@@ -583,7 +584,7 @@ async fn start_failure_is_reported() {
     assert_eq!(err.code(), "not_found", "{err}");
     let status = instance.status(QUICK_ASK_TIMEOUT).await.unwrap();
     assert!(
-        matches!(&status.state, InstanceState::Failed { code, .. } if code == "not_found"),
+        matches!(&status.state, InstanceState::Failed { reason } if reason.code() == "not_found"),
         "{status:?}"
     );
     let events = drain_events(&mut events, &instance);

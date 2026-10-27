@@ -8,10 +8,17 @@
 //!
 //! Other switches: `--lines-per-tick <k>`, `--print-env <NAME>` (repeatable),
 //! `--print-cwd`, `--stop-file <path>` (exit 0 once the file exists),
-//! `--crash-after-ms <ms>` (exit 3), `--spawn-child` (starts a stubborn copy of itself,
-//! prints `child <pid>`), `--window` (hidden top-level window; exits 0 on WM_CLOSE).
+//! `--crash-after-ms <ms>` (exit 3, or `--crash-code <n>`), `--spawn-child` (starts a
+//! stubborn copy of itself, prints `child <pid>`), `--window` (hidden top-level window;
+//! exits 0 on WM_CLOSE).
+//! Health and metrics fixtures: `--listen <port>` (accepts TCP connections on
+//! 127.0.0.1:<port>, prints `listening <port>`), `--listen-delay-ms <ms>` (bind only
+//! after that), `--unlisten-after-ms <ms>` (close the listener again, prints
+//! `unlistened`), `--burn <pct>` (one thread using <pct> % of one CPU, metered by its own
+//! CPU time), `--alloc <MiB>` (allocates and keeps touching that much memory, prints
+//! `allocated <bytes>`).
 //! One-shot modes for stop commands: `--touch <path>` (create the file, exit 0),
-//! `--exit-code <n>` (exit at once with n).
+//! `--exit-code <n>` (exit at once with n; `0x…` accepted).
 
 use std::ffi::c_void;
 use std::io::Write;
@@ -57,10 +64,25 @@ struct Msg {
     private: u32,
 }
 
+#[repr(C)]
+#[derive(Default, Clone, Copy)]
+struct FileTime {
+    low: u32,
+    high: u32,
+}
+
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn SetConsoleCtrlHandler(handler: Option<HandlerRoutine>, add: i32) -> i32;
     fn GetModuleHandleW(name: *const u16) -> isize;
+    fn GetCurrentThread() -> isize;
+    fn GetThreadTimes(
+        thread: isize,
+        creation: *mut FileTime,
+        exit: *mut FileTime,
+        kernel: *mut FileTime,
+        user: *mut FileTime,
+    ) -> i32;
 }
 
 #[link(name = "user32")]
@@ -139,8 +161,14 @@ struct Options {
     print_cwd: bool,
     stop_file: Option<PathBuf>,
     crash_after: Option<u64>,
+    crash_code: i32,
     spawn_child: bool,
     window: bool,
+    listen: Option<u16>,
+    listen_delay: u64,
+    unlisten_after: Option<u64>,
+    burn: Option<u32>,
+    alloc_mib: Option<usize>,
 }
 
 fn main() {
@@ -148,6 +176,7 @@ fn main() {
     let mut opts = Options {
         interval: 100,
         lines_per_tick: 1,
+        crash_code: 3,
         ..Options::default()
     };
     while let Some(arg) = args.next() {
@@ -162,13 +191,21 @@ fn main() {
             "--print-cwd" => opts.print_cwd = true,
             "--stop-file" => opts.stop_file = Some(value().into()),
             "--crash-after-ms" => opts.crash_after = Some(value().parse().unwrap()),
+            "--crash-code" => opts.crash_code = parse_code(&value()),
+            "--listen" => opts.listen = Some(value().parse().unwrap()),
+            "--listen-delay-ms" => opts.listen_delay = value().parse().unwrap(),
+            "--unlisten-after-ms" => opts.unlisten_after = Some(value().parse().unwrap()),
+            "--burn" => opts.burn = Some(value().trim_end_matches('%').parse().unwrap()),
+            "--alloc" => {
+                opts.alloc_mib = Some(value().trim_end_matches("MB").parse().unwrap());
+            }
             "--spawn-child" => opts.spawn_child = true,
             "--window" => opts.window = true,
             "--touch" => {
                 std::fs::write(value(), b"stop").unwrap();
                 std::process::exit(0);
             }
-            "--exit-code" => std::process::exit(value().parse().unwrap()),
+            "--exit-code" => std::process::exit(parse_code(&value())),
             other => panic!("unknown argument {other}"),
         }
     }
@@ -203,6 +240,15 @@ fn main() {
         println!("child {}", child.id());
     }
 
+    if let Some(port) = opts.listen {
+        let delay = opts.listen_delay;
+        let unlisten = opts.unlisten_after;
+        std::thread::spawn(move || listen(port, delay, unlisten));
+    }
+    if let Some(pct) = opts.burn {
+        std::thread::spawn(move || burn(pct));
+    }
+
     if opts.window {
         std::thread::spawn(move || ticks(&opts));
         run_window();
@@ -212,11 +258,108 @@ fn main() {
     ticks(&opts);
 }
 
+/// `n`, `-n` or `0x…` (Windows status codes such as `0xC0000135`).
+fn parse_code(text: &str) -> i32 {
+    match text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        Some(hex) => u32::from_str_radix(hex, 16).unwrap() as i32,
+        None => text.parse().unwrap(),
+    }
+}
+
+/// Accepts (and drops) connections on 127.0.0.1:`port` after `delay_ms`, until
+/// `unlisten_after_ms` (measured from the start) if given.
+fn listen(port: u16, delay_ms: u64, unlisten_after_ms: Option<u64>) {
+    let started = Instant::now();
+    std::thread::sleep(Duration::from_millis(delay_ms));
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    println!("listening {port}");
+    loop {
+        if let Some(ms) = unlisten_after_ms {
+            if started.elapsed() >= Duration::from_millis(ms) {
+                drop(listener);
+                println!("unlistened");
+                return;
+            }
+        }
+        match listener.accept() {
+            Ok((stream, _)) => drop(stream),
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            Err(err) => panic!("accept: {err}"),
+        }
+    }
+}
+
+/// CPU time of the calling thread.
+fn thread_cpu() -> Duration {
+    let mut creation = FileTime::default();
+    let mut exit = FileTime::default();
+    let mut kernel = FileTime::default();
+    let mut user = FileTime::default();
+    // SAFETY: pseudo handle of the current thread; four writable FILETIMEs.
+    let ok = unsafe {
+        GetThreadTimes(
+            GetCurrentThread(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    };
+    assert_ne!(ok, 0, "GetThreadTimes failed");
+    let ticks = |t: FileTime| (u64::from(t.high) << 32) | u64::from(t.low);
+    Duration::from_nanos((ticks(kernel) + ticks(user)) * 100)
+}
+
+/// Uses `pct` % of one CPU: in every 1 s period, spins until this thread got `pct` % of
+/// it as CPU time (or the period is over), then sleeps. Metering by CPU time keeps the
+/// load right even when the machine is busy; the long period keeps the 15.6 ms
+/// granularity of `GetThreadTimes` below 2 % of the budget.
+fn burn(pct: u32) {
+    let period = Duration::from_secs(1);
+    let budget = period * pct.min(100) / 100;
+    loop {
+        let start = Instant::now();
+        let cpu_start = thread_cpu();
+        let mut x = 0_u64;
+        while thread_cpu() - cpu_start < budget && start.elapsed() < period {
+            for _ in 0..10_000 {
+                x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
+            }
+        }
+        if let Some(rest) = period.checked_sub(start.elapsed()) {
+            std::thread::sleep(rest);
+        }
+    }
+}
+
+/// Writes one byte per 4 KiB page so every page is in the working set.
+fn touch(memory: &mut [u8], round: u8) {
+    for page in memory.chunks_mut(4096) {
+        page[0] = round;
+    }
+}
+
 fn ticks(opts: &Options) {
     let started = Instant::now();
+    let mut memory = opts.alloc_mib.map(|mib| {
+        let mut memory = vec![0_u8; mib * 1024 * 1024];
+        touch(&mut memory, 1);
+        println!("allocated {}", memory.len());
+        memory
+    });
+    let mut last_touch = Instant::now();
     let mut n: u64 = 0;
     let mut next = Instant::now();
     loop {
+        if let Some(memory) = memory.as_mut() {
+            if last_touch.elapsed() >= Duration::from_millis(500) {
+                touch(memory, (n % 251) as u8 + 1);
+                last_touch = Instant::now();
+            }
+        }
         if POLITE_STOP.load(Ordering::SeqCst) {
             println!("ctrl-break");
             std::process::exit(0);
@@ -230,7 +373,7 @@ fn ticks(opts: &Options) {
         if let Some(ms) = opts.crash_after {
             if started.elapsed() >= Duration::from_millis(ms) {
                 eprintln!("crashing");
-                std::process::exit(3);
+                std::process::exit(opts.crash_code);
             }
         }
         if Instant::now() >= next {

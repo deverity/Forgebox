@@ -168,7 +168,7 @@ fn inheritable() -> SECURITY_ATTRIBUTES {
     }
 }
 
-fn open_process(pid: u32, access: PROCESS_ACCESS_RIGHTS) -> Result<OwnedHandle> {
+pub(crate) fn open_process(pid: u32, access: PROCESS_ACCESS_RIGHTS) -> Result<OwnedHandle> {
     // SAFETY: plain call; the returned handle is owned below.
     match unsafe { OpenProcess(access, false, pid) } {
         // SAFETY: OpenProcess returned a fresh handle.
