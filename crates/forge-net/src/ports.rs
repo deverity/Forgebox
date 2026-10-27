@@ -405,6 +405,15 @@ impl PortReservations for PortAllocator {
     fn release_owner<'a>(&'a self, kind: OwnerKind, id: &'a str) -> PortFuture<'a, usize> {
         Box::pin(PortAllocator::release_owner(self, kind, id))
     }
+
+    fn reserve<'a>(
+        &'a self,
+        port: u16,
+        range: Option<&'a str>,
+        owner: ReservationOwner,
+    ) -> PortFuture<'a, PortReservation> {
+        Box::pin(PortAllocator::reserve(self, port, range, owner))
+    }
 }
 
 /// `C:\xampp\mysql\bin\mysqld.exe (PID 4412)` or `PID 4`.

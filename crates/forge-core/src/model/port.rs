@@ -210,6 +210,24 @@ pub trait PortReservations: Send + Sync + fmt::Debug {
     /// Drops every reservation of `kind`/`id` (all the workers of a pool); returns how
     /// many there were.
     fn release_owner<'a>(&'a self, kind: OwnerKind, id: &'a str) -> PortFuture<'a, usize>;
+
+    /// Reserves exactly `port` for `owner` (an explicit choice, such as the fixed port of
+    /// a Procfile process); `port_in_use` when something listens on it, `conflict` when
+    /// another owner holds it. Optional: the default refuses, so existing implementations
+    /// (fakes in tests) keep compiling.
+    fn reserve<'a>(
+        &'a self,
+        port: u16,
+        range: Option<&'a str>,
+        owner: ReservationOwner,
+    ) -> PortFuture<'a, PortReservation> {
+        let _ = (port, range, owner);
+        Box::pin(async {
+            Err(ForgeError::NotImplemented(
+                "explicit port reservations are not supported by this allocator".to_owned(),
+            ))
+        })
+    }
 }
 
 #[cfg(test)]
