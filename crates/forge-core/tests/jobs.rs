@@ -310,3 +310,16 @@ async fn progress_events_are_throttled_but_snapshot_is_current() {
         .count();
     assert_eq!(progress, 1, "only the first report within the interval");
 }
+
+#[tokio::test]
+async fn a_preallocated_job_id_is_used() {
+    let jobs = registry(&EventBus::new(), eager());
+    let id = JobId::new();
+    let handle = jobs.spawn(JobSpec::new("reserved").job_id(id), |_ctx| async {
+        Ok::<_, ForgeError>(json!(1))
+    });
+    assert_eq!(handle.id(), id);
+    let info = handle.wait(SECOND).await.unwrap();
+    assert_eq!((info.id, info.state), (id, JobState::Done));
+    assert!(jobs.get(id).is_some());
+}

@@ -43,8 +43,6 @@ pub struct RegistrySpec {
     /// `stacks/*.yaml`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<RegistryEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Signature>,
 }
 
 /// `spec.tools[]` / `spec.stacks[]`.
@@ -61,25 +59,4 @@ pub struct RegistryEntry {
     /// Newest stable version, for the catalog list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest: Option<String>,
-}
-
-/// `key_id` of the placeholder signature of unsigned development indexes (`sig` may be empty).
-/// Real signatures come with M1-E1-T3; a loader must only accept `dev` in development mode.
-pub const DEV_KEY_ID: &str = "dev";
-
-/// `spec.signature`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Signature {
-    #[serde(rename = "type")]
-    pub kind: SignatureType,
-    pub key_id: String,
-    pub sig: String,
-}
-
-/// Signature scheme of a registry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum SignatureType {
-    Minisign,
 }

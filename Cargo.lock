@@ -1411,7 +1411,23 @@ dependencies = [
 name = "forge-registry"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "forge-core",
  "forge-manifest",
+ "futures",
+ "minisign",
+ "minisign-verify",
+ "pretty_assertions",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "ulid",
+ "url",
 ]
 
 [[package]]
@@ -1443,6 +1459,14 @@ name = "forge-supervisor"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "forge-ipc",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4799,6 +4823,8 @@ dependencies = [
  "forge-core",
  "forge-ipc",
  "forge-manifest",
+ "forge-registry",
+ "minisign",
  "serde_json",
  "tempfile",
 ]

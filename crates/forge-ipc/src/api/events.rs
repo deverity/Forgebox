@@ -230,6 +230,10 @@ pub struct ToolVersionChangePayload {
 }
 
 /// `service.starting|running|stopping|stopped|crashed|failed`.
+///
+/// Published by `forge_supervisor::events::ServiceEventPayload`, which serializes the
+/// same fields (docs/03 §8). The fields after `error` were added without bumping `v`:
+/// they may be missing, and older daemons never send them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ServicePayload {
     pub v: u32,
@@ -240,10 +244,32 @@ pub struct ServicePayload {
     pub state: ServiceState,
     pub pid: Option<u32>,
     /// `service.stopping`: strategy being tried (`command`, `ctrl_break`, `wm_close`,
-    /// `terminate`).
+    /// `terminate`). `service.stopped`: step after which the process exited.
     pub strategy: Option<String>,
+    /// Process exit code (Windows `DWORD` bits as `i32`: `0xC000013A` is negative).
     pub exit_code: Option<i32>,
+    /// `service.failed`: why the instance could not be started or stopped.
     pub error: Option<JobErrorInfo>,
+    /// Number of this start for the instance (1, 2, ...); `service.starting|running`.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub run: Option<u64>,
+    /// `service.stopping`: position of `strategy` in the stop cascade (1 = command,
+    /// 2 = CTRL_BREAK, 3 = WM_CLOSE, 4 = TerminateJobObject; docs/03 §1.3).
+    #[serde(default)]
+    pub step: Option<u8>,
+    /// `service.stopping`: how long this step waits for the process to exit.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub timeout_ms: Option<u64>,
+    /// `service.stopped`: duration of the stop.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub elapsed_ms: Option<u64>,
+    /// `service.stopped|crashed`: processes left in the instance's job after the main
+    /// process exited, then terminated.
+    #[serde(default)]
+    pub leftovers_killed: Option<u32>,
 }
 
 /// `pool.scaled`.

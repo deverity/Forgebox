@@ -65,6 +65,7 @@ spec:
       - copy: { from: "php.ini-development", to: "{{ paths.etc }}/php/{{ series }}/php.ini", if_missing: true }
       - render: { template: "php/php.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/10-forgebox.ini" }
       - mkdir: "{{ paths.tmp }}/php/{{ series }}/sessions"
+      - mkdir: "{{ paths.tmp }}/php/{{ series }}/uploads"
       - mkdir: "{{ paths.logs }}/php/{{ series }}"
     uninstall:
       keep: ["{{ paths.etc }}/php/{{ series }}"]
@@ -124,6 +125,7 @@ spec:
       ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
       pattern: "php_{name}.dll"
       defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
+      zend_extensions: [{ name: opcache, constraint: "<8.5" }]  # PHP 8.5+ embeds OPcache
     env:
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"

@@ -36,10 +36,13 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, ProcessGroup, TrustStore, DnsPolicy) + current();
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, DnsPolicy) + current();
+│   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
-│   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono)
+│   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono),
+│   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
+│   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema: common, tool,
@@ -52,9 +55,12 @@ Forgebox/
 │   │       └── yaml.rs           # único módulo que usa serde_yaml_ng (ADR-0012)
 │   ├── forge-registry/
 │   │   └── src/
-│   │       ├── index.rs          # index.yaml do registry, cache em state/registry/
-│   │       ├── source.rs         # fontes: git (https), http (index.json), dir local
-│   │       ├── search.rs         # busca por nome/categoria/tag, ranking
+│   │       ├── index.rs          # index.yaml: assinatura minisign, sha256 dos manifestos, política de terceiros
+│   │       ├── cache.rs          # state/registry/<nome>/ (escrita atômica, reverificado a cada leitura)
+│   │       ├── source.rs         # fontes: git (comando `git` da máquina), http (index.yaml + relativos), dir local
+│   │       ├── service.rs        # `Registry`: refresh(name) -> JobId, load, find, search, list; metadados em `registries`
+│   │       ├── messages.rs       # strings pt-BR (badges "não verificado", "terceiro")
+│   │       ├── search.rs         # busca por id/nome/tag/categoria, ranking
 │   │       └── discover.rs       # heurísticas para pastas soltas em bin/ (php.exe, httpd.exe, mysqld.exe...)
 │   ├── forge-provider/
 │   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
@@ -69,14 +75,19 @@ Forgebox/
 │   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
-│   │   └── src/
-│   │       ├── job.rs            # Job Object raiz e por instância
-│   │       ├── process.rs        # spawn com env/cwd/stdio capturado, console oculto
-│   │       ├── stop.rs           # estratégias: ctrl-c (GenerateConsoleCtrlEvent), comando, WM_CLOSE, kill
-│   │       ├── health.rs         # probes tcp/http/command/pid com backoff
-│   │       ├── policy.rs         # restart: never|on-failure|always; limites; cooldown
-│   │       ├── metrics.rs        # cpu/rss/handles por pid
-│   │       └── service.rs        # máquina de estados da Instance
+│   │   ├── src/
+│   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância
+│   │   │   ├── process.rs        # SpawnSpec: env mínimo + PATH determinístico, stdio Capture|Discard|File, console oculto
+│   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
+│   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
+│   │   │   ├── events.rs         # ServiceEventPayload: payloads service.* (v1), mesma forma de forge_ipc ServicePayload
+│   │   │   ├── health.rs         # probes tcp/http/command/pid com backoff (M1-E3-T2)
+│   │   │   ├── policy.rs         # restart: never|on-failure|always; limites; cooldown (M1-E3-T2)
+│   │   │   ├── metrics.rs        # cpu/rss/handles por pid (M1-E3-T2)
+│   │   │   ├── service.rs        # InstanceActor (máquina de estados da Instance), InstanceHandle, Supervisor
+│   │   │   └── bin/forgebox-ctrl.rs  # auxiliar que entrega CTRL_BREAK ao console de um serviço (ADR-0016)
+│   │   └── tests/
+│   │       └── fake_service/     # projeto cargo independente (sem deps) compilado pelos testes: serviço falso
 │   ├── forge-fcgi/
 │   │   └── src/
 │   │       ├── pool.rs           # PhpPool: workers php-cgi.exe, portas, scaling
@@ -154,7 +165,8 @@ Forgebox/
 │       └── public/
 │
 ├── registry/                     # catálogo oficial de manifestos (pode virar repo separado "forgebox-registry")
-│   ├── index.yaml                # lista de tools, versão do schema, assinatura
+│   ├── index.yaml                # lista de tools, versão do schema, assinatura minisign
+│   ├── keys/dev.pub              # chave pública de desenvolvimento (a secreta fica fora do repo)
 │   ├── tools/
 │   │   ├── php.yaml
 │   │   ├── apache.yaml
@@ -200,11 +212,12 @@ Forgebox/
 │   ├── portable/                 # script que monta o zip portátil
 │   └── assets/                   # banners, ícones do instalador
 │
-├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry, registry-index
+├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry, registry-index, registry-sign, registry-keygen
 ├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)
-│   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout
+│   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout;
+│       │                         #   registry/ (assinado com a chave dev, 2 tools + 1 stack) e registry-bad-sha/ (sha errado no índice)
 └── .github/
     └── workflows/                # ci.yml (fmt, clippy, build, test, deny, lint-registry, artefatos gerados, pnpm build), dependabot.yml, PULL_REQUEST_TEMPLATE.md, release.yml (build, sign, latest.json)
 ```

@@ -5,11 +5,13 @@
 //! slow volumes, antivirus or network shares): async code calls them from
 //! `tokio::task::spawn_blocking` (ADR-0011).
 //!
-//! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows;
-//! [`CodeSign`] (Authenticode, M1-E2-T2) too. M1-E5-T1 added [`FileAcl`] (owner-only
-//! secret files) and [`windows::pipe_security`] (DACL and owner check of the local API
-//! pipe). [`ProcessGroup`] (M1-E3-T1), [`TrustStore`] (M1-E4-T4) and [`DnsPolicy`]
-//! (M1-E4-T3) are declared only; their signatures may still grow in those tasks.
+//! Status: [`LinkFs`] and [`CaseSensitiveFs`] (M0-E1-T4), [`CodeSign`] (Authenticode,
+//! M1-E2-T2), [`FileAcl`] (owner-only secret files) and [`windows::pipe_security`]
+//! (DACL and owner check of the local API pipe; M1-E5-T1) and the process primitives of
+//! [`process`] ([`ProcessGroup`], [`ProcessControl`]: Job Objects, spawn, `CTRL_BREAK`,
+//! `WM_CLOSE`; M1-E3-T1) are implemented for Windows. [`TrustStore`] (M1-E4-T4) and
+//! [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still grow in those
+//! tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -24,8 +26,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
+pub mod process;
 #[cfg(windows)]
 pub mod windows;
+
+pub use process::{
+    ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
+    ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
+    SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
+};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.
@@ -128,17 +137,6 @@ pub trait CodeSign: Send + Sync {
     fn verify(&self, path: &Path) -> Result<CodeSignInfo>;
 }
 
-/// Group of processes that die together (Job Object on Windows, cgroup on Linux).
-/// Implemented in M1-E3-T1.
-pub trait ProcessGroup: Send + Sync {
-    /// Adds the running process `pid` to the group.
-    fn assign(&self, pid: u32) -> Result<()>;
-    /// PIDs currently in the group.
-    fn pids(&self) -> Result<Vec<u32>>;
-    /// Kills every process of the group.
-    fn terminate_all(&self, exit_code: u32) -> Result<()>;
-}
-
 /// Where a root certificate is trusted (docs/06 §6, docs/11).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrustScope {
@@ -184,6 +182,7 @@ pub struct Platform {
     name: &'static str,
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
+    processes: Arc<dyn ProcessControl>,
     code_sign: Arc<dyn CodeSign>,
     file_acl: Arc<dyn FileAcl>,
 }
@@ -197,8 +196,9 @@ impl fmt::Debug for Platform {
 }
 
 impl Platform {
-    /// Assembles a platform from parts (tests use fakes). Code signing and file ACLs
-    /// default to the implementations of the running OS; see
+    /// Assembles a platform from parts (tests use fakes). Process operations default to
+    /// [`process_control`] with default options; code signing and file ACLs to the
+    /// implementations of the running OS. See [`Platform::with_processes`],
     /// [`Platform::with_code_sign`] and [`Platform::with_file_acl`].
     pub fn new(
         name: &'static str,
@@ -209,9 +209,16 @@ impl Platform {
             name,
             link_fs,
             case_sensitive_fs,
+            processes: process_control(ProcessControlOptions::default()),
             code_sign: default_code_sign(),
             file_acl: default_file_acl(),
         }
+    }
+
+    /// Replaces the process operations (custom `forgebox-ctrl` location, fakes).
+    pub fn with_processes(mut self, processes: Arc<dyn ProcessControl>) -> Self {
+        self.processes = processes;
+        self
     }
 
     /// Replaces the code signing verifier (fakes in tests).
@@ -237,6 +244,11 @@ impl Platform {
 
     pub fn case_sensitive_fs(&self) -> &dyn CaseSensitiveFs {
         self.case_sensitive_fs.as_ref()
+    }
+
+    /// Job Objects, spawn, console control events, window close requests.
+    pub fn processes(&self) -> &Arc<dyn ProcessControl> {
+        &self.processes
     }
 
     /// Authenticode verification (shared, so it can move into `spawn_blocking`).

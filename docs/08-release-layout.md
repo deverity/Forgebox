@@ -23,6 +23,7 @@ C:\Forgebox\
 ├── forgeboxd.exe                 # daemon (motor). ~7 MB
 ├── forge.exe                     # CLI. ~4 MB
 ├── forgebox-helper.exe           # helper elevado (manifest requireAdministrator; só roda sob demanda)
+├── forgebox-ctrl.exe             # auxiliar interno do daemon, sem elevação: entrega CTRL_BREAK a um serviço (ADR-0016)
 ├── forge-mcp.exe                 # servidor MCP (opcional)
 ├── uninstall.exe                 # NSIS
 ├── portable.flag                 # presente só no portátil: força tudo relativo e sem registro/PATH
@@ -97,6 +98,7 @@ C:\Forgebox\
 │   ├── apache\...
 │   ├── php\8.3\error.log , 8.3\pool.log
 │   ├── mysql\default\error.log
+│   ├── mysql\default.out.log , default.out.log.1 … .4   # stdout/stderr capturados pelo supervisor (10 MiB × 5)
 │   └── apps\loja.test\web.log , queue.log
 │
 ├── state\                        # ESTADO INTERNO (não editar à mão)

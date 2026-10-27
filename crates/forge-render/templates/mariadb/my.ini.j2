@@ -11,6 +11,7 @@ basedir = "{{ tool.dir }}"
 datadir = "{{ instance.data_dir }}"
 port = {{ instance.ports.main }}
 bind-address = 127.0.0.1
+skip-name-resolve
 pid-file = "{{ paths.tmp }}/mariadb/{{ instance.name }}.pid"
 log-error = "{{ paths.logs }}/mariadb/{{ instance.name }}/error.log"
 character-set-server = utf8mb4
@@ -19,6 +20,12 @@ lower_case_table_names = {{ 0 if instance.case_sensitive else 2 }}
 max_allowed_packet = {{ instance.settings.max_allowed_packet | default('256M') }}
 max_connections = {{ instance.settings.max_connections | default('200') }}
 innodb_buffer_pool_size = {{ instance.settings.innodb_buffer_pool_size | default('256M') }}
+# Development defaults: favor speed over durability.
+innodb_flush_log_at_trx_commit = 2
 slow_query_log = {{ instance.settings.slow_query_log | default('0') }}
 slow_query_log_file = "{{ paths.logs }}/mariadb/{{ instance.name }}/slow.log"
 long_query_time = {{ instance.settings.long_query_time | default('1') }}
+
+[mysqldump]
+quick
+max_allowed_packet = {{ instance.settings.max_allowed_packet | default('256M') }}
