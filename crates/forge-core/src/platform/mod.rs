@@ -6,9 +6,10 @@
 //! `tokio::task::spawn_blocking` (ADR-0011).
 //!
 //! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows;
-//! [`CodeSign`] (Authenticode, M1-E2-T2) too. [`ProcessGroup`] (M1-E3-T1), [`TrustStore`]
-//! (M1-E4-T4) and [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still
-//! grow in those tasks.
+//! [`CodeSign`] (Authenticode, M1-E2-T2) too. M1-E5-T1 added [`FileAcl`] (owner-only
+//! secret files) and [`windows::pipe_security`] (DACL and owner check of the local API
+//! pipe). [`ProcessGroup`] (M1-E3-T1), [`TrustStore`] (M1-E4-T4) and [`DnsPolicy`]
+//! (M1-E4-T3) are declared only; their signatures may still grow in those tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -76,6 +77,18 @@ pub trait CaseSensitiveFs: Send + Sync {
     /// `forgebox-helper`), `Conflict` when disabling a directory that holds names
     /// differing only by case.
     fn set(&self, dir: &Path, enabled: bool) -> Result<()>;
+}
+
+/// Restricts files holding secrets (`state/ipc.token`, the CA key) to the current OS user
+/// (docs/11 §3-§4).
+pub trait FileAcl: Send + Sync {
+    /// Replaces the access rules of the existing file `path` so that only the current
+    /// user can open it (Windows: protected DACL with one ACE; Unix: mode `0600`).
+    /// `NotFound` if `path` does not exist.
+    fn restrict_to_current_user(&self, path: &Path) -> Result<()>;
+
+    /// Whether `path` is accessible to the current user only.
+    fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool>;
 }
 
 /// Where the Authenticode signature of a file was found.
@@ -172,6 +185,7 @@ pub struct Platform {
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
     code_sign: Arc<dyn CodeSign>,
+    file_acl: Arc<dyn FileAcl>,
 }
 
 impl fmt::Debug for Platform {
@@ -183,8 +197,9 @@ impl fmt::Debug for Platform {
 }
 
 impl Platform {
-    /// Assembles a platform from parts (tests use fakes). Code signing defaults to the
-    /// implementation of the running OS; see [`Platform::with_code_sign`].
+    /// Assembles a platform from parts (tests use fakes). Code signing and file ACLs
+    /// default to the implementations of the running OS; see
+    /// [`Platform::with_code_sign`] and [`Platform::with_file_acl`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -195,12 +210,19 @@ impl Platform {
             link_fs,
             case_sensitive_fs,
             code_sign: default_code_sign(),
+            file_acl: default_file_acl(),
         }
     }
 
     /// Replaces the code signing verifier (fakes in tests).
     pub fn with_code_sign(mut self, code_sign: Arc<dyn CodeSign>) -> Self {
         self.code_sign = code_sign;
+        self
+    }
+
+    /// Replaces the secret file ACL implementation (fakes in tests).
+    pub fn with_file_acl(mut self, file_acl: Arc<dyn FileAcl>) -> Self {
+        self.file_acl = file_acl;
         self
     }
 
@@ -221,6 +243,11 @@ impl Platform {
     pub fn code_sign(&self) -> &Arc<dyn CodeSign> {
         &self.code_sign
     }
+
+    /// Owner-only ACLs for secret files (`state/ipc.token`).
+    pub fn file_acl(&self) -> &dyn FileAcl {
+        self.file_acl.as_ref()
+    }
 }
 
 #[cfg(windows)]
@@ -230,6 +257,16 @@ fn default_code_sign() -> Arc<dyn CodeSign> {
 
 #[cfg(not(windows))]
 fn default_code_sign() -> Arc<dyn CodeSign> {
+    Arc::new(unsupported::Unsupported)
+}
+
+#[cfg(windows)]
+fn default_file_acl() -> Arc<dyn FileAcl> {
+    Arc::new(windows::WindowsFileAcl)
+}
+
+#[cfg(not(windows))]
+fn default_file_acl() -> Arc<dyn FileAcl> {
     Arc::new(unsupported::Unsupported)
 }
 
@@ -291,6 +328,33 @@ mod unsupported {
         }
     }
 
+    /// Unix permission bits; other OSes fail with `UnsupportedPlatform`.
+    impl FileAcl for Unsupported {
+        #[cfg(unix)]
+        fn restrict_to_current_user(&self, path: &Path) -> Result<()> {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| ForgeError::io_at("restricting permissions of", path, e))
+        }
+        #[cfg(not(unix))]
+        fn restrict_to_current_user(&self, _: &Path) -> Result<()> {
+            err("file ACLs")
+        }
+        #[cfg(unix)]
+        fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool> {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(path)
+                .map_err(|e| ForgeError::io_at("reading permissions of", path, e))?
+                .permissions()
+                .mode();
+            Ok(mode & 0o077 == 0)
+        }
+        #[cfg(not(unix))]
+        fn is_restricted_to_current_user(&self, _: &Path) -> Result<bool> {
+            err("file ACLs")
+        }
+    }
+
     impl CaseSensitiveFs for Unsupported {
         fn support(&self, _: &Path) -> CaseSensitivitySupport {
             CaseSensitivitySupport::Unsupported(format!(
@@ -328,6 +392,27 @@ mod tests {
         assert_eq!(err.code(), "unsupported_platform");
         let err = platform.code_sign().verify(&dir).unwrap_err();
         assert_eq!(err.code(), "unsupported_platform");
+    }
+
+    #[test]
+    fn file_acl_can_be_replaced() {
+        struct AlwaysRestricted;
+        impl FileAcl for AlwaysRestricted {
+            fn restrict_to_current_user(&self, _: &Path) -> Result<()> {
+                Ok(())
+            }
+            fn is_restricted_to_current_user(&self, _: &Path) -> Result<bool> {
+                Ok(true)
+            }
+        }
+        let platform = current().with_file_acl(Arc::new(AlwaysRestricted));
+        let missing = std::env::temp_dir().join("forgebox-no-such-file");
+        assert!(
+            platform
+                .file_acl()
+                .is_restricted_to_current_user(&missing)
+                .unwrap()
+        );
     }
 
     #[test]

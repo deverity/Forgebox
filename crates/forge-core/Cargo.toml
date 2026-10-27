@@ -16,7 +16,9 @@ workspace = true
 default = []
 # Derives `specta::Type` for API-facing types (IDs). Enabled by forge-ipc so that
 # `cargo xtask gen-ts` can export them; domain crates do not need it.
-specta = ["dep:specta", "specta/ulid", "specta/jiff"]
+# `specta-typescript` provides the `Number`/`Unknown` markers used as type overrides on
+# u64 and JSON fields of event payloads.
+specta = ["dep:specta", "dep:specta-typescript", "specta/ulid", "specta/jiff"]
 # tokio-console instrumentation for development (`runtime::init_console`). Requires
 # RUSTFLAGS="--cfg tokio_unstable"; the default build does not.
 console = ["dep:console-subscriber"]
@@ -34,6 +36,7 @@ schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 specta = { workspace = true, features = ["derive"], optional = true }
+specta-typescript = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -43,18 +46,21 @@ ulid = { workspace = true }
 
 # Win32 only behind `platform::windows` (CLAUDE.md). `junction` wraps
 # CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile and the
-# Authenticode APIs (WinVerifyTrust, catalogs, CryptQueryObject).
+# Authenticode APIs (WinVerifyTrust, catalogs, CryptQueryObject) and the security
+# descriptors of the API pipe and secret files (DACLs, SIDs).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_Security_Cryptography",
     "Win32_Security_Cryptography_Catalog",
     "Win32_Security_WinTrust",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
+    "Win32_System_Threading",
 ] }
 
 [dev-dependencies]

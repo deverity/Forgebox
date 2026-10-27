@@ -29,7 +29,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E4-T4 | TLS | todo | — | |
 | M1-E4-T5 | Proxies + processes | todo | — | |
 | M1-E4-T6 | Paridade Linux | todo | — | |
-| M1-E5-T1 | Contratos IPC | todo | — | |
+| M1-E5-T1 | Contratos IPC | done | feature/M1-E5-T1-ipc-contracts | ADR-0015. `forge-ipc`: DTOs por grupo do docs/09 + tabela única `METHODS` (macro → marcadores, `Client` tipado, `methods.ts`; teste cobre todo comando do docs/09), JSON-RPC 2.0/NDJSON com `request_id` obrigatório e cache de idempotência, `system.hello` + `state/ipc.token` (ACL via `FileAcl`), named pipe por raiz com DACL/dono = usuário (Win32 em `forge-core/platform/windows/pipe_security.rs`), unix socket mínimo (não compilado no CI Windows), in-memory, WebSocket placeholder; streams com fila drop-oldest + `*.lagged`, `resume_from` (anel do `EventBus` + tabela `events`), cliente com reconexão/reassinatura; `fs.*` restrito a etc/logs/www (canonicalize). forge-core: `EventBus::subscribe_from`, ids `SubscriptionId/SessionId/ClientId`, códigos `unauthorized/forbidden`, payloads job/actor com `specta::Type`. Correção 1: assinatura sem cursor retoma do `last_seq` do subscribe (piso) se a conexão cair antes do primeiro item. Pendente para M1-E5-T2: daemon registrar handlers, persistir eventos e servir no pipe. |
 | M1-E5-T2 | Daemon | todo | — | |
 | M1-E5-T3 | CLI completa | todo | — | |
 | M1-E5-T4 | Helper elevado | todo | — | |
