@@ -23,6 +23,9 @@
 //! * [`hosts`]: the managed block of the system `hosts` file (fallback of the NRPT rule,
 //!   docs/06 §5.1), rendered and parsed here so that the daemon (diagnosis) and the helper
 //!   (writing) agree byte for byte.
+//! * [`trust`]: what the helper accepts to add to (or remove from) `LocalMachine\Root`:
+//!   only a self-signed Forgebox CA whose Name Constraints stay under local-use suffixes
+//!   (ADR-0024).
 //!
 //! Requirements on the helper side (M1-E5-T4), part of the protocol:
 //! 1. `request.root` must be the helper's own root (the folder of `forgebox-helper.exe`);
@@ -35,11 +38,15 @@
 //!    again right before acting (a junction inside `bin/` must not lead outside it).
 //! 4. Every operation (accepted or refused) is appended to `logs/helper.log`; the daemon
 //!    publishes `helper.op {name, ok}`.
+//!
+//! The helper itself lives in the `forge-helper` crate (M1-E5-T4, ADR-0024); its
+//! privileged side effects are [`crate::platform::PrivilegedOps`].
 
 mod client;
 pub mod hosts;
 mod op;
 mod protocol;
+pub mod trust;
 
 pub use client::{FakeElevation, HelperClient};
 pub use hosts::{HOSTS_BLOCK_NAME, HostsEntry};
@@ -48,6 +55,6 @@ pub use op::{
     NRPT_NAMESERVERS,
 };
 pub use protocol::{
-    HELPER_EXE_NAME, HELPER_PROTOCOL_VERSION, HelperRequest, HelperResponse, request_path,
-    response_path,
+    HELPER_EXE_NAME, HELPER_PROTOCOL_VERSION, HelperRequest, HelperResponse, MAX_DOCUMENT_BYTES,
+    request_path, response_path,
 };

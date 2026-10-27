@@ -12,7 +12,8 @@
 //! * `LocalMachine\Root` is read without elevation. Changes go through `forgebox-helper`
 //!   (`trust.add_machine_root` / `trust.remove_machine_root`, ADR-0022), except in
 //!   [`WindowsTrustStore::elevated`], meant for the helper itself, which writes the store
-//!   directly.
+//!   directly (through `PrivilegedOps`, ADR-0024; [`machine_root_der`] gives it the
+//!   certificate it is asked to remove, to check it is a Forgebox CA first).
 //! * [`TrustStore::verify_server`] builds the chain with a private chain engine whose
 //!   **exclusive** root store holds only the given anchor (`hExclusiveRoot`, Windows 7+),
 //!   then applies the SSL policy (`CERT_CHAIN_POLICY_SSL`) with the server name: the same
@@ -343,6 +344,17 @@ impl TrustStore for WindowsTrustStore {
     }
 }
 
+/// DER of the certificate with SHA-1 `thumbprint` in the registry part of
+/// `LocalMachine\Root` (what [`WindowsTrustStore`] adds and removes), if any. No elevation.
+pub(crate) fn machine_root_der(thumbprint: &CertThumbprint) -> Result<Option<Vec<u8>>> {
+    let Some(store) =
+        Store::open_registry(CERT_SYSTEM_STORE_LOCAL_MACHINE, ROOT_STORE, true, true)?
+    else {
+        return Ok(None);
+    };
+    Ok(store.find(thumbprint).map(|context| context.der()))
+}
+
 /// An open certificate store, closed on drop.
 struct Store(HCERTSTORE);
 
@@ -459,6 +471,15 @@ impl CertContext {
             )));
         }
         Ok(Self(ctx))
+    }
+
+    /// A copy of the DER encoding.
+    fn der(&self) -> Vec<u8> {
+        // SAFETY: a context owned by `self`; its encoded bytes live as long as it does.
+        unsafe {
+            let ctx = &*self.0;
+            std::slice::from_raw_parts(ctx.pbCertEncoded, ctx.cbCertEncoded as usize).to_vec()
+        }
     }
 
     /// Gives up ownership (for calls that free the context themselves).
@@ -627,6 +648,20 @@ mod tests {
             .add_root(b"not a certificate", TrustScope::LocalMachine)
             .unwrap_err();
         assert_eq!(err.code(), "needs_elevation", "{err}");
+    }
+
+    #[test]
+    fn machine_roots_are_read_without_elevation() {
+        assert_eq!(
+            machine_root_der(&CertThumbprint::from_bytes([0xA5; 20])).unwrap(),
+            None
+        );
+        // "Microsoft Root Certificate Authority 2011" ships with every Windows 10/11.
+        let microsoft: CertThumbprint = "8F43288AD272F3103B6FB1428485EA3014C0BCFE".parse().unwrap();
+        let der = machine_root_der(&microsoft)
+            .unwrap()
+            .expect("Microsoft root");
+        assert_eq!(CertThumbprint::of_der(&der), microsoft);
     }
 
     #[test]
