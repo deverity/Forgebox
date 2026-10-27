@@ -126,6 +126,7 @@ pub fn db_context(root: &ForgeRoot, tool: &str, version: &str, port: u16) -> Ren
             .join("default")
             .to_string_lossy()
             .into_owned(),
+        case_sensitive: true,
         settings: BTreeMap::from([("slow_query_log".to_owned(), "1".to_owned())]),
     };
     ctx
@@ -142,6 +143,7 @@ pub fn mailpit_context(root: &ForgeRoot) -> RenderContext {
             .join("default")
             .to_string_lossy()
             .into_owned(),
+        case_sensitive: true,
         settings: BTreeMap::new(),
     };
     ctx

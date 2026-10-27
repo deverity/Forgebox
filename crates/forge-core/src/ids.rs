@@ -150,6 +150,22 @@ ulid_id!(
     RequestId,
     "request id"
 );
+ulid_id!(
+    /// A stream subscription of an API connection (`events.subscribe`, `logs.subscribe`,
+    /// `metrics.subscribe`); scoped to the connection that opened it.
+    SubscriptionId,
+    "subscription id"
+);
+ulid_id!(
+    /// An authenticated API connection (returned by `system.hello`).
+    SessionId,
+    "session id"
+);
+ulid_id!(
+    /// A remote client paired with this daemon (docs/13 §3.2, `forge remote clients`).
+    ClientId,
+    "client id"
+);
 
 /// Maximum length of a [`ToolId`].
 pub const TOOL_ID_MAX_LEN: usize = 64;

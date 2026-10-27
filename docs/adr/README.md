@@ -18,4 +18,5 @@ Formato: contexto → decisão → alternativas rejeitadas → consequências. U
 | [0012](0012-yaml-crate-serde-yaml-ng.md) | YAML com `serde_yaml_ng` (`serde_yml` deprecado), atrás de `forge_manifest::yaml` | aceito |
 | [0013](0013-jiff-timestamps.md) | Timestamps UTC com `jiff::Timestamp` (re-export `forge_core::Timestamp`), RFC 3339 no fio | aceito |
 | [0014](0014-concurrency-skeleton.md) | Esqueleto de concorrência: supervisão no task do ator, travas ordenadas, writer SQLite em lotes com `SAVEPOINT` | aceito |
+| [0015](0015-ipc-protocol.md) | Protocolo IPC: JSON-RPC 2.0 em NDJSON, `request_id` obrigatório, `system.hello` com token, tabela única de métodos, streams com fila drop-oldest e `resume_from` | aceito |
 | [0017](0017-verify-extract-stack.md) | Verificação e extração em Rust puro (rpgp, minisign-verify, zip 9, sevenz-rust2, lzma-rust2), Authenticode sem revogação, MSRV 1.88 | aceito |

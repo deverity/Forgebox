@@ -237,3 +237,21 @@ fn unknown_php_pool_is_rejected() {
         .unwrap_err();
     assert_eq!(err.code(), "invalid_input");
 }
+
+#[test]
+fn lower_case_table_names_follows_instance_case_sensitivity() {
+    let r = root();
+    for tool in ["mysql", "mariadb"] {
+        let mut ctx = common::db_context(&r, tool, "1.0.0", 3306);
+        let body = |ctx: &RenderContext| {
+            render(tool, ctx)
+                .into_iter()
+                .find(|f| f.path.ends_with("my.ini"))
+                .unwrap()
+                .body
+        };
+        assert!(body(&ctx).contains("lower_case_table_names = 0"));
+        ctx.instance.case_sensitive = false;
+        assert!(body(&ctx).contains("lower_case_table_names = 2"));
+    }
+}

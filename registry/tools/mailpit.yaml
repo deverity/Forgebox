@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 1.32.0 16915767a6c95dca569336e8f561f91cf355e9a33c57b91deedcc10a4bba7fd4
+#   (the GitHub release of axllent/mailpit publishes no checksum asset; sha256 computed locally
+#   from mailpit-windows-amd64.zip of v1.32.0 and curated)
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: mailpit
+  name: Mailpit
+  summary: Catcher de e-mail local (SMTP + UI web)
+  description: |
+    Captura os e-mails enviados pelos seus projetos (SMTP 1025) e mostra numa UI web (8025).
+    Catcher de e-mail padrão do Forgebox.
+  category: mail
+  tags: [mail, smtp, mailpit, testing]
+  homepage: https://mailpit.axllent.org
+  docs: https://mailpit.axllent.org/docs/
+  license: MIT
+  icon: mailpit.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=1 <2" }
+    series_key: "{major}.{minor}"
+
+  source:
+    providers:
+      - type: github-release
+        repo: axllent/mailpit
+        asset: "^mailpit-windows-amd64\\.zip$"
+    releases:
+      - version: "1.32.0"
+        url: https://github.com/axllent/mailpit/releases/download/v1.32.0/mailpit-windows-amd64.zip
+        sha256: "16915767a6c95dca569336e8f561f91cf355e9a33c57b91deedcc10a4bba7fd4"
+        size: 10632291
+
+  install:
+    archive: zip
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "."
+    shims: [mailpit]
+    verify:
+      command: "mailpit.exe version"
+      regex: "mailpit v(\\d+\\.\\d+\\.\\d+)"
+    post_install:
+      - mkdir: "{{ paths.data }}/mailpit"
+    uninstall:
+      keep: ["{{ paths.data }}/mailpit"]
+    size_estimate_mb: 30
+
+  service:
+    kind: daemon
+    daemon:
+      exe: mailpit.exe
+      args:
+        - "--smtp"
+        - "127.0.0.1:{{ instance.ports.smtp }}"
+        - "--listen"
+        - "127.0.0.1:{{ instance.ports.http }}"
+        - "--database"
+        - "{{ instance.data_dir }}/mailpit.db"
+      cwd: "{{ paths.version }}"
+      console_group: true
+      ports:
+        - { name: smtp, default: 1025, range: mail }
+        - { name: http, default: 8025, range: mail }
+      start_timeout: 15s
+      health:
+        http: { url: "http://127.0.0.1:{{ instance.ports.http }}/api/v1/info", expect_status: 200 }
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop:
+        timeout: 10s
+        then: ctrl-c
+      restart_policy: { on: failure, max: 3, window: 60s }
+      data:
+        dir: "{{ paths.data }}/mailpit/{{ instance.name }}"
+      autostart: true
+
+  discover:
+    match_files: [mailpit.exe]
+    version_command: "mailpit.exe version"
+    version_regex: "mailpit v(\\d+\\.\\d+\\.\\d+)"
+
+  update:
+    policy: auto-minor
+    retention: 1
+    check_interval: 12h
+
+  ui:
+    color: "#2F8CF5"
+    actions:
+      - { label: "Abrir caixa de e-mail", icon: mail, browse: "http://127.0.0.1:{{ instance.ports.http }}" }

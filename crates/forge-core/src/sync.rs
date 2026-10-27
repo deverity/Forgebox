@@ -34,6 +34,15 @@ impl LockLevel {
     pub const JOB_TABLE: LockLevel = LockLevel::new(10, "jobs.table");
     /// Idle read connections of a [`crate::store::StoreReader`].
     pub const STORE_READERS: LockLevel = LockLevel::new(10, "store.readers");
+    /// Outgoing queue (responses + per-subscription stream queues) of one API connection
+    /// (`forge_ipc` server).
+    pub const IPC_OUTBOX: LockLevel = LockLevel::new(10, "ipc.outbox");
+    /// Request-id cache of the API server (idempotent retries, ADR-0009 rule 4).
+    pub const IPC_IDEMPOTENCY: LockLevel = LockLevel::new(10, "ipc.idempotency");
+    /// Live connections of the API server.
+    pub const IPC_CONNECTIONS: LockLevel = LockLevel::new(10, "ipc.connections");
+    /// Connection slot, pending calls, routes and subscriptions of an API client.
+    pub const IPC_CLIENT: LockLevel = LockLevel::new(10, "ipc.client");
     /// Sequence counter of the [`crate::event::EventBus`]. Innermost lock: nothing may be
     /// acquired while it is held.
     pub const EVENT_BUS_SEQ: LockLevel = LockLevel::new(200, "event_bus.seq");

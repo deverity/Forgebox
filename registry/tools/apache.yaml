@@ -1,0 +1,157 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 2.4.69 vs18 77d715d0d9cee731e2251e7ddc2090a7a8e6d41fedef2e9827cd918593c5a652
+#   (SHA256 published by Apache Lounge in httpd-2.4.69-261002-Win64-VS18.zip.txt == local hash)
+# verified: 2026-10-26 2.4.66 vs17 2cd1f349b6705e43e784e876a233eeb1a859fa6b8abc693a91f87b35a368f7f9
+#   (same procedure, httpd-2.4.66-251206-Win64-VS17.zip.txt)
+# Console mode (no Windows Service, by design). Measured with httpd 2.4.66 VS17: `httpd -k graceful`
+# and `httpd -k stop` fail with AH00436 "No installed service named Apache2.4" (exit 2) and the
+# process keeps running, so neither is used. Ctrl+Break on the console group does a graceful
+# restart (AH00424 "Received restart signal -- Restarting the server") and Ctrl+C shuts down
+# (mpm_winnt console handler); hence reload = ctrl-break and stop = ctrl-c.
+# Config templates (httpd.conf, sites, upstreams) arrive with M1-E4-T1, which adds the `render`
+# actions; until then `httpd_conf` is only declared.
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: apache
+  name: Apache HTTP Server
+  summary: Apache httpd 2.4 (builds Apache Lounge)
+  description: |
+    Servidor web Apache 2.4 para Windows (Apache Lounge). Suporta `.htaccess`. Um vhost por site,
+    PHP via FastCGI nos pools do Forgebox.
+  category: webserver
+  tags: [apache, httpd, webserver, htaccess]
+  homepage: https://httpd.apache.org
+  docs: https://httpd.apache.org/docs/2.4/
+  license: Apache-2.0
+  icon: apache.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+  runtime_deps: [vcredist-vs17]
+  suggests: [php]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=2.4 <2.5" }
+    series_key: "{major}.{minor}"
+    variants:
+      - key: compiler
+        values: [vs18, vs17]
+        derive: from_provider
+
+  source:
+    providers:
+      - type: apache-lounge
+        builds: [vs18, vs17]
+    releases:
+      - version: "2.4.69"
+        url: https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip
+        sha256: "77d715d0d9cee731e2251e7ddc2090a7a8e6d41fedef2e9827cd918593c5a652"
+        size: 14495691
+        variants: { compiler: vs18 }
+        published_at: 2026-10-02T00:00:00Z
+      - version: "2.4.66"
+        url: https://www.apachelounge.com/download/VS17/binaries/httpd-2.4.66-251206-Win64-VS17.zip
+        sha256: "2cd1f349b6705e43e784e876a233eeb1a859fa6b8abc693a91f87b35a368f7f9"
+        size: 11527838
+        variants: { compiler: vs17 }
+        published_at: 2025-12-06T00:00:00Z
+
+  install:
+    archive: zip
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "bin"
+    shims: [httpd]
+    verify:
+      command: "bin/httpd.exe -v"
+      regex: "Apache/(\\d+\\.\\d+\\.\\d+)"
+    post_install:
+      - mkdir: "{{ paths.logs }}/apache"
+      - mkdir: "{{ paths.etc }}/apache/{{ version }}"
+    uninstall:
+      keep: ["{{ paths.etc }}/apache/{{ version }}"]
+    size_estimate_mb: 55
+
+  config:
+    files:
+      - id: httpd_conf
+        path: "{{ paths.etc }}/apache/{{ version }}/httpd.conf"
+        format: conf-directive
+        label: httpd.conf
+        editable: true
+    quick_settings:
+      - key: keep_alive
+        label: KeepAlive
+        file: httpd_conf
+        directive: "KeepAlive"
+        type: toggle
+        on: "On"
+        off: "Off"
+        default: on
+        apply: reload
+      - key: timeout
+        label: Timeout (s)
+        file: httpd_conf
+        directive: "Timeout"
+        type: number
+        min: 1
+        max: 3600
+        default: 300
+        apply: reload
+      - key: limit_request_body
+        label: Limite do corpo da requisição (bytes, 0 = ilimitado)
+        file: httpd_conf
+        directive: "LimitRequestBody"
+        type: number
+        min: 0
+        default: 0
+        apply: reload
+
+  service:
+    kind: daemon
+    daemon:
+      exe: bin/httpd.exe
+      args: ["-d", "{{ paths.version }}", "-f", "{{ instance.config.httpd_conf }}"]
+      cwd: "{{ paths.version }}"
+      console_group: true
+      ports:
+        - { name: http, default: 80, range: web }
+        - { name: https, default: 443, range: web }
+      check: { command: "bin/httpd.exe -t -d {{ paths.version }} -f {{ instance.config.httpd_conf }}" }
+      start_timeout: 20s
+      health:
+        tcp: "127.0.0.1:{{ instance.ports.http }}"
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop: { timeout: 15s, then: ctrl-c }
+      reload: { signal: ctrl-break }
+      restart_policy: { on: failure, max: 3, window: 60s }
+      logs:
+        - { label: Error log, path: "{{ paths.logs }}/apache/error.log", format: apache-error }
+        - { label: Access log (JSON), path: "{{ paths.logs }}/apache/access.log", format: forgebox-json }
+      autostart: true
+
+  discover:
+    match_files: [bin/httpd.exe]
+    version_command: "bin/httpd.exe -v"
+    version_regex: "Apache/(\\d+\\.\\d+\\.\\d+)"
+
+  update:
+    policy: auto-patch
+    retention: 1
+    check_interval: 12h
+
+  ui:
+    color: "#D22128"
+    actions:
+      - { label: "httpd.conf", icon: file-text, open: config:httpd_conf }
+      - { label: "Terminal com esta versão", icon: terminal, shell: { path_prepend: ["{{ paths.version }}/bin"] } }
+    badges: ["{{ variant.compiler }}"]

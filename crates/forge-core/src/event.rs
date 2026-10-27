@@ -11,8 +11,16 @@
 //! for subscribers. A subscriber that falls behind loses the oldest events
 //! (drop-oldest, docs/03 §7.3); [`EventStream`] counts what was lost so the client can
 //! resynchronise (for example from the `events` table by `seq`).
+//!
+//! The bus also keeps the last [`EventBusOptions::history`] events in memory (a ring
+//! buffer). [`EventBus::subscribe_from`] atomically snapshots that ring and subscribes, so
+//! an API client resuming from `seq` N gets every event after N exactly once and in order:
+//! first what the ring still holds, then the live stream; whatever is older than the ring
+//! is reported as a gap to be read from the `events` table (ADR-0009, rule 3).
 
+use std::collections::VecDeque;
 use std::fmt;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -25,6 +33,8 @@ use crate::sync::{LockLevel, OrderedMutex};
 
 /// Default number of events buffered per subscriber before the oldest are dropped.
 pub const DEFAULT_EVENT_CAPACITY: usize = 4096;
+/// Default number of recent events kept in memory for [`EventBus::subscribe_from`].
+pub const DEFAULT_EVENT_HISTORY: usize = 4096;
 
 macro_rules! event_kinds {
     ($($(#[$meta:meta])* $variant:ident => $name:literal,)+) => {
@@ -147,17 +157,68 @@ pub struct EventBus {
 
 struct Inner {
     sender: broadcast::Sender<Event>,
-    /// Next `seq` to assign. Held only while numbering and handing the event to the
-    /// channel (non-blocking), so subscribers always observe `seq` in order. Never held
-    /// across `.await` (ADR-0011). Innermost lock ([`LockLevel::EVENT_BUS_SEQ`]): callers
-    /// may publish while holding an outer lock (e.g. the job table) but never the reverse.
-    next_seq: OrderedMutex<u64>,
+    history_capacity: usize,
+    /// Next `seq` and the in-memory history. Held only while numbering, recording and
+    /// handing the event to the channel (non-blocking), so subscribers always observe
+    /// `seq` in order. Never held across `.await` (ADR-0011). Innermost lock
+    /// ([`LockLevel::EVENT_BUS_SEQ`]): callers may publish while holding an outer lock
+    /// (e.g. the job table) but never the reverse.
+    state: OrderedMutex<BusState>,
+}
+
+struct BusState {
+    next_seq: u64,
+    /// Last published events, oldest first, at most `history_capacity`.
+    history: VecDeque<Event>,
+}
+
+/// Construction parameters of an [`EventBus`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventBusOptions {
+    /// Events buffered per subscriber before the oldest are dropped (must be > 0).
+    pub capacity: usize,
+    /// Recent events kept in memory for [`EventBus::subscribe_from`] (0 disables replay
+    /// from memory).
+    pub history: usize,
+    /// `seq` of the first event published by this bus.
+    pub next_seq: u64,
+}
+
+impl Default for EventBusOptions {
+    /// [`DEFAULT_EVENT_CAPACITY`], [`DEFAULT_EVENT_HISTORY`], numbering from 1.
+    fn default() -> Self {
+        Self {
+            capacity: DEFAULT_EVENT_CAPACITY,
+            history: DEFAULT_EVENT_HISTORY,
+            next_seq: 1,
+        }
+    }
+}
+
+/// Result of [`EventBus::subscribe_from`].
+#[derive(Debug)]
+pub struct Resume {
+    /// Events after the requested `seq` that are still in memory, oldest first.
+    pub replay: Vec<Event>,
+    /// Live subscription; its first event is the one right after the last of `replay`
+    /// (or after the bus's last `seq` at the time of the call).
+    pub stream: EventStream,
+    /// Events the caller asked for that are older than the in-memory history (to be read
+    /// from the `events` table). `None` when memory covers everything requested.
+    pub gap: Option<RangeInclusive<u64>>,
+    /// `seq` of the last event published before the subscription (0 if none).
+    pub last_seq: u64,
 }
 
 impl fmt::Debug for EventBus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (next_seq, history) = {
+            let state = self.inner.state.lock();
+            (state.next_seq, state.history.len())
+        };
         f.debug_struct("EventBus")
-            .field("next_seq", &*self.inner.next_seq.lock())
+            .field("next_seq", &next_seq)
+            .field("history", &history)
             .field("subscribers", &self.subscriber_count())
             .finish()
     }
@@ -170,9 +231,10 @@ impl Default for EventBus {
 }
 
 impl EventBus {
-    /// Bus with [`DEFAULT_EVENT_CAPACITY`], numbering from `seq = 1`.
+    /// Bus with [`DEFAULT_EVENT_CAPACITY`] and [`DEFAULT_EVENT_HISTORY`], numbering from
+    /// `seq = 1`.
     pub fn new() -> Self {
-        Self::starting_at(DEFAULT_EVENT_CAPACITY, 1)
+        Self::with_options(EventBusOptions::default())
     }
 
     /// Bus with a custom per-subscriber buffer, numbering from `seq = 1`.
@@ -186,11 +248,30 @@ impl EventBus {
     /// # Panics
     /// If `capacity` is zero (tokio requirement).
     pub fn starting_at(capacity: usize, next_seq: u64) -> Self {
-        let (sender, _) = broadcast::channel(capacity);
+        Self::with_options(EventBusOptions {
+            capacity,
+            next_seq,
+            ..EventBusOptions::default()
+        })
+    }
+
+    /// Bus with explicit [`EventBusOptions`].
+    ///
+    /// # Panics
+    /// If `options.capacity` is zero (tokio requirement).
+    pub fn with_options(options: EventBusOptions) -> Self {
+        let (sender, _) = broadcast::channel(options.capacity);
         Self {
             inner: Arc::new(Inner {
                 sender,
-                next_seq: OrderedMutex::new(LockLevel::EVENT_BUS_SEQ, next_seq.max(1)),
+                history_capacity: options.history,
+                state: OrderedMutex::new(
+                    LockLevel::EVENT_BUS_SEQ,
+                    BusState {
+                        next_seq: options.next_seq.max(1),
+                        history: VecDeque::with_capacity(options.history.min(1024)),
+                    },
+                ),
             }),
         }
     }
@@ -206,19 +287,35 @@ impl EventBus {
             payload,
         };
         // Clone outside the critical section; inside only numbering, the clock read
-        // (keeps `ts` non-decreasing with `seq`) and the non-blocking hand-off.
+        // (keeps `ts` non-decreasing with `seq`), the ring update and the non-blocking
+        // hand-off.
         let mut outgoing = event.clone();
-        {
-            let mut next_seq = self.inner.next_seq.lock();
-            outgoing.seq = *next_seq;
-            outgoing.ts = Timestamp::now();
-            *next_seq += 1;
-            event.seq = outgoing.seq;
-            event.ts = outgoing.ts;
+        let mut recorded = (self.inner.history_capacity > 0).then(|| event.clone());
+        let evicted = {
+            let mut state = self.inner.state.lock();
+            let seq = state.next_seq;
+            let ts = Timestamp::now();
+            state.next_seq += 1;
+            outgoing.seq = seq;
+            outgoing.ts = ts;
+            event.seq = seq;
+            event.ts = ts;
+            let mut evicted = None;
+            if let Some(mut copy) = recorded.take() {
+                copy.seq = seq;
+                copy.ts = ts;
+                state.history.push_back(copy);
+                if state.history.len() > self.inner.history_capacity {
+                    evicted = state.history.pop_front();
+                }
+            }
             // An error only means there is no subscriber right now; the event is not
             // lost for persistence because the caller gets it back.
             let _ = self.inner.sender.send(outgoing);
-        }
+            evicted
+        };
+        // Dropped outside the lock (payloads can be large).
+        drop(evicted);
         event
     }
 
@@ -230,6 +327,48 @@ impl EventBus {
         }
     }
 
+    /// Subscription that resumes after `after_seq`: returns the in-memory events with
+    /// `seq > after_seq` and a live stream starting right after them, taken atomically
+    /// (no duplicate, no hole). Events older than the history are reported in
+    /// [`Resume::gap`]. A cursor at or beyond the last published `seq` replays nothing.
+    pub fn subscribe_from(&self, after_seq: u64) -> Resume {
+        let (receiver, replay, oldest, last_seq) = {
+            let state = self.inner.state.lock();
+            let receiver = self.inner.sender.subscribe();
+            let last_seq = state.next_seq - 1;
+            let oldest = state.history.front().map(|e| e.seq);
+            // `history` is sorted by `seq`: skip what the caller already has.
+            let start = state.history.partition_point(|e| e.seq <= after_seq);
+            let replay: Vec<Event> = state.history.range(start..).cloned().collect();
+            (receiver, replay, oldest, last_seq)
+        };
+        let wanted_from = after_seq.saturating_add(1);
+        let available_from = oldest.unwrap_or(last_seq.saturating_add(1));
+        let gap = (after_seq < last_seq && wanted_from < available_from)
+            .then(|| wanted_from..=(available_from - 1).min(last_seq));
+        Resume {
+            replay,
+            stream: EventStream {
+                receiver,
+                missed: 0,
+            },
+            gap,
+            last_seq,
+        }
+    }
+
+    /// Up to `limit` in-memory events with `seq > after_seq`, oldest first.
+    pub fn history_since(&self, after_seq: u64, limit: usize) -> Vec<Event> {
+        let state = self.inner.state.lock();
+        let start = state.history.partition_point(|e| e.seq <= after_seq);
+        state.history.range(start..).take(limit).cloned().collect()
+    }
+
+    /// `seq` of the oldest event still in memory (`None` when the history is empty).
+    pub fn oldest_in_history(&self) -> Option<u64> {
+        self.inner.state.lock().history.front().map(|e| e.seq)
+    }
+
     /// Number of live subscriptions.
     pub fn subscriber_count(&self) -> usize {
         self.inner.sender.receiver_count()
@@ -237,7 +376,7 @@ impl EventBus {
 
     /// `seq` of the last published event (0 if none yet).
     pub fn last_seq(&self) -> u64 {
-        *self.inner.next_seq.lock() - 1
+        self.inner.state.lock().next_seq - 1
     }
 }
 
@@ -446,6 +585,73 @@ mod tests {
         drop(bus);
         assert!(stream.recv().await.is_some());
         assert!(stream.recv().await.is_none());
+    }
+
+    #[test]
+    fn history_keeps_the_last_events() {
+        let bus = EventBus::with_options(EventBusOptions {
+            capacity: 8,
+            history: 3,
+            next_seq: 1,
+        });
+        assert_eq!(bus.oldest_in_history(), None);
+        for _ in 0..5 {
+            bus.publish(EventKind::JobProgress, serde_json::Value::Null);
+        }
+        assert_eq!(bus.oldest_in_history(), Some(3));
+        let seqs: Vec<u64> = bus.history_since(0, 10).iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, [3, 4, 5]);
+        let seqs: Vec<u64> = bus.history_since(3, 1).iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, [4]);
+        assert!(bus.history_since(5, 10).is_empty());
+    }
+
+    #[tokio::test]
+    async fn subscribe_from_replays_then_streams_without_duplicates() {
+        let bus = EventBus::with_options(EventBusOptions {
+            capacity: 64,
+            history: 4,
+            next_seq: 1,
+        });
+        for _ in 0..6 {
+            bus.publish(EventKind::JobProgress, serde_json::Value::Null);
+        }
+        // Ring holds 3..=6. Resuming after 4 needs 5 and 6 from memory, no gap.
+        let mut resume = bus.subscribe_from(4);
+        assert_eq!(resume.last_seq, 6);
+        assert_eq!(resume.gap, None);
+        let replayed: Vec<u64> = resume.replay.iter().map(|e| e.seq).collect();
+        assert_eq!(replayed, [5, 6]);
+        bus.publish(EventKind::JobProgress, serde_json::Value::Null);
+        assert_eq!(resume.stream.recv().await.unwrap().seq, 7);
+
+        // Resuming after 0 needs 1..=2 from the store; memory starts at 4 now.
+        let resume = bus.subscribe_from(0);
+        assert_eq!(resume.gap, Some(1..=3));
+        assert_eq!(resume.replay.first().map(|e| e.seq), Some(4));
+
+        // Up to date or ahead: nothing to replay, no gap.
+        for cursor in [7, 100] {
+            let resume = bus.subscribe_from(cursor);
+            assert!(resume.replay.is_empty());
+            assert_eq!(resume.gap, None);
+        }
+    }
+
+    #[test]
+    fn subscribe_from_without_history_reports_the_whole_gap() {
+        let bus = EventBus::with_options(EventBusOptions {
+            capacity: 8,
+            history: 0,
+            next_seq: 10,
+        });
+        for _ in 0..3 {
+            bus.publish(EventKind::JobProgress, serde_json::Value::Null);
+        }
+        let resume = bus.subscribe_from(9);
+        assert!(resume.replay.is_empty());
+        assert_eq!(resume.gap, Some(10..=12));
+        assert_eq!(bus.subscribe_from(12).gap, None);
     }
 
     #[test]

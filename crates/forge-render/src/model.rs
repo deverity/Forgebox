@@ -454,7 +454,7 @@ pub struct ToolModel {
 }
 
 /// A database/mail instance.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceModel {
     /// Instance name (`default`).
     pub name: String,
@@ -462,8 +462,28 @@ pub struct InstanceModel {
     pub ports: BTreeMap<String, u16>,
     /// Data directory, POSIX.
     pub data_dir: String,
+    /// Whether `data_dir` carries the NTFS case-sensitive flag (docs/15 section 5). Drives
+    /// `lower_case_table_names` in the MySQL/MariaDB templates (0 when true, 2 otherwise).
+    #[serde(default = "default_case_sensitive")]
+    pub case_sensitive: bool,
     /// Free settings from the UI (quick settings, docs/04).
     pub settings: BTreeMap<String, String>,
+}
+
+fn default_case_sensitive() -> bool {
+    true
+}
+
+impl Default for InstanceModel {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            ports: BTreeMap::new(),
+            data_dir: String::new(),
+            case_sensitive: true,
+            settings: BTreeMap::new(),
+        }
+    }
 }
 
 /// Global preferences used by templates.

@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../schema/stack.v1.json
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata:
+  id: cakephp
+  name: CakePHP
+  summary: "PHP 8.3 + Composer + Apache + MySQL 8.4"
+  description: |
+    CakePHP 5 com Apache e MySQL. O driver `cakephp` usa `webroot/` como raiz do site.
+  tags: [php, cakephp, mysql]
+  icon: cakephp.svg
+  homepage: https://cakephp.org
+spec:
+  tools:
+    - { id: php, series: "8.3" }
+    - { id: composer }
+    - { id: apache }
+    - { id: mysql, series: "8.4", instance: default }
+  site:
+    create_with: "composer create-project --prefer-dist cakephp/app {{ dir }}"
+    driver: cakephp
+    php: "8.3"
+    secure: true
+    env_patch:
+      DATABASE_URL: "mysql://root@127.0.0.1:{{ instances.mysql.default.ports.main }}/{{ site.slug }}"
+    post_create:
+      - create_database: { instance: mysql/default, name: "{{ site.slug }}" }
