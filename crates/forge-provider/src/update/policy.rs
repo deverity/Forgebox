@@ -16,6 +16,13 @@
 //!   installed version that no `failed` update targeted. When that row is a rollback the
 //!   group is *pinned*: nothing is applied automatically until the user updates it by
 //!   hand. The daemon resolves a series to a pool version with [`active_versions`] too.
+//! * A group is **superseded** when the newest `completed` history row that references
+//!   one of its members (as `from` or `to`) is an update (not a rollback) that left the
+//!   group: `from` in the group, `to` in another one (`auto-minor` 1.28.0 → 1.30.0,
+//!   `auto` 8.3 → 9.0). Its pools now run the other group's version, so [`plan`] skips
+//!   it: the retained old version must not be offered (and re-applied) again. Rolling
+//!   that update back marks the row `rolled_back` and adds a rollback row that targets
+//!   the member, so the group is active (and pinned) again.
 //! * **Reach**: `notify`/`manual` report what `auto-patch` would install (same series);
 //!   `auto-patch` stays in the series; `auto-minor` follows minors, never a major;
 //!   `auto` takes anything.
@@ -223,13 +230,25 @@ pub fn cmp_rows(manifest: &ToolManifest, a: &ToolVersionRow, b: &ToolVersionRow)
     }
 }
 
-/// The active version of every group of `rows` (module docs): `(group, active row,
-/// pinned)`, groups in key order. Only `installed` rows of the manifest's tool count.
+/// The active version of an update line (module docs).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveVersion<'r> {
+    pub key: GroupKey,
+    /// The version the line's pools serve.
+    pub row: &'r ToolVersionRow,
+    /// The line was rolled back: nothing is applied automatically.
+    pub pinned: bool,
+    /// An update moved the line to another series: [`plan`] skips it.
+    pub superseded: bool,
+}
+
+/// The active version of every group of `rows` (module docs), groups in key order. Only
+/// `installed` rows of the manifest's tool count. `history` is newest first.
 pub fn active_versions<'r>(
     manifest: &ToolManifest,
     rows: &'r [ToolVersionRow],
     history: &[UpdateHistoryRow],
-) -> Vec<(GroupKey, &'r ToolVersionRow, bool)> {
+) -> Vec<ActiveVersion<'r>> {
     let mut groups: BTreeMap<GroupKey, Vec<&ToolVersionRow>> = BTreeMap::new();
     for row in rows.iter().filter(|r| {
         r.state == VersionState::Installed
@@ -244,13 +263,23 @@ pub fn active_versions<'r>(
     let mut out = Vec::new();
     for (key, mut members) in groups {
         members.sort_by(|a, b| cmp_rows(manifest, a, b));
-        // `history` is newest first.
-        let last = history.iter().find(|h| {
-            h.status == UpdateStatus::Completed
-                && h.to_version_id
-                    .is_some_and(|id| members.iter().any(|m| m.id == id))
-        });
-        let (active, pinned) = match last {
+        let member =
+            |id: Option<VersionId>| id.is_some_and(|id| members.iter().any(|m| m.id == id));
+        let completed = || {
+            history
+                .iter()
+                .filter(|h| h.status == UpdateStatus::Completed)
+        };
+        let last = completed().find(|h| member(h.to_version_id));
+        let superseded = completed()
+            .find(|h| member(h.to_version_id) || member(h.from_version_id))
+            .is_some_and(|h| {
+                h.triggered_by != UpdateTrigger::Rollback
+                    && member(h.from_version_id)
+                    && h.to_version_id.is_some()
+                    && !member(h.to_version_id)
+            });
+        let (row, pinned) = match last {
             Some(h) => {
                 let target = members
                     .iter()
@@ -274,7 +303,12 @@ pub fn active_versions<'r>(
                 (target, false)
             }
         };
-        out.push((key, active, pinned));
+        out.push(ActiveVersion {
+            key,
+            row,
+            pinned,
+            superseded,
+        });
     }
     out
 }
@@ -311,7 +345,16 @@ pub fn plan(
         )
     });
     let mut out = Vec::new();
-    for (key, active, pinned) in active_versions(manifest, rows, history) {
+    for line in active_versions(manifest, rows, history) {
+        if line.superseded {
+            continue;
+        }
+        let ActiveVersion {
+            key,
+            row: active,
+            pinned,
+            ..
+        } = line;
         let Some(active_version) = parse(manifest, &active.version) else {
             continue;
         };
@@ -560,13 +603,121 @@ spec:
         let rolled_back = vec![history(UpdateTrigger::Rollback, old.id)];
         let active = active_versions(&m, &rows, &rolled_back);
         assert_eq!(active.len(), 1);
-        assert_eq!((active[0].1.id, active[0].2), (old.id, true));
+        assert_eq!((active[0].row.id, active[0].pinned), (old.id, true));
+        assert!(!active[0].superseded);
         let found = plan(&m, UpdatePolicy::AutoPatch, &rows, &rolled_back, &catalog());
         assert_eq!(found[0].to, "8.3.37");
         assert!(found[0].installed && found[0].pinned && !found[0].automatic);
 
         let updated = vec![history(UpdateTrigger::Auto, new.id)];
         let active = active_versions(&m, &rows, &updated);
-        assert_eq!((active[0].1.id, active[0].2), (new.id, false));
+        assert_eq!((active[0].row.id, active[0].pinned), (new.id, false));
+    }
+
+    fn entry(
+        trigger: UpdateTrigger,
+        status: UpdateStatus,
+        from: &ToolVersionRow,
+        to: &ToolVersionRow,
+    ) -> UpdateHistoryRow {
+        UpdateHistoryRow {
+            id: UpdateId::new(),
+            tool_id: ToolId::new("php").unwrap(),
+            series: Some("8.3".into()),
+            from_version_id: Some(from.id),
+            to_version_id: Some(to.id),
+            from_version: Some(from.version.clone()),
+            to_version: to.version.clone(),
+            policy: None,
+            triggered_by: trigger,
+            status,
+            error: None,
+            job_id: Some(JobId::new()),
+            rollback_of: None,
+            started_at: jiff::Timestamp::now(),
+            finished_at: None,
+        }
+    }
+
+    #[test]
+    fn a_cross_series_update_supersedes_the_old_group() {
+        let m = manifest("runtime", "auto-minor", false);
+        let (v83, v84) = (row("8.3.36", "nts", "vs16"), row("8.4.14", "nts", "vs17"));
+        let rows = vec![v83.clone(), v84.clone()];
+        let releases = vec![
+            release("8.3.36", "nts", "vs16"),
+            release("8.4.14", "nts", "vs17"),
+            release("9.0.0", "nts", "vs17"),
+        ];
+        // Before the update both lines are active; auto-minor moves 8.3 to 8.4.14.
+        let before = plan(&m, UpdatePolicy::AutoMinor, &rows[..1], &[], &releases);
+        assert_eq!(
+            (before[0].from.as_str(), before[0].to.as_str()),
+            ("8.3.36", "8.4.14")
+        );
+
+        // 8.3.36 -> 8.4.14 completed: 8.3 is superseded (retained, not offered again).
+        let updated = vec![entry(
+            UpdateTrigger::Auto,
+            UpdateStatus::Completed,
+            &v83,
+            &v84,
+        )];
+        let lines = active_versions(&m, &rows, &updated);
+        assert_eq!(lines.len(), 2);
+        let line = |series: &str| lines.iter().find(|l| l.key.series == series).unwrap();
+        assert!(line("8.3").superseded && !line("8.3").pinned);
+        assert_eq!(line("8.4").row.id, v84.id);
+        assert!(!line("8.4").superseded && !line("8.4").pinned);
+        assert!(plan(&m, UpdatePolicy::AutoMinor, &rows, &updated, &releases).is_empty());
+        // `auto` (major): only the 8.4 line moves on, to 9.0.0.
+        let all = plan(&m, UpdatePolicy::Auto, &rows, &updated, &releases);
+        assert_eq!(all.len(), 1, "{all:#?}");
+        assert_eq!(
+            (all[0].from.as_str(), all[0].to.as_str()),
+            ("8.4.14", "9.0.0")
+        );
+
+        // A later update inside 8.4 keeps 8.3 superseded (its newest row is the move).
+        let v8415 = row("8.4.15", "nts", "vs17");
+        let rows3 = vec![v83.clone(), v84.clone(), v8415.clone()];
+        let mut later = vec![entry(
+            UpdateTrigger::Auto,
+            UpdateStatus::Completed,
+            &v84,
+            &v8415,
+        )];
+        later.extend(updated.iter().cloned());
+        let lines = active_versions(&m, &rows3, &later);
+        let line = |series: &str| lines.iter().find(|l| l.key.series == series).unwrap();
+        assert!(line("8.3").superseded);
+        assert_eq!(line("8.4").row.id, v8415.id);
+
+        // A failed cross-series update does not supersede anything.
+        let failed = vec![entry(UpdateTrigger::Auto, UpdateStatus::Failed, &v83, &v84)];
+        assert!(
+            active_versions(&m, &rows, &failed)
+                .iter()
+                .all(|l| !l.superseded)
+        );
+
+        // Rollback: the update is rolled_back and a rollback row targets 8.3.36, so the
+        // 8.3 line is active and pinned again; the 8.4 line stays (not superseded).
+        let rolled = entry(UpdateTrigger::Auto, UpdateStatus::RolledBack, &v83, &v84);
+        let mut back = entry(UpdateTrigger::Rollback, UpdateStatus::Completed, &v84, &v83);
+        back.rollback_of = Some(rolled.id);
+        let history = vec![back, rolled];
+        let lines = active_versions(&m, &rows, &history);
+        let line = |series: &str| lines.iter().find(|l| l.key.series == series).unwrap();
+        assert!(!line("8.3").superseded && line("8.3").pinned);
+        assert_eq!(line("8.3").row.id, v83.id);
+        assert!(!line("8.4").superseded);
+        let found = plan(&m, UpdatePolicy::AutoMinor, &rows, &history, &releases);
+        assert_eq!(found.len(), 1, "{found:#?}");
+        assert_eq!(
+            (found[0].from.as_str(), found[0].to.as_str()),
+            ("8.3.36", "8.4.14")
+        );
+        assert!(found[0].pinned && found[0].installed && !found[0].automatic);
     }
 }

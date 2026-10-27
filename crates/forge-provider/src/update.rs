@@ -11,7 +11,8 @@
 //! * [`UpdateEngine::check`] resolves releases ([`ReleaseSource`]), groups installed
 //!   versions into update lines and picks the best release in reach of the effective
 //!   policy ([`policy`]): `manual | notify | auto-patch | auto-minor | auto`, databases
-//!   capped at `notify`.
+//!   capped at `notify`. A line an update moved to another series is *superseded* and
+//!   skipped, so the retained old version is not offered again.
 //! * [`UpdateEngine::apply`] returns a `JobId` at once. The job: records a `started`
 //!   history row → downloads ([`ArchiveFetcher`]) and installs the new version **side by
 //!   side** ([`Layout::install_from_archive`], `current` untouched) unless it is already

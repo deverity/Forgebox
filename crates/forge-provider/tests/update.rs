@@ -669,6 +669,96 @@ async fn retention_keeps_a_version_a_pool_still_serves() {
     assert_eq!(env.folders(), ["8.3.38-nts-x64"]);
 }
 
+/// A cross-series update (auto-minor 8.3 -> 8.4, auto 8.3 -> 9.0) supersedes the old
+/// line: the retained 8.3.36 is not offered again and the scheduler does not re-apply it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cross_series_update_is_not_offered_again() {
+    for (manifest_policy, override_policy, target, kind) in [
+        ("auto-minor", None, "8.4.14", UpdateKind::Minor),
+        ("auto-patch", Some("auto"), "9.0.1", UpdateKind::Major),
+    ] {
+        let env = Env::new(php_manifest("runtime", manifest_policy, 1));
+        let v36 = env.install("8.3.36").await;
+        if let Some(policy) = override_policy {
+            ToolVersionRepo::new(env.store.conn())
+                .set_update_policy(&Env::php(), Some(policy))
+                .unwrap();
+        }
+        env.publish("8.3.36");
+        env.publish("8.4.14");
+        env.publish("9.0.1");
+        let update = env.check_one().await;
+        assert_eq!(
+            (
+                update.series.as_str(),
+                update.from.as_str(),
+                update.to.as_str()
+            ),
+            ("8.3", "8.3.36", target)
+        );
+        assert_eq!(update.kind, kind);
+        assert!(update.automatic, "{update:#?}");
+
+        // The scheduler applies it once.
+        let run = env
+            .engine
+            .run_scheduled(&Env::php(), Timestamp::now())
+            .await
+            .unwrap();
+        assert_eq!(run.started.len(), 1, "{run:#?}");
+        let report: UpdateReport = done(&env.wait(run.started[0]).await);
+        assert_eq!((report.from_id, report.to.as_str()), (v36, target));
+        assert!(report.removed.is_empty(), "retention 1 keeps 8.3.36");
+        let to_folder = format!("{target}-nts-x64");
+        assert_eq!(
+            env.folders(),
+            ["8.3.36-nts-x64".to_owned(), to_folder.clone()]
+        );
+
+        // The 8.3 line is superseded: no phantom update, nothing re-applied.
+        let found = env.engine.check(Some(&Env::php())).await.unwrap();
+        assert!(found.is_empty(), "{found:#?}");
+        for _ in 0..2 {
+            let run = env
+                .engine
+                .run_scheduled(&Env::php(), Timestamp::now())
+                .await
+                .unwrap();
+            assert!(run.updates.is_empty() && run.started.is_empty(), "{run:#?}");
+        }
+        assert_eq!(env.pools.calls.lock().unwrap().len(), 1);
+        assert_eq!(events_of(&env.bus, EventKind::ToolUpdated).len(), 1);
+        assert_eq!(
+            env.engine
+                .history(Some(&Env::php()), 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(env.fetcher.fetched.lock().unwrap().len(), 1);
+
+        // Rolling it back makes the 8.3 line active and pinned again.
+        let job = env
+            .engine
+            .rollback(RollbackRequest::new(Env::php(), "8.3"))
+            .await
+            .unwrap();
+        let back: RollbackReport = done(&env.wait(job).await);
+        assert_eq!((back.to_id, back.to.as_str()), (v36, "8.3.36"));
+        let again = env.check_one().await;
+        assert_eq!((again.from.as_str(), again.to.as_str()), ("8.3.36", target));
+        assert!(again.pinned && again.installed && !again.automatic);
+        let run = env
+            .engine
+            .run_scheduled(&Env::php(), Timestamp::now())
+            .await
+            .unwrap();
+        assert!(run.started.is_empty(), "{run:#?}");
+        assert_eq!(env.pools.calls.lock().unwrap().len(), 2);
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn policy_notify_reports_but_never_installs() {
     let env = Env::new(php_manifest("runtime", "notify", 1));
