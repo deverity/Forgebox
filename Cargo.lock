@@ -1345,6 +1345,7 @@ dependencies = [
  "minisign",
  "minisign-verify",
  "pretty_assertions",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",

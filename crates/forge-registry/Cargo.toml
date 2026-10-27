@@ -16,6 +16,7 @@ workspace = true
 forge-manifest = { path = "../forge-manifest" }
 forge-core = { path = "../forge-core" }
 base64 = { workspace = true }
+regex = { workspace = true }
 futures = { workspace = true }
 minisign-verify = { workspace = true }
 reqwest = { workspace = true }
