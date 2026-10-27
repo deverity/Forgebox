@@ -22,7 +22,7 @@ pwsh -NoProfile -File scripts/smoke.ps1 -NonInteractive -Keep -Root D:\tmp\fb-sm
 | `-NoBuild` | — | Usa o que já está em `target\debug` (sem `cargo build`). |
 | `-LaravelPackage` | `laravel/laravel` | Esqueleto do `composer create-project`. |
 
-Se uma porta pedida está ocupada (nesta máquina o Laragon usa 80/443/3306), o script escolhe a primeira livre entre `porta + 10000·k` e avisa. As portas vão para o Forgebox **pela CLI** (`forge config set ports.ranges.web "[http, https]"`, `ports.ranges.databases`, `ports.ranges.mail`), que aplica na hora ([03 §4](03-engine.md)).
+Se uma porta pedida está ocupada (nesta máquina o Laragon usa 80/443/3306), o script escolhe a primeira livre entre `porta + 10000·k` e avisa. As portas vão para o Forgebox **pela CLI** (`forge config set ports.ranges.web "[http, https]"`, `ports.ranges.databases`, `ports.ranges.mail`), que aplica na hora ([03 §4](03-engine.md)). As portas fixas do próprio daemon (responder de CRL 47480, endpoint interno 47481) só mudam se outro processo as ocupa: `forge config set ports.ranges.tls-crl|internal` + `forge daemon restart` (são abertas no boot).
 
 ## O que ele faz
 1. **Raiz e binários:** cria a raiz no formato da release (`forge.exe`, `forgeboxd.exe`, `forgebox-ctrl.exe`, `forgebox-helper.exe` do workspace copiados para ela, [08 §1](08-release-layout.md)); o registry oficial é a pasta `registry/` do repositório (assinada com a chave de dev, `FORGEBOX_OFFICIAL_REGISTRY`). `FORGE_LANG=en`, `NO_COLOR=1`.

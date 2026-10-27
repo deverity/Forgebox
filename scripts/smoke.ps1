@@ -255,7 +255,22 @@ try {
         Invoke-Forge @('config', 'set', 'ports.ranges.web', "[$($script:HttpPort), $($script:HttpsPort)]") | Out-Null
         Invoke-Forge @('config', 'set', 'ports.ranges.databases', "[$($script:MysqlPort)]") | Out-Null
         Invoke-Forge @('config', 'set', 'ports.ranges.mail', "[$($script:MailpitSmtpPort), $($script:MailpitHttpPort)]") | Out-Null
-        "http=$($script:HttpPort) https=$($script:HttpsPort) mysql=$($script:MysqlPort) smtp=$($script:MailpitSmtpPort) mailpit-http=$($script:MailpitHttpPort)"
+        # The CRL responder and the internal endpoint are bound at boot (fixed ports of the
+        # daemon, docs/03 section 4): only when another process holds them, move them and
+        # restart the daemon.
+        $daemonPorts = @()
+        $status = Invoke-ForgeJson @('daemon', 'status')
+        foreach ($range in @(@{ Name = 'tls-crl'; Port = 47480 }, @{ Name = 'internal'; Port = 47481 })) {
+            $owners = @(Get-NetTCPConnection -State Listen -LocalPort $range.Port -ErrorAction SilentlyContinue |
+                    Where-Object { $_.OwningProcess -ne $status.pid })
+            if ($owners.Count) {
+                $free = Select-Port $range.Name $range.Port $taken; $taken += $free
+                Invoke-Forge @('config', 'set', "ports.ranges.$($range.Name)", "[$free]") | Out-Null
+                $daemonPorts += "$($range.Name)=$free"
+            }
+        }
+        if ($daemonPorts.Count) { Invoke-Forge @('daemon', 'restart') | Out-Null }
+        "http=$($script:HttpPort) https=$($script:HttpsPort) mysql=$($script:MysqlPort) smtp=$($script:MailpitSmtpPort) mailpit-http=$($script:MailpitHttpPort) $($daemonPorts -join ' ')".Trim()
     }
 
     Invoke-Step '1. forge tool install php@8.4 nginx mysql@8.4 mailpit composer' {
