@@ -14,8 +14,8 @@ use forge_core::helper::{
 };
 use forge_core::ids::RequestId;
 use forge_core::platform::{
-    CaseSensitiveFs, CaseSensitivitySupport, CertificateInfo, CodeSign, CodeSignInfo, CodeSignKind,
-    FirewallRuleSpec, NrptRule, NrptSource, PrivilegedOps, StagedFile,
+    CaseSensitiveFs, CaseSensitivitySupport, CertThumbprint, CertificateInfo, CodeSign,
+    CodeSignInfo, CodeSignKind, FirewallRuleSpec, NrptRule, NrptSource, PrivilegedOps, StagedFile,
 };
 use pretty_assertions::assert_eq;
 use sha2::{Digest, Sha256};
@@ -127,14 +127,14 @@ impl PrivilegedOps for FakeSys {
         // Read-only parsing of the real platform.
         forge_core::platform::privileged_ops().certificate_info(bytes)
     }
-    fn machine_root_find(&self, thumbprint: &str) -> Result<Option<CertificateInfo>> {
+    fn machine_root_find(&self, thumbprint: &CertThumbprint) -> Result<Option<CertificateInfo>> {
         Ok(self
             .state
             .lock()
             .unwrap()
             .machine_root
             .iter()
-            .find(|c| c.thumbprint.eq_ignore_ascii_case(thumbprint))
+            .find(|c| c.thumbprint == *thumbprint)
             .cloned())
     }
     fn machine_root_add(&self, der: &[u8]) -> Result<()> {
@@ -144,11 +144,10 @@ impl PrivilegedOps for FakeSys {
         s.machine_root.push(info);
         Ok(())
     }
-    fn machine_root_remove(&self, thumbprint: &str) -> Result<bool> {
+    fn machine_root_remove(&self, thumbprint: &CertThumbprint) -> Result<bool> {
         let mut s = self.state.lock().unwrap();
         let before = s.machine_root.len();
-        s.machine_root
-            .retain(|c| !c.thumbprint.eq_ignore_ascii_case(thumbprint));
+        s.machine_root.retain(|c| c.thumbprint != *thumbprint);
         s.changes.push(format!("root.remove {thumbprint}"));
         Ok(s.machine_root.len() != before)
     }
@@ -392,7 +391,8 @@ impl Fx {
     }
 }
 
-/// A test CA (`cn`, Name Constraints `dns`), PEM, and its parsed thumbprint.
+/// A test CA (`cn`, Name Constraints `dns`), PEM, and its parsed thumbprint (uppercase
+/// hex).
 fn test_ca(cn: &str, dns: &[&str]) -> (String, String) {
     use rcgen::{
         BasicConstraints, CertificateParams, DnType, GeneralSubtree, IsCa, KeyPair, NameConstraints,
@@ -418,7 +418,7 @@ fn test_ca(cn: &str, dns: &[&str]) -> (String, String) {
     let info = forge_core::platform::privileged_ops()
         .certificate_info(pem.as_bytes())
         .unwrap();
-    (pem, info.thumbprint)
+    (pem, info.thumbprint.to_hex())
 }
 
 // ---------------------------------------------------------------------------------------
@@ -977,7 +977,7 @@ fn only_a_constrained_forgebox_ca_is_trusted_machine_wide() {
 
     let plan = fx.ok(
         HelperOp::TrustAddMachineRoot {
-            thumbprint: good.to_uppercase(),
+            thumbprint: good.to_lowercase(),
         },
         true,
     );
@@ -1024,9 +1024,14 @@ fn only_a_constrained_forgebox_ca_is_trusted_machine_wide() {
         },
         false,
     );
-    assert!(fx.sys.machine_root_find(&good).unwrap().is_none());
+    assert!(
+        fx.sys
+            .machine_root_find(&good.parse().unwrap())
+            .unwrap()
+            .is_none()
+    );
     let microsoft_root = forge_core::platform::privileged_ops()
-        .machine_root_find("8F43288AD272F3103B6FB1428485EA3014C0BCFE")
+        .machine_root_find(&"8F43288AD272F3103B6FB1428485EA3014C0BCFE".parse().unwrap())
         .unwrap()
         .unwrap();
     fx.sys

@@ -192,36 +192,61 @@ fn every_operation_dry_runs() {
     assert_eq!(lines[0]["op"], "nrpt.add");
 }
 
+/// The CA that `forge-tls` really generates (M1-E4-T4, ADR-0023) passes the helper's
+/// machine-root policy (ADR-0024): CN `Forgebox Local CA ...`, critical Name Constraints
+/// with local-use TLDs only (a configured `.dev` is left out by forge-tls), `localhost`
+/// and loopback ranges.
 #[test]
-fn a_constrained_ca_is_planned_for_the_machine_store() {
-    use rcgen::{
-        BasicConstraints, CertificateParams, DnType, GeneralSubtree, IsCa, KeyPair, NameConstraints,
-    };
+fn the_forge_tls_ca_is_planned_for_the_machine_store() {
+    use forge_core::platform::CertThumbprint;
+    use forge_tls::ca::{CaOptions, LocalCa};
+
     let root = Root::new();
-    let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
-    params
-        .distinguished_name
-        .push(DnType::CommonName, "Forgebox Local CA cli-test 2026");
-    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-    params.name_constraints = Some(NameConstraints {
-        permitted_subtrees: vec![
-            GeneralSubtree::DnsName("test".into()),
-            GeneralSubtree::DnsName("localhost".into()),
-        ],
-        excluded_subtrees: vec![],
-    });
-    let cert = params.self_signed(&KeyPair::generate().unwrap()).unwrap();
-    std::fs::write(root.root.join("certs/ca/forgebox-ca.crt"), cert.pem()).unwrap();
-    let thumbprint = forge_core::platform::privileged_ops()
-        .certificate_info(cert.pem().as_bytes())
-        .unwrap()
-        .thumbprint;
+    let ca = LocalCa::generate(&CaOptions::for_this_machine(
+        vec![".test".into(), ".dev".into()],
+        forge_core::Timestamp::now(),
+    ))
+    .unwrap();
+    std::fs::write(root.root.join("certs/ca/forgebox-ca.crt"), ca.cert_pem()).unwrap();
+    let thumbprint = CertThumbprint::of_der(ca.cert_der());
     let (code, response) = root.dry_run_op(HelperOp::TrustAddMachineRoot {
-        thumbprint: thumbprint.clone(),
+        thumbprint: thumbprint.to_hex().to_lowercase(),
     });
-    assert_eq!(code, 0, "{}", response.message);
-    assert_eq!(response.details["thumbprint"], thumbprint);
+    assert_eq!(code, 0, "{} ({:?})", response.message, response.code);
+    assert_eq!(response.details["thumbprint"], thumbprint.to_hex());
     assert_eq!(response.details["already_trusted"], false);
+    let constraints = &response.details["name_constraints"];
+    assert_eq!(constraints["critical"], true);
+    assert_eq!(constraints["permitted_dns"], json!(["test", "localhost"]));
+    assert_eq!(
+        constraints["permitted_ip"],
+        json!([{"addr": "127.0.0.0", "len": 8}, {"addr": "::1", "len": 128}])
+    );
+    assert!(
+        response.details["subject"]
+            .as_str()
+            .unwrap()
+            .starts_with("Forgebox Local CA "),
+        "{}",
+        response.details
+    );
+
+    // The same request for a CA nobody put in certs/ca/ is refused.
+    let other = LocalCa::generate(&CaOptions::for_this_machine(
+        vec![".test".into()],
+        forge_core::Timestamp::now(),
+    ))
+    .unwrap();
+    let (code, response) = root.dry_run_op(HelperOp::TrustAddMachineRoot {
+        thumbprint: CertThumbprint::of_der(other.cert_der()).to_hex(),
+    });
+    assert_eq!(code, 1);
+    assert_eq!(
+        response.code.as_deref(),
+        Some("not_found"),
+        "{}",
+        response.message
+    );
 }
 
 #[test]

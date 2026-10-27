@@ -15,7 +15,7 @@ use std::net::IpAddr;
 
 use crate::dns_name;
 use crate::error::{ForgeError, Result};
-use crate::platform::{CertificateInfo, IpPrefix};
+use crate::platform::{CertThumbprint, CertificateInfo, IpPrefix};
 
 /// Prefix of the subject (CN) of every Forgebox CA (`Forgebox Local CA <host> <year>`,
 /// docs/06 §6.1).
@@ -65,8 +65,11 @@ fn private_range(prefix: &IpPrefix) -> bool {
 
 /// Checks that `info` (read from `certs/ca/`) may be added to `LocalMachine\Root` for the
 /// request carrying `thumbprint`.
-pub fn check_machine_root_candidate(info: &CertificateInfo, thumbprint: &str) -> Result<()> {
-    if !info.thumbprint.eq_ignore_ascii_case(thumbprint) {
+pub fn check_machine_root_candidate(
+    info: &CertificateInfo,
+    thumbprint: &CertThumbprint,
+) -> Result<()> {
+    if info.thumbprint != *thumbprint {
         return Err(forbidden(
             info,
             format_args!("does not have the requested thumbprint {thumbprint}"),
@@ -139,6 +142,8 @@ mod tests {
     use super::*;
     use crate::platform::NameConstraints;
 
+    const AB: CertThumbprint = CertThumbprint::from_bytes([0xAB; 20]);
+
     fn prefix(addr: &str, len: u8) -> IpPrefix {
         IpPrefix {
             addr: addr.parse().unwrap(),
@@ -149,7 +154,7 @@ mod tests {
     fn forgebox_ca() -> CertificateInfo {
         CertificateInfo {
             der: vec![1, 2, 3],
-            thumbprint: "ab".repeat(20),
+            thumbprint: AB,
             subject: "Forgebox Local CA devbox 2026".into(),
             self_signed: true,
             is_ca: true,
@@ -166,7 +171,7 @@ mod tests {
     #[test]
     fn the_forgebox_ca_is_accepted() {
         let ca = forgebox_ca();
-        check_machine_root_candidate(&ca, &"AB".repeat(20)).unwrap();
+        check_machine_root_candidate(&ca, &AB).unwrap();
         check_machine_root_removal(&ca).unwrap();
         let mut lan = forgebox_ca();
         lan.name_constraints.as_mut().unwrap().permitted_ip.extend([
@@ -174,14 +179,16 @@ mod tests {
             prefix("10.1.0.0", 16),
             prefix("fd00::", 8),
         ]);
-        check_machine_root_candidate(&lan, &"ab".repeat(20)).unwrap();
+        check_machine_root_candidate(&lan, &AB).unwrap();
     }
 
     #[test]
     fn anything_else_is_refused() {
         type Change = fn(&mut CertificateInfo);
         let cases: [(&str, Change); 12] = [
-            ("thumbprint", |c| c.thumbprint = "cd".repeat(20)),
+            ("thumbprint", |c| {
+                c.thumbprint = CertThumbprint::from_bytes([0xCD; 20]);
+            }),
             ("subject", |c| c.subject = "Evil Root CA".into()),
             ("self-signed", |c| c.self_signed = false),
             ("not a CA", |c| c.is_ca = false),
@@ -231,7 +238,7 @@ mod tests {
         for (what, change) in cases {
             let mut ca = forgebox_ca();
             change(&mut ca);
-            let err = check_machine_root_candidate(&ca, &"ab".repeat(20)).unwrap_err();
+            let err = check_machine_root_candidate(&ca, &AB).unwrap_err();
             assert_eq!(err.code(), "forbidden", "{what}: {err}");
         }
         let mut odd_mask = forgebox_ca();
@@ -244,7 +251,7 @@ mod tests {
                 addr: "127.0.0.0".parse().unwrap(),
                 len: None,
             });
-        assert!(check_machine_root_candidate(&odd_mask, &"ab".repeat(20)).is_err());
+        assert!(check_machine_root_candidate(&odd_mask, &AB).is_err());
 
         let mut microsoft = forgebox_ca();
         microsoft.subject = "Microsoft Root Certificate Authority 2011".into();

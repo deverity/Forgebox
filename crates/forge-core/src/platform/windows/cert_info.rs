@@ -1,34 +1,26 @@
-//! Certificates for the elevated helper's `trust.add_machine_root` /
-//! `trust.remove_machine_root` (docs/11 §1, ADR-0024): parsing (thumbprint, subject,
-//! self-signature, Basic Constraints, Name Constraints) and the `LocalMachine\Root` store.
-//!
-//! Parsing and reading the store need no elevation; adding to or deleting from
-//! `LocalMachine\Root` fails with access denied (→ `needs_elevation`) otherwise.
+//! Certificate parsing for the elevated helper's `trust.add_machine_root` /
+//! `trust.remove_machine_root` (docs/11 §1, ADR-0024): thumbprint, subject, self-signature,
+//! Basic Constraints and Name Constraints, read by CryptoAPI. The store itself is
+//! [`super::trust_store`] (the same code the daemon's `TrustStore` uses). No elevation.
 
 use std::ffi::c_void;
-use std::fmt::Write as _;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-use ::windows::Win32::Foundation::E_ACCESSDENIED;
 use ::windows::Win32::Security::Cryptography::{
-    CERT_BASIC_CONSTRAINTS2_INFO, CERT_CONTEXT, CERT_EXTENSION, CERT_FIND_SHA1_HASH,
-    CERT_NAME_CONSTRAINTS_INFO, CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_OPEN_STORE_FLAGS,
-    CERT_QUERY_ENCODING_TYPE, CERT_SHA1_HASH_PROP_ID, CERT_STORE_ADD_USE_EXISTING,
-    CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_SYSTEM_W, CERT_STORE_READONLY_FLAG,
-    CERT_SYSTEM_STORE_LOCAL_MACHINE, CRYPT_DECODE_ALLOC_FLAG, CRYPT_INTEGER_BLOB,
+    CERT_BASIC_CONSTRAINTS2_INFO, CERT_CONTEXT, CERT_EXTENSION, CERT_NAME_CONSTRAINTS_INFO,
+    CERT_NAME_SIMPLE_DISPLAY_TYPE, CRYPT_DECODE_ALLOC_FLAG, CRYPT_INTEGER_BLOB,
     CRYPT_STRING_BASE64HEADER, CRYPT_VERIFY_CERT_FLAGS, CRYPT_VERIFY_CERT_SIGN_ISSUER_CERT,
-    CRYPT_VERIFY_CERT_SIGN_SUBJECT_CERT, CertAddEncodedCertificateToStore, CertCloseStore,
-    CertCompareCertificateName, CertCreateCertificateContext, CertDeleteCertificateFromStore,
-    CertDuplicateCertificateContext, CertFindCertificateInStore, CertFindExtension,
-    CertFreeCertificateContext, CertGetCertificateContextProperty, CertGetNameStringW,
-    CertOpenStore, CryptDecodeObjectEx, CryptStringToBinaryA, CryptVerifyCertificateSignatureEx,
-    HCERTSTORE, X509_ASN_ENCODING, X509_BASIC_CONSTRAINTS2, X509_NAME_CONSTRAINTS,
-    szOID_BASIC_CONSTRAINTS2, szOID_NAME_CONSTRAINTS,
+    CRYPT_VERIFY_CERT_SIGN_SUBJECT_CERT, CertCompareCertificateName, CertCreateCertificateContext,
+    CertFindExtension, CertFreeCertificateContext, CertGetNameStringW, CryptDecodeObjectEx,
+    CryptStringToBinaryA, CryptVerifyCertificateSignatureEx, X509_ASN_ENCODING,
+    X509_BASIC_CONSTRAINTS2, X509_NAME_CONSTRAINTS, szOID_BASIC_CONSTRAINTS2,
+    szOID_NAME_CONSTRAINTS,
 };
-use ::windows::core::{PCSTR, w};
+use ::windows::core::PCSTR;
 
 use super::security::LocalBox;
 use crate::error::{ForgeError, Result};
+use crate::platform::CertThumbprint;
 use crate::platform::privileged::{CertificateInfo, IpPrefix, NameConstraints};
 
 /// `CERT_ALT_NAME_DNS_NAME` (wincrypt.h).
@@ -38,13 +30,6 @@ const ALT_NAME_IP: u32 = 8;
 
 /// Largest certificate file the helper reads.
 const MAX_CERT_BYTES: usize = 64 * 1024;
-
-fn crypt_err(context: &str, err: &::windows::core::Error) -> ForgeError {
-    if err.code() == E_ACCESSDENIED {
-        return ForgeError::NeedsElevation(format!("{context}: access denied"));
-    }
-    ForgeError::io(context, std::io::Error::from(err.clone()))
-}
 
 /// A certificate context, freed on drop.
 struct Cert(*mut CERT_CONTEXT);
@@ -84,26 +69,6 @@ impl Cert {
                 std::slice::from_raw_parts(info.rgExtension, info.cExtension as usize)
             }
         }
-    }
-
-    fn thumbprint(&self) -> Result<String> {
-        let mut hash = [0_u8; 20];
-        let mut len = hash.len() as u32;
-        // SAFETY: `hash` holds `len` bytes.
-        unsafe {
-            CertGetCertificateContextProperty(
-                self.0,
-                CERT_SHA1_HASH_PROP_ID,
-                Some(hash.as_mut_ptr().cast()),
-                &mut len,
-            )
-        }
-        .map_err(|e| crypt_err("computing a certificate thumbprint", &e))?;
-        let mut out = String::with_capacity(40);
-        for byte in &hash[..len as usize] {
-            let _ = write!(out, "{byte:02x}");
-        }
-        Ok(out)
     }
 
     fn subject(&self) -> String {
@@ -210,9 +175,10 @@ impl Cert {
     }
 
     fn info(&self) -> Result<CertificateInfo> {
+        let der = self.der();
         Ok(CertificateInfo {
-            der: self.der(),
-            thumbprint: self.thumbprint()?,
+            thumbprint: CertThumbprint::of_der(&der),
+            der,
             subject: self.subject(),
             self_signed: self.self_signed(),
             is_ca: self.is_ca()?,
@@ -325,109 +291,11 @@ pub(crate) fn certificate_info(bytes: &[u8]) -> Result<CertificateInfo> {
     Cert::from_der(&decode_certificate(bytes)?)?.info()
 }
 
-/// The `LocalMachine\Root` store, closed on drop.
-struct Store(HCERTSTORE);
-
-impl Store {
-    fn machine_root(write: bool) -> Result<Self> {
-        let mut flags =
-            CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_LOCAL_MACHINE) | CERT_STORE_OPEN_EXISTING_FLAG;
-        if !write {
-            flags |= CERT_STORE_READONLY_FLAG;
-        }
-        // SAFETY: system store provider with a NUL-terminated wide store name.
-        let store = unsafe {
-            CertOpenStore(
-                CERT_STORE_PROV_SYSTEM_W,
-                CERT_QUERY_ENCODING_TYPE(0),
-                None,
-                flags,
-                Some(w!("Root").as_ptr().cast()),
-            )
-        }
-        .map_err(|e| crypt_err(r"opening LocalMachine\Root", &e))?;
-        Ok(Self(store))
-    }
-
-    fn find(&self, thumbprint: &str) -> Result<Option<Cert>> {
-        let mut hash = parse_thumbprint(thumbprint)?;
-        let blob = CRYPT_INTEGER_BLOB {
-            cbData: hash.len() as u32,
-            pbData: hash.as_mut_ptr(),
-        };
-        // SAFETY: valid store; `blob` points to 20 bytes alive during the call.
-        let found = unsafe {
-            CertFindCertificateInStore(
-                self.0,
-                X509_ASN_ENCODING,
-                0,
-                CERT_FIND_SHA1_HASH,
-                Some((&blob as *const CRYPT_INTEGER_BLOB).cast()),
-                None,
-            )
-        };
-        Ok((!found.is_null()).then_some(Cert(found)))
-    }
-}
-
-impl Drop for Store {
-    fn drop(&mut self) {
-        // SAFETY: the store handle is owned by `self` and closed once.
-        unsafe {
-            let _ = CertCloseStore(Some(self.0), 0);
-        }
-    }
-}
-
-fn parse_thumbprint(thumbprint: &str) -> Result<[u8; 20]> {
-    let bad =
-        || ForgeError::InvalidInput(format!("thumbprint {thumbprint:?} is not 40 hex digits"));
-    if thumbprint.len() != 40 {
-        return Err(bad());
-    }
-    let mut out = [0_u8; 20];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&thumbprint[2 * i..2 * i + 2], 16).map_err(|_| bad())?;
-    }
-    Ok(out)
-}
-
-/// The certificate with this thumbprint in `LocalMachine\Root`.
-pub(crate) fn machine_root_find(thumbprint: &str) -> Result<Option<CertificateInfo>> {
-    let store = Store::machine_root(false)?;
-    store.find(thumbprint)?.map(|cert| cert.info()).transpose()
-}
-
-/// Adds the DER certificate to `LocalMachine\Root` (an identical one already there is kept).
-pub(crate) fn machine_root_add(der: &[u8]) -> Result<()> {
-    let store = Store::machine_root(true)?;
-    // SAFETY: valid store and DER slice; no context is returned.
-    unsafe {
-        CertAddEncodedCertificateToStore(
-            Some(store.0),
-            X509_ASN_ENCODING,
-            der,
-            CERT_STORE_ADD_USE_EXISTING,
-            None,
-        )
-    }
-    .map_err(|e| crypt_err(r"adding a certificate to LocalMachine\Root", &e))
-}
-
-/// Deletes the certificate with this thumbprint from `LocalMachine\Root`.
-pub(crate) fn machine_root_remove(thumbprint: &str) -> Result<bool> {
-    let store = Store::machine_root(true)?;
-    let Some(cert) = store.find(thumbprint)? else {
-        return Ok(false);
-    };
-    // CertDeleteCertificateFromStore always frees the context it is given: hand it a
-    // duplicate so that `cert` keeps its own reference.
-    // SAFETY: valid context; the duplicate is consumed by the delete call.
-    let duplicate = unsafe { CertDuplicateCertificateContext(Some(cert.0)) };
-    // SAFETY: `duplicate` is a valid context of the opened store.
-    unsafe { CertDeleteCertificateFromStore(duplicate) }
-        .map_err(|e| crypt_err(r"deleting a certificate from LocalMachine\Root", &e))?;
-    Ok(true)
+/// The certificate with SHA-1 `thumbprint` in `LocalMachine\Root`, parsed.
+pub(crate) fn machine_root_find(thumbprint: &CertThumbprint) -> Result<Option<CertificateInfo>> {
+    super::trust_store::machine_root_der(thumbprint)?
+        .map(|der| Cert::from_der(&der)?.info())
+        .transpose()
 }
 
 #[cfg(test)]
@@ -445,14 +313,6 @@ mod tests {
         v6[16..].fill(0xff);
         assert_eq!(ip_prefix(&v6).unwrap().to_string(), "::1/128");
         assert!(ip_prefix(&[1, 2, 3]).is_none());
-    }
-
-    #[test]
-    fn thumbprints_are_parsed() {
-        assert_eq!(parse_thumbprint(&"0a".repeat(20)).unwrap(), [10_u8; 20]);
-        for bad in ["", "zz", &"0".repeat(39), &"g".repeat(40)] {
-            assert_eq!(parse_thumbprint(bad).unwrap_err().code(), "invalid_input");
-        }
     }
 
     #[test]
@@ -477,13 +337,15 @@ mod tests {
 
     #[test]
     fn reads_the_machine_root_store_without_elevation() {
-        assert!(machine_root_find(&"00".repeat(20)).unwrap().is_none());
+        let nobody = CertThumbprint::from_bytes([0; 20]);
+        assert!(machine_root_find(&nobody).unwrap().is_none());
         // "Microsoft Root Certificate Authority 2011" ships with every Windows 10/11.
-        let thumbprint = "8F43288AD272F3103B6FB1428485EA3014C0BCFE";
-        let info = machine_root_find(thumbprint)
+        let thumbprint: CertThumbprint =
+            "8f43288ad272f3103b6fb1428485ea3014c0bcfe".parse().unwrap();
+        let info = machine_root_find(&thumbprint)
             .unwrap()
             .expect("Microsoft root");
-        assert_eq!(info.thumbprint, thumbprint.to_ascii_lowercase());
+        assert_eq!(info.thumbprint, thumbprint);
         assert_eq!(info.subject, "Microsoft Root Certificate Authority 2011");
         assert!(info.self_signed && info.is_ca, "{info:?}");
         assert_eq!(info.name_constraints, None);

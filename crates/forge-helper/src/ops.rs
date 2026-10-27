@@ -17,9 +17,9 @@ use forge_core::helper::{HelperOp, HostsEntry};
 use forge_core::ids::RequestId;
 use forge_core::paths::plain_path;
 use forge_core::platform::{
-    CaseSensitiveFs, CaseSensitivitySupport, CertificateInfo, CodeSign, CodeSignInfo,
-    FORGEBOX_NRPT_COMMENT, FirewallRuleSpec, NoFollow, NrptRule, NrptSource, PrivilegedOps,
-    VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, open_no_follow,
+    CaseSensitiveFs, CaseSensitivitySupport, CertThumbprint, CertificateInfo, CodeSign,
+    CodeSignInfo, FORGEBOX_NRPT_COMMENT, FirewallRuleSpec, NoFollow, NrptRule, NrptSource,
+    PrivilegedOps, VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, open_no_follow,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -71,8 +71,8 @@ pub fn run(env: &Env<'_>, op: &HelperOp) -> Result<Outcome> {
         } => nrpt_add(env, namespace, *nameserver),
         HelperOp::NrptRemove { namespace } => nrpt_remove(env, namespace),
         HelperOp::HostsSetBlock { entries } => hosts_set_block(env, entries),
-        HelperOp::TrustAddMachineRoot { thumbprint } => trust_add(env, thumbprint),
-        HelperOp::TrustRemoveMachineRoot { thumbprint } => trust_remove(env, thumbprint),
+        HelperOp::TrustAddMachineRoot { thumbprint } => trust_add(env, &thumbprint.parse()?),
+        HelperOp::TrustRemoveMachineRoot { thumbprint } => trust_remove(env, &thumbprint.parse()?),
         HelperOp::FirewallAdd { name, port, exe } => firewall_add(env, name, *port, exe),
         HelperOp::FirewallRemove { name } => firewall_remove(env, name),
         HelperOp::DefenderExclude { path } => defender(env, path, true),
@@ -249,7 +249,10 @@ fn hosts_set_block(env: &Env<'_>, entries: &[HostsEntry]) -> Result<Outcome> {
 }
 
 /// The certificate of `certs/ca/` with this thumbprint.
-fn find_ca_certificate(env: &Env<'_>, thumbprint: &str) -> Result<(PathBuf, CertificateInfo)> {
+fn find_ca_certificate(
+    env: &Env<'_>,
+    thumbprint: &CertThumbprint,
+) -> Result<(PathBuf, CertificateInfo)> {
     let dir = env.root.join("certs").join("ca");
     let entries = std::fs::read_dir(&dir).at("listing", &dir)?;
     let mut candidates: Vec<PathBuf> = entries
@@ -275,7 +278,7 @@ fn find_ca_certificate(env: &Env<'_>, thumbprint: &str) -> Result<(PathBuf, Cert
             continue;
         }
         if let Ok(info) = env.sys.certificate_info(&bytes) {
-            if info.thumbprint.eq_ignore_ascii_case(thumbprint) {
+            if info.thumbprint == *thumbprint {
                 return Ok((path, info));
             }
         }
@@ -286,7 +289,7 @@ fn find_ca_certificate(env: &Env<'_>, thumbprint: &str) -> Result<(PathBuf, Cert
     )))
 }
 
-fn trust_add(env: &Env<'_>, thumbprint: &str) -> Result<Outcome> {
+fn trust_add(env: &Env<'_>, thumbprint: &CertThumbprint) -> Result<Outcome> {
     let (path, info) = find_ca_certificate(env, thumbprint)?;
     check_machine_root_candidate(&info, thumbprint)?;
     let already = env.sys.machine_root_find(thumbprint)?.is_some();
@@ -320,11 +323,11 @@ fn trust_add(env: &Env<'_>, thumbprint: &str) -> Result<Outcome> {
     ))
 }
 
-fn trust_remove(env: &Env<'_>, thumbprint: &str) -> Result<Outcome> {
+fn trust_remove(env: &Env<'_>, thumbprint: &CertThumbprint) -> Result<Outcome> {
     let Some(info) = env.sys.machine_root_find(thumbprint)? else {
         return Ok(Outcome::new(
             format!(r"{thumbprint} is not in LocalMachine\Root"),
-            json!({ "thumbprint": thumbprint.to_ascii_lowercase(), "present": false }),
+            json!({ "thumbprint": thumbprint, "present": false }),
         ));
     };
     check_machine_root_removal(&info)?;

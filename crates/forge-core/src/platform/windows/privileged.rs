@@ -6,7 +6,7 @@
 //! | NRPT rules | WMI `PS_DnsClientNrptRule.Add/Remove` (`root/Microsoft/Windows/DNS`), read from the registry |
 //! | `hosts` | sibling temporary file + `ReplaceFileW` (keeps ACL and attributes) |
 //! | DNS cache | `DnsFlushResolverCache` |
-//! | `LocalMachine\Root` | `CertOpenStore` + `CertAddEncodedCertificateToStore` / `CertDeleteCertificateFromStore` |
+//! | `LocalMachine\Root` | [`WindowsTrustStore::elevated`] (registry part of the system store: `CertAddEncodedCertificateToStore` / `CertDeleteCertificateFromStore`); parsing in `cert_info` |
 //! | firewall | COM `INetFwPolicy2` |
 //! | Defender | WMI `MSFT_MpPreference.Add/Remove` (`root/Microsoft/Windows/Defender`) |
 //! | installer | copy into `%SystemRoot%\Temp\forgebox-helper-<tag>` (DACL `SYSTEM` + `Administrators`), sha256 of the copy, `CreateProcess` without a window |
@@ -26,19 +26,20 @@ use ::windows::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
 use ::windows::core::{HSTRING, PCWSTR};
 use sha2::{Digest, Sha256};
 
-use super::cert_store;
+use super::cert_info;
 use super::com::ComArg;
 use super::dns_policy::{flush_resolver_cache, hosts_file_path, read_nrpt_rules};
 use super::firewall;
 use super::process::{os_error, win32_code};
 use super::security::{OwnedDescriptor, process_is_elevated};
+use super::trust_store::WindowsTrustStore;
 use super::wmi::Wmi;
 use crate::error::{ForgeError, IoResultExt, Result};
 use crate::ids::RequestId;
 use crate::paths::plain_path;
-use crate::platform::NrptRule;
 use crate::platform::privileged::{CertificateInfo, FirewallRuleSpec, PrivilegedOps, StagedFile};
 use crate::platform::secure_file::{NoFollow, open_no_follow};
+use crate::platform::{CertThumbprint, NrptRule, TrustScope, TrustStore};
 
 /// WMI namespace of the DNS client cmdlets.
 pub(crate) const NRPT_NAMESPACE: &str = "root/Microsoft/Windows/DNS";
@@ -249,19 +250,19 @@ impl PrivilegedOps for WindowsPrivilegedOps {
     }
 
     fn certificate_info(&self, bytes: &[u8]) -> Result<CertificateInfo> {
-        cert_store::certificate_info(bytes)
+        cert_info::certificate_info(bytes)
     }
 
-    fn machine_root_find(&self, thumbprint: &str) -> Result<Option<CertificateInfo>> {
-        cert_store::machine_root_find(thumbprint)
+    fn machine_root_find(&self, thumbprint: &CertThumbprint) -> Result<Option<CertificateInfo>> {
+        cert_info::machine_root_find(thumbprint)
     }
 
     fn machine_root_add(&self, der: &[u8]) -> Result<()> {
-        cert_store::machine_root_add(der)
+        WindowsTrustStore::elevated().add_root(der, TrustScope::LocalMachine)
     }
 
-    fn machine_root_remove(&self, thumbprint: &str) -> Result<bool> {
-        cert_store::machine_root_remove(thumbprint)
+    fn machine_root_remove(&self, thumbprint: &CertThumbprint) -> Result<bool> {
+        WindowsTrustStore::elevated().remove_root(thumbprint, TrustScope::LocalMachine)
     }
 
     fn firewall_rule_count(&self, name: &str) -> Result<usize> {
@@ -446,7 +447,8 @@ mod tests {
         ops.nrpt_rules().unwrap();
         assert!(ops.hosts_path().is_file());
         assert_eq!(ops.firewall_rule_count("Forgebox-never-0123").unwrap(), 0);
-        assert!(ops.machine_root_find(&"ab".repeat(20)).unwrap().is_none());
+        let nobody = CertThumbprint::from_bytes([0xAB; 20]);
+        assert!(ops.machine_root_find(&nobody).unwrap().is_none());
         assert!(windows_directory().unwrap().join("System32").is_dir());
     }
 
@@ -477,7 +479,7 @@ mod tests {
         let err = ops.firewall_add(&rule).unwrap_err();
         assert_eq!(err.code(), "needs_elevation", "{err}");
         assert_eq!(ops.firewall_rule_count("Forgebox-test-never").unwrap(), 0);
-        let err = ops.machine_root_remove(&"ab".repeat(20));
+        let err = ops.machine_root_remove(&CertThumbprint::from_bytes([0xAB; 20]));
         // Opening LocalMachine\Root for writing is refused, or nothing is there to delete.
         assert!(
             matches!(&err, Ok(false)) || err.as_ref().unwrap_err().code() == "needs_elevation",

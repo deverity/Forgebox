@@ -74,8 +74,8 @@ Forgebox/
 │   │                             #   vcredist.rs (registro VC\Runtimes\x64 + versão de vcruntime140.dll/msvcp140.dll),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE),
 │   │                             #   privileged.rs (WindowsPrivilegedOps), com.rs (COM/VARIANT), wmi.rs (métodos estáticos WMI:
-│   │                             #   PS_DnsClientNrptRule, MSFT_MpPreference), firewall.rs (INetFwPolicy2), cert_store.rs (parse de CA,
-│   │                             #   LocalMachine\Root), secure_file.rs (FILE_FLAG_OPEN_REPARSE_POINT, nlink), pe_resources.rs (manifest embutido)
+│   │                             #   PS_DnsClientNrptRule, MSFT_MpPreference), firewall.rs (INetFwPolicy2), cert_info.rs (parse de CA:
+│   │                             #   Basic/Name Constraints; o store é o trust_store.rs), secure_file.rs (FILE_FLAG_OPEN_REPARSE_POINT, nlink), pe_resources.rs (manifest embutido)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema: common, tool,

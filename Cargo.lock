@@ -1334,6 +1334,7 @@ version = "0.1.0"
 dependencies = [
  "embed-manifest",
  "forge-core",
+ "forge-tls",
  "jiff",
  "junction",
  "pretty_assertions",

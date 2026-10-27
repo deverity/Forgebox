@@ -19,7 +19,7 @@ use serde::Serialize;
 #[cfg(not(windows))]
 use crate::error::ForgeError;
 use crate::error::Result;
-use crate::platform::NrptRule;
+use crate::platform::{CertThumbprint, NrptRule};
 
 /// An inbound TCP allow rule (`firewall.add`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -71,8 +71,8 @@ pub struct CertificateInfo {
     /// DER encoding.
     #[serde(skip)]
     pub der: Vec<u8>,
-    /// SHA-1 of the DER, 40 lowercase hex digits (the Windows "thumbprint").
-    pub thumbprint: String,
+    /// SHA-1 of the DER (the Windows "thumbprint").
+    pub thumbprint: CertThumbprint,
     /// Simple display name of the subject (its CN).
     pub subject: String,
     /// Subject = issuer and the signature verifies with its own key.
@@ -142,16 +142,16 @@ pub trait PrivilegedOps: Send + Sync + fmt::Debug {
     /// Parses a certificate (PEM or DER).
     fn certificate_info(&self, bytes: &[u8]) -> Result<CertificateInfo>;
 
-    /// The certificate with SHA-1 `thumbprint` in `LocalMachine\Root`, if any (no
-    /// elevation).
-    fn machine_root_find(&self, thumbprint: &str) -> Result<Option<CertificateInfo>>;
+    /// The certificate with SHA-1 `thumbprint` in `LocalMachine\Root` (its registry part,
+    /// where Forgebox adds roots), if any (no elevation).
+    fn machine_root_find(&self, thumbprint: &CertThumbprint) -> Result<Option<CertificateInfo>>;
 
     /// Adds the DER certificate to `LocalMachine\Root` (kept when already there).
     fn machine_root_add(&self, der: &[u8]) -> Result<()>;
 
     /// Deletes the certificate with SHA-1 `thumbprint` from `LocalMachine\Root`; whether
     /// it was there.
-    fn machine_root_remove(&self, thumbprint: &str) -> Result<bool>;
+    fn machine_root_remove(&self, thumbprint: &CertThumbprint) -> Result<bool>;
 
     /// Number of firewall rules named `name` (no elevation).
     fn firewall_rule_count(&self, name: &str) -> Result<usize>;
@@ -227,13 +227,13 @@ impl PrivilegedOps for Unsupported {
     fn certificate_info(&self, _: &[u8]) -> Result<CertificateInfo> {
         unsupported()
     }
-    fn machine_root_find(&self, _: &str) -> Result<Option<CertificateInfo>> {
+    fn machine_root_find(&self, _: &CertThumbprint) -> Result<Option<CertificateInfo>> {
         unsupported()
     }
     fn machine_root_add(&self, _: &[u8]) -> Result<()> {
         unsupported()
     }
-    fn machine_root_remove(&self, _: &str) -> Result<bool> {
+    fn machine_root_remove(&self, _: &CertThumbprint) -> Result<bool> {
         unsupported()
     }
     fn firewall_rule_count(&self, _: &str) -> Result<usize> {

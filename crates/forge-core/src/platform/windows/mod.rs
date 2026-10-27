@@ -2,7 +2,7 @@
 
 mod authenticode;
 mod case_sensitive_fs;
-mod cert_store;
+mod cert_info;
 mod com;
 pub(crate) mod console_ctrl;
 mod dns_policy;
