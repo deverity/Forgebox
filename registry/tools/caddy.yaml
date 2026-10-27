@@ -2,7 +2,7 @@
 # verified: 2026-10-26 2.11.7 0a1edc0b799512051c57071ce0e798d3f2cf67dc98171366f1d2b326072e3b06
 #   (sha256 computed locally; upstream caddy_2.11.7_checksums.txt publishes sha512
 #   c308154504e53755958f... for the same zip, which matched the local sha512)
-# The Caddyfile template arrives with M1-E4-T1, which adds the `render` action.
+# The Caddyfile is rendered by the forge-render caddy target (docs/03 section 3.2.1).
 apiVersion: forgebox.dev/v1
 kind: Tool
 
@@ -94,7 +94,7 @@ spec:
         command: "caddy.exe reload --config {{ instance.config.caddyfile }} --adapter caddyfile"
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
-        - { label: Access log (JSON), path: "{{ paths.logs }}/caddy/access.log", format: forgebox-json }
+        - { label: Access log (JSON), path: "{{ paths.logs }}/caddy/access.json", format: forgebox-json }
       autostart: false
 
   discover:
