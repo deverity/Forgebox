@@ -244,11 +244,65 @@ fn expand_env(text: &str) -> String {
 /// `DnsFlushResolverCache` signature (dnsapi.dll, undocumented but stable since XP).
 type FlushFn = unsafe extern "system" fn() -> BOOL;
 
+/// Every NRPT rule: the local table, then the Group Policy one. No elevation.
+pub(crate) fn read_nrpt_rules() -> Result<Vec<NrptRule>> {
+    let mut rules = read_rules(LOCAL_RULES, NrptSource::Local)?;
+    rules.extend(read_rules(GPO_RULES, NrptSource::GroupPolicy)?);
+    Ok(rules)
+}
+
+/// The system `hosts` file: `DataBasePath` of `Tcpip\Parameters` (normally
+/// `%SystemRoot%\System32\drivers\etc`) + `hosts`.
+pub(crate) fn hosts_file_path() -> PathBuf {
+    let configured = string_value(
+        HKEY_LOCAL_MACHINE,
+        TCPIP_PARAMETERS,
+        w!("DataBasePath"),
+        RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND,
+    )
+    .map(|w| expand_env(&String::from_utf16_lossy(&w)))
+    .filter(|p| !p.trim().is_empty());
+    configured
+        .map(PathBuf::from)
+        .unwrap_or_else(|| system_directory().join("drivers").join("etc"))
+        .join("hosts")
+}
+
+/// `DnsFlushResolverCache` (what `ipconfig /flushdns` calls). No elevation.
+pub(crate) fn flush_resolver_cache() -> Result<()> {
+    // SAFETY: loads a system DLL from System32 only (no DLL planting).
+    let module = unsafe { LoadLibraryExW(w!("dnsapi.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32) }
+        .map_err(|e| ForgeError::io("loading dnsapi.dll", os_error(&e)))?;
+    // SAFETY: valid module; NUL-terminated ANSI name.
+    let proc = unsafe { GetProcAddress(module, s!("DnsFlushResolverCache")) };
+    let result = match proc {
+        // SAFETY: the export has this signature (no arguments, returns BOOL).
+        Some(proc) => {
+            let flush: FlushFn = unsafe { std::mem::transmute(proc) };
+            // SAFETY: plain call into dnsapi.dll while the module is loaded.
+            if unsafe { flush() }.as_bool() {
+                Ok(())
+            } else {
+                Err(ForgeError::io(
+                    "flushing the DNS resolver cache",
+                    std::io::Error::last_os_error(),
+                ))
+            }
+        }
+        None => Err(ForgeError::UnsupportedPlatform(
+            "dnsapi.dll has no DnsFlushResolverCache".to_owned(),
+        )),
+    };
+    // SAFETY: balances LoadLibraryExW.
+    unsafe {
+        let _ = FreeLibrary(module);
+    }
+    result
+}
+
 impl DnsPolicy for WindowsDnsPolicy {
     fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
-        let mut rules = read_rules(LOCAL_RULES, NrptSource::Local)?;
-        rules.extend(read_rules(GPO_RULES, NrptSource::GroupPolicy)?);
-        Ok(rules)
+        read_nrpt_rules()
     }
 
     fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<()> {
@@ -269,18 +323,7 @@ impl DnsPolicy for WindowsDnsPolicy {
     }
 
     fn hosts_path(&self) -> PathBuf {
-        let configured = string_value(
-            HKEY_LOCAL_MACHINE,
-            TCPIP_PARAMETERS,
-            w!("DataBasePath"),
-            RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND,
-        )
-        .map(|w| expand_env(&String::from_utf16_lossy(&w)))
-        .filter(|p| !p.trim().is_empty());
-        configured
-            .map(PathBuf::from)
-            .unwrap_or_else(|| system_directory().join("drivers").join("etc"))
-            .join("hosts")
+        hosts_file_path()
     }
 
     fn set_hosts_block(&self, entries: &[HostsEntry]) -> Result<()> {
@@ -292,35 +335,7 @@ impl DnsPolicy for WindowsDnsPolicy {
     }
 
     fn flush_cache(&self) -> Result<()> {
-        // SAFETY: loads a system DLL from System32 only (no DLL planting).
-        let module =
-            unsafe { LoadLibraryExW(w!("dnsapi.dll"), None, LOAD_LIBRARY_SEARCH_SYSTEM32) }
-                .map_err(|e| ForgeError::io("loading dnsapi.dll", os_error(&e)))?;
-        // SAFETY: valid module; NUL-terminated ANSI name.
-        let proc = unsafe { GetProcAddress(module, s!("DnsFlushResolverCache")) };
-        let result = match proc {
-            // SAFETY: the export has this signature (no arguments, returns BOOL).
-            Some(proc) => {
-                let flush: FlushFn = unsafe { std::mem::transmute(proc) };
-                // SAFETY: plain call into dnsapi.dll while the module is loaded.
-                if unsafe { flush() }.as_bool() {
-                    Ok(())
-                } else {
-                    Err(ForgeError::io(
-                        "flushing the DNS resolver cache",
-                        std::io::Error::last_os_error(),
-                    ))
-                }
-            }
-            None => Err(ForgeError::UnsupportedPlatform(
-                "dnsapi.dll has no DnsFlushResolverCache".to_owned(),
-            )),
-        };
-        // SAFETY: balances LoadLibraryExW.
-        unsafe {
-            let _ = FreeLibrary(module);
-        }
-        result
+        flush_resolver_cache()
     }
 }
 

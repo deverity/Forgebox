@@ -443,6 +443,21 @@ pub fn posix_string(path: &Path) -> String {
     text.replace('\\', "/")
 }
 
+/// `path` without the Win32 verbatim prefix (`\\?\C:\x` → `C:\x`, `\\?\UNC\srv\share` →
+/// `\\srv\share`), separators unchanged: the form other programs and Windows APIs expect
+/// (firewall rules, Defender exclusions, messages). Other verbatim forms (volume GUIDs)
+/// are kept as they are.
+pub fn plain_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path.to_path_buf(),
+    }
+}
+
 /// Rejects anything that is not one plain path component (no separators, no `.`/`..`,
 /// no drive, no `current`).
 fn validate_component(name: &str) -> Result<()> {
@@ -563,6 +578,20 @@ mod tests {
             "//srv/share/x"
         );
         assert_eq!(posix_string(Path::new("/opt/forgebox")), "/opt/forgebox");
+        assert_eq!(
+            plain_path(Path::new(r"\\?\C:\Forgebox\bin")),
+            PathBuf::from(r"C:\Forgebox\bin")
+        );
+        assert_eq!(
+            plain_path(Path::new(r"\\?\UNC\srv\share\x")),
+            PathBuf::from(r"\\srv\share\x")
+        );
+        assert_eq!(
+            plain_path(Path::new(r"\\?\Volume{x}\a")),
+            PathBuf::from(r"\\?\Volume{x}\a"),
+            "volume GUID paths keep their prefix"
+        );
+        assert_eq!(plain_path(Path::new("C:/x")), PathBuf::from("C:/x"));
         let base = tempfile::tempdir().unwrap();
         assert!(!root(base.path()).to_posix_string().contains('\\'));
     }

@@ -18,6 +18,9 @@
 //! M1-E4-T3: [`Elevation`] (launching `forgebox-helper` through UAC), [`DnsPolicy`] (NRPT
 //! rules and `hosts`, changed through the helper; resolver cache flush), [`NetAdapters`]
 //! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`].
+//! [`PrivilegedOps`] (M1-E5-T4) gathers the machine-wide changes behind the elevated
+//! helper's allowlist (WMI, firewall COM API, `LocalMachine\Root`, staging of installers)
+//! and [`secure_file`] the link-safe file access the helper uses inside the root.
 //! [`TrustStore`] (M1-E4-T4) is declared only; its signature may still grow in that task.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
@@ -36,19 +39,26 @@ pub mod dns_policy;
 pub mod elevation;
 pub mod net_adapters;
 pub mod net_table;
+pub mod privileged;
 pub mod probe;
 pub mod process;
 pub mod process_stats;
 pub mod runtime_deps;
+pub mod secure_file;
 #[cfg(windows)]
 pub mod windows;
 
 pub use dns_policy::{
-    DnsPolicy, DnsPolicyStatus, NrptRule, NrptSource, dns_policy, effective_nrpt_rules,
+    DnsPolicy, DnsPolicyStatus, FORGEBOX_NRPT_COMMENT, NrptRule, NrptSource, dns_policy,
+    effective_nrpt_rules,
 };
 pub use elevation::{Elevation, elevation};
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
+pub use privileged::{
+    CertificateInfo, FirewallRuleSpec, IpPrefix, NameConstraints, PrivilegedOps, StagedFile,
+    privileged_ops,
+};
 pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
@@ -57,8 +67,10 @@ pub use process::{
 };
 pub use process_stats::{ProcStats, ProcessStats, process_stats};
 pub use runtime_deps::{
-    RuntimeDep, RuntimeDeps, VCREDIST_X64_URL, VcRedistFlavor, VcRuntimeVersion, runtime_deps,
+    RuntimeDep, RuntimeDeps, VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, VCREDIST_X64_URL,
+    VcRedistFlavor, VcRuntimeVersion, runtime_deps,
 };
+pub use secure_file::{NoFollow, NoFollowFile, final_path, open_no_follow};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.

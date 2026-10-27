@@ -178,6 +178,20 @@ pub fn apply_hosts_block(existing: &str, entries: &[HostsEntry]) -> Result<Strin
     }
 }
 
+/// [`apply_hosts_block`] over the raw bytes of the file, whatever their encoding (ANSI
+/// comments with accents, UTF-8 with or without BOM): every byte is mapped to the char of
+/// the same value (Latin-1), the ASCII block is applied, and the chars are mapped back.
+/// Bytes outside the block come out exactly as they went in. This is what the helper
+/// writes; [`apply_hosts_block`] on a lossy UTF-8 decode would corrupt non-UTF-8 bytes.
+pub fn apply_hosts_block_bytes(existing: &[u8], entries: &[HostsEntry]) -> Result<Vec<u8>> {
+    let text: String = existing.iter().map(|&b| char::from(b)).collect();
+    let out = apply_hosts_block(&text, entries)?;
+    Ok(out
+        .chars()
+        .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
+        .collect())
+}
+
 /// The block found in a `hosts` file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostsBlock {
@@ -310,6 +324,28 @@ mod tests {
             text = apply_hosts_block(&text, &[]).unwrap();
         }
         assert_eq!(text, STOCK);
+    }
+
+    #[test]
+    fn bytes_outside_the_block_survive_any_encoding() {
+        // ANSI (Windows-1252) "Configuração", a UTF-8 BOM and UTF-8 "ção", plus a stray
+        // byte that is valid in neither.
+        let mut original =
+            b"\xEF\xBB\xBF# Configura\xE7\xE3o\r\n# a\xC3\xA7\xC3\xA3o \xFF\r\n".to_vec();
+        original.extend_from_slice(b"10.0.0.9 nas.lan\r\n");
+        let entries = [e("127.0.0.1", "loja.test")];
+        let added = apply_hosts_block_bytes(&original, &entries).unwrap();
+        assert!(added.starts_with(&original), "prefix kept byte for byte");
+        let block = &added[original.len()..];
+        assert!(block.starts_with(b"# forgebox:begin hosts (hash="));
+        assert!(block.ends_with(b"127.0.0.1 loja.test\r\n# forgebox:end hosts\r\n"));
+        assert_eq!(apply_hosts_block_bytes(&added, &entries).unwrap(), added);
+        assert_eq!(apply_hosts_block_bytes(&added, &[]).unwrap(), original);
+        // Same result as the text version for plain ASCII.
+        assert_eq!(
+            apply_hosts_block_bytes(STOCK.as_bytes(), &entries).unwrap(),
+            apply_hosts_block(STOCK, &entries).unwrap().into_bytes()
+        );
     }
 
     #[test]

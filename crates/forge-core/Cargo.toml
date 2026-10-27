@@ -57,7 +57,9 @@ ulid = { workspace = true }
 # VC++ runtime detection (RegGetValueW, GetFileVersionInfoW) and the DNS side (M1-E4-T3): UDP
 # table (GetExtendedUdpTable), network adapters (GetAdaptersAddresses), NRPT rules read from
 # the registry, DnsFlushResolverCache (dnsapi.dll, loaded at run time) and the elevated helper
-# launch (ShellExecuteExW "runas", COM initialization).
+# launch (ShellExecuteExW "runas", COM initialization); the helper's privileged operations
+# (M1-E5-T4, ADR-0023): WMI static methods (Wmi, Variant, Ole SAFEARRAYs), the firewall COM
+# API (WindowsFirewall), LocalMachine\Root, ReplaceFileW and the embedded manifest reader.
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
@@ -65,6 +67,7 @@ windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WindowsFirewall",
     "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",
@@ -77,10 +80,13 @@ windows = { workspace = true, features = [
     "Win32_System_IO",
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_Wmi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
