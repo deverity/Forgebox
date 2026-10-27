@@ -35,13 +35,14 @@ use ::windows::Win32::Security::Cryptography::{
     CERT_CHAIN_POLICY_SSL, CERT_CHAIN_POLICY_STATUS, CERT_CHAIN_REVOCATION_CHECK_END_CERT,
     CERT_CONTEXT, CERT_FIND_SHA1_HASH, CERT_OPEN_STORE_FLAGS, CERT_STORE_ADD_USE_EXISTING,
     CERT_STORE_DELETE_FLAG, CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_MEMORY,
-    CERT_STORE_PROV_SYSTEM_REGISTRY_W, CERT_STORE_READONLY_FLAG, CERT_SYSTEM_STORE_CURRENT_USER,
-    CERT_SYSTEM_STORE_LOCAL_MACHINE, CERT_USAGE_MATCH, CRYPT_INTEGER_BLOB, CTL_USAGE,
-    CertAddEncodedCertificateToStore, CertCloseStore, CertCreateCertificateChainEngine,
-    CertCreateCertificateContext, CertDeleteCertificateFromStore, CertFindCertificateInStore,
-    CertFreeCertificateChain, CertFreeCertificateChainEngine, CertFreeCertificateContext,
-    CertGetCertificateChain, CertOpenStore, CertUnregisterSystemStore,
-    CertVerifyCertificateChainPolicy, HCERTCHAINENGINE, HCERTSTORE, HTTPSPolicyCallbackData,
+    CERT_STORE_PROV_SYSTEM_REGISTRY_W, CERT_STORE_PROV_SYSTEM_W, CERT_STORE_READONLY_FLAG,
+    CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE, CERT_USAGE_MATCH,
+    CRYPT_INTEGER_BLOB, CTL_USAGE, CertAddEncodedCertificateToStore, CertCloseStore,
+    CertCreateCertificateChainEngine, CertCreateCertificateContext, CertDeleteCertificateFromStore,
+    CertEnumCertificatesInStore, CertFindCertificateInStore, CertFreeCertificateChain,
+    CertFreeCertificateChainEngine, CertFreeCertificateContext, CertGetCertificateChain,
+    CertOpenStore, CertUnregisterSystemStore, CertVerifyCertificateChainPolicy,
+    CertVerifyTimeValidity, HCERTCHAINENGINE, HCERTSTORE, HTTPSPolicyCallbackData,
     HTTPSPolicyCallbackData_0, PKCS_7_ASN_ENCODING, USAGE_MATCH_TYPE_AND, X509_ASN_ENCODING,
     szOID_PKIX_KP_SERVER_AUTH,
 };
@@ -54,6 +55,13 @@ use crate::platform::{CertThumbprint, TrustScope, TrustStore};
 
 /// Name of the root system store.
 const ROOT_STORE: &str = "Root";
+/// Logical stores whose certificates the OS trusts as TLS roots
+/// ([`TrustStore::system_roots`]): the user's view of `Root` (user, machine, group policy
+/// and enterprise roots) and the machine's third-party roots.
+const TRUSTED_ROOT_STORES: [(u32, &str); 2] = [
+    (CERT_SYSTEM_STORE_CURRENT_USER, ROOT_STORE),
+    (CERT_SYSTEM_STORE_LOCAL_MACHINE, "AuthRoot"),
+];
 /// Budget of one CRL fetch when revocation is checked.
 const URL_TIMEOUT_MS: u32 = 5_000;
 
@@ -238,6 +246,22 @@ impl TrustStore for WindowsTrustStore {
         }
     }
 
+    fn system_roots(&self) -> Result<Vec<Vec<u8>>> {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut out = Vec::new();
+        for (location, name) in TRUSTED_ROOT_STORES {
+            let Some(store) = Store::open_logical(location, name)? else {
+                continue;
+            };
+            for der in store.valid_certificates() {
+                if seen.insert(CertThumbprint::of_der(&der)) {
+                    out.push(der);
+                }
+            }
+        }
+        Ok(out)
+    }
+
     fn verify_server(
         &self,
         chain: &[Vec<u8>],
@@ -392,6 +416,59 @@ impl Store {
                 &err,
             )),
         }
+    }
+
+    /// The logical system store `name` at `location` (every physical store Windows
+    /// merges into it), read-only. `Ok(None)` when it does not exist.
+    fn open_logical(location: u32, name: &str) -> Result<Option<Self>> {
+        let flags = location | CERT_STORE_READONLY_FLAG.0 | CERT_STORE_OPEN_EXISTING_FLAG.0;
+        let wide = HSTRING::from(name);
+        // SAFETY: `wide` is a NUL-terminated store name alive for the call.
+        match unsafe {
+            CertOpenStore(
+                CERT_STORE_PROV_SYSTEM_W,
+                Default::default(),
+                None,
+                CERT_OPEN_STORE_FLAGS(flags),
+                Some(wide.as_ptr().cast()),
+            )
+        } {
+            Ok(store) => Ok(Some(Self(store))),
+            Err(err) if win32_code(&err) == Some(ERROR_FILE_NOT_FOUND.0) => Ok(None),
+            Err(err) => Err(cert_error(
+                &format!("opening the certificate store {name}"),
+                &err,
+            )),
+        }
+    }
+
+    /// DER of every certificate of the store that is valid now.
+    fn valid_certificates(&self) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut previous: *const CERT_CONTEXT = std::ptr::null();
+        loop {
+            // SAFETY: valid store; `previous` is null or the context returned by the
+            // previous call, which this call frees.
+            let next = unsafe {
+                CertEnumCertificatesInStore(self.0, (!previous.is_null()).then_some(previous))
+            };
+            if next.is_null() {
+                break;
+            }
+            // SAFETY: `next` is a valid context until the next enumeration call; its
+            // `pCertInfo` and encoded bytes live as long as it does.
+            unsafe {
+                let ctx = &*next;
+                if CertVerifyTimeValidity(None, ctx.pCertInfo) == 0 {
+                    out.push(
+                        std::slice::from_raw_parts(ctx.pbCertEncoded, ctx.cbCertEncoded as usize)
+                            .to_vec(),
+                    );
+                }
+            }
+            previous = next;
+        }
+        out
     }
 
     /// An empty in-memory store.
@@ -662,6 +739,22 @@ mod tests {
             .unwrap()
             .expect("Microsoft root");
         assert_eq!(CertThumbprint::of_der(&der), microsoft);
+    }
+
+    #[test]
+    fn system_roots_are_listed_without_elevation() {
+        let roots = WindowsTrustStore::new(None).system_roots().unwrap();
+        let thumbprints: std::collections::BTreeSet<_> = roots
+            .iter()
+            .map(|der| CertThumbprint::of_der(der))
+            .collect();
+        assert_eq!(thumbprints.len(), roots.len(), "deduplicated");
+        // "Microsoft Root Certificate Authority 2011" ships with every Windows 10/11.
+        let microsoft: CertThumbprint = "8F43288AD272F3103B6FB1428485EA3014C0BCFE".parse().unwrap();
+        assert!(thumbprints.contains(&microsoft), "{} roots", roots.len());
+        for der in &roots {
+            CertContext::from_der(der).unwrap();
+        }
     }
 
     #[test]

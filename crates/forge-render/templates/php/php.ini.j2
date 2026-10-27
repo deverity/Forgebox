@@ -20,6 +20,14 @@ default_charset = "UTF-8"
 [Session]
 session.save_path = "{{ paths.tmp }}/php/{{ php.series }}/sessions"
 
+; TLS roots: the local CA plus the roots the OS trusts (certs/ca-bundle.pem, docs/06 section 6.5),
+; so curl, streams and Composer trust what the browser trusts.
+[openssl]
+openssl.cafile = "{{ paths.certs }}/ca-bundle.pem"
+
+[curl]
+curl.cainfo = "{{ paths.certs }}/ca-bundle.pem"
+
 [opcache]
 {% for ext in php.zend_extensions %}
 zend_extension = {{ ext }}

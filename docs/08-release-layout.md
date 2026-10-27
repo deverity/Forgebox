@@ -91,7 +91,8 @@ C:\Forgebox\
 │   ├── ca\forgebox-ca.crt , forgebox-ca.key (ACL: só o usuário)
 │   │      forgebox-ca.crl                      # CRL vazia assinada pela CA (servida em 127.0.0.1:47480, ADR-0023)
 │   │      trust.json                           # thumbprints SHA-1 das raízes que o Forgebox pôs no Windows (remoção limpa)
-│   └── sites\loja.test.crt , loja.test.key (ACL: só o usuário) , ...
+│   ├── sites\loja.test.crt , loja.test.key (ACL: só o usuário) , ...
+│   └── ca-bundle.pem                         # CA local + raízes confiadas pelo Windows, para PHP/curl/Composer (docs/06 §6.5)
 │
 ├── logs\
 │   ├── forgeboxd.log.2026-10-27 ...          # daemon (tracing, JSON lines; um arquivo por dia, últimos 14)

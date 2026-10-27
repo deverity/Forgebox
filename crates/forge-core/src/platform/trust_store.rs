@@ -157,6 +157,16 @@ pub trait TrustStore: Send + Sync + fmt::Debug {
         host: &str,
         check_revocation: bool,
     ) -> Result<()>;
+
+    /// Every root certificate the OS trusts for TLS right now (DER, deduplicated,
+    /// unexpired), read without elevation or dialog: on Windows the `Root` logical store
+    /// of the user (the user's, the machine's, group policy and enterprise roots) and the
+    /// machine's third-party roots (`AuthRoot`). Tools with their own TLS stack (PHP's
+    /// OpenSSL and curl, Composer) get them as `certs/ca-bundle.pem`, so they trust what
+    /// the browser trusts, a corporate TLS inspection root included. Default: none.
+    fn system_roots(&self) -> Result<Vec<Vec<u8>>> {
+        Ok(Vec::new())
+    }
 }
 
 /// The trust store of the running OS. `helper` runs the `LocalMachine` changes; without

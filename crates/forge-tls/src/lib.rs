@@ -14,6 +14,7 @@
 //!
 //! Crate of the Forgebox workspace, see docs/02-project-structure.md.
 
+pub mod bundle;
 pub mod ca;
 mod cert;
 pub mod crl;
