@@ -2,11 +2,12 @@
 //!
 //! Crate of the Forgebox workspace, see docs/02-project-structure.md. Implemented so
 //! far: [`download`] (M1-E2-T1), [`verify`] and [`extract`] (M1-E2-T2), [`provider`]
-//! (M1-E2-T3). The rest is
-//! placeholder until its roadmap task (docs/10).
+//! (M1-E2-T3), [`layout`] (M1-E2-T4: install pipeline, `current` junction, shims, user
+//! `PATH`). The update engine is placeholder until its roadmap task (docs/10).
 
 pub mod download;
 pub mod extract;
+pub mod layout;
 mod messages;
 pub mod provider;
 pub mod verify;

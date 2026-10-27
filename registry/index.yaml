@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-27T04:35:28Z
+  updated_at: 2026-10-27T12:04:35Z
   tools:
   - id: apache
     path: tools/apache.yaml
@@ -23,7 +23,7 @@ spec:
     latest: 2.11.7
   - id: composer
     path: tools/composer.yaml
-    sha256: 99e506f2d5e6ccfb76800d814ddc2799abef7d868430fa7d448669b81090041c
+    sha256: 782d7043f6c2bf959225f5d666d77dd727a2bc1e44a74f5e4e9ff2bfc85b8b08
     categories:
     - devtool
     latest: 2.10.3
@@ -59,13 +59,13 @@ spec:
     latest: 1.31.8
   - id: nodejs
     path: tools/nodejs.yaml
-    sha256: c85180ac16397b782f9bd70314e89b945dd8c55cd6dd088a8033b4cbeb025f22
+    sha256: 79fd6e261d784011e19266d8ccf96acd0ef0ccfa5a9d49058ae0a79f07472b98
     categories:
     - runtime
     latest: 22.23.4
   - id: php
     path: tools/php.yaml
-    sha256: 313246cb661bb200abd2a3ba555b807bbe2e96ae07f0c6ed11f50cd7e56a65c8
+    sha256: dfdb7dd029ed4dc25dfe346f25525fc005464ff8e907d0c0e28e73ebcfd453f7
     categories:
     - runtime
   - id: postgresql

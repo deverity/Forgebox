@@ -23,7 +23,7 @@
 
 mod entry;
 mod formats;
-mod install;
+pub(crate) mod install;
 
 use std::fs::File;
 use std::io::{ErrorKind, Read, Write};

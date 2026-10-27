@@ -1,7 +1,8 @@
 //! `tools` / `tool_versions` tables: installed versions of tools (docs/08 §5).
 //!
-//! Only what discovery and the layout engine need so far: idempotent registration and
-//! listing. Paths are stored with `/` separators (db conventions of `0001_init.sql`).
+//! Only what discovery and the layout engine need so far: idempotent registration
+//! (discovery), recording of an installation (layout engine), lookup and listing. Paths
+//! are stored with `/` separators (db conventions of `0001_init.sql`).
 
 use std::collections::BTreeMap;
 
@@ -157,6 +158,80 @@ impl<'c> ToolVersionRepo<'c> {
         Ok(Some(id))
     }
 
+    /// Records a version installed by the layout engine (`forge_provider::layout`):
+    /// inserts it, or, when the tool already has a row with the same `canonical_name`
+    /// (reinstall, repair, a row left by a removed folder), updates that row's version,
+    /// variant, path, state, source, sha256, size and `installed_at`. Creates the `tools`
+    /// row when missing. Returns the row id and whether it was inserted.
+    pub fn record_install(
+        &self,
+        new: &NewToolVersion,
+        sha256: Option<&str>,
+        size_bytes: Option<u64>,
+    ) -> Result<(VersionId, bool)> {
+        let path = normalize_path(&new.path);
+        let now = Timestamp::now().to_string();
+        let variant = serde_json::to_string(&new.variant)
+            .map_err(|e| ForgeError::InvalidInput(format!("variant: {e}")))?;
+        let size = size_bytes
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| ForgeError::InvalidInput("size_bytes does not fit in i64".into()))?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO tools (id, name, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?3)",
+            params![new.tool_id, new.tool_name, now],
+        )?;
+        if let Some(existing) = self.find(&new.tool_id, &new.canonical_name)? {
+            self.conn.execute(
+                "UPDATE tool_versions SET version = ?2, variant = ?3, path = ?4, state = ?5, \
+                 source = ?6, sha256 = ?7, size_bytes = ?8, installed_at = ?9, updated_at = ?9 \
+                 WHERE id = ?1",
+                params![
+                    existing.id,
+                    new.version,
+                    variant,
+                    path,
+                    new.state.as_str(),
+                    new.source.as_str(),
+                    sha256,
+                    size,
+                    now
+                ],
+            )?;
+            return Ok((existing.id, false));
+        }
+        let id = VersionId::new();
+        self.conn.execute(
+            "INSERT INTO tool_versions \
+             (id, tool_id, version, canonical_name, variant, path, state, source, sha256, \
+              size_bytes, installed_at, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, ?11)",
+            params![
+                id,
+                new.tool_id,
+                new.version,
+                new.canonical_name,
+                variant,
+                path,
+                new.state.as_str(),
+                new.source.as_str(),
+                sha256,
+                size,
+                now
+            ],
+        )?;
+        Ok((id, true))
+    }
+
+    /// The row of `tool` with folder name `canonical_name`, if any.
+    pub fn find(&self, tool: &ToolId, canonical_name: &str) -> Result<Option<ToolVersionRow>> {
+        Ok(self
+            .list(Some(tool))?
+            .into_iter()
+            .find(|row| row.canonical_name == canonical_name))
+    }
+
     /// Versions of `tool` (all tools when `None`), ordered by tool and folder name.
     pub fn list(&self, tool: Option<&ToolId>) -> Result<Vec<ToolVersionRow>> {
         let mut stmt = self.conn.prepare(
@@ -233,6 +308,32 @@ mod tests {
         assert_eq!(rows[0].path, "C:/fb/bin/php/php-8.3-Win32-vs16-x64");
         assert_eq!(rows[0].source, VersionSource::Manual);
         assert_eq!(rows[0].variant["ts"], "nts");
+    }
+
+    #[test]
+    fn record_install_inserts_then_updates_the_same_folder() {
+        let store = Store::open_in_memory().unwrap();
+        let repo = ToolVersionRepo::new(store.conn());
+        let mut v = new_version("8.3.21-nts", r"C:\fb\bin\php\8.3.21-nts");
+        v.source = VersionSource::Registry;
+        let (id, inserted) = repo.record_install(&v, Some("ab"), Some(42)).unwrap();
+        assert!(inserted);
+        v.state = VersionState::Broken;
+        let (again, inserted) = repo.record_install(&v, None, None).unwrap();
+        assert_eq!((again, inserted), (id, false));
+        let row = repo.find(&v.tool_id, "8.3.21-nts").unwrap().unwrap();
+        assert_eq!(row.state, VersionState::Broken);
+        assert_eq!(row.path, "C:/fb/bin/php/8.3.21-nts");
+        assert!(repo.find(&v.tool_id, "nope").unwrap().is_none());
+        let (sha, size): (Option<String>, Option<i64>) = store
+            .conn()
+            .query_row(
+                "SELECT sha256, size_bytes FROM tool_versions WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((sha, size), (None, None));
     }
 
     #[test]

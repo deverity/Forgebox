@@ -48,6 +48,7 @@ spec:
     path:
       - "."
     shims: [node, npm, npx, corepack]
+    version_files: [".nvmrc", ".node-version"]
     verify:
       command: "node.exe -v"
       regex: "^v(\\d+\\.\\d+\\.\\d+)"

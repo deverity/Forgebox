@@ -273,6 +273,16 @@ fn relative_path_problem(path: &str) -> Option<&'static str> {
     }
 }
 
+/// A single file or command name: `[A-Za-z0-9._-]`, not `.`/`..`.
+fn is_file_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
 fn host_problem(host: &str) -> Option<&'static str> {
     if host.is_empty() || host.len() > 253 {
         return Some("must have 1 to 253 characters");
@@ -970,18 +980,65 @@ impl Checker<'_> {
         let mut shims = BTreeSet::new();
         for (i, shim) in install.shims.iter().enumerate() {
             let f = format!("spec.install.shims[{i}]");
-            if shim.is_empty()
-                || !shim
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-            {
+            let name = shim.name();
+            if !is_file_name(name) {
                 self.push(
                     IssueCode::InvalidValue,
                     &f,
-                    format!("{shim:?}: shim names use [A-Za-z0-9._-]"),
+                    format!("{name:?}: shim names use [A-Za-z0-9._-]"),
                 );
             }
-            self.duplicate(&f, &mut shims, shim);
+            if let Some(file) = shim.file() {
+                self.relative_path(&format!("{f}.file"), file);
+            }
+            if let Some(interpreter) = shim.interpreter() {
+                if !is_file_name(interpreter) || interpreter == name {
+                    self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.interpreter"),
+                        format!("{interpreter:?} must be the name of another shim"),
+                    );
+                }
+                if shim.file().is_none() {
+                    self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.file"),
+                        "a shim with an interpreter needs `file`",
+                    );
+                }
+            }
+            self.duplicate(&f, &mut shims, name);
+        }
+        let mut version_files = BTreeSet::new();
+        for (i, file) in install.version_files.iter().enumerate() {
+            let f = format!("spec.install.version_files[{i}]");
+            if !is_file_name(file) || file.eq_ignore_ascii_case("forgebox.yaml") {
+                self.push(
+                    IssueCode::InvalidValue,
+                    &f,
+                    format!(
+                        "{file:?}: a plain file name in [A-Za-z0-9._-] other than forgebox.yaml \
+                         (use project_key for it)"
+                    ),
+                );
+            }
+            self.duplicate(&f, &mut version_files, file);
+        }
+        if let Some(key) = &install.project_key {
+            let valid = key.starts_with("spec.")
+                && key.split('.').all(|seg| {
+                    !seg.is_empty()
+                        && seg
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                });
+            if !valid {
+                self.push(
+                    IssueCode::InvalidValue,
+                    "spec.install.project_key",
+                    format!("{key:?}: a dotted key of forgebox.yaml such as `spec.site.php`"),
+                );
+            }
         }
         if let Some(verify) = &install.verify {
             self.not_empty("spec.install.verify.command", &verify.command);

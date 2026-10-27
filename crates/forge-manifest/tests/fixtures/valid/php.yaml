@@ -67,6 +67,8 @@ spec:
     path:
       - "."
     shims: [php, php-cgi, phpdbg, pear, pecl]
+    version_files: [".php-version"]
+    project_key: spec.site.php
     verify:
       command: "php.exe -v"
       regex: "^PHP (\\d+\\.\\d+\\.\\d+)"

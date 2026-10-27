@@ -45,7 +45,9 @@ Forgebox/
 │   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts; apply_hosts_block_bytes preserva bytes fora do bloco),
 │   │       │                     #   client.rs (HelperClient, FakeElevation), trust.rs (CA aceita em LocalMachine\Root, ADR-0024)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore) + current();
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, UserEnv) + current();
+│   │                             #   user_env.rs: UserEnv (PATH persistente do usuário), PathValue (lista crua, sem duplicatas),
+│   │                             #   MemoryUserEnv (fake em memória); probe.rs também tem run_probe_with_env (ações run);
 │   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
 │   │                             #   verify_server: cadeia pelo verificador do SO com raiz exclusiva, revogação opcional);
 │   │                             #   privileged.rs: PrivilegedOps + privileged_ops() (mudanças de máquina do forgebox-helper:
@@ -73,6 +75,8 @@ Forgebox/
 │   │                             #   net_adapters.rs (GetAdaptersAddresses),
 │   │                             #   vcredist.rs (registro VC\Runtimes\x64 + versão de vcruntime140.dll/msvcp140.dll),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE),
+│   │                             #   user_env.rs (HKCU\Environment\Path via RegQueryValueExW/RegSetValueExW, REG_EXPAND_SZ
+│   │                             #   preservado, SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE "Environment")),
 │   │                             #   privileged.rs (WindowsPrivilegedOps), com.rs (COM/VARIANT), wmi.rs (métodos estáticos WMI:
 │   │                             #   PS_DnsClientNrptRule, MSFT_MpPreference), firewall.rs (INetFwPolicy2), cert_info.rs (parse de CA:
 │   │                             #   Basic/Name Constraints; o store é o trust_store.rs), secure_file.rs (FILE_FLAG_OPEN_REPARSE_POINT, nlink), pe_resources.rs (manifest embutido)
@@ -106,8 +110,11 @@ Forgebox/
 │   │       ├── verify.rs         # tamanho, sha256/sha512, minisign, Authenticode (platform::CodeSign); verify/pgp.rs (rpgp, keyrings)
 │   │       ├── extract.rs        # zip/7z/tar.gz/tar.xz/arquivo único; strip_root; staging em tmp/stage e move atômico;
 │   │       │                     #   extract/{entry (nomes seguros), formats, install (strip, rename, cópia entre volumes)}.rs
-│   │       ├── messages.rs       # textos de progresso pt-BR de verify/extract (até existir i18n)
-│   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims
+│   │       ├── messages.rs       # textos pt-BR de verify/extract/layout e dos shims (até existir i18n)
+│   │       ├── layout.rs         # Layout: install_from_archive -> JobId (verify → staging → extract → post_install →
+│   │       │                     #   move → tool_versions → current → shims), use_version/current_version, ensure_shims/path;
+│   │       │                     #   layout/{actions (post_install, TemplateRenderer, install.verify), current (seleção de versão),
+│   │       │                     #   shims (.cmd + forgebox-project.ps1), path (PATH do usuário via UserEnv), vars}.rs
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
 │   │   ├── src/
