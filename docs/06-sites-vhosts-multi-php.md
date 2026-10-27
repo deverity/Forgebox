@@ -242,18 +242,39 @@ Executado nesta máquina (Windows 10 19045, sem elevação) com o exemplo em `12
 ## 6. SSL/TLS
 
 ### 6.1 CA local
-- Gerada no onboarding: ECDSA P-256, `CN=Forgebox Local CA <hostname> <ano>`, validade 10 anos, em `certs/ca/forgebox-ca.crt|key` (chave com ACL só do usuário).
-- Instalada em `CurrentUser\Root` via `CertAddEncodedCertificateToStore` (**não requer admin**; Windows mostra um diálogo de confirmação uma única vez). Opcional via helper: `LocalMachine\Root` para todos os usuários.
-- Firefox: adicionamos `security.enterprise_roots.enabled=true` em `policies.json` **se** o usuário permitir, ou instruímos. Node: definimos `NODE_EXTRA_CA_CERTS` nos processes gerenciados e sugerimos no PATH setup. Java/Python: botão "Exportar CA" e instruções.
-- Renovação/rotação: 90 dias antes de expirar a UI avisa; rotação re-emite todas as folhas.
+- Gerada no onboarding (ou no primeiro `tls.issue`): ECDSA P-256, `CN=Forgebox Local CA <hostname> <ano>`, `O=Forgebox`, `OU=created <instante>`, validade 10 anos, `pathLenConstraint = 0`, em `certs/ca/forgebox-ca.crt|key` (chave com ACL só do usuário, aplicada antes de o segredo ser escrito). Implementação: `forge_tls::ca` ([ADR-0023](adr/0023-local-ca-name-constraints-trust.md)).
+- **Name constraints** (críticas, `permittedSubtrees`): `dNSName` de cada TLD configurado que seja de uso local (`.test`, `[dns] extra_tlds` como `.localhost`; TLD público como `.dev` fica de fora), `localhost` sempre, `iPAddress` `127.0.0.0/8` e `::1/128` ([11 §3](11-security.md)). TLD acrescentado depois só entra com rotação (`forge tls ca status` avisa).
+- Instalada em `CurrentUser\Root` via `CertAddEncodedCertificateToStore` (**não requer admin**; Windows mostra um diálogo de confirmação uma única vez; "Não" = `cancelled`). Opcional via helper: `LocalMachine\Root` para todos os usuários (`trust.add_machine_root {thumbprint}`). Raízes identificadas pelo thumbprint SHA-1 (o que `certmgr`/`Cert:\` mostram) e registradas em `certs/ca/trust.json` para remoção limpa. Modo portátil: nunca toca no store.
+- Firefox: 120+ já lê as raízes do usuário do Windows; para versões antigas instruímos `policies.json` (`Certificates.ImportEnterpriseRoots`). Node: definimos `NODE_EXTRA_CA_CERTS` nos processes gerenciados e sugerimos no PATH setup. Java/Python: botão "Exportar CA" e instruções (`forge_tls::trust::instructions`; nada disso é automático).
+- Renovação/rotação: 90 dias antes de expirar a UI avisa; rotação re-emite todas as folhas. A rotação é em duas fases: a nova CA é confiada onde a antiga era **antes** de qualquer arquivo mudar (recusar o diálogo não muda nada), depois a CA é gravada, as folhas reemitidas e a antiga removida (recusa vira aviso; o thumbprint fica no `trust.json`).
 
 ### 6.2 Certificados de site
-- Por site: SAN = host + `*.host` + aliases; validade 825 dias (limite Apple/Chrome); ECDSA P-256; arquivos `certs/sites/<host>.crt|key`.
-- Emitidos no `secure: true`, renovados automaticamente 30 dias antes, re-render + reload.
-- Export para `.pfx` para IIS/Outros.
+- Por site: SAN = host + `*.host` + aliases; `CN` = host; EKU `serverAuth`; validade 825 dias (limite Apple/Chrome, contados do `notBefore` recuado 1 h, nunca além da CA); ECDSA P-256; arquivos `certs/sites/<host>.crt|key` (só a folha no `.crt`; chave com ACL só do usuário). O host precisa estar abaixo de um TLD da CA (nunca um certificado para `*.test`). Implementação: `forge_tls::leaf`.
+- Emitidos no `secure: true` (`tls.issue` devolve o existente se ainda cobre os nomes), renovados automaticamente 30 dias antes pelo ator `tls` (verificação diária, ±10 %; também reemite folhas de outra CA, com chave que não bate ou com ponto de distribuição de CRL diferente do configurado), re-render + reload (o daemon reage a `tls.renewed`).
+- **Revogação para o Schannel:** cada folha leva o ponto de distribuição de CRL `http://127.0.0.1:47480/forgebox/<SHA-1 da CA>.crl` (faixa `tls-crl` do `forgebox.toml`) e o ator `tls` serve ali uma CRL vazia assinada pela CA (cópia em `certs/ca/forgebox-ca.crl`, 7 dias, reassinada na metade). Sem isso o `curl.exe` do Windows recusa o certificado por padrão (`CRYPT_E_NO_REVOCATION_CHECK`), como acontece com mkcert/Laragon ([ADR-0023](adr/0023-local-ca-name-constraints-trust.md)).
+- Export para `.pfx` para IIS/Outros (pendente: `tls.export` com `pfx`; PEM já sai por `TlsManager::export_leaf`).
 
 ### 6.3 Certificados públicos (opcional, v1.1)
 ACME (Let's Encrypt via DNS-01 Cloudflare) para quem expõe via túnel com domínio próprio.
+
+### 6.4 Verificação manual (aceite do smoke M1)
+Com nginx servindo `loja.test`, DNS ligado, daemon rodando (responder de CRL em `127.0.0.1:47480`) e a CA instalada (`forge tls ca install`):
+```
+C:\Windows\System32\curl.exe https://loja.test   # sem -k e sem --ssl-no-revoke: Schannel valida pela CA em CurrentUser\Root e busca a CRL
+openssl x509 -in C:\Forgebox\certs\ca\forgebox-ca.crt -noout -text
+#   X509v3 Basic Constraints: critical  CA:TRUE, pathlen:0
+#   X509v3 Name Constraints: critical
+#       Permitted:
+#         DNS:test
+#         DNS:localhost
+#         IP:127.0.0.0/255.0.0.0
+#         IP:0:0:0:0:0:0:0:1/FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF:FFFF
+openssl verify -CAfile C:\Forgebox\certs\ca\forgebox-ca.crt -verify_hostname loja.test C:\Forgebox\certs\sites\loja.test.crt
+certutil -user -verifystore Root <thumbprint SHA-1>   # a CA está no store do usuário
+curl -s -o NUL -w "%{http_code}\n" http://127.0.0.1:47480/forgebox/<thumbprint SHA-1>.crl   # 200
+```
+Sem daemon nem nginx: `cargo run -p forge-tls --example tls_demo -- <raiz> issue loja.test` (CA + folha + verificação pelo CryptoAPI com revogação) e `... serve loja.test 18443` (HTTPS de teste + responder de CRL), depois `curl.exe --cacert <raiz>\certs\ca\forgebox-ca.crt --resolve loja.test:18443:127.0.0.1 https://loja.test:18443/`.
+Sem nginx, a mesma garantia é coberta por testes: `crates/forge-tls/tests/name_constraints_tls.rs` (handshake rustls/webpki) e `windows_trust.rs` (CryptoAPI com a CA como raiz exclusiva: `loja.test` passa, `google.com`/`evil.example.com` assinados com a chave vazada falham com `CERT_TRUST_HAS_NOT_PERMITTED_NAME_CONSTRAINT`).
 
 ## 7. Túneis (`forge share`)
 - Tools `cloudflared`, `ngrok`, `expose` no catálogo (`category: tunnel`).

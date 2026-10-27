@@ -89,7 +89,9 @@ C:\Forgebox\
 │
 ├── certs\
 │   ├── ca\forgebox-ca.crt , forgebox-ca.key (ACL: só o usuário)
-│   └── sites\loja.test.crt , loja.test.key , ...
+│   │      forgebox-ca.crl                      # CRL vazia assinada pela CA (servida em 127.0.0.1:47480, ADR-0023)
+│   │      trust.json                           # thumbprints SHA-1 das raízes que o Forgebox pôs no Windows (remoção limpa)
+│   └── sites\loja.test.crt , loja.test.key (ACL: só o usuário) , ...
 │
 ├── logs\
 │   ├── forgeboxd.log , forgeboxd.log.1 ...   # daemon (tracing, JSON lines)
@@ -133,7 +135,7 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 | PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` | Onboarding, se o usuário marcar | Desinstalador remove entradas que contenham `\Forgebox\bin\` |
 | Iniciar com Windows | `HKCU\...\Run\Forgebox` | Opt-in | Desinstalador remove |
 | Protocolo `forgebox://` | `HKCU\Software\Classes\forgebox` | Instalação | Desinstalador remove |
-| CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover (identifica pelo thumbprint salvo) |
+| CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover: a CA atual e toda raiz registrada em `certs\ca\trust.json` (thumbprint SHA-1 + escopo; inclui CAs antigas cuja remoção foi recusada numa rotação). Remover de `CurrentUser\Root` mostra o diálogo do Windows; `LocalMachine` vai pelo helper |
 | Regra NRPT `.test` | Política DNS do sistema | Opt-in via helper | Desinstalador remove via helper |
 | `hosts` | bloco gerenciado | Fallback | Bloco removido |
 | Firewall | regras `Forgebox-*` | Só com "expor na LAN" | Removidas |
