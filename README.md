@@ -36,10 +36,10 @@ cargo xtask schema | gen-ts | lint-registry | registry-index # tarefas de desenv
 
 ### Espaço em disco (`target/`)
 
-Os worktrees do workflow (`C:\apps_src\Forgebox-wt\E*`) compartilham `C:\apps_src\Forgebox\target`, e o cargo nunca apaga artefatos antigos. Em M1 isso chegou a ~135 GB (74 GB de `incremental/`, 60 GB de `deps/` com PDBs). Por isso:
+Cada worktree do workflow (`C:pps_src\Forgebox-wt\E*`) compila no **seu próprio** `target/`. Já tentamos compartilhar `C:pps_src\Forgebox	arget` entre eles e não funciona: o cargo calcula o hash dos pacotes de caminho relativo à raiz do workspace, então crates de branches diferentes recebem o mesmo nome de artefato e um worktree acaba linkando o código do outro (e binários MSVC como `deps/xtask.exe` nem têm hash). Para o custo em disco ficar aceitável:
 
-- `.cargo/config.toml` (repo) e `C:\apps_src\Forgebox-wt\.cargo\config.toml` definem `[profile.dev] incremental = false`, `debug = "line-tables-only"` e `debug = false` para dependências externas. **Mantenha os dois iguais**: profiles diferentes geram hashes diferentes e duplicam tudo no target compartilhado. Backtraces continuam com arquivo e linha; quem quiser incremental local usa `CARGO_INCREMENTAL=1`.
-- **Workers/agentes:** não alterem esses profiles nem passem `RUSTFLAGS`/`--profile` custom (cada combinação vira uma cópia nova em `deps/`), e não rodem `cargo clean` com build de outro worktree em andamento.
-- `scripts/clean-target.ps1` roda a cada 4 h (tarefa agendada "Forgebox target sweep", registrada com `scripts/clean-target.ps1 -Register`): pula se algum build segura `.cargo-lock`, remove `incremental/`, apaga artefatos sem escrita há 5 dias e, se o disco ficar abaixo de 30 GB livres, remove os diretórios de profile inteiros. Log em `target/clean-target.log`.
+- `.cargo/config.toml` (repo) e `C:pps_src\Forgebox-wt\.cargo\config.toml` definem `[profile.dev] incremental = false`, `debug = "line-tables-only"` e `debug = false` para dependências externas. Mantenha os dois iguais. Backtraces continuam com arquivo e linha; quem quiser incremental local usa `CARGO_INCREMENTAL=1`.
+- **Workers/agentes:** não alterem esses profiles nem passem `RUSTFLAGS`/`--profile` custom, não rodem `cargo clean` fora do seu worktree, não matem processos de build de outros worktrees e não registrem tarefas agendadas ou serviços. Se o disco tiver menos de 10 GB livres, parem e reportem.
+- `scripts/clean-target.ps1` (opcional; `-Register` cria a tarefa agendada "Forgebox target sweep" para o usuário atual) remove `incremental/`, artefatos sem escrita há 5 dias e, abaixo de 30 GB livres, os diretórios de profile inteiros de um `target/`. Log em `target/clean-target.log`.
 
 Antes de começar uma tarefa, leia [CLAUDE.md](CLAUDE.md) e o [índice da documentação](docs/README.md). O estado das tarefas do roadmap fica em [docs/STATUS.md](docs/STATUS.md).
