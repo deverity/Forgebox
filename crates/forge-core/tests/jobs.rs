@@ -323,3 +323,20 @@ async fn a_preallocated_job_id_is_used() {
     assert_eq!((info.id, info.state), (id, JobState::Done));
     assert!(jobs.get(id).is_some());
 }
+
+#[tokio::test]
+async fn a_job_started_elsewhere_can_be_awaited_by_id() {
+    let jobs = registry(&EventBus::new(), eager());
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+    let id = jobs.start("elsewhere", |_ctx| async move {
+        let _ = rx.await;
+        Ok::<_, ForgeError>(json!("ok"))
+    });
+    let handle = jobs.handle(id).expect("retained job");
+    assert_eq!(handle.info().state, JobState::Running);
+    tx.send(()).unwrap();
+    let info = handle.wait(SECOND).await.unwrap();
+    assert_eq!(info.state, JobState::Done);
+    assert_eq!(info.result, Some(json!("ok")));
+    assert!(jobs.handle(JobId::new()).is_none());
+}

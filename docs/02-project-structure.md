@@ -35,7 +35,7 @@ Forgebox/
 │   │       │                     #   spawn_blocking_timeout (chamada bloqueante com prazo)
 │   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
-│   │       │                     #   ports.rs (PortRepo: reservas de porta)
+│   │       │                     #   ports.rs (PortRepo: reservas de porta), update_history.rs (UpdateHistoryRepo: updates e rollbacks)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder e o trait
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
@@ -118,7 +118,10 @@ Forgebox/
 │   │       │                     #   move → tool_versions → current → shims), use_version/current_version, ensure_shims/path;
 │   │       │                     #   layout/{actions (post_install, TemplateRenderer, install.verify), current (seleção de versão),
 │   │       │                     #   shims (.cmd + forgebox-project.ps1), path (PATH do usuário via UserEnv), vars}.rs
-│   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
+│   │       └── update.rs         # UpdateEngine (ator update-engine): check/apply/rollback -> JobId, ganchos do agendador;
+│   │                             #   update/{policy (política efetiva, linha, versão ativa, plano), schedule (next_check_at:
+│   │                             #   intervalo+jitter, quiet_hours, conexão medida), migrate (copy_dir), deps (traits
+│   │                             #   ToolCatalog, ReleaseSource, ArchiveFetcher/DownloadFetcher, PoolSwitcher, MeteredProbe)}.rs
 │   ├── forge-supervisor/
 │   │   ├── src/
 │   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância; nested() = Job de um pool (workers aninhados)

@@ -66,3 +66,59 @@ pub(crate) fn shim_not_installed(tool: &str, installed: &str) -> [String; 3] {
 pub(crate) fn shim_missing_file() -> String {
     "Forgebox: \"%FB_EXE%\" nao existe.".to_owned()
 }
+
+// ------------------------------------------------------------- updates (M1-E2-T5)
+
+pub(crate) fn update_downloading(tool: &str, version: &str) -> String {
+    format!("Baixando {tool} {version}")
+}
+
+pub(crate) fn update_installing(tool: &str, version: &str) -> String {
+    format!("Instalando {tool} {version} lado a lado")
+}
+
+pub(crate) fn update_migrating() -> String {
+    "Levando extensões e arquivos da versão anterior".to_owned()
+}
+
+pub(crate) fn update_rendering() -> String {
+    "Regerando a configuração da série".to_owned()
+}
+
+pub(crate) fn update_switching(series: &str) -> String {
+    format!("Trocando os pools da série {series} (blue/green)")
+}
+
+pub(crate) fn update_retention() -> String {
+    "Aplicando a retenção de versões antigas".to_owned()
+}
+
+/// A newer build of the series has other provider-derived variants (compiler) while
+/// `update.migrate` copies files built for the old one.
+pub(crate) fn update_blocked_build(from: &str, to: &str) -> String {
+    format!(
+        "Atualização bloqueada: {to} é um build diferente de {from} (ex.: outro compilador); \
+         extensões copiadas da versão atual podem não carregar. Instale {to} e reinstale as \
+         extensões manualmente."
+    )
+}
+
+pub(crate) fn update_from_changed(version: &str) -> String {
+    format!("A versão {version} não está mais instalada; verifique as atualizações de novo.")
+}
+
+pub(crate) fn update_in_flight(tool: &str, series: &str) -> String {
+    format!("Já existe uma atualização ou rollback de {tool} {series} em andamento.")
+}
+
+pub(crate) fn retention_kept_serving(folder: &str) -> String {
+    format!("retenção: {folder} mantida (um pool ainda a usa)")
+}
+
+pub(crate) fn rollback_nothing(tool: &str, series: &str) -> String {
+    format!("Nenhuma atualização de {tool} {series} para desfazer.")
+}
+
+pub(crate) fn rollback_not_retained(version: &str) -> String {
+    format!("A versão anterior {version} não está mais retida; não há para onde voltar.")
+}

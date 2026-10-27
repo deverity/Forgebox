@@ -20,7 +20,8 @@
 //! Closing blocks for at most [`STORE_CLOSE_TIMEOUT`]; do it from a blocking context.
 //!
 //! Repositories are added per aggregate (docs/02). M0-E1-T4 ships the migration runner
-//! and [`events::EventRepo`]; M1-E3-T3 adds [`ports::PortRepo`] (port reservations).
+//! and [`events::EventRepo`]; M1-E3-T3 adds [`ports::PortRepo`] (port reservations);
+//! M1-E2-T5 adds [`update_history::UpdateHistoryRepo`] (updates and rollbacks).
 
 pub mod events;
 pub mod migrations;
@@ -28,6 +29,7 @@ pub mod ports;
 mod reader;
 pub mod sites;
 pub mod tool_versions;
+pub mod update_history;
 pub mod writer;
 
 use std::path::{Path, PathBuf};
@@ -43,6 +45,9 @@ pub use reader::StoreReader;
 pub use sites::{Site, SiteKind, SitePhp, SiteRepo, SiteXdebug};
 pub use tool_versions::{
     NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,
+};
+pub use update_history::{
+    NewUpdateHistory, UpdateHistoryRepo, UpdateHistoryRow, UpdateStatus, UpdateTrigger,
 };
 pub use writer::{StoreWriter, WriterStats};
 

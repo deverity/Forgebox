@@ -104,6 +104,31 @@ pub(crate) fn run_actions(ctx: &ActionContext<'_>, actions: &[PostInstallAction]
     Ok(())
 }
 
+/// Runs only the `render` actions of `actions`, in order, for a version that is already
+/// in place (`staged_dir` = its folder, both variable sets equal): the update engine
+/// re-renders configuration shared by a series (`etc/php/8.3/conf.d/`) for the version
+/// that is about to serve it (docs/05 §4). Returns the rendered files.
+pub(crate) fn run_renders(
+    ctx: &ActionContext<'_>,
+    actions: &[PostInstallAction],
+) -> Result<Vec<PathBuf>> {
+    let mut rendered = Vec::new();
+    for (index, action) in actions.iter().enumerate() {
+        let PostInstallAction::Render(render) = action else {
+            continue;
+        };
+        if (ctx.cancelled)() {
+            return Err(ForgeError::Cancelled("re-render".into()));
+        }
+        let dest = target(ctx, &render.to)
+            .map_err(|e| annotate(e, &format!("post_install[{index}] (render)")))?;
+        render_action(ctx, render)
+            .map_err(|e| annotate(e, &format!("post_install[{index}] (render)")))?;
+        rendered.push(dest);
+    }
+    Ok(rendered)
+}
+
 /// Prefixes the message of `err` with `what`, keeping its code.
 pub(crate) fn annotate(err: ForgeError, what: &str) -> ForgeError {
     match err {
@@ -177,7 +202,7 @@ fn source(ctx: &ActionContext<'_>, text: &str) -> Result<PathBuf> {
 
 /// `base` joined with the relative `rel` (`/` or `\`), refusing absolute paths, drives,
 /// `..` and environment references.
-fn relative_in(base: &Path, rel: &str) -> Option<PathBuf> {
+pub(crate) fn relative_in(base: &Path, rel: &str) -> Option<PathBuf> {
     if rel.contains(['%', '$']) || rel.contains("{{") {
         return None;
     }

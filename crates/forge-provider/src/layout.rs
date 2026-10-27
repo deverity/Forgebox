@@ -63,6 +63,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 pub use self::actions::{
     DEFAULT_RUN_TIMEOUT, NoTemplates, RenderRequest, TemplateRenderer, VERIFY_TIMEOUT,
 };
+pub(crate) use self::actions::{annotate, relative_in};
 pub use self::current::{
     CurrentVersion, TOOL_CURRENT_EVENT_VERSION, ToolCurrentEventPayload, UseReport, select,
 };
@@ -187,6 +188,19 @@ pub struct InstallReport {
     pub reinstalled: bool,
     pub shims: ShimReport,
     /// Non-fatal problems (`current` or shims could not be updated).
+    pub warnings: Vec<String>,
+}
+
+/// Result of [`Layout::remove_version`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemovedVersion {
+    pub tool: ToolId,
+    pub version: String,
+    pub canonical_name: String,
+    pub version_id: VersionId,
+    /// The folder that was deleted (informative path).
+    pub path: PathBuf,
+    /// Non-fatal problems (shims could not be refreshed).
     pub warnings: Vec<String>,
 }
 
@@ -380,6 +394,11 @@ impl Layout {
 
     pub fn root(&self) -> &ForgeRoot {
         &self.inner.root
+    }
+
+    /// The registry install jobs run in.
+    pub fn jobs(&self) -> &JobRegistry {
+        &self.inner.jobs
     }
 
     fn turn(&self, tool: &ToolId) -> Arc<Semaphore> {
@@ -832,6 +851,151 @@ impl Layout {
             }
         })
         .await
+    }
+
+    // ------------------------------------------------------------------ installed versions
+
+    /// Install-time variables of an installed version (`paths.version` = its folder).
+    pub fn vars_for(&self, manifest: &ToolManifest, row: &ToolVersionRow) -> TemplateVars {
+        let versioning = &manifest.spec.versioning;
+        let series = Version::parse(versioning.scheme, &row.version)
+            .ok()
+            .and_then(|v| v.series(&versioning.series_key).ok())
+            .unwrap_or_else(|| row.version.clone());
+        TemplateVars {
+            tool: row.tool_id.to_string(),
+            version: row.version.clone(),
+            series,
+            canonical_name: row.canonical_name.clone(),
+            variant: row.variant.clone(),
+            paths: PathVars::new(&self.inner.root, Path::new(&row.path)),
+        }
+    }
+
+    /// Runs the `render` actions of `install.post_install` again for the installed
+    /// version `row` (configuration shared by a series, such as
+    /// `etc/php/8.3/conf.d/10-forgebox.ini`, must reference the version that serves it:
+    /// the update engine calls this before switching pools and on rollback, docs/05 §4).
+    /// Returns the rendered files.
+    pub async fn rerender(
+        &self,
+        manifest: Arc<ToolManifest>,
+        row: &ToolVersionRow,
+    ) -> Result<Vec<PathBuf>> {
+        let vars = self.vars_for(&manifest, row);
+        let dir = PathBuf::from(&row.path);
+        let (root, renderer) = (self.inner.root.clone(), Arc::clone(&self.inner.renderer));
+        let tool = row.tool_id.clone();
+        blocking("re-rendering configuration", move || {
+            let never = || false;
+            let ctx = actions::ActionContext {
+                root: &root,
+                tool: &tool,
+                staged_dir: &dir,
+                physical: &vars,
+                final_vars: &vars,
+                renderer: renderer.as_ref(),
+                allow_run: false,
+                cancelled: &never,
+            };
+            actions::run_renders(&ctx, &manifest.spec.install.post_install)
+        })
+        .await
+    }
+
+    /// Removes an installed version: its folder and its `tool_versions` row, then
+    /// refreshes the tool's shims. Refused (`conflict`) while `current` points at it,
+    /// while service instances use it, or when the folder cannot be moved away (files in
+    /// use). The folder is first renamed to `.<name>.forgebox-removed-<id>` (ignored by
+    /// discovery), so a half-deleted tree never looks like a version. Takes the tool's
+    /// turn.
+    pub async fn remove_version(
+        &self,
+        manifest: Arc<ToolManifest>,
+        id: VersionId,
+    ) -> Result<RemovedVersion> {
+        let tool = manifest.metadata.id.clone();
+        let _turn = self.tool_turn(&tool).await?;
+        let row = self
+            .inner
+            .reader
+            .query(move |conn| ToolVersionRepo::new(conn).get(id))
+            .await?
+            .filter(|row| row.tool_id == tool)
+            .ok_or_else(|| ForgeError::NotFound(format!("{tool} version {id}")))?;
+        let dir = PathBuf::from(&row.path);
+        if let Some(current) = self.current_version(&tool).await?
+            && same_dir(&current.path, &dir)
+        {
+            return Err(ForgeError::Conflict(format!(
+                "{tool} {} is the current version (bin/{tool}/current)",
+                row.canonical_name
+            )));
+        }
+        self.inner
+            .writer
+            .execute(move |conn| {
+                let repo = ToolVersionRepo::new(conn);
+                if repo.instance_count(id)? > 0 {
+                    return Err(ForgeError::Conflict(format!(
+                        "tool version {id} is used by service instances"
+                    )));
+                }
+                repo.set_state(id, VersionState::Removing)
+            })
+            .await?;
+        let (from, aside) = (
+            dir.clone(),
+            dir.with_file_name(format!(
+                ".{}.forgebox-removed-{}",
+                row.canonical_name,
+                ulid::Ulid::generate()
+            )),
+        );
+        let moved = blocking("moving the version away", move || {
+            if !from.exists() {
+                return Ok(false);
+            }
+            rename_retry(&from, &aside).map_err(|e| {
+                ForgeError::Conflict(format!(
+                    "{} cannot be removed (files in use?): {e}",
+                    from.display()
+                ))
+            })?;
+            remove_tree_logged(&aside);
+            Ok(true)
+        })
+        .await;
+        if let Err(err) = moved {
+            let restore = self
+                .inner
+                .writer
+                .execute(move |conn| {
+                    ToolVersionRepo::new(conn).set_state(id, VersionState::Installed)
+                })
+                .await;
+            if let Err(e) = restore {
+                tracing::error!(%id, "could not restore the version state: {e}");
+            }
+            return Err(err);
+        }
+        self.inner
+            .writer
+            .execute(move |conn| ToolVersionRepo::new(conn).delete(id))
+            .await?;
+        let mut warnings = Vec::new();
+        if let Err(e) = self.refresh_shims(&manifest).await {
+            warnings.push(format!("shims: {e}"));
+        }
+        tracing::info!(tool = %row.tool_id, folder = %row.canonical_name, "version removed");
+        Ok(RemovedVersion {
+            tool: row.tool_id,
+            version: row.version,
+            canonical_name: row.canonical_name,
+            version_id: id,
+            path: dir,
+            warnings,
+        })
     }
 
     // ------------------------------------------------------------------ shims, PATH
