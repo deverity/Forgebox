@@ -14,6 +14,7 @@ mod process;
 mod process_stats;
 mod security;
 mod trust_store;
+mod user_env;
 mod vcredist;
 mod window_close;
 
@@ -29,4 +30,5 @@ pub use process::WindowsProcessControl;
 pub use process_stats::WindowsProcessStats;
 pub use security::{current_user_sid, dacl_grants_only};
 pub use trust_store::WindowsTrustStore;
+pub use user_env::{BROADCAST_TIMEOUT, WindowsUserEnv};
 pub use vcredist::WindowsRuntimeDeps;

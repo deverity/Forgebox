@@ -46,6 +46,9 @@ impl LockLevel {
     /// Configured registries, catalog snapshots and refresh marks of `forge_registry`.
     /// Leaf lock: no job is started and nothing is awaited or published while it is held.
     pub const REGISTRY_STATE: LockLevel = LockLevel::new(10, "registry.state");
+    /// Per-tool turn semaphores of the layout engine (`forge_provider::layout`). Leaf lock:
+    /// held only to look up or insert a semaphore, never while acquiring it.
+    pub const LAYOUT_TOOLS: LockLevel = LockLevel::new(10, "layout.tools");
     /// Sequence counter of the [`crate::event::EventBus`]. Innermost lock: nothing may be
     /// acquired while it is held.
     pub const EVENT_BUS_SEQ: LockLevel = LockLevel::new(200, "event_bus.seq");

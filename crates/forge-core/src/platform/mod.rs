@@ -20,7 +20,8 @@
 //! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`]. M1-E4-T4 added
 //! [`TrustStore`] (root certificates of `CurrentUser\Root` and, through the helper,
 //! `LocalMachine\Root`, by SHA-1 [`CertThumbprint`]; server chain checks by the OS
-//! verifier against an explicit anchor).
+//! verifier against an explicit anchor). M1-E2-T4 added [`UserEnv`] (the persistent user
+//! `PATH`, `HKCU\Environment\Path` + `WM_SETTINGCHANGE`).
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -43,6 +44,7 @@ pub mod process;
 pub mod process_stats;
 pub mod runtime_deps;
 pub mod trust_store;
+pub mod user_env;
 #[cfg(windows)]
 pub mod windows;
 
@@ -52,7 +54,9 @@ pub use dns_policy::{
 pub use elevation::{Elevation, elevation};
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
-pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
+pub use probe::{
+    PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe, run_probe_with_env,
+};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
@@ -63,6 +67,9 @@ pub use runtime_deps::{
     RuntimeDep, RuntimeDeps, VCREDIST_X64_URL, VcRedistFlavor, VcRuntimeVersion, runtime_deps,
 };
 pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
+pub use user_env::{
+    MemoryUserEnv, PathValue, UserEnv, expand_env_refs, normalize_path_entry, user_env,
+};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.
@@ -179,6 +186,7 @@ pub struct Platform {
     runtime_deps: Arc<dyn RuntimeDeps>,
     elevation: Arc<dyn Elevation>,
     net_adapters: Arc<dyn NetAdapters>,
+    user_env: Arc<dyn UserEnv>,
 }
 
 impl fmt::Debug for Platform {
@@ -192,12 +200,13 @@ impl fmt::Debug for Platform {
 impl Platform {
     /// Assembles a platform from parts (tests use fakes). Process operations default to
     /// [`process_control`] with default options; process counters, code signing, file
-    /// ACLs, the TCP table, runtime detection, elevation and network adapters to the
-    /// implementations of the running OS. See [`Platform::with_processes`],
-    /// [`Platform::with_process_stats`], [`Platform::with_code_sign`],
-    /// [`Platform::with_file_acl`], [`Platform::with_port_table`],
-    /// [`Platform::with_runtime_deps`], [`Platform::with_elevation`] and
-    /// [`Platform::with_net_adapters`].
+    /// ACLs, the TCP table, runtime detection, elevation, network adapters and the user
+    /// environment to the implementations of the running OS. See
+    /// [`Platform::with_processes`], [`Platform::with_process_stats`],
+    /// [`Platform::with_code_sign`], [`Platform::with_file_acl`],
+    /// [`Platform::with_port_table`], [`Platform::with_runtime_deps`],
+    /// [`Platform::with_elevation`], [`Platform::with_net_adapters`] and
+    /// [`Platform::with_user_env`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -215,6 +224,7 @@ impl Platform {
             runtime_deps: runtime_deps(),
             elevation: elevation(),
             net_adapters: net_adapters(),
+            user_env: user_env(),
         }
     }
 
@@ -263,6 +273,12 @@ impl Platform {
     /// Replaces the adapter listing (fakes in tests).
     pub fn with_net_adapters(mut self, net_adapters: Arc<dyn NetAdapters>) -> Self {
         self.net_adapters = net_adapters;
+        self
+    }
+
+    /// Replaces the user environment ([`MemoryUserEnv`] in tests).
+    pub fn with_user_env(mut self, user_env: Arc<dyn UserEnv>) -> Self {
+        self.user_env = user_env;
         self
     }
 
@@ -326,6 +342,12 @@ impl Platform {
     /// `spawn_blocking`).
     pub fn net_adapters(&self) -> &Arc<dyn NetAdapters> {
         &self.net_adapters
+    }
+
+    /// The persistent user environment (`PATH`), shared so it can move into
+    /// `spawn_blocking`.
+    pub fn user_env(&self) -> &Arc<dyn UserEnv> {
+        &self.user_env
     }
 }
 
