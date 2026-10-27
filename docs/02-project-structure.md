@@ -58,8 +58,10 @@ Forgebox/
 │   ├── forge-provider/
 │   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
 │   │   └── src/
-│   │       ├── provider/         # trait Provider + impls: http, github_release, php_windows, apache_lounge,
-│   │       │                     #   nginx_org, mysql, mariadb, postgresql_edb, nodejs_dist, python, composer, mailpit...
+│   │       ├── provider/         # mod.rs (trait Provider, Release, ProviderRegistry::for_spec), fetch.rs (cache de metadados TTL+ETag),
+│   │       │                     #   filter.rs (constraint/canal/variantes/ordem), checksum.rs, messages.rs (pt-BR) e uma impl por tipo:
+│   │       │                     #   http, github_release, php_windows, apache_lounge, nginx_org, mysql, mariadb, postgresql_edb,
+│   │       │                     #   nodejs_dist, curated.rs (releases: do manifesto); python_embed fica para depois
 │   │       ├── download.rs       # fila (ator), paralelismo, resume (Range), progresso, mirrors; submódulos download/{transfer,limiter,progress,messages}.rs
 │   │       ├── verify.rs         # tamanho, sha256/sha512, minisign, Authenticode (platform::CodeSign); verify/pgp.rs (rpgp, keyrings)
 │   │       ├── extract.rs        # zip/7z/tar.gz/tar.xz/arquivo único; strip_root; staging em tmp/stage e move atômico;
