@@ -14,3 +14,17 @@ workspace = true
 
 [dependencies]
 forge-render = { path = "../forge-render" }
+forge-core = { path = "../forge-core" }
+forge-manifest = { path = "../forge-manifest" }
+notify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+jiff = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

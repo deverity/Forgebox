@@ -1,0 +1,28 @@
+apiVersion: forgebox.dev/v1
+kind: Project
+metadata: { name: loja }
+spec:
+  site:
+    host: loja.test              # minúsculo; padrão: nome da pasta + TLD
+    aliases: [admin.loja.test]
+    root: public
+    driver: laravel
+    server: nginx                # apache | nginx | caddy | frankenphp
+    php: "8.3"                   # série ou versão exata "8.3.36"
+    php_ini: { memory_limit: 1G, upload_max_filesize: 256M }
+    xdebug: trigger              # inherit | off | trigger | always
+    secure: true
+  services:
+    - { tool: mysql, series: "8.4", instance: default, database: loja }
+    - { tool: memurai }
+    - { tool: mailpit }
+  runtimes:
+    - { tool: nodejs, version: "22" }       # usado por `forge shell` e pelos processes abaixo
+  processes:                     # gerenciados pelo supervisor quando o site está "up" (docs/06 §4.2)
+    vite:   { cmd: "npm run dev -- --port $PORT", port: 5173, proxy_path: null }
+    queue:  { cmd: "php artisan queue:work", restart: always }
+    sched:  { cmd: "php artisan schedule:work" }
+    # web:  { cmd: "npm start -- --port $PORT", port: auto, proxy: true, runtime: nodejs@22, autostart: on-visit, cwd: ., env: {} }
+  proxies:                       # sites extras do tipo reverse proxy
+    - { host: app.loja.test, upstream: "http://127.0.0.1:3000", websocket: true, secure: true }   # ex. Next.js
+  share: { provider: cloudflared }

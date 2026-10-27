@@ -80,6 +80,8 @@ camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"
 insta = "1.49.0"
+# Filesystem watcher of parked directories (forge-sites). CC0-1.0, allowed by deny.toml.
+notify = { version = "8.2.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
