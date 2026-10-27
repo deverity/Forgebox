@@ -2,7 +2,8 @@
 //! `TCP_TABLE_OWNER_PID_LISTENER` (listeners) or `TCP_TABLE_OWNER_PID_CONNECTIONS`
 //! (connections), for `AF_INET` and `AF_INET6`, and `QueryFullProcessImageNameW` for the
 //! executable of each owning PID (one `PROCESS_QUERY_LIMITED_INFORMATION` handle per
-//! distinct PID, closed at once).
+//! distinct PID, closed at once). UDP endpoints (DNS diagnosis, docs/06 §5.2) come from
+//! `GetExtendedUdpTable` with `UDP_TABLE_OWNER_PID`.
 //!
 //! The table size is asked first and the call repeated while it returns
 //! `ERROR_INSUFFICIENT_BUFFER` (connections come and go between the two calls). Ports
@@ -17,9 +18,10 @@ use std::path::PathBuf;
 
 use ::windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, HANDLE, NO_ERROR};
 use ::windows::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, MIB_TCP_STATE_ESTAB, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID,
-    MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_CLASS, TCP_TABLE_OWNER_PID_CONNECTIONS,
-    TCP_TABLE_OWNER_PID_LISTENER,
+    GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCP_STATE_ESTAB, MIB_TCP6ROW_OWNER_PID,
+    MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID, MIB_UDP6ROW_OWNER_PID,
+    MIB_UDP6TABLE_OWNER_PID, MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_CLASS,
+    TCP_TABLE_OWNER_PID_CONNECTIONS, TCP_TABLE_OWNER_PID_LISTENER, UDP_TABLE_OWNER_PID,
 };
 use ::windows::Win32::System::Threading::{
     PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
@@ -43,6 +45,30 @@ pub struct WindowsPortTable;
 
 /// Raw bytes of one `GetExtendedTcpTable` answer, 4-byte aligned (`u32` storage).
 fn tcp_table(family: u32, class: TCP_TABLE_CLASS) -> Result<Vec<u32>> {
+    // SAFETY: `ptr` is `None` or points at a buffer of at least `size` bytes.
+    read_table(
+        "reading the TCP table (GetExtendedTcpTable)",
+        |ptr, size| unsafe { GetExtendedTcpTable(ptr, size, false, family, class, 0) },
+    )
+}
+
+/// Raw bytes of one `GetExtendedUdpTable(UDP_TABLE_OWNER_PID)` answer.
+fn udp_table(family: u32) -> Result<Vec<u32>> {
+    // SAFETY: `ptr` is `None` or points at a buffer of at least `size` bytes.
+    read_table(
+        "reading the UDP table (GetExtendedUdpTable)",
+        |ptr, size| unsafe {
+            GetExtendedUdpTable(ptr, size, false, family, UDP_TABLE_OWNER_PID, 0)
+        },
+    )
+}
+
+/// Calls a size-then-copy table API until the buffer is big enough. `call` receives the
+/// buffer (or `None` to ask the size) and its size in bytes, and returns a Win32 status.
+fn read_table(
+    what: &str,
+    mut call: impl FnMut(Option<*mut std::ffi::c_void>, &mut u32) -> u32,
+) -> Result<Vec<u32>> {
     let mut size = 0_u32;
     let mut buffer: Vec<u32> = Vec::new();
     for _ in 0..TABLE_ATTEMPTS {
@@ -51,8 +77,7 @@ fn tcp_table(family: u32, class: TCP_TABLE_CLASS) -> Result<Vec<u32>> {
         } else {
             Some(buffer.as_mut_ptr().cast::<std::ffi::c_void>())
         };
-        // SAFETY: `ptr` is `None` or points at `buffer`, whose byte length is >= `size`.
-        let status = unsafe { GetExtendedTcpTable(ptr, &mut size, false, family, class, 0) };
+        let status = call(ptr, &mut size);
         if status == NO_ERROR.0 && !buffer.is_empty() {
             return Ok(buffer);
         }
@@ -64,12 +89,12 @@ fn tcp_table(family: u32, class: TCP_TABLE_CLASS) -> Result<Vec<u32>> {
             continue;
         }
         return Err(ForgeError::io(
-            "reading the TCP table (GetExtendedTcpTable)",
+            what,
             std::io::Error::from_raw_os_error(status as i32),
         ));
     }
     Err(ForgeError::io(
-        "reading the TCP table (GetExtendedTcpTable)",
+        what,
         std::io::Error::other("the table kept growing while it was read"),
     ))
 }
@@ -79,8 +104,9 @@ fn tcp_table(family: u32, class: TCP_TABLE_CLASS) -> Result<Vec<u32>> {
 ///
 /// # Safety
 /// `T` must be a plain-old-data row type (`MIB_TCPROW_OWNER_PID`,
-/// `MIB_TCP6ROW_OWNER_PID`) and `buffer` a table of such rows as written by
-/// `GetExtendedTcpTable` with the matching family and class.
+/// `MIB_TCP6ROW_OWNER_PID`, `MIB_UDPROW_OWNER_PID`, `MIB_UDP6ROW_OWNER_PID`) and `buffer`
+/// a table of such rows as written by `GetExtendedTcpTable`/`GetExtendedUdpTable` with
+/// the matching family and class.
 unsafe fn rows<T: Copy>(buffer: &[u32], offset: usize) -> Vec<T> {
     let count = buffer.first().copied().unwrap_or(0) as usize;
     let available = (buffer.len() * 4).saturating_sub(offset) / size_of::<T>();
@@ -110,6 +136,39 @@ fn v6_rows(class: TCP_TABLE_CLASS) -> Result<Vec<MIB_TCP6ROW_OWNER_PID>> {
             std::mem::offset_of!(MIB_TCP6TABLE_OWNER_PID, table),
         )
     })
+}
+
+fn udp_v4_rows() -> Result<Vec<MIB_UDPROW_OWNER_PID>> {
+    let buffer = udp_table(AF_INET)?;
+    // SAFETY: AF_INET + UDP_TABLE_OWNER_PID writes an MIB_UDPTABLE_OWNER_PID.
+    Ok(unsafe { rows(&buffer, std::mem::offset_of!(MIB_UDPTABLE_OWNER_PID, table)) })
+}
+
+fn udp_v6_rows() -> Result<Vec<MIB_UDP6ROW_OWNER_PID>> {
+    let buffer = udp_table(AF_INET6)?;
+    // SAFETY: AF_INET6 + UDP_TABLE_OWNER_PID writes an MIB_UDP6TABLE_OWNER_PID.
+    Ok(unsafe {
+        rows(
+            &buffer,
+            std::mem::offset_of!(MIB_UDP6TABLE_OWNER_PID, table),
+        )
+    })
+}
+
+/// Sorts raw endpoints and resolves the executable of each distinct PID once.
+fn owners(mut found: Vec<(u16, IpAddr, u32, PortProto)>) -> Vec<PortOwner> {
+    found.sort();
+    let mut exes: HashMap<u32, Option<PathBuf>> = HashMap::new();
+    found
+        .into_iter()
+        .map(|(port, addr, pid, proto)| PortOwner {
+            port,
+            addr,
+            pid,
+            exe_path: exes.entry(pid).or_insert_with(|| image_path(pid)).clone(),
+            proto,
+        })
+        .collect()
 }
 
 /// Port from the network-byte-order low 16 bits of a `dwLocalPort`.
@@ -177,18 +236,28 @@ impl PortTable for WindowsPortTable {
                 PortProto::Tcp6,
             ));
         }
-        found.sort();
-        let mut exes: HashMap<u32, Option<PathBuf>> = HashMap::new();
-        Ok(found
-            .into_iter()
-            .map(|(port, addr, pid, proto)| PortOwner {
-                port,
-                addr,
-                pid,
-                exe_path: exes.entry(pid).or_insert_with(|| image_path(pid)).clone(),
-                proto,
-            })
-            .collect())
+        Ok(owners(found))
+    }
+
+    fn udp_endpoints(&self) -> Result<Vec<PortOwner>> {
+        let mut found: Vec<(u16, IpAddr, u32, PortProto)> = Vec::new();
+        for row in udp_v4_rows()? {
+            found.push((
+                port(row.dwLocalPort),
+                IpAddr::V4(ipv4(row.dwLocalAddr)),
+                row.dwOwningPid,
+                PortProto::Udp,
+            ));
+        }
+        for row in udp_v6_rows()? {
+            found.push((
+                port(row.dwLocalPort),
+                IpAddr::V6(Ipv6Addr::from(row.ucLocalAddr)),
+                row.dwOwningPid,
+                PortProto::Udp6,
+            ));
+        }
+        Ok(owners(found))
     }
 
     fn established_count(&self, wanted: u16) -> Result<u32> {
@@ -217,6 +286,42 @@ mod tests {
         assert_eq!(port(raw | 0xABCD_0000), 3306, "high word ignored");
         let loopback = u32::from_ne_bytes([127, 0, 0, 1]);
         assert_eq!(ipv4(loopback), Ipv4Addr::LOCALHOST);
+    }
+
+    #[test]
+    fn finds_our_own_udp_sockets() {
+        let v4 = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port4 = v4.local_addr().unwrap().port();
+        let v6 = std::net::UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).ok();
+        let endpoints = WindowsPortTable.udp_endpoints().unwrap();
+        let own = endpoints
+            .iter()
+            .find(|e| e.port == port4 && e.pid == std::process::id())
+            .expect("our UDP socket");
+        assert_eq!(own.proto, PortProto::Udp);
+        assert_eq!(own.addr, IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(own.exe_path, std::env::current_exe().ok());
+        if let Some(v6) = &v6 {
+            let port6 = v6.local_addr().unwrap().port();
+            let own6 = endpoints
+                .iter()
+                .find(|e| e.port == port6 && e.proto == PortProto::Udp6)
+                .expect("our UDP6 socket");
+            assert_eq!(own6.addr, IpAddr::V6(Ipv6Addr::LOCALHOST));
+        }
+        assert!(
+            endpoints
+                .windows(2)
+                .all(|w| (w[0].port, w[0].addr) <= (w[1].port, w[1].addr)),
+            "sorted"
+        );
+        drop(v4);
+        let after = WindowsPortTable.udp_endpoints().unwrap();
+        assert!(
+            !after
+                .iter()
+                .any(|e| e.port == port4 && e.pid == std::process::id())
+        );
     }
 
     #[test]

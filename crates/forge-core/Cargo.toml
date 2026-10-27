@@ -35,6 +35,8 @@ rusqlite = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Hash of the hosts managed block (same format as forge-render's managed blocks).
+sha2 = { workspace = true }
 specta = { workspace = true, features = ["derive"], optional = true }
 specta-typescript = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -51,27 +53,35 @@ ulid = { workspace = true }
 # primitives of the supervisor (Job Objects, CreateProcessW, console control events,
 # EnumWindows/PostMessageW), the per-process counters of the metrics sampler
 # (GetProcessTimes, GetProcessMemoryInfo, GetProcessHandleCount), the TCP table of the
-# pre-checks and the port allocator (GetExtendedTcpTable, QueryFullProcessImageNameW) and
-# the VC++ runtime detection (RegGetValueW, GetFileVersionInfoW).
+# pre-checks and the port allocator (GetExtendedTcpTable, QueryFullProcessImageNameW), the
+# VC++ runtime detection (RegGetValueW, GetFileVersionInfoW) and the DNS side (M1-E4-T3): UDP
+# table (GetExtendedUdpTable), network adapters (GetAdaptersAddresses), NRPT rules read from
+# the registry, DnsFlushResolverCache (dnsapi.dll, loaded at run time) and the elevated helper
+# launch (ShellExecuteExW "runas", COM initialization).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",
     "Win32_Security_Cryptography",
     "Win32_Security_Cryptography_Catalog",
     "Win32_Security_WinTrust",
     "Win32_Storage_FileSystem",
+    "Win32_System_Com",
     "Win32_System_Console",
     "Win32_System_IO",
     "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
