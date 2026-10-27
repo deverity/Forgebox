@@ -297,7 +297,7 @@ export interface ApiNotifications {
   "events.lagged": T.LaggedDto;
 }
 
-export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updated", "tool.rollback", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
+export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** Payload type of each event kind (`EventDto.payload`). */
@@ -319,6 +319,7 @@ export interface EventPayloads {
   "tool.install.failed": T.ToolInstallPayload;
   "tool.updated": T.ToolVersionChangePayload;
   "tool.rollback": T.ToolVersionChangePayload;
+  "tool.current_changed": T.ToolCurrentPayload;
   "service.starting": T.ServicePayload;
   "service.running": T.ServicePayload;
   "service.stopping": T.ServicePayload;
