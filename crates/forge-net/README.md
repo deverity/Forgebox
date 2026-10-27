@@ -1,6 +1,6 @@
 # forge-net
 
-**O que é:** Alocação de portas (`ports::PortAllocator`: faixas nomeadas do `forgebox.toml`, reservas persistidas na tabela `ports`, checagem de bind para portas excluídas pelo sistema, conflitos com processos externos via `forge_core::platform::PortTable`), servidor DNS para `*.test` (hickory), política NRPT e hosts via helper, e regras de firewall.
+**O que é:** Alocação de portas (`ports::PortAllocator`: faixas nomeadas do `forgebox.toml`, reservas persistidas na tabela `ports`, checagem de bind para portas excluídas pelo sistema, conflitos com processos externos via `forge_core::platform::PortTable`; implementa `forge_core::model::port::PortReservations`, que o daemon injeta nos pools de `forge-fcgi`), servidor DNS para `*.test` (hickory), política NRPT e hosts via helper, e regras de firewall.
 
 **O que não é:** Não eleva privilégios por conta própria: qualquer operação administrativa passa por `forge-helper`. Não publica eventos: o daemon publica `port.conflict` a partir de `PortAllocator::conflicts`. Não é dependência de `forge-supervisor` (as pré-checagens usam `PortTable` de `forge-core` direto).
 

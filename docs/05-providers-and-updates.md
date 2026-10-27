@@ -50,7 +50,7 @@ Implementação: `forge_provider::verify` (`Verifier::verify(path, Expect) -> Ve
 |---|---|
 | `manual` | Nunca checa. Usuário clica "Verificar". |
 | `notify` | Checa; mostra badge e notificação; nada é baixado. |
-| `auto-patch` *(padrão para runtimes e web servers)* | Baixa e instala patch dentro da mesma série (8.3.36 → 8.3.37); troca pools blue/green; mantém `retention` versões. |
+| `auto-patch` *(padrão para runtimes e web servers)* | Baixa e instala patch dentro da mesma série (8.3.36 → 8.3.37); troca pools blue/green (`forge_fcgi::Switcher::switch(de, para)`, [03 §2.2](03-engine.md)); mantém `retention` versões. |
 | `auto-minor` | Também segue minor (1.28 → 1.30 do Nginx). Nunca cruza major. |
 | `auto` | Tudo, inclusive major. Só para tools sem estado (cloudflared, composer). |
 

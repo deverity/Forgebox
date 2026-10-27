@@ -127,6 +127,8 @@ loja.test, *.loja.test {
 2. Re-renderiza o vhost. 3. Reload do servidor. 4. Drena pool antigo se ficou órfão.
 Tempo típico: < 2 s. Nenhum outro site é afetado.
 
+Implementação: `forge_fcgi::swap::swap` ([03 §2.2](03-engine.md)); os passos 2–3 são o `UpstreamListener` injetado pelo daemon (`UpstreamChange::Swapped{from, to}`) e o passo 4 é `SwapOptions::drain_source` (o daemon passa `false` se outro site ainda usa o pool antigo). Medido com PHP real 8.3 → 8.4 sob carga: troca em ~2 s, zero requisições perdidas.
+
 ### 2.3 Versão de CLI vs versão web
 - Web: cada site decide (pool).
 - CLI global: `bin/php/current` (junction) → `forge use php 8.4`.
