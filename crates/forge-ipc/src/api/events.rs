@@ -317,7 +317,8 @@ pub struct ServiceMetricsPayload {
     pub window_ms: u64,
 }
 
-/// `pool.scaled`.
+/// `pool.scaled`: the backends of a pool changed (workers added, removed or replaced).
+/// Produced by `forge_fcgi::PoolScaledEvent` (same fields).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct PoolScaledPayload {
     pub v: u32,
@@ -325,17 +326,55 @@ pub struct PoolScaledPayload {
     pub series: String,
     pub from_workers: u32,
     pub to_workers: u32,
+    /// Exact PHP version of the pool (`8.3.36`).
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Upstream name in the web server configs (`php_8_3`).
+    #[serde(default)]
+    pub upstream: Option<String>,
+    /// Backends now in the upstream (`127.0.0.1:19083`).
+    #[serde(default)]
+    pub backends: Vec<String>,
+    /// Balancing policy of the upstream (`least_conn`).
+    #[serde(default)]
+    pub policy: Option<String>,
+    /// `start`, `scale_up`, `scale_down`, `recycle`, `worker_exit`, `reload`, `drain`,
+    /// `stop`.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
-/// `pool.worker.recycled`.
+/// `pool.worker.recycled`: a worker was replaced or removed for a recycle reason.
+/// Produced by `forge_fcgi::WorkerRecycledEvent` (same fields).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct PoolWorkerRecycledPayload {
     pub v: u32,
     pub version_id: VersionId,
     pub series: String,
     pub port: u16,
-    /// `max_requests`, `max_rss`, `max_age`, `crashed`.
+    /// `max_requests`, `max_rss`, `max_age`, `crashed`, `reload`.
     pub reason: String,
+    /// Exact PHP version of the pool (`8.3.36`).
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Process of the recycled worker.
+    #[serde(default)]
+    pub pid: Option<u32>,
+    /// Requests it served (estimated from its connections, docs/03 §2.1).
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub requests: Option<u64>,
+    /// Last working set sampled.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub rss_bytes: Option<u64>,
+    /// Time it served.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub age_ms: Option<u64>,
+    /// Port of the worker that took its place, if one did.
+    #[serde(default)]
+    pub replacement_port: Option<u16>,
 }
 
 /// `site.created|updated|removed`.

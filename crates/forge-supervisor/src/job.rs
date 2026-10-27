@@ -1,6 +1,7 @@
 //! Job Objects of the daemon (docs/03 §1.1): one root job created at boot with
-//! `KILL_ON_JOB_CLOSE | BREAKAWAY_OK`, and one job per instance (and per PHP pool, M1-E3-T4)
-//! nested in it.
+//! `KILL_ON_JOB_CLOSE | BREAKAWAY_OK`, and one job per instance nested in it. A PHP pool
+//! gets a nested tree ([`JobTree::nested`]): its own job under the root, and one job per
+//! worker under the pool's job (M1-E3-T4).
 //!
 //! The root job's handle lives as long as the daemon: when the daemon dies, for any
 //! reason, the kernel closes it and kills every supervised process and their
@@ -51,6 +52,17 @@ impl JobTree {
     /// New job nested in the root ([`GroupOptions::INSTANCE`]).
     pub fn instance_job(&self) -> Result<Arc<dyn ProcessGroup>> {
         self.root.create_child(GroupOptions::INSTANCE)
+    }
+
+    /// A tree whose root is a new job nested in this tree's root
+    /// ([`GroupOptions::INSTANCE`]): the job of a PHP pool, under which every worker gets
+    /// its own instance job (docs/03 §1.1). Terminating or dropping the nested root takes
+    /// all of them; the daemon's root still covers everything.
+    pub fn nested(&self) -> Result<JobTree> {
+        Ok(Self {
+            processes: Arc::clone(&self.processes),
+            root: self.root.create_child(GroupOptions::INSTANCE)?,
+        })
     }
 
     /// Every supervised process (all instance jobs included). Blocking.

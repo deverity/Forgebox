@@ -2,8 +2,13 @@
 //! (instance, pool, app, site, the daemon itself) holds which port, so a port is never
 //! "guessed" twice. Rows of the `ports` table ([`crate::store::PortRepo`]); allocated by
 //! `forge_net::ports::PortAllocator`.
+//!
+//! [`PortReservations`] is the allocator seen from crates that cannot depend on
+//! `forge-net` (the PHP pools of `forge-fcgi` take one by injection; docs/01 §3).
 
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -179,6 +184,32 @@ impl PortReservation {
             updated_at: now,
         }
     }
+}
+
+/// Future returned by [`PortReservations`].
+pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>;
+
+/// Hands out and takes back port reservations (implemented by
+/// `forge_net::ports::PortAllocator`; fakes in tests). Every method is async and bounded
+/// by the implementation (store writer and TCP table timeouts).
+pub trait PortReservations: Send + Sync + fmt::Debug {
+    /// The reservation of `owner`, allocating the first free port of the named `range`
+    /// (`php-pools`) the first time; the same port on later calls for the same owner.
+    fn allocate<'a>(
+        &'a self,
+        range: &'a str,
+        owner: ReservationOwner,
+    ) -> PortFuture<'a, PortReservation>;
+
+    /// Drops the reservation of `owner`; returns it if there was one.
+    fn release<'a>(
+        &'a self,
+        owner: &'a ReservationOwner,
+    ) -> PortFuture<'a, Option<PortReservation>>;
+
+    /// Drops every reservation of `kind`/`id` (all the workers of a pool); returns how
+    /// many there were.
+    fn release_owner<'a>(&'a self, kind: OwnerKind, id: &'a str) -> PortFuture<'a, usize>;
 }
 
 #[cfg(test)]

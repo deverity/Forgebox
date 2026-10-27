@@ -604,6 +604,56 @@ async fn dropping_the_last_handle_kills_the_process() {
     assert_eq!(code, Some(forge_supervisor::TERMINATED_EXIT_CODE));
 }
 
+/// A pool's nested tree (M1-E3-T4): instances spawned through `with_jobs` live in a job
+/// under the nested root, which lives under the daemon's root; terminating the nested
+/// root takes them all, and the private actor supervisor gets their events.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn nested_tree_holds_and_terminates_its_instances() {
+    let (supervisor, bus) = supervisor();
+    let nested = supervisor.jobs().nested().unwrap();
+    let private = forge_core::event::EventBus::with_capacity(1024);
+    let scoped = supervisor
+        .clone()
+        .with_jobs(nested.clone())
+        .with_actors(forge_core::actor::ActorSupervisor::new(private.clone()));
+    let mut public_events = bus.subscribe();
+    let mut private_events = private.subscribe();
+    let a = scoped
+        .spawn_instance(fake_spec("nested-a", &["--stubborn"]))
+        .unwrap();
+    let b = scoped
+        .spawn_instance(fake_spec("nested-b", &["--stubborn"]))
+        .unwrap();
+    let pid_a = a.start(ASK).await.unwrap();
+    let pid_b = b.start(ASK).await.unwrap();
+    let nested_pids = nested.pids().unwrap();
+    assert!(nested_pids.contains(&pid_a) && nested_pids.contains(&pid_b));
+    let all = supervisor.jobs().pids().unwrap();
+    assert!(
+        all.contains(&pid_a) && all.contains(&pid_b),
+        "root sees nested jobs"
+    );
+    assert!(
+        drain_events(&mut public_events, &a).is_empty(),
+        "no public events"
+    );
+    let running = drain_events(&mut private_events, &a);
+    assert!(
+        running.iter().any(|e| e.kind == EventKind::ServiceRunning),
+        "{running:?}"
+    );
+
+    let mut exit_a = processes().watch(pid_a).unwrap();
+    let mut exit_b = processes().watch(pid_b).unwrap();
+    tokio::task::spawn_blocking(move || nested.terminate_all())
+        .await
+        .unwrap()
+        .unwrap();
+    let wait = Duration::from_secs(5);
+    assert!(exit_a.wait_timeout(wait).await.unwrap().is_some());
+    assert!(exit_b.wait_timeout(wait).await.unwrap().is_some());
+}
+
 /// Regression: the leftovers of a crash used to be terminated with a fire-and-forget
 /// `TerminateJobObject`, and the crash was reported while the termination was still in
 /// flight. Windows refuses `AssignProcessToJobObject` on such a job (`Access denied`) for

@@ -1753,6 +1753,31 @@ impl Supervisor {
         self
     }
 
+    /// Spawns the instances' jobs under `jobs` instead (a pool's nested tree,
+    /// [`JobTree::nested`]); everything else is shared.
+    pub fn with_jobs(mut self, jobs: JobTree) -> Self {
+        self.jobs = jobs;
+        self
+    }
+
+    /// Runs the instance actors under `actors` instead: they publish their `service.*`
+    /// and `actor.*` events on its bus. A PHP pool gives its workers a private bus, so
+    /// they do not show up as services (docs/03 §2).
+    pub fn with_actors(mut self, actors: ActorSupervisor) -> Self {
+        self.actors = actors;
+        self
+    }
+
+    /// The process counters in use.
+    pub fn process_stats(&self) -> &Arc<dyn ProcessStats> {
+        &self.stats
+    }
+
+    /// The TCP table in use (port pre-checks).
+    pub fn port_table(&self) -> &Arc<dyn PortTable> {
+        &self.ports
+    }
+
     pub fn jobs(&self) -> &JobTree {
         &self.jobs
     }
