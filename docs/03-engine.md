@@ -109,7 +109,7 @@ Sites com `runtime: frankenphp` não usam pool: o Forgebox sobe um `frankenphp.e
 ### 3.2 Alvos por tool (exemplos)
 | Tool | Arquivos renderizados | Reload |
 |---|---|---|
-| Apache | `etc/apache/<ver>/httpd.conf` (include fixo), `etc/apache/conf.d/*.conf`, `etc/apache/sites/<host>.conf`, `etc/apache/upstreams/php_<ver>.conf` | `httpd -k graceful` |
+| Apache | `etc/apache/<ver>/httpd.conf` (include fixo), `etc/apache/conf.d/*.conf`, `etc/apache/sites/<host>.conf`, `etc/apache/upstreams/php_<ver>.conf` | Ctrl+Break no grupo de console (graceful restart; `httpd -k` só funciona com serviço do Windows instalado, o que o Forgebox não usa) |
 | Nginx | `etc/nginx/<ver>/nginx.conf`, `etc/nginx/conf.d/*.conf`, `etc/nginx/sites/<host>.conf`, `etc/nginx/upstreams/php_<ver>.conf` | `nginx -s reload` |
 | Caddy | `etc/caddy/Caddyfile` (import sites/*) | `caddy reload` |
 | PHP | `etc/php/<major.minor>/php.ini`, `conf.d/10-forgebox.ini`, `conf.d/20-xdebug.ini` | recycle do pool |

@@ -6,8 +6,10 @@
 #   (computed locally from dist.memurai.com; Memurai publishes no checksum, curated)
 # Distribution is an MSI. It is unpacked as an administrative image (`msiexec /a`, no system
 # install, docs/12), which yields a `Memurai/` folder with memurai.exe and memurai-cli.exe; the
-# extraction itself belongs to M1-E2-T2, so `install.archive` is deduced (.msi) and not declared:
-# the lint refuses an explicit `archive: msi` in v1.
+# extraction is NOT implemented: M1-E2-T2 supports only zip/7z/tar.gz/tar.xz/single file and no
+# roadmap task covers `msiexec /a` yet (gap: Memurai is not installable until one exists). So
+# `install.archive` is deduced (.msi) and not declared: the lint refuses an explicit
+# `archive: msi` in v1.
 # The command line below uses the standard Redis options; it was NOT executed here.
 apiVersion: forgebox.dev/v1
 kind: Tool

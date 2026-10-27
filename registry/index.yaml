@@ -7,11 +7,11 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-26T21:24:19Z
+  updated_at: 2026-10-27T00:26:02Z
   tools:
   - id: apache
     path: tools/apache.yaml
-    sha256: 21e34aa21b6cd8f07b6d0143db4e76561b3c177ce394bc38b323aed5a0abaa20
+    sha256: f4e6cc6b4516d313cb338d5b572db592faaba0a3fdb1ffbdf5fbfeaa33e1e567
     categories:
     - webserver
     latest: 2.4.69
@@ -41,7 +41,7 @@ spec:
     latest: 11.8.9
   - id: memurai
     path: tools/memurai.yaml
-    sha256: f92cfd1595bf0f5b48f8b91d7a2f64324590091551ea96b08149aca471c43714
+    sha256: 20bb8b938e546fe11e3cd3fa1854b168974485299e8d82790696671236fb2566
     categories:
     - cache
     latest: 4.3.2
@@ -92,7 +92,7 @@ spec:
     sha256: dac25a00ee6e3c9b16ee8a6ebd461592fd003378dcc9d786038f883b608397e6
   - id: wordpress
     path: stacks/wordpress.yaml
-    sha256: b5777ca4314e4e61959b944ac5883608157f6c74bcc9029bbeea52f3cf680025
+    sha256: 892c09d4201e0b55956c19ec07833630ac8b540325408798e5811bd2ff43c068
   signature:
     type: minisign
     key_id: dev

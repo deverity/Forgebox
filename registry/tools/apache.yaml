@@ -3,6 +3,11 @@
 #   (SHA256 published by Apache Lounge in httpd-2.4.69-261002-Win64-VS18.zip.txt == local hash)
 # verified: 2026-10-26 2.4.66 vs17 2cd1f349b6705e43e784e876a233eeb1a859fa6b8abc693a91f87b35a368f7f9
 #   (same procedure, httpd-2.4.66-251206-Win64-VS17.zip.txt)
+# Console mode (no Windows Service, by design). Measured with httpd 2.4.66 VS17: `httpd -k graceful`
+# and `httpd -k stop` fail with AH00436 "No installed service named Apache2.4" (exit 2) and the
+# process keeps running, so neither is used. Ctrl+Break on the console group does a graceful
+# restart (AH00424 "Received restart signal -- Restarting the server") and Ctrl+C shuts down
+# (mpm_winnt console handler); hence reload = ctrl-break and stop = ctrl-c.
 # Config templates (httpd.conf, sites, upstreams) arrive with M1-E4-T1, which adds the `render`
 # actions; until then `httpd_conf` is only declared.
 apiVersion: forgebox.dev/v1
@@ -126,12 +131,8 @@ spec:
         interval: 5s
         success_threshold: 1
         failure_threshold: 3
-      stop:
-        command: "bin/httpd.exe -k stop -d {{ paths.version }} -f {{ instance.config.httpd_conf }}"
-        timeout: 15s
-        then: ctrl-c
-      reload:
-        command: "bin/httpd.exe -k graceful -d {{ paths.version }} -f {{ instance.config.httpd_conf }}"
+      stop: { timeout: 15s, then: ctrl-c }
+      reload: { signal: ctrl-break }
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
         - { label: Error log, path: "{{ paths.logs }}/apache/error.log", format: apache-error }
