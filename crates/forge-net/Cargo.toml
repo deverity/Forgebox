@@ -14,3 +14,9 @@ workspace = true
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
