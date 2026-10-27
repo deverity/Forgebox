@@ -27,6 +27,8 @@ thiserror = "2.0.21"
 anyhow = "1.0.104"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+# Daily-rotated JSON log of the daemon (logs/forgeboxd.log, docs/08 §2); non-blocking writer.
+tracing-appender = "0.2.4"
 ulid = { version = "3.0.0", features = ["serde"] }
 # Timestamps UTC (RFC 3339 no fio). Sem tzdb embutido: só Timestamp é usado no núcleo (ADR-0013).
 jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }

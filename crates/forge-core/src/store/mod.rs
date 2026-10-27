@@ -21,9 +21,11 @@
 //!
 //! Repositories are added per aggregate (docs/02). M0-E1-T4 ships the migration runner
 //! and [`events::EventRepo`]; M1-E3-T3 adds [`ports::PortRepo`] (port reservations);
-//! M1-E2-T5 adds [`update_history::UpdateHistoryRepo`] (updates and rollbacks).
+//! M1-E2-T5 adds [`update_history::UpdateHistoryRepo`] (updates and rollbacks);
+//! M1-E5-T2 adds [`instances::InstanceRepo`] (service instances of the daemon).
 
 pub mod events;
+pub mod instances;
 pub mod migrations;
 pub mod ports;
 mod reader;
@@ -39,6 +41,7 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::error::{ForgeError, IoResultExt, Result};
 pub use events::EventRepo;
+pub use instances::{DesiredState, InstanceRepo, InstanceRow, validate_instance_name};
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;

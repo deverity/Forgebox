@@ -40,6 +40,7 @@ use crate::error::Result;
 
 pub mod dns_policy;
 pub mod elevation;
+pub mod host;
 pub mod net_adapters;
 pub mod net_table;
 pub mod privileged;
@@ -58,6 +59,10 @@ pub use dns_policy::{
     effective_nrpt_rules,
 };
 pub use elevation::{Elevation, elevation};
+pub use host::{
+    DAEMON_MUTEX_PREFIX, InstanceMutex, NetworkCost, NeverMetered, acquire_instance_mutex,
+    daemon_mutex_name, long_path, network_cost, spawn_detached,
+};
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
 pub use privileged::{
@@ -365,6 +370,12 @@ impl Platform {
 
     pub fn case_sensitive_fs(&self) -> &dyn CaseSensitiveFs {
         self.case_sensitive_fs.as_ref()
+    }
+
+    /// Shared handle of [`Platform::case_sensitive_fs`] (for components that keep it,
+    /// such as `fs::case::CaseConversions`).
+    pub fn shared_case_sensitive_fs(&self) -> Arc<dyn CaseSensitiveFs> {
+        Arc::clone(&self.case_sensitive_fs)
     }
 
     /// Job Objects, spawn, console control events, window close requests.

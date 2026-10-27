@@ -122,6 +122,8 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 8. Renderiza configs (só se houver drift) e sobe web servers.
 9. Abre IPC e emite `daemon.ready`.
 
+Implementação (`forge_daemon::boot`, M1-E5-T2, [ADR-0029](adr/0029-daemon-composition.md)): o mutex (`Global\Forgebox.Daemon` ou `Global\Forgebox.Daemon-<chave da raiz>`, a mesma chave do pipe) é criado antes de tudo, e um segundo daemon sai com código 4 em ~50 ms; `ForgeRoot::init` vem logo depois, então os logs. Cada passo que depende do mundo externo tem prazo e, se falhar, vira aviso: catálogo do cache em até 10 s (o carregamento continua em segundo plano; na primeira execução o registry oficial é cadastrado), `discover` em até 20 s, DNS só com `[dns] enabled` (padrão `true`). No passo 6 os servidores web esperam: sobem no 8, depois dos pools, já com os upstreams no primeiro render. Com a API aberta, `state/locks/forgeboxd.lock` descreve o dono (pid, versão, pipe; só informativo, removido na parada). Raiz vazia: ~130–200 ms até o pipe responder.
+
 ### 5.2 Criar site com PHP específico
 `forge site add C:\www\loja --host loja.test --php 8.3 --server nginx --secure`
 1. `forge-sites` detecta driver (Laravel → root `public/`).

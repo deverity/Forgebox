@@ -13,6 +13,7 @@ forge <grupo> <comando> [args] [--json] [--quiet] [--yes] [--root <dir>]
 forge daemon status | start | stop | restart | logs [-f] | doctor
 forge doctor                      # diagnóstico completo: PATH, DNS, CA, portas, vcredist, Defender, versões
 ```
+O daemon em si é `forgeboxd [--root <dir>] [--foreground] [--log-level <filtro>]` (`--listen` é do modo remoto, M6-E3, e `--self-update <arquivo>` do M4-E1: ambos recusados com código 2 por enquanto). Saída 0 = parada limpa, 4 = já existe um daemon nesta raiz (mutex `Global\Forgebox.Daemon[-<chave>]`, mensagem pt-BR no stderr), 1 = falha no boot. Ctrl+C, Ctrl+Break, fechar o console e `daemon.stop` fazem o mesmo shutdown gracioso; `daemon.restart` faz o shutdown e inicia um daemon novo ([ADR-0029](adr/0029-daemon-composition.md)).
 
 ### tool / catálogo
 ```

@@ -15,7 +15,7 @@ use futures::FutureExt;
 use futures::future::BoxFuture;
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeServer, ServerOptions};
 
-use forge_core::paths::{ForgeRoot, default_root, posix_string};
+use forge_core::paths::{ForgeRoot, root_instance_key};
 use forge_core::platform::windows::pipe_security::{PipeSecurity, is_pipe_busy, verify_pipe_owner};
 
 use super::framing::{DEFAULT_MAX_FRAME_BYTES, framed};
@@ -27,28 +27,12 @@ pub const DEFAULT_PIPE_NAME: &str = r"\\.\pipe\forgebox";
 /// How long `connect` retries while every pipe instance is busy.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
-fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0000_01b3);
-    }
-    hash
-}
-
-fn normalized(path: &std::path::Path) -> String {
-    posix_string(path)
-        .trim_end_matches('/')
-        .to_ascii_lowercase()
-}
-
-/// Pipe name for the installation at `root`.
+/// Pipe name for the installation at `root` (`forge_core::paths::root_instance_key`, the
+/// same key as the daemon's single-instance mutex).
 pub fn pipe_name_for_root(root: &ForgeRoot) -> String {
-    let root = normalized(root.path());
-    if root == normalized(&default_root()) {
-        DEFAULT_PIPE_NAME.to_owned()
-    } else {
-        format!(r"{DEFAULT_PIPE_NAME}-{:016x}", fnv1a64(root.as_bytes()))
+    match root_instance_key(root) {
+        None => DEFAULT_PIPE_NAME.to_owned(),
+        Some(key) => format!("{DEFAULT_PIPE_NAME}-{key}"),
     }
 }
 
@@ -205,6 +189,7 @@ impl Listener for NamedPipeListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use forge_core::paths::default_root;
 
     #[test]
     fn default_root_uses_the_short_name() {

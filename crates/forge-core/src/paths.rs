@@ -419,6 +419,32 @@ impl AsRef<Path> for ForgeRoot {
     }
 }
 
+/// Key that tells installations apart in machine-wide names: `None` for the default root
+/// (`C:\Forgebox`), otherwise 16 hex digits of FNV-1a 64 over the lowercased root path
+/// with `/` separators and no trailing slash. Used by the API pipe name
+/// (`\\.\pipe\forgebox[-<key>]`, docs/11 §4) and the daemon's single-instance mutex
+/// (`Global\Forgebox.Daemon[-<key>]`, docs/01 §1), so both always agree. Short 8.3
+/// components of an existing root are expanded first
+/// ([`crate::platform::long_path`]): a client that reached the root through a short name
+/// (`GUSTAV~1`) finds the daemon started with the long one.
+pub fn root_instance_key(root: &ForgeRoot) -> Option<String> {
+    fn normalized(path: &Path) -> String {
+        posix_string(&crate::platform::long_path(path))
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    }
+    let this = normalized(root.path());
+    if this == normalized(&default_root()) {
+        return None;
+    }
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in this.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    Some(format!("{hash:016x}"))
+}
+
 /// Built-in default root for this OS.
 pub fn default_root() -> PathBuf {
     if cfg!(windows) {

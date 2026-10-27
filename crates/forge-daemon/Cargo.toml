@@ -16,6 +16,12 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+[features]
+default = []
+# tokio-console instead of the file/stdout logs (development; build with
+# RUSTFLAGS="--cfg tokio_unstable", docs/03 §7.1). The default build never uses tokio_unstable.
+console = ["forge-core/console"]
+
 [dependencies]
 forge-core = { path = "../forge-core" }
 forge-manifest = { path = "../forge-manifest" }
@@ -29,3 +35,23 @@ forge-net = { path = "../forge-net" }
 forge-tls = { path = "../forge-tls" }
 forge-metrics = { path = "../forge-metrics" }
 forge-ipc = { path = "../forge-ipc" }
+base64 = { workspace = true }
+clap = { workspace = true, features = ["env"] }
+futures = { workspace = true }
+jiff = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+# Checks the PHP zip of the online test (php_pool_online).
+sha2 = { workspace = true }
+tempfile = { workspace = true }
