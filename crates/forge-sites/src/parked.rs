@@ -225,7 +225,7 @@ impl ParkedSync {
                         || site.driver.as_deref() != Some(entry.driver)
                     {
                         let mut updated = site.clone();
-                        let draft = SiteDraft::from_dir(&entry.project_dir, &entry.host, None)?;
+                        let draft = draft_from_entry(entry)?;
                         updated.root = draft.root.as_deref().map(posix_string);
                         updated.driver = draft.driver;
                         updated.kind = draft.kind;
@@ -234,7 +234,7 @@ impl ParkedSync {
                     }
                 }
                 None => {
-                    let mut draft = SiteDraft::from_dir(&entry.project_dir, &entry.host, None)?;
+                    let mut draft = draft_from_entry(entry)?;
                     draft.parked = true;
                     match self.sites.create_parked_if_free(draft).await? {
                         Some(site) => report.added.push(site.host),
@@ -359,4 +359,17 @@ async fn run_reconcile(sync: &ParkedSync) {
         Ok(Err(err)) => tracing::warn!(%err, "parked reconcile failed"),
         Err(_) => tracing::warn!("parked reconcile timed out"),
     }
+}
+
+/// Draft from a scanned entry: the driver and root were detected inside the scan's
+/// `spawn_blocking`, so this does no file I/O.
+fn draft_from_entry(entry: &ParkedEntry) -> Result<SiteDraft> {
+    let driver = drivers::by_id(entry.driver).ok_or_else(|| {
+        ForgeError::Internal(format!("unknown driver `{}` in parked scan", entry.driver))
+    })?;
+    Ok(SiteDraft::from_detected(
+        &entry.host,
+        driver,
+        entry.root.clone(),
+    ))
 }

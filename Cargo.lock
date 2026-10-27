@@ -1452,6 +1452,7 @@ name = "forge-sites"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "forge-ipc",
  "forge-manifest",
  "forge-render",
  "insta",

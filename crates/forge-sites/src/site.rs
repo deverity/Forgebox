@@ -178,14 +178,23 @@ pub struct SiteDraft {
 impl SiteDraft {
     /// Draft for a project folder: runs driver detection (or uses `driver_override`) and
     /// takes root and kind from the driver. TLS on, PHP selection left to the caller.
+    ///
+    /// **Blocking**: detection does many `stat`/`read_dir` calls. Async callers (the
+    /// daemon) must run it through `spawn_blocking` (ADR-0011), like `ProjectPlan::load`.
+    /// Callers that already have a detection result use [`SiteDraft::from_detected`].
     pub fn from_dir(dir: &Path, host: &str, driver_override: Option<&str>) -> Result<Self> {
         let found = drivers::detect(dir, driver_override)?;
-        Ok(Self {
+        Ok(Self::from_detected(host, found.driver, found.root))
+    }
+
+    /// Draft from an already detected driver and document root. Does no I/O.
+    pub fn from_detected(host: &str, driver: &dyn drivers::Driver, root: PathBuf) -> Self {
+        Self {
             host: host.to_owned(),
             aliases: Vec::new(),
-            kind: found.driver.kind(),
-            root: Some(found.root),
-            driver: Some(found.driver.id().to_owned()),
+            kind: driver.kind(),
+            root: Some(root),
+            driver: Some(driver.id().to_owned()),
             server: None,
             php: SitePhp::default(),
             upstream: None,
@@ -194,7 +203,7 @@ impl SiteDraft {
             env: BTreeMap::new(),
             xdebug: SiteXdebug::Inherit,
             parked: false,
-        })
+        }
     }
 
     /// Validates the draft and builds the [`Site`] (new id, slug, timestamps).

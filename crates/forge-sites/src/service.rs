@@ -19,13 +19,12 @@ use crate::site::{SiteDraft, SiteRules, Warning, normalize_alias, normalize_host
 /// Payload version of `site.*` events.
 const PAYLOAD_VERSION: u32 = 1;
 
+/// Wire form of `forge_ipc::api::events::SitePayload` (checked by tests/payload_contract.rs).
 fn payload(site: &Site) -> serde_json::Value {
     serde_json::json!({
         "v": PAYLOAD_VERSION,
-        "id": site.id,
-        "slug": site.slug,
+        "site_id": site.id,
         "host": site.host,
-        "parked": site.parked,
     })
 }
 
