@@ -20,7 +20,10 @@
 //! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`]. M1-E4-T4 added
 //! [`TrustStore`] (root certificates of `CurrentUser\Root` and, through the helper,
 //! `LocalMachine\Root`, by SHA-1 [`CertThumbprint`]; server chain checks by the OS
-//! verifier against an explicit anchor). M1-E2-T4 added [`UserEnv`] (the persistent user
+//! verifier against an explicit anchor). [`PrivilegedOps`] (M1-E5-T4) gathers the
+//! machine-wide changes behind the elevated helper's allowlist (WMI, firewall COM API,
+//! `LocalMachine\Root`, staging of installers) and [`secure_file`] the link-safe file
+//! access the helper uses inside the root. M1-E2-T4 added [`UserEnv`] (the persistent user
 //! `PATH`, `HKCU\Environment\Path` + `WM_SETTINGCHANGE`).
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
@@ -39,21 +42,28 @@ pub mod dns_policy;
 pub mod elevation;
 pub mod net_adapters;
 pub mod net_table;
+pub mod privileged;
 pub mod probe;
 pub mod process;
 pub mod process_stats;
 pub mod runtime_deps;
+pub mod secure_file;
 pub mod trust_store;
 pub mod user_env;
 #[cfg(windows)]
 pub mod windows;
 
 pub use dns_policy::{
-    DnsPolicy, DnsPolicyStatus, NrptRule, NrptSource, dns_policy, effective_nrpt_rules,
+    DnsPolicy, DnsPolicyStatus, FORGEBOX_NRPT_COMMENT, NrptRule, NrptSource, dns_policy,
+    effective_nrpt_rules,
 };
 pub use elevation::{Elevation, elevation};
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
+pub use privileged::{
+    CertificateInfo, FirewallRuleSpec, IpPrefix, NameConstraints, PrivilegedOps, StagedFile,
+    privileged_ops,
+};
 pub use probe::{
     PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe, run_probe_with_env,
 };
@@ -64,8 +74,10 @@ pub use process::{
 };
 pub use process_stats::{ProcStats, ProcessStats, process_stats};
 pub use runtime_deps::{
-    RuntimeDep, RuntimeDeps, VCREDIST_X64_URL, VcRedistFlavor, VcRuntimeVersion, runtime_deps,
+    RuntimeDep, RuntimeDeps, VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, VCREDIST_X64_URL,
+    VcRedistFlavor, VcRuntimeVersion, runtime_deps,
 };
+pub use secure_file::{NoFollow, NoFollowFile, final_path, open_no_follow};
 pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
 pub use user_env::{
     MemoryUserEnv, PathValue, UserEnv, expand_env_refs, normalize_path_entry, user_env,

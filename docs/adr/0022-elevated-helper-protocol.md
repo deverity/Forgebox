@@ -1,6 +1,6 @@
 # ADR-0022 — Protocolo do `forgebox-helper`: allowlist tipada, JSON versionado, troca por arquivos em `state/locks/`
 
-**Status:** aceito · **Data:** 2026-10-27
+**Status:** aceito · **Data:** 2026-10-27 · Execução das operações no helper: [ADR-0024](0024-helper-execution.md) (que substitui a obrigação "gravar a regra NRPT na tabela efetiva" abaixo: com regras de GPO o helper grava só a regra local e informa `effective: false`; o daemon usa o `hosts`).
 
 ## Contexto
 O `forgebox-helper.exe` é o único binário elevado ([11 §1](../11-security.md)). A primeira operação que precisa dele é a regra NRPT de `.test` ([ADR-0004](0004-dns-nrpt-resolver.md)); depois vêm `hosts`, CA em `LocalMachine`, firewall, Defender, VC++ e a flag case-sensitive. Três perguntas precisavam de resposta antes do binário existir (M1-E5-T4):

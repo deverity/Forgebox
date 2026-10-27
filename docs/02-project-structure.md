@@ -43,12 +43,16 @@ Forgebox/
 │   │       ├── dns_name.rs       # sintaxe de nomes DNS (rótulos minúsculos), sufixos de uso local (test, localhost, home.arpa...)
 │   │       ├── helper/           # protocolo do forgebox-helper (ADR-0022): op.rs (HelperOp allowlist + HelperPolicy/validate),
 │   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
-│   │       │                     #   hosts.rs (bloco gerenciado do hosts), client.rs (HelperClient, FakeElevation)
+│   │       │                     #   hosts.rs (bloco gerenciado do hosts; apply_hosts_block_bytes preserva bytes fora do bloco),
+│   │       │                     #   client.rs (HelperClient, FakeElevation), trust.rs (CA aceita em LocalMachine\Root, ADR-0024)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, UserEnv) + current();
 │   │                             #   user_env.rs: UserEnv (PATH persistente do usuário), PathValue (lista crua, sem duplicatas),
 │   │                             #   MemoryUserEnv (fake em memória); probe.rs também tem run_probe_with_env (ações run);
 │   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
 │   │                             #   verify_server: cadeia pelo verificador do SO com raiz exclusiva, revogação opcional);
+│   │                             #   privileged.rs: PrivilegedOps + privileged_ops() (mudanças de máquina do forgebox-helper:
+│   │                             #   NRPT, hosts, LocalMachine\Root, firewall, Defender, instalador verificado; ADR-0024);
+│   │                             #   secure_file.rs: open_no_follow/final_path (arquivos da raiz sem seguir links);
 │   │                             #   dns_policy.rs: DnsPolicy (regras NRPT, hosts, flush do cache; mudanças via helper), NrptRule;
 │   │                             #   elevation.rs: Elevation (forgebox-helper elevado); net_adapters.rs: NetAdapters (adaptadores + DNS);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
@@ -72,7 +76,10 @@ Forgebox/
 │   │                             #   vcredist.rs (registro VC\Runtimes\x64 + versão de vcruntime140.dll/msvcp140.dll),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE),
 │   │                             #   user_env.rs (HKCU\Environment\Path via RegQueryValueExW/RegSetValueExW, REG_EXPAND_SZ
-│   │                             #   preservado, SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE "Environment"))
+│   │                             #   preservado, SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE "Environment")),
+│   │                             #   privileged.rs (WindowsPrivilegedOps), com.rs (COM/VARIANT), wmi.rs (métodos estáticos WMI:
+│   │                             #   PS_DnsClientNrptRule, MSFT_MpPreference), firewall.rs (INetFwPolicy2), cert_info.rs (parse de CA:
+│   │                             #   Basic/Name Constraints; o store é o trust_store.rs), secure_file.rs (FILE_FLAG_OPEN_REPARSE_POINT, nlink), pe_resources.rs (manifest embutido)
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema: common, tool,
@@ -192,7 +199,11 @@ Forgebox/
 │   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
 │   ├── forge-daemon/             # bin forgeboxd.exe: main.rs, boot.rs, scheduler.rs, tray-less
 │   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
-│   ├── forge-helper/             # bin forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022), manifest UAC, logging
+│   ├── forge-helper/             # forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022/0024); lib + bin (test = false)
+│   │   ├── build.rs              # manifest requireAdministrator embutido (crate embed-manifest)
+│   │   ├── src/                  # lib.rs (Helper: validação léxica + canônica, elevação, run), args.rs, exchange.rs (arquivos de
+│   │   │                         #   troca), ops.rs (cada operação: plano/--dry-run e execução), log.rs (logs/helper.log), messages.rs
+│   │   └── tests/                # cli.rs (binário real com __COMPAT_LAYER=RunAsInvoker, --dry-run), manifest.rs (nível de execução)
 │   └── forge-mcp/                # bin forge-mcp.exe: expõe tools MCP (list_sites, create_site, logs, ...)
 │
 ├── apps/

@@ -16,7 +16,7 @@ pub const HELPER_PROTOCOL_VERSION: u32 = 1;
 pub const HELPER_EXE_NAME: &str = "forgebox-helper.exe";
 
 /// Biggest request or response accepted (a full `hosts.set_block` is about 300 KiB).
-const MAX_DOCUMENT_BYTES: usize = 1024 * 1024;
+pub const MAX_DOCUMENT_BYTES: usize = 1024 * 1024;
 
 /// What the daemon asks the helper to do.
 ///
