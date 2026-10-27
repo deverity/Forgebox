@@ -95,6 +95,34 @@ pub enum CaseSensitivitySupport {
     Unsupported(String),
 }
 
+/// Diagnostic details of a volume for case sensitivity (docs/15 §3.2): what
+/// `forge fs case-sensitive status` shows next to the flag.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CaseFsInfo {
+    /// File system of the volume holding the directory (`NTFS`, `FAT32`, `ReFS`...), when
+    /// it could be read.
+    pub fs_type: Option<String>,
+    /// Build number of the OS (Windows: `19045`), when known. The flag needs Windows 10
+    /// 1803 (build [`MIN_CASE_SENSITIVE_BUILD`]) or later.
+    pub os_build: Option<u32>,
+}
+
+/// First Windows build with `FILE_CS_FLAG_CASE_SENSITIVE_DIR` (Windows 10 1803).
+pub const MIN_CASE_SENSITIVE_BUILD: u32 = 17134;
+
+/// Attributes and timestamps of a directory, captured before the case sensitivity
+/// conversion (`forge_core::fs::case`) moves its entries into a recreated directory, and
+/// applied to the new one afterwards so the tree looks the same.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DirMeta {
+    /// OS attribute bits that make sense to copy (Windows: read-only, hidden, system,
+    /// archive, not content indexed). Never the directory/reparse/compression bits.
+    pub attributes: u32,
+    pub created: Option<std::time::SystemTime>,
+    pub modified: Option<std::time::SystemTime>,
+    pub accessed: Option<std::time::SystemTime>,
+}
+
 /// Per-directory case sensitivity (docs/15 §3, ADR-0010).
 pub trait CaseSensitiveFs: Send + Sync {
     /// Whether the volume/OS holding the existing directory `dir` supports the flag.
@@ -114,6 +142,38 @@ pub trait CaseSensitiveFs: Send + Sync {
     /// `forgebox-helper`), `Conflict` when disabling a directory that holds names
     /// differing only by case.
     fn set(&self, dir: &Path, enabled: bool) -> Result<()>;
+
+    /// File system and OS build behind `dir`, for diagnostics. Never fails: unknown
+    /// values are `None` (the default implementation knows nothing).
+    fn info(&self, _dir: &Path) -> CaseFsInfo {
+        CaseFsInfo::default()
+    }
+
+    /// Attributes and timestamps of the existing directory `dir`, or `None` when they
+    /// cannot be read (or the platform has nothing worth copying).
+    fn capture_dir_meta(&self, _dir: &Path) -> Option<DirMeta> {
+        None
+    }
+
+    /// Applies what [`CaseSensitiveFs::capture_dir_meta`] returned to the directory
+    /// `dir` (the attributes first, then the timestamps). Default: nothing.
+    fn apply_dir_meta(&self, _dir: &Path, _meta: &DirMeta) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// Whether the entry described by `meta` (from `symlink_metadata`) is a reparse point of
+/// any kind: symbolic link, junction, OneDrive placeholder, dedup... The case
+/// sensitivity conversion moves those as a whole and never walks into them.
+pub fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        windows::is_reparse_point(meta)
+    }
+    #[cfg(not(windows))]
+    {
+        meta.file_type().is_symlink()
+    }
 }
 
 /// Restricts files holding secrets (`state/ipc.token`, the CA key) to the current OS user

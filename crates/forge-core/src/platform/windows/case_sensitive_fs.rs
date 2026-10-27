@@ -10,8 +10,9 @@
 //! - disabling fails with `STATUS_CASE_DIFFERING_NAMES_IN_DIR` while the directory
 //!   holds names that differ only by case.
 
-use std::fs::{File, OpenOptions};
-use std::os::windows::fs::OpenOptionsExt;
+use std::ffi::c_void;
+use std::fs::{File, FileTimes, OpenOptions};
+use std::os::windows::fs::{FileTimesExt, MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 
@@ -19,19 +20,68 @@ use ::windows::Wdk::Storage::FileSystem::{
     FILE_CASE_SENSITIVE_INFORMATION, FileCaseSensitiveInformation, NtQueryInformationFile,
     NtSetInformationFile,
 };
+use ::windows::Win32::Foundation::{ERROR_SUCCESS, WIN32_ERROR};
 use ::windows::Win32::Foundation::{
     HANDLE, NTSTATUS, RtlNtStatusToDosError, STATUS_ACCESS_DENIED,
     STATUS_CASE_DIFFERING_NAMES_IN_DIR, STATUS_DIRECTORY_NOT_EMPTY, STATUS_INVALID_DEVICE_REQUEST,
     STATUS_INVALID_INFO_CLASS, STATUS_INVALID_PARAMETER, STATUS_NOT_SUPPORTED,
 };
 use ::windows::Win32::Storage::FileSystem::{
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, GetVolumeInformationByHandleW,
+    FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_NOT_CONTENT_INDEXED,
+    FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_SYSTEM,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAGS_AND_ATTRIBUTES, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, GetVolumeInformationByHandleW,
+    SetFileAttributesW,
 };
 use ::windows::Win32::System::IO::IO_STATUS_BLOCK;
+use ::windows::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
+use ::windows::core::{PCWSTR, w};
 
+use super::process::wide;
 use crate::error::{ForgeError, IoResultExt, Result};
-use crate::platform::{CaseSensitiveFs, CaseSensitivitySupport};
+use crate::platform::{CaseFsInfo, CaseSensitiveFs, CaseSensitivitySupport, DirMeta};
+
+/// Attribute bits copied by [`CaseSensitiveFs::apply_dir_meta`]: the ones a user or a tool
+/// (Git hides `.git`) sets on a folder. Directory, reparse, compression and encryption
+/// bits are properties of the object, not something `SetFileAttributesW` can copy.
+const COPIED_ATTRIBUTES: u32 = FILE_ATTRIBUTE_READONLY.0
+    | FILE_ATTRIBUTE_HIDDEN.0
+    | FILE_ATTRIBUTE_SYSTEM.0
+    | FILE_ATTRIBUTE_ARCHIVE.0
+    | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED.0;
+
+/// Key holding the build number of the running Windows (`CurrentBuildNumber`, `REG_SZ`).
+/// Unlike `GetVersionExW` it does not depend on the manifest of the executable.
+const CURRENT_VERSION_KEY: PCWSTR = w!(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+
+/// Whether `meta` (from `symlink_metadata`) describes a reparse point of any kind.
+pub fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+}
+
+/// Build number of the running Windows, from the registry.
+fn os_build() -> Option<u32> {
+    let mut buf = [0u16; 32];
+    let mut size = (buf.len() * size_of::<u16>()) as u32;
+    // SAFETY: valid NUL-terminated key/value names; `buf` holds `size` bytes and the
+    // call writes at most that many (RRF_RT_REG_SZ guarantees NUL termination).
+    let status: WIN32_ERROR = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            CURRENT_VERSION_KEY,
+            w!("CurrentBuildNumber"),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast::<c_void>()),
+            Some(&mut size),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len]).trim().parse().ok()
+}
 
 /// `FILE_CS_FLAG_CASE_SENSITIVE_DIR` (ntifs.h), kept local to avoid pulling the large
 /// `Win32_System_SystemServices` feature for one constant.
@@ -202,6 +252,61 @@ impl CaseSensitiveFs for WindowsCaseSensitiveFs {
             )),
             s => status_error("setting case sensitivity of", dir, s),
         })
+    }
+
+    fn info(&self, dir: &Path) -> CaseFsInfo {
+        CaseFsInfo {
+            fs_type: open_dir(dir, false)
+                .ok()
+                .and_then(|file| file_system_name(&file)),
+            os_build: os_build(),
+        }
+    }
+
+    fn capture_dir_meta(&self, dir: &Path) -> Option<DirMeta> {
+        let meta = std::fs::metadata(dir).ok()?;
+        if !meta.is_dir() {
+            return None;
+        }
+        Some(DirMeta {
+            attributes: meta.file_attributes() & COPIED_ATTRIBUTES,
+            created: meta.created().ok(),
+            modified: meta.modified().ok(),
+            accessed: meta.accessed().ok(),
+        })
+    }
+
+    fn apply_dir_meta(&self, dir: &Path, meta: &DirMeta) -> Result<()> {
+        // Timestamps first: a read-only directory still accepts FILE_WRITE_ATTRIBUTES, but
+        // keep the order independent of that detail.
+        let file = open_dir(dir, true)?;
+        let mut times = FileTimes::new();
+        if let Some(t) = meta.modified {
+            times = times.set_modified(t);
+        }
+        if let Some(t) = meta.accessed {
+            times = times.set_accessed(t);
+        }
+        if let Some(t) = meta.created {
+            times = times.set_created(t);
+        }
+        file.set_times(times).at("setting timestamps of", dir)?;
+        drop(file);
+        let attributes = meta.attributes & COPIED_ATTRIBUTES;
+        if attributes != 0 {
+            let path = wide(dir.as_os_str());
+            // SAFETY: `path` is a NUL-terminated UTF-16 string alive for the call.
+            unsafe {
+                SetFileAttributesW(PCWSTR(path.as_ptr()), FILE_FLAGS_AND_ATTRIBUTES(attributes))
+            }
+            .map_err(|e| {
+                ForgeError::io(
+                    format!("setting attributes of {}", dir.display()),
+                    std::io::Error::from(e),
+                )
+            })?;
+        }
+        Ok(())
     }
 }
 

@@ -18,7 +18,7 @@ mod vcredist;
 mod window_close;
 
 pub use authenticode::WindowsCodeSign;
-pub use case_sensitive_fs::WindowsCaseSensitiveFs;
+pub use case_sensitive_fs::{WindowsCaseSensitiveFs, is_reparse_point};
 pub use dns_policy::WindowsDnsPolicy;
 pub use elevation::{HELPER_RUN_TIMEOUT, WindowsElevation};
 pub use file_acl::WindowsFileAcl;

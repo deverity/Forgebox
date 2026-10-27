@@ -46,6 +46,9 @@ impl LockLevel {
     /// Configured registries, catalog snapshots and refresh marks of `forge_registry`.
     /// Leaf lock: no job is started and nothing is awaited or published while it is held.
     pub const REGISTRY_STATE: LockLevel = LockLevel::new(10, "registry.state");
+    /// Folders being converted to/from case-sensitive (`crate::fs::case`). Leaf lock:
+    /// held only to insert or remove one path.
+    pub const CASE_CONVERSIONS: LockLevel = LockLevel::new(10, "fs.case_conversions");
     /// Sequence counter of the [`crate::event::EventBus`]. Innermost lock: nothing may be
     /// acquired while it is held.
     pub const EVENT_BUS_SEQ: LockLevel = LockLevel::new(200, "event_bus.seq");
