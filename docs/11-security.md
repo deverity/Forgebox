@@ -12,7 +12,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
   | `trust.add_machine_root {thumbprint}` / `remove` | cert deve estar em `certs/ca/` e bater com o thumbprint |
   | `firewall.add {name, port, exe}` / `remove` | exe dentro de `<root>/bin/`, nome prefixado `Forgebox-` |
   | `defender.exclude {path}` / `remove` | path = raiz do Forgebox |
-  | `vcredist.install {path, sha256}` | arquivo baixado pelo daemon, hash conferido, Authenticode Microsoft verificado |
+  | `vcredist.install {path, sha256}` | arquivo baixado pelo daemon (link permanente `https://aka.ms/vc14/vc_redist.x64.exe`, oferecido pela pré-checagem `missing_runtime`, [03](03-engine.md) §1.5; o conteúdo muda a cada release, então o sha256 é o do arquivo baixado, fixado pelo daemon), hash conferido, Authenticode Microsoft verificado |
 - **`forgebox-ctrl.exe`** é um auxiliar interno do daemon, **sem** elevação e sem rede: só se anexa ao console de um serviço do próprio usuário e gera `CTRL_BREAK` para o grupo dele (`forgebox-ctrl break <pid>`; [ADR-0016](adr/0016-ctrl-break-helper-process.md)).
 - O helper é invocado por processo (ShellExecute `runas`, um UAC por operação ou por lote agrupado no onboarding). Modo opcional "serviço helper" (como HerdHelper) para quem não quer UAC: serviço Windows ouvindo em named pipe com ACL restrita ao SID do usuário instalador, mesma allowlist. Padrão: **sem serviço**.
 - Tudo que o helper faz vai para `logs/helper.log` e para o histórico de eventos.

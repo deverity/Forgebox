@@ -26,8 +26,9 @@ pub enum ServiceState {
 /// Structured diagnosis of a `failed` instance (docs/03 §1.4), tagged by `kind`.
 ///
 /// Published by `forge_supervisor::FailureReason` (same shape). Exit codes are the bits
-/// of the Windows `DWORD` as `i32`. `kind` decides the UI action (`missing_dll` → offer
-/// the VC++ Redistributable, `port_in_use` → stop the holder or change the port).
+/// of the Windows `DWORD` as `i32`. `kind` decides the UI action (`missing_dll` /
+/// `missing_runtime` → offer the VC++ Redistributable, `port_in_use` → stop the holder or
+/// change the port, `dependency_not_running` → start the dependency).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FailureReasonDto {
@@ -39,8 +40,24 @@ pub enum FailureReasonDto {
     },
     /// A DLL (or an entry point in one) is missing: exit `0xC0000135` / `0xC0000139`.
     MissingDll { exit_code: i32 },
-    /// The configuration check failed; its output.
+    /// The configuration check failed; its output (stderr, then stdout).
     ConfigInvalid { stderr: String },
+    /// The VC++ Redistributable needed by `flavor` builds is missing or too old
+    /// (pre-checks, docs/03 §1.5).
+    MissingRuntime {
+        /// `vc15`, `vs16`, `vs17`, `vs18`.
+        flavor: String,
+        download_url: String,
+        /// Older runtime found (`14.29.30133.0`).
+        installed: Option<String>,
+    },
+    /// A `depends_on` service is not running (pre-checks).
+    DependencyNotRunning {
+        /// `mysql` or `mysql/default`.
+        dependency: String,
+        /// `stopped`, `failed`...; `unknown` when not found.
+        state: String,
+    },
     /// Access denied starting or running the executable.
     Permission { message: String },
     /// Health did not pass within `start_timeout`.

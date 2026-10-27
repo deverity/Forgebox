@@ -1372,6 +1372,10 @@ name = "forge-net"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "pretty_assertions",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

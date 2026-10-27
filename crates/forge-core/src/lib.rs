@@ -14,6 +14,7 @@ pub mod error;
 pub mod event;
 pub mod ids;
 pub mod jobs;
+pub mod model;
 pub mod paths;
 pub mod platform;
 pub mod runtime;

@@ -16,6 +16,11 @@
 //! * [`policy`]: `never` / `on-failure{max, window, backoff}` / `always`.
 //! * [`metrics`]: CPU %, working set, private bytes and handles of the instance's job,
 //!   every 2 s ([`forge_core::platform::ProcessStats`]).
+//! * [`precheck`]: before a run creates its process, the VC++ runtime
+//!   ([`forge_core::platform::RuntimeDeps`]), `depends_on` (a [`DependencyLookup`]
+//!   injected by the daemon), the declared ports ([`forge_core::platform::PortTable`]) and
+//!   the configuration check (`nginx -t`) → `Failed(missing_runtime |
+//!   dependency_not_running | port_in_use | config_invalid)`.
 //! * [`service`]: the lifecycle state machine ([`service::state`]) and
 //!   [`InstanceActor`] (Start/Stop/Restart/Status/SubscribeLogs/Metrics/maintenance)
 //!   behind [`InstanceHandle`], created by [`Supervisor::spawn_instance`].
@@ -24,7 +29,8 @@
 //!
 //! No Win32 here: everything OS-specific goes through
 //! [`forge_core::platform::ProcessControl`] / [`forge_core::platform::ProcessGroup`] /
-//! [`forge_core::platform::ProcessStats`].
+//! [`forge_core::platform::ProcessStats`] / [`forge_core::platform::PortTable`] /
+//! [`forge_core::platform::RuntimeDeps`].
 //! Callers in the daemon stop instances with `Stop` before shutting the actors down.
 
 pub mod events;
@@ -33,6 +39,7 @@ pub mod job;
 pub mod logs;
 pub mod metrics;
 pub mod policy;
+pub mod precheck;
 pub mod process;
 pub mod service;
 pub mod stop;
@@ -42,6 +49,9 @@ pub use job::JobTree;
 pub use logs::{LogItem, LogLine, LogOptions, LogStream, LogSubscription, Rotation};
 pub use metrics::{InstanceMetrics, MetricsOptions, ProcessMetrics, ServiceMetricsPayload};
 pub use policy::{Backoff, RestartPolicy};
+pub use precheck::{
+    ConfigCheck, DependencyFuture, DependencyLookup, DependencyRef, NoDependencies, PrecheckSpec,
+};
 pub use process::{EnvMap, SpawnSpec, Stdio};
 pub use service::{
     FailureReason, InstanceActor, InstanceHandle, InstanceMsg, InstanceSpec, InstanceState,

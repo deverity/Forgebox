@@ -28,6 +28,7 @@ use std::fmt;
 
 use forge_core::ForgeError;
 use forge_core::jobs::JobErrorInfo;
+use forge_core::platform::VcRedistFlavor;
 use serde::{Deserialize, Serialize};
 
 use crate::events::wire_exit_code;
@@ -57,8 +58,26 @@ pub enum FailureReason {
     },
     /// A DLL (or an entry point in one) is missing: exit `0xC0000135` / `0xC0000139`.
     MissingDll { exit_code: i32 },
-    /// The configuration check (`service.check`, `nginx -t`) failed; its output.
+    /// The configuration check (`service.check`, `nginx -t`) failed; its output
+    /// (stderr, then stdout).
     ConfigInvalid { stderr: String },
+    /// A system runtime of `spec.runtime_deps` is missing or too old (pre-checks): the
+    /// Visual C++ Redistributable for `flavor` builds.
+    MissingRuntime {
+        /// Build flavor that needs it (`vs17`).
+        flavor: String,
+        /// Where to get a runtime that satisfies it.
+        download_url: String,
+        /// The older runtime found, if any (`14.29.30133.0`).
+        installed: Option<String>,
+    },
+    /// A `depends_on` service is not `Running` (pre-checks).
+    DependencyNotRunning {
+        /// `mysql` or `mysql/default`.
+        dependency: String,
+        /// Its state (`stopped`, `failed`...; `unknown` when no such service answered).
+        state: String,
+    },
     /// Access denied starting the executable, or the process exited with
     /// `STATUS_ACCESS_DENIED`.
     Permission { message: String },
@@ -137,6 +156,8 @@ impl FailureReason {
             Self::PortInUse { .. } => "port_in_use",
             Self::MissingDll { .. } => "missing_dll",
             Self::ConfigInvalid { .. } => "config_invalid",
+            Self::MissingRuntime { .. } => "missing_runtime",
+            Self::DependencyNotRunning { .. } => "dependency_not_running",
             Self::Permission { .. } => "permission",
             Self::HealthTimeout { .. } => "health_timeout",
             Self::ExitedDuringStart { .. } => "exited_during_start",
@@ -151,8 +172,9 @@ impl FailureReason {
     pub fn code(&self) -> &str {
         match self {
             Self::PortInUse { .. } => "port_in_use",
-            Self::MissingDll { .. } => "not_found",
+            Self::MissingDll { .. } | Self::MissingRuntime { .. } => "not_found",
             Self::ConfigInvalid { .. } => "config_invalid",
+            Self::DependencyNotRunning { .. } => "conflict",
             Self::Permission { .. } => "needs_elevation",
             Self::HealthTimeout { .. } => "timeout",
             // A supervised process failed: reported by the OS, not a daemon bug.
@@ -179,6 +201,27 @@ impl FailureReason {
                 exit_code.cast_unsigned()
             ),
             Self::ConfigInvalid { stderr } => format!("invalid configuration: {stderr}"),
+            Self::MissingRuntime {
+                flavor,
+                download_url,
+                installed,
+            } => {
+                let minimum = flavor
+                    .parse::<VcRedistFlavor>()
+                    .map(|f| format!(" ({} or newer)", f.min_version()))
+                    .unwrap_or_default();
+                let found = installed
+                    .as_ref()
+                    .map(|v| format!("; found {v}"))
+                    .unwrap_or_default();
+                format!(
+                    "the Visual C++ Redistributable (x64) for {flavor} builds{minimum} is not \
+                     installed{found}; install it from {download_url}"
+                )
+            }
+            Self::DependencyNotRunning { dependency, state } => {
+                format!("dependency {dependency} is not running (state {state}); start it first")
+            }
             Self::Permission { message } => format!("permission denied: {message}"),
             Self::HealthTimeout {
                 timeout_ms,
@@ -232,8 +275,11 @@ impl FailureReason {
                     (None, None) => None,
                 },
             },
-            Self::MissingDll { .. } => ForgeError::NotFound(self.message()),
+            Self::MissingDll { .. } | Self::MissingRuntime { .. } => {
+                ForgeError::NotFound(self.message())
+            }
             Self::ConfigInvalid { stderr } => ForgeError::ConfigInvalid(stderr.clone()),
+            Self::DependencyNotRunning { .. } => ForgeError::Conflict(self.message()),
             Self::Permission { message } => ForgeError::NeedsElevation(message.clone()),
             // "timed out after 30s: waiting for the health check (last error: ...)".
             Self::HealthTimeout {
@@ -794,6 +840,15 @@ mod tests {
             FailureReason::ConfigInvalid {
                 stderr: "line 3".into(),
             },
+            FailureReason::MissingRuntime {
+                flavor: "vs17".into(),
+                download_url: "https://aka.ms/vc14/vc_redist.x64.exe".into(),
+                installed: Some("14.29.30133.0".into()),
+            },
+            FailureReason::DependencyNotRunning {
+                dependency: "mysql/default".into(),
+                state: "stopped".into(),
+            },
             FailureReason::Permission {
                 message: "denied".into(),
             },
@@ -835,6 +890,39 @@ mod tests {
             timeout.to_error().to_string(),
             "timed out after 30s: waiting for the health check (last error: connect \
              127.0.0.1:3306: refused)"
+        );
+    }
+
+    #[test]
+    fn precheck_reasons_explain_the_fix() {
+        let runtime = FailureReason::MissingRuntime {
+            flavor: "vs18".into(),
+            download_url: "https://aka.ms/vc14/vc_redist.x64.exe".into(),
+            installed: Some("14.44.35211.0".into()),
+        };
+        assert_eq!(
+            runtime.message(),
+            "the Visual C++ Redistributable (x64) for vs18 builds (14.50.0.0 or newer) is not \
+             installed; found 14.44.35211.0; install it from \
+             https://aka.ms/vc14/vc_redist.x64.exe"
+        );
+        assert_eq!(runtime.to_error().code(), "not_found");
+        assert_eq!(
+            serde_json::to_value(&runtime).unwrap(),
+            serde_json::json!({
+                "kind": "missing_runtime",
+                "flavor": "vs18",
+                "download_url": "https://aka.ms/vc14/vc_redist.x64.exe",
+                "installed": "14.44.35211.0",
+            })
+        );
+        let dependency = FailureReason::DependencyNotRunning {
+            dependency: "mysql/default".into(),
+            state: "stopped".into(),
+        };
+        assert_eq!(
+            dependency.to_error().to_string(),
+            "conflict: dependency mysql/default is not running (state stopped); start it first"
         );
     }
 

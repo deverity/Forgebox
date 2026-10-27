@@ -31,20 +31,27 @@ Forgebox/
 │   │       │                     #   (catch_unwind, RestartPolicy, actor.restarted|failed, stop gracioso); tabela de ordem de travas
 │   │       ├── jobs/             # JobRegistry: JobId imediato, JobProgress, cancelamento cooperativo, eventos job.* (payload.rs, v1)
 │   │       ├── sync.rs           # OrderedMutex/LockLevel: travas curtas com ordem verificada por debug_assert
-│   │       ├── runtime.rs        # build_runtime (max(4, núcleos) workers, 2 × núcleos blocking, threads nomeadas); feature `console`
+│   │       ├── runtime.rs        # build_runtime (max(4, núcleos) workers, 2 × núcleos blocking, threads nomeadas); feature `console`;
+│   │       │                     #   spawn_blocking_timeout (chamada bloqueante com prazo)
 │   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
-│   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
-│   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
+│   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
+│   │       │                     #   ports.rs (PortRepo: reservas de porta)
+│   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
+│   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder)
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, DnsPolicy) + current();
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
-│   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela)
+│   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
+│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta);
+│   │                             #   runtime_deps.rs: RuntimeDeps, RuntimeDep, VcRedistFlavor (vc15/vs16/vs17/vs18 → versão mínima)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
 │   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
 │   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
+│   │                             #   net_table.rs (GetExtendedTcpTable + QueryFullProcessImageNameW),
+│   │                             #   vcredist.rs (registro VC\Runtimes\x64 + versão de vcruntime140.dll/msvcp140.dll),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE)
 │   ├── forge-manifest/
 │   │   └── src/
@@ -87,6 +94,8 @@ Forgebox/
 │   │   │   ├── health.rs         # probes tcp/http/command/pid, limiares, start_timeout, intervalo com jitter
 │   │   │   ├── policy.rs         # restart: never|on-failure{max, window, backoff}|always; RestartTracker (puro)
 │   │   │   ├── metrics.rs        # sampler por Job da instância: CPU % (Δcpu/Δparede/CPUs lógicas), working set, handles
+│   │   │   ├── precheck.rs       # pré-checagens antes do spawn: runtime (VC++), depends_on (DependencyLookup injetada),
+│   │   │   │                     #   portas (PortTable), service.check (Job próprio, saída capturada, timeout)
 │   │   │   ├── service/          # mod.rs: InstanceActor, InstanceHandle, Supervisor;
 │   │   │   │                     #   state.rs: máquina de estados pura (next_state), FailureReason, StopCause
 │   │   │   └── bin/forgebox-ctrl.rs  # auxiliar que entrega CTRL_BREAK ao console de um serviço (ADR-0016)
@@ -116,7 +125,7 @@ Forgebox/
 │   │       └── project_file.rs   # leitura de forgebox.yaml do projeto (kind: Project)
 │   ├── forge-net/
 │   │   └── src/
-│   │       ├── ports.rs          # alocador por faixas, reservas, GetExtendedTcpTable (quem usa a porta)
+│   │       ├── ports.rs          # PortAllocator: faixas do forgebox.toml, reservas (PortRepo), bind de teste, conflicts()
 │   │       ├── dns/              # servidor hickory: zonas *.test (configurável), upstream passthrough
 │   │       ├── policy.rs         # NRPT via helper; hosts fallback; verificação (resolve de teste)
 │   │       └── firewall.rs       # regras via helper (netsh/API) só se o usuário quiser acesso LAN

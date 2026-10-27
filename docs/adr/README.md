@@ -23,3 +23,4 @@ Formato: contexto → decisão → alternativas rejeitadas → consequências. U
 | [0017](0017-verify-extract-stack.md) | Verificação e extração em Rust puro (rpgp, minisign-verify, zip 9, sevenz-rust2, lzma-rust2), Authenticode sem revogação, MSRV 1.88 | aceito |
 | [0018](0018-detached-index-signature.md) | Índice do registry assinado por minisign destacado (`index.yaml.minisig`) sobre os bytes crus, sem canonicalização | aceito |
 | [0019](0019-instance-lifecycle-health-restart-metrics.md) | Ciclo de vida da Instance: máquina de estados pura, `Stopping` com causa, `Failed` estruturado, health com jitter, restart com backoff na janela, métricas por Job com CPU % da máquina | aceito |
+| [0020](0020-prechecks-ports-vcredist.md) | Pré-checagens no início de `Starting` (runtime, `depends_on`, portas, config) e validação antes de restart; VC++ por registro + versão de arquivo (vs18 ≥ 14.50); alocador de portas como operação única no writer do SQLite | aceito |
