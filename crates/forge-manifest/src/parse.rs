@@ -415,7 +415,7 @@ fn check_var(scope: &Scope, field: &str, var: &VarRef) -> Result<(), String> {
             let at_install = field.starts_with("spec.install.") || field == "spec.install";
             if at_install && matches!(segs[0].as_str(), "instance" | "prefs") {
                 return Err(format!(
-                    "`{}` is not available at install time (allowed in install: version,                      series, variant.<key>, paths.<dir>)",
+                    "`{}` is not available at install time (allowed in install: version, series, variant.<key>, paths.<dir>)",
                     var.path()
                 ));
             }
