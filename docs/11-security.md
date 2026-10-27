@@ -17,7 +17,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 - Tudo que o helper faz vai para `logs/helper.log` e para o histórico de eventos.
 
 ## 2. Cadeia de confiança dos downloads
-1. Registry oficial assinado (minisign) e verificado antes de qualquer manifesto ser lido. Registries de terceiros exibem aviso e não podem declarar `post_install.run`.
+1. Registry oficial assinado (minisign) e verificado antes de qualquer manifesto ser lido (`forge-registry`, [04](04-tool-manifest-spec.md) §5); sha256 de cada manifesto conferido contra o índice assinado; cache reverificado a cada leitura. Registries de terceiros exibem aviso ("terceiro", e "não verificado" quando sem assinatura, só com `trusted_unsigned`) e não podem declarar `post_install.run` (flag `official` por registry). Uma assinatura errada nunca é aceita, nem em `trusted_unsigned`. A chave de dev (`registry/keys/dev.pub`) só vale para desenvolvimento; a chave de produção é embutida na release (§7).
 2. Cada download: SHA-256 obrigatório (do upstream ou curado no registry pelo bot, com PR revisado). Sem hash → bloqueado por padrão.
 3. Assinaturas upstream verificadas quando existem (PGP nginx/Node com keyrings embutidos e fingerprints fixados por teste; Authenticode sem checagem de revogação, para funcionar offline). Ver [ADR-0017](adr/0017-verify-extract-stack.md).
 4. Staging em `tmp/stage` e extração com proteção contra zip-slip: o arquivo inteiro é recusado se alguma entrada tiver `..`, caminho absoluto, letra de drive, `:` (ADS), caractere proibido no Windows, nome reservado (`CON`, `NUL.txt`, `COM1`...), componente terminado em `.`/espaço, link simbólico ou físico, reparse point, device/fifo ou dados criptografados; limites de bytes escritos e de número de entradas contra bombas de descompressão. A extração nunca usa `extract()`/`unpack()` das bibliotecas.
@@ -47,6 +47,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 - Logs de processes passam por redator básico para `Authorization:`/`password=`.
 
 ## 7. Supply chain do próprio Forgebox
+- A chave de produção do registry oficial é embutida na release no lugar de `registry/keys/dev.pub`; o segredo fica fora do repositório (CI de release). `cargo xtask registry-sign` assina o `index.yaml` (a chave de dev secreta fica em `Forgebox-wt/cache/keys/dev.key`, fora do git).
 - `cargo-deny` (licenças, advisories), `cargo-audit` em CI, lockfile commitado, builds reprodutíveis em GitHub Actions com SLSA provenance, binários assinados com certificado Authenticode do projeto (quando disponível) + minisign sempre.
 - Telemetria: **desligada por padrão**; opt-in; só contadores agregados (versão, SO, features usadas); nunca hosts, caminhos ou IPs. Documentado na UI com o payload exato.
 

@@ -52,9 +52,12 @@ Forgebox/
 │   │       └── yaml.rs           # único módulo que usa serde_yaml_ng (ADR-0012)
 │   ├── forge-registry/
 │   │   └── src/
-│   │       ├── index.rs          # index.yaml do registry, cache em state/registry/
-│   │       ├── source.rs         # fontes: git (https), http (index.json), dir local
-│   │       ├── search.rs         # busca por nome/categoria/tag, ranking
+│   │       ├── index.rs          # index.yaml: assinatura minisign, sha256 dos manifestos, política de terceiros
+│   │       ├── cache.rs          # state/registry/<nome>/ (escrita atômica, reverificado a cada leitura)
+│   │       ├── source.rs         # fontes: git (comando `git` da máquina), http (index.yaml + relativos), dir local
+│   │       ├── service.rs        # `Registry`: refresh(name) -> JobId, load, find, search, list; metadados em `registries`
+│   │       ├── messages.rs       # strings pt-BR (badges "não verificado", "terceiro")
+│   │       ├── search.rs         # busca por id/nome/tag/categoria, ranking
 │   │       └── discover.rs       # heurísticas para pastas soltas em bin/ (php.exe, httpd.exe, mysqld.exe...)
 │   ├── forge-provider/
 │   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
@@ -154,7 +157,8 @@ Forgebox/
 │       └── public/
 │
 ├── registry/                     # catálogo oficial de manifestos (pode virar repo separado "forgebox-registry")
-│   ├── index.yaml                # lista de tools, versão do schema, assinatura
+│   ├── index.yaml                # lista de tools, versão do schema, assinatura minisign
+│   ├── keys/dev.pub              # chave pública de desenvolvimento (a secreta fica fora do repo)
 │   ├── tools/
 │   │   ├── php.yaml
 │   │   ├── apache.yaml
@@ -200,11 +204,12 @@ Forgebox/
 │   ├── portable/                 # script que monta o zip portátil
 │   └── assets/                   # banners, ícones do instalador
 │
-├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry, registry-index
+├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry, registry-index, registry-sign, registry-keygen
 ├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)
-│   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout
+│   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout;
+│       │                         #   registry/ (assinado com a chave dev, 2 tools + 1 stack) e registry-bad-sha/ (sha errado no índice)
 └── .github/
     └── workflows/                # ci.yml (fmt, clippy, build, test, deny, lint-registry, artefatos gerados, pnpm build), dependabot.yml, PULL_REQUEST_TEMPLATE.md, release.yml (build, sign, latest.json)
 ```
