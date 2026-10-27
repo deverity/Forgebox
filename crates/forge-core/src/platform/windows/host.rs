@@ -2,7 +2,6 @@
 //! cost (`INetworkCostManager`) and detached process launch.
 
 use std::ffi::OsString;
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 
 use ::windows::Win32::Foundation::{
@@ -15,9 +14,7 @@ use ::windows::Win32::Networking::NetworkListManager::{
 };
 use ::windows::Win32::Storage::FileSystem::GetLongPathNameW;
 use ::windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-use ::windows::Win32::System::Threading::{
-    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CreateMutexW, DETACHED_PROCESS,
-};
+use ::windows::Win32::System::Threading::CreateMutexW;
 use ::windows::core::HSTRING;
 
 use super::com::ComGuard;
@@ -125,26 +122,9 @@ pub fn long_path(path: &Path) -> Option<std::path::PathBuf> {
     Some(std::path::PathBuf::from(OsString::from_wide(&buf)))
 }
 
-/// Detached start: own process group, no console, outside the caller's job when allowed.
+/// Detached start: own process group, no console, outside the caller's job when allowed,
+/// std handles on the null device and nothing else inherited (see
+/// [`super::process::create_detached`]).
 pub fn spawn_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Result<u32> {
-    let base = DETACHED_PROCESS.0 | CREATE_NEW_PROCESS_GROUP.0;
-    let attempt = |flags: u32| {
-        std::process::Command::new(exe)
-            .args(args)
-            .current_dir(cwd)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(flags)
-            .spawn()
-    };
-    let child = match attempt(base | CREATE_BREAKAWAY_FROM_JOB.0) {
-        Ok(child) => child,
-        // The caller's job does not allow breakaway: start inside it.
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            attempt(base).map_err(|e| ForgeError::io_at("starting", exe, e))?
-        }
-        Err(e) => return Err(ForgeError::io_at("starting", exe, e)),
-    };
-    Ok(child.id())
+    super::process::create_detached(exe, args, cwd)
 }

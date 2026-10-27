@@ -57,7 +57,7 @@ pub async fn find(daemon: &Daemon, site: &SiteRef) -> Result<Site> {
     found.ok_or_else(|| ForgeError::NotFound(format!("site {site}")))
 }
 
-async fn dto(daemon: &Daemon, site: &Site) -> SiteDto {
+pub(super) async fn dto(daemon: &Daemon, site: &Site) -> SiteDto {
     let plan = daemon
         .web
         .php_plan(std::slice::from_ref(site))

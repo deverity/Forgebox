@@ -38,7 +38,7 @@ async fn installed_manifests(daemon: &Daemon) -> Result<Vec<Arc<ToolManifest>>> 
         .collect())
 }
 
-async fn snapshot(daemon: &Daemon) -> Result<UserPathDto> {
+pub(super) async fn snapshot(daemon: &Daemon) -> Result<UserPathDto> {
     let manifests = installed_manifests(daemon).await?;
     let config = daemon.config();
     let refs: Vec<&ToolManifest> = manifests.iter().map(AsRef::as_ref).collect();

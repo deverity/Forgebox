@@ -3,6 +3,7 @@
 //! Folders must be inside the root or a parked folder.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use forge_core::error::{ForgeError, Result};
 use forge_core::fs::case::{CaseConversions, CaseStatus};
@@ -12,7 +13,7 @@ use forge_ipc::api::methods::{
 };
 use forge_ipc::api::{
     CaseConvertParams, CaseDirParams, CaseFixChoice, CaseSensitivityDto, JobDto, LintCaseParams,
-    SiteCaseParams,
+    SiteCaseParams, SiteRef,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::CaseParity;
@@ -147,10 +148,21 @@ fn parity(daemon: &Daemon) -> CaseParity {
     CaseParity::new(daemon.sites.clone(), conversions(daemon))
 }
 
+/// The conversion runs as a job of the case component; this job waits for it and answers
+/// with the updated site, which is the result type of the method (`SiteDto`).
 async fn site_case(daemon: Daemon, params: SiteCaseParams, ctx: Ctx) -> Result<JobDto> {
     let site = super::sites::find(&daemon, &params.site).await?;
-    let id = parity(&daemon).set_site_case(site.id, params.enabled, Some(ctx.request_id()));
-    job_dto(&daemon, id)
+    let d = daemon.clone();
+    daemon.job(
+        &ctx,
+        format!("fs_parity.site_case {}", site.host),
+        move |_job| async move {
+            let id = parity(&d).set_site_case(site.id, params.enabled, None);
+            super::tools::wait_job(&d, id, Duration::from_secs(60 * 60)).await?;
+            let updated = super::sites::find(&d, &SiteRef::from(site.id.to_string())).await?;
+            Ok(super::sites::dto(&d, &updated).await)
+        },
+    )
 }
 
 async fn lint_case(daemon: Daemon, params: LintCaseParams, ctx: Ctx) -> Result<JobDto> {

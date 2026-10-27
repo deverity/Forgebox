@@ -227,7 +227,12 @@ Forgebox/
 │   │   └── tests/                # processo real em raiz temporária: lifecycle.rs, up_down_loop.rs (aceite 100×);
 │   │                             #   #[ignore] com binários oficiais (common/online.rs): php_pool_online.rs,
 │   │                             #   web_nginx_php_online.rs, mailpit_service_online.rs
-│   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
+│   ├── forge-cli/                # bin forge.exe (lib forge_cli + main.rs): cli.rs (árvore clap com todos os comandos de docs/09),
+│   │   │                         #   commands/*.rs (um por grupo), context.rs (flags globais + cliente), connect.rs (daemon automático),
+│   │   │                         #   jobs.rs (acompanha jobs: eventos + poll, barras), output.rs (tabelas, cores, --json), render.rs
+│   │   │                         #   (DTO → texto), messages.rs (pt-BR/en-US), error.rs (códigos → saída), remotes.rs, open.rs, parse.rs
+│   │   └── tests/                # processo real contra forgeboxd real em raiz temporária: commands.rs (tabela de TODOS os comandos,
+│   │                             #   --json e humano), output.rs, exit_codes.rs, lifecycle.rs (daemon automático), misc.rs; online.rs (#[ignore])
 │   ├── forge-helper/             # forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022/0024); lib + bin (test = false)
 │   │   ├── build.rs              # manifest requireAdministrator embutido (crate embed-manifest)
 │   │   ├── src/                  # lib.rs (Helper: validação léxica + canônica, elevação, run), args.rs, exchange.rs (arquivos de

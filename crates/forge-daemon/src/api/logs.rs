@@ -6,7 +6,10 @@
 //!   with its own `seq`);
 //! * `<tool>.<file>` — a log the manifest declares (`nginx.error` → the `logs[]` entry
 //!   whose file name starts with `error`);
-//! * `<pool tool>@<series>` — the newest worker log of that pool.
+//! * `<pool tool>@<series>` — the newest worker log of that pool;
+//! * `site:<host>` / `app:<host>/<process>` — documented targets whose capture is the
+//!   Logs screen (roadmap M2-E3): unknown sites are `not_found`, known ones answer
+//!   `not_implemented`.
 //!
 //! File targets number their lines from the start of the file (`seq` = line number);
 //! following a file polls it every 500 ms and starts over when it was rotated.
@@ -66,6 +69,16 @@ async fn resolve(daemon: &Daemon, target: &str) -> Result<Target> {
             .flatten()
             .ok_or_else(|| ForgeError::NotFound("no daemon log file yet".into()))?;
         return Ok(Target::File(file));
+    }
+    if let Some(rest) = target
+        .strip_prefix("site:")
+        .or_else(|| target.strip_prefix("app:"))
+    {
+        let host = rest.split('/').next().unwrap_or(rest);
+        super::sites::find(daemon, &forge_ipc::api::SiteRef::from(host)).await?;
+        return Err(ForgeError::NotImplemented(format!(
+            "log target {target}: site and app logs are not implemented yet (roadmap M2-E3)"
+        )));
     }
     if let Some((tool, version)) = target.split_once('@') {
         let (tool_id, _) = crate::install::parse_spec(target)?;
