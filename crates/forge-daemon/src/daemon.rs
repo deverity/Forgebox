@@ -173,7 +173,12 @@ impl Daemon {
     }
 
     /// Replaces the in-memory preferences (after `forge config set` saved them).
+    /// The parts read by other components are handed to them too (the port ranges of the
+    /// allocator), so a preference changed through the API applies without a restart.
     pub fn set_config(&self, config: ForgeConfig) {
+        if config.ports != self.config().ports {
+            self.inner.ports.set_config(config.ports.clone());
+        }
         self.inner.config.send_replace(Arc::new(config));
     }
 

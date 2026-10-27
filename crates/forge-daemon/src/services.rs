@@ -513,14 +513,17 @@ impl ServiceManager {
             let reservation = match self.inner.ports.get(&owner).await? {
                 Some(existing) => existing,
                 None => {
+                    // The manifest's default port, when free and still part of the
+                    // range: a range reconfigured to leave it out (`[ports.ranges] web =
+                    // [8080, 8443]`) means "not that port".
                     let preferred = match spec.default {
-                        Some(port) => self
+                        Some(port) if self.inner.ports.in_range(&spec.range, port) => self
                             .inner
                             .ports
                             .reserve(port, Some(&spec.range), owner.clone())
                             .await
                             .ok(),
-                        None => None,
+                        _ => None,
                     };
                     match preferred {
                         Some(r) => r,
@@ -593,7 +596,47 @@ impl ServiceManager {
         if let Some(renderer) = self.inner.renderer.get().cloned() {
             renderer.render_instance(entry).await?;
         }
+        self.log_dirs(entry).await?;
         self.data_init(entry).await
+    }
+
+    /// Creates the folders of the log files the manifest declares
+    /// (`service.daemon.logs[].path`, usually per instance: `logs/mysql/<name>/`): the
+    /// tool writes the file but most tools do not create its folder.
+    async fn log_dirs(&self, entry: &Entry) -> Result<()> {
+        let (Some(manifest), Some(vars)) = (&entry.manifest, &entry.vars) else {
+            return Ok(());
+        };
+        let Some(daemon) = manifest.spec.service.daemon.as_ref() else {
+            return Ok(());
+        };
+        let mut dirs = Vec::new();
+        for log in &daemon.logs {
+            let path = PathBuf::from(vars.substitute(&log.path)?);
+            // Only inside the root: a manifest never makes the daemon create folders
+            // elsewhere.
+            if let Some(parent) = path
+                .parent()
+                .filter(|p| p.starts_with(self.inner.root.path()))
+            {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+        if dirs.is_empty() {
+            return Ok(());
+        }
+        forge_core::runtime::spawn_blocking_timeout(
+            "creating the log folders",
+            Duration::from_secs(10),
+            move || {
+                for dir in &dirs {
+                    std::fs::create_dir_all(dir)
+                        .map_err(|e| ForgeError::io_at("creating", dir, e))?;
+                }
+                Ok(())
+            },
+        )
+        .await
     }
 
     /// Runs `service.daemon.data.init` once, when the data folder does not exist.
