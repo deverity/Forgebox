@@ -21,10 +21,10 @@
 //!    missing DLL → [`FailureReason::MissingDll`], no exit in time →
 //!    [`FailureReason::Other`] with code `timeout`.
 //!
-//! Reading the TCP table or the registry can fail (permissions, a broken WMI-less
-//! system...): those checks then **pass** with a warning in the log. The pre-checks are a
-//! diagnosis aid, never a reason to refuse a start that may work; the service's own bind
-//! error still surfaces as `exited_during_start` with its log.
+//! Reading the TCP table or the registry can fail (access denied, a damaged IP Helper
+//! service, a timeout...): those checks then **pass** with a warning in the log. The
+//! pre-checks are a diagnosis aid, never a reason to refuse a start that may work; the
+//! service's own bind error still surfaces as `exited_during_start` with its log.
 //!
 //! A restart of a running instance validates first (runtime deps, dependencies and
 //! configuration; not the ports, which the instance itself holds) and keeps the instance
