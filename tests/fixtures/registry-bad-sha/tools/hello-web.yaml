@@ -1,0 +1,20 @@
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata:
+  id: hello-web
+  name: Hello Web
+  summary: Minimal web server used by the registry loader tests
+  category: webserver
+  tags: [http, demo]
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: mysql
+    releases:
+      - version: "1.2.0"
+        url: https://example.org/hello-web-1.2.0.zip
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+      - version: "1.10.0"
+        url: https://example.org/hello-web-1.10.0.zip
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222"

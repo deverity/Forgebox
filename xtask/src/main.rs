@@ -25,8 +25,33 @@ enum Command {
     GenTs,
     /// Lint the manifests in registry/.
     LintRegistry,
-    /// Regenerate registry/index.yaml (sha256 of every manifest, placeholder signature).
-    RegistryIndex,
+    /// Regenerate registry/index.yaml (sha256 of every manifest; unsigned).
+    RegistryIndex {
+        /// Registry folder (default: registry/ of the repository).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Registry name written in the index (default: official, or the folder name with --dir).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Sign index.yaml with a minisign secret key (writes the detached index.yaml.minisig).
+    RegistrySign {
+        /// Secret key file (unencrypted, or protected by FORGEBOX_REGISTRY_KEY_PASSWORD).
+        #[arg(long)]
+        key: PathBuf,
+        /// Registry folder (default: registry/ of the repository).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
+    /// Generate a development minisign key pair (never overwrites).
+    RegistryKeygen {
+        /// Where to write the secret key (outside the repository).
+        #[arg(long)]
+        secret: PathBuf,
+        /// Where to write the public key (registry/keys/dev.pub).
+        #[arg(long)]
+        public: PathBuf,
+    },
     /// Run fmt-check, clippy, test, deny and lint-registry; stops at the first failure.
     Ci,
 }
@@ -119,17 +144,22 @@ fn lint_registry(root: &Path) -> Result<usize> {
         .iter()
         .map(|(rule, n)| format!("rule {rule}: {n}"))
         .collect();
+    let signature = signature_issue(&registry);
+    if let Some(problem) = &signature {
+        println!("[signature] {problem}");
+    }
+    let issues = report.issues.len() + usize::from(signature.is_some());
     println!(
         "linted {} file(s), {} issue(s){}",
         report.files_checked,
-        report.issues.len(),
+        issues,
         if per_rule.is_empty() {
             String::new()
         } else {
             format!(" ({})", per_rule.join(", "))
         }
     );
-    Ok(report.issues.len())
+    Ok(issues)
 }
 
 /// Name and URL written in `metadata` of the official index.
@@ -139,9 +169,13 @@ const REGISTRY_URL: &str = "https://github.com/forgebox/registry";
 /// Regenerates `registry/index.yaml`. `updated_at` only moves when the listed entries change,
 /// so running it twice leaves no diff. Returns whether the file was (re)written.
 fn registry_index(root: &Path) -> Result<bool> {
-    let registry = root.join("registry");
-    let dir = RegistryDir::new(&registry);
-    let (tools, stacks) = build_entries(&dir).context("indexing registry/")?;
+    registry_index_at(&root.join("registry"), REGISTRY_NAME, Some(REGISTRY_URL))
+}
+
+/// [`registry_index`] for any registry folder (fixtures, third-party registries).
+fn registry_index_at(registry: &Path, name: &str, url: Option<&str>) -> Result<bool> {
+    let dir = RegistryDir::new(registry);
+    let (tools, stacks) = build_entries(&dir).context("indexing the registry")?;
     let path = dir.index_path();
     let previous = forge_manifest::load_file(&path).ok().and_then(|m| match m {
         Manifest::Registry(r) => Some(r),
@@ -150,13 +184,13 @@ fn registry_index(root: &Path) -> Result<bool> {
     let unchanged = previous.as_ref().filter(|r| {
         r.spec.tools == tools
             && r.spec.stacks == stacks
-            && r.metadata.name == REGISTRY_NAME
-            && r.metadata.url.as_deref() == Some(REGISTRY_URL)
+            && r.metadata.name == name
+            && r.metadata.url.as_deref() == url
     });
     if let Some(previous) = unchanged {
         let text = render_index(previous)?;
         if std::fs::read_to_string(&path).is_ok_and(|current| current == text) {
-            println!("registry/index.yaml is up to date");
+            println!("{} is up to date", path.display());
             return Ok(false);
         }
     }
@@ -164,14 +198,122 @@ fn registry_index(root: &Path) -> Result<bool> {
         Some(r) => r.spec.updated_at,
         None => Timestamp::from_second(Timestamp::now().as_second())?,
     };
-    let index = build_index(&dir, REGISTRY_NAME, Some(REGISTRY_URL), updated_at)?;
+    let index = build_index(&dir, name, url, updated_at)?;
     write_file(&path, &render_index(&index)?)?;
     println!(
-        "wrote registry/index.yaml ({} tool(s), {} stack(s))",
+        "wrote {} ({} tool(s), {} stack(s))",
+        path.display(),
         index.spec.tools.len(),
         index.spec.stacks.len()
     );
     Ok(true)
+}
+
+/// Environment variable with the password of an encrypted registry secret key.
+const KEY_PASSWORD_ENV: &str = "FORGEBOX_REGISTRY_KEY_PASSWORD";
+
+/// Signs the raw bytes of `<registry>/index.yaml` with the minisign secret key at `key_path`
+/// and writes the detached signature to `<registry>/index.yaml.minisig` (ADR-0018). The
+/// result is what `minisign -S -m index.yaml` produces. It is checked with the loader's own
+/// verification before it is written.
+fn registry_sign(registry: &Path, key_path: &Path) -> Result<()> {
+    let key_text = std::fs::read_to_string(key_path)
+        .with_context(|| format!("reading {}", key_path.display()))?;
+    let key_box = minisign::SecretKeyBox::from_string(&key_text)
+        .map_err(|e| anyhow::anyhow!("unreadable secret key: {e}"))?;
+    let secret = match std::env::var(KEY_PASSWORD_ENV) {
+        Ok(password) => key_box.into_secret_key(Some(password)),
+        Err(_) => key_box.into_unencrypted_secret_key(),
+    }
+    .map_err(|e| anyhow::anyhow!("cannot unlock the secret key: {e}"))?;
+    let public = minisign::PublicKey::from_secret_key(&secret)
+        .map_err(|e| anyhow::anyhow!("deriving the public key: {e}"))?;
+    let public_b64 = public.to_base64();
+    let key_id = forge_registry::index::key_id_of_public_key(&public_b64)?;
+
+    let path = RegistryDir::new(registry).index_path();
+    let payload = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+    let signature = minisign::sign(
+        Some(&public),
+        &secret,
+        std::io::Cursor::new(&payload),
+        Some(&format!(
+            "forgebox registry index {}",
+            forge_manifest::index::sha256_hex(&payload)
+        )),
+        Some("signature from forgebox registry-sign"),
+    )
+    .map_err(|e| anyhow::anyhow!("signing: {e}"))?
+    .into_string();
+    // Never write a signature the loader would refuse.
+    forge_registry::index::verify_bytes(
+        &payload,
+        Some(signature.as_bytes()),
+        &forge_registry::index::VerifyOptions {
+            public_key: Some(public_b64),
+            trusted_unsigned: false,
+        },
+    )?;
+    let sig_path = path.with_file_name(forge_registry::index::SIGNATURE_FILE);
+    write_file(&sig_path, &signature)?;
+    println!("signed {} with key {key_id}", sig_path.display());
+    Ok(())
+}
+
+/// Writes a new unencrypted development key pair. Refuses to overwrite either file.
+fn registry_keygen(secret_path: &Path, public_path: &Path) -> Result<()> {
+    for path in [secret_path, public_path] {
+        if path.exists() {
+            bail!("{} already exists, refusing to overwrite", path.display());
+        }
+    }
+    let pair = minisign::KeyPair::generate_unencrypted_keypair()
+        .map_err(|e| anyhow::anyhow!("generating the key pair: {e}"))?;
+    let secret = pair
+        .sk
+        .to_box(Some("forgebox registry dev secret key"))
+        .map_err(|e| anyhow::anyhow!("{e}"))?
+        .into_string();
+    let public = pair
+        .pk
+        .to_box()
+        .map_err(|e| anyhow::anyhow!("{e}"))?
+        .into_string();
+    write_file(secret_path, &secret)?;
+    write_file(public_path, &public)?;
+    println!(
+        "wrote {} and {} (key {})",
+        secret_path.display(),
+        public_path.display(),
+        forge_registry::index::key_id_of_public_key(&pair.pk.to_base64())?
+    );
+    Ok(())
+}
+
+/// Checks the signature of `registry/index.yaml` against `registry/keys/dev.pub` when that
+/// key exists (docs/04 §6). Returns the problem found, if any.
+fn signature_issue(registry: &Path) -> Option<String> {
+    let key_path = registry.join("keys/dev.pub");
+    let key = std::fs::read_to_string(&key_path).ok()?;
+    let index_path = RegistryDir::new(registry).index_path();
+    let bytes = match std::fs::read(&index_path) {
+        Ok(bytes) => bytes,
+        Err(e) => return Some(format!("{}: cannot read: {e}", index_path.display())),
+    };
+    let sig_path = index_path.with_file_name(forge_registry::index::SIGNATURE_FILE);
+    let signature = std::fs::read(&sig_path).ok();
+    let options = forge_registry::index::VerifyOptions {
+        public_key: Some(key),
+        trusted_unsigned: false,
+    };
+    forge_registry::index::verify_index(bytes, signature, &options)
+        .err()
+        .map(|e| {
+            format!(
+                "{}: {e} (run `cargo xtask registry-sign`)",
+                index_path.display()
+            )
+        })
 }
 
 fn run_step(root: &Path, program: &str, args: &[&str]) -> Result<()> {
@@ -222,7 +364,21 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Command::RegistryIndex => registry_index(&root).map(|_| ()),
+        Command::RegistryIndex { dir, name } => match dir {
+            None => registry_index(&root).map(|_| ()),
+            Some(dir) => {
+                let name = name.unwrap_or_else(|| {
+                    dir.file_name()
+                        .map_or_else(|| "local".to_owned(), |n| n.to_string_lossy().into_owned())
+                });
+                registry_index_at(&dir, &name, None).map(|_| ())
+            }
+        },
+        Command::RegistrySign { key, dir } => {
+            registry_sign(&dir.unwrap_or_else(|| root.join("registry")), &key)
+        }
+        Command::RegistryKeygen { secret, public } => registry_keygen(&secret, &public),
+
         Command::Ci => ci(&root),
     }
 }
@@ -236,6 +392,12 @@ mod tests {
         for arg in ["schema", "gen-ts", "lint-registry", "registry-index", "ci"] {
             assert!(Cli::try_parse_from(["xtask", arg]).is_ok(), "{arg}");
         }
+        assert!(Cli::try_parse_from(["xtask", "registry-sign", "--key", "k"]).is_ok());
+        assert!(Cli::try_parse_from(["xtask", "registry-sign"]).is_err());
+        assert!(
+            Cli::try_parse_from(["xtask", "registry-keygen", "--secret", "s", "--public", "p"])
+                .is_ok()
+        );
     }
 
     #[test]
@@ -390,7 +552,7 @@ spec:
         let path = dir.path().join("registry/index.yaml");
         let first = std::fs::read_to_string(&path).unwrap();
         assert!(first.starts_with("# generated by cargo xtask registry-index"));
-        assert!(first.contains("key_id: dev"), "{first}");
+        assert!(!first.contains("signature"), "{first}");
         let alpha = first.find("id: alpha").unwrap();
         let zeta = first.find("id: zeta").unwrap();
         assert!(alpha < zeta, "{first}");
@@ -426,5 +588,102 @@ spec:
         );
         std::fs::write(&path, text).unwrap();
         assert_eq!(lint_registry(dir.path()).unwrap(), 1);
+    }
+}
+
+#[cfg(test)]
+mod signing_tests {
+    use super::*;
+
+    /// A registry folder (not a repo root) with one tool, indexed.
+    fn indexed(dir: &Path) -> PathBuf {
+        let registry = dir.join("reg");
+        std::fs::create_dir_all(registry.join("tools")).unwrap();
+        std::fs::write(
+            registry.join("tools/alpha.yaml"),
+            "apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: alpha, name: Alpha, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+",
+        )
+        .unwrap();
+        assert!(registry_index_at(&registry, "reg", None).unwrap());
+        registry
+    }
+
+    #[test]
+    fn keygen_never_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let (secret, public) = (dir.path().join("keys/dev.key"), dir.path().join("dev.pub"));
+        registry_keygen(&secret, &public).unwrap();
+        assert!(
+            std::fs::read_to_string(&public)
+                .unwrap()
+                .starts_with("untrusted comment")
+        );
+        assert!(registry_keygen(&secret, &public).is_err());
+    }
+
+    #[test]
+    fn sign_then_verify_with_the_matching_public_key_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let (secret, public) = (dir.path().join("dev.key"), dir.path().join("dev.pub"));
+        registry_keygen(&secret, &public).unwrap();
+        let registry = indexed(dir.path());
+        registry_sign(&registry, &secret).unwrap();
+
+        // No keys/dev.pub in the registry yet: lint has nothing to check.
+        assert_eq!(signature_issue(&registry), None);
+        std::fs::create_dir_all(registry.join("keys")).unwrap();
+        std::fs::copy(&public, registry.join("keys/dev.pub")).unwrap();
+        assert_eq!(signature_issue(&registry), None);
+
+        // The detached signature is a plain minisign signature over the raw file.
+        assert!(registry.join("index.yaml.minisig").is_file());
+
+        // Editing the index after signing breaks the signature.
+        let index = registry.join("index.yaml");
+        let text = std::fs::read_to_string(&index).unwrap();
+        std::fs::write(&index, text.replace("name: reg", "name: other")).unwrap();
+        assert!(signature_issue(&registry).is_some());
+
+        // A different key does not verify.
+        registry_sign(&registry, &secret).unwrap();
+        let other = (dir.path().join("o.key"), dir.path().join("o.pub"));
+        registry_keygen(&other.0, &other.1).unwrap();
+        std::fs::copy(&other.1, registry.join("keys/dev.pub")).unwrap();
+        assert!(signature_issue(&registry).is_some());
+    }
+
+    #[test]
+    fn an_unsigned_index_fails_the_signature_lint() {
+        let dir = tempfile::tempdir().unwrap();
+        let (secret, public) = (dir.path().join("dev.key"), dir.path().join("dev.pub"));
+        registry_keygen(&secret, &public).unwrap();
+        let registry = indexed(dir.path());
+        std::fs::create_dir_all(registry.join("keys")).unwrap();
+        std::fs::copy(&public, registry.join("keys/dev.pub")).unwrap();
+        let problem = signature_issue(&registry).expect("an unsigned index fails the lint");
+        assert!(problem.contains("registry-sign"), "{problem}");
+    }
+
+    #[test]
+    fn indexing_again_after_signing_keeps_the_index_and_its_signature() {
+        let dir = tempfile::tempdir().unwrap();
+        let (secret, public) = (dir.path().join("dev.key"), dir.path().join("dev.pub"));
+        registry_keygen(&secret, &public).unwrap();
+        let registry = indexed(dir.path());
+        registry_sign(&registry, &secret).unwrap();
+        let signed = std::fs::read_to_string(registry.join("index.yaml")).unwrap();
+        assert!(!registry_index_at(&registry, "reg", None).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(registry.join("index.yaml")).unwrap(),
+            signed
+        );
     }
 }

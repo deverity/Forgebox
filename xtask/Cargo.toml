@@ -23,6 +23,8 @@ serde_json = { workspace = true }
 forge-core = { path = "../crates/forge-core" }
 forge-manifest = { path = "../crates/forge-manifest" }
 forge-ipc = { path = "../crates/forge-ipc" }
+forge-registry = { path = "../crates/forge-registry" }
+minisign = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

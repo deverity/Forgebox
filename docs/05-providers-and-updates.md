@@ -71,4 +71,4 @@ GitHub Action (`registry/.github/workflows/bump.yml`) roda a cada 6 h: executa c
 ## 7. Offline e ambientes corporativos
 - `forge bundle export php@8.3 nginx mysql@8.4 -o stack.fbx` gera um pacote (zip + manifestos + hashes) para instalar em máquinas sem internet (`forge bundle import`).
 - Proxy corporativo: usa configuração do sistema (WinHTTP) por padrão; permite CA corporativa extra (`prefs.extra_ca_bundle`) para os downloads.
-- Registry espelhado interno: `forge registry add file://\\servidor\forgebox\index.yaml`.
+- Registry espelhado interno: `forge registry add file://\\servidor\forgebox\index.yaml` (fonte `Dir`; o espelho tem de manter o `index.yaml` assinado, senão só carrega como `trusted_unsigned`). O cache em `state/registry/<nome>/` permite abrir o catálogo sem rede: se a fonte falha, `load` serve o último catálogo verificado com um aviso; `refresh` (job explícito) reporta a falha.
