@@ -120,6 +120,8 @@ struct Shared {
     zones: watch::Sender<Arc<ZoneSet>>,
     counters: Arc<Counters>,
     want_running: AtomicBool,
+    /// Numbers each run, across actor instances (a late `Ended` never matches a newer run).
+    generation: AtomicU64,
 }
 
 /// The hickory side: answers from the current zones.
@@ -246,7 +248,6 @@ enum Msg {
 struct DnsActor {
     shared: Arc<Shared>,
     running: Option<Running>,
-    generation: u64,
     last_error: Option<String>,
 }
 
@@ -318,8 +319,7 @@ impl DnsActor {
         server.register_socket(udp);
         server.register_listener(tcp, self.shared.config.tcp_timeout, 64);
         let token = server.shutdown_token().clone();
-        self.generation += 1;
-        let generation = self.generation;
+        let generation = self.shared.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let myself = ctx.myself_weak();
         let task = tokio::spawn(async move {
             let error = server.block_until_done().await.err().map(|e| e.to_string());
@@ -452,6 +452,7 @@ impl DnsServer {
             zones: zones_tx,
             counters: Arc::new(Counters::default()),
             want_running: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         });
         let stop_timeout = shared.config.stop_timeout + Duration::from_secs(1);
         let handle = supervisor.spawn(
@@ -461,7 +462,6 @@ impl DnsServer {
             move || DnsActor {
                 shared: Arc::clone(&shared),
                 running: None,
-                generation: 0,
                 last_error: None,
             },
         );
