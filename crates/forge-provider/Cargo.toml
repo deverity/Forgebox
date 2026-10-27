@@ -40,6 +40,9 @@ zip = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
+# Contract test of the tool.install.* / tool.current_changed payloads (tests/layout.rs);
+# forge-ipc does not depend on forge-provider.
+forge-ipc = { path = "../forge-ipc" }
 # The xz encoder builds tar.xz fixtures in tests.
 lzma-rust2 = { workspace = true, features = ["encoder"] }
 minisign = { workspace = true }

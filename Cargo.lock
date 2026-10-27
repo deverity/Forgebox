@@ -1411,6 +1411,7 @@ dependencies = [
  "bytes",
  "flate2",
  "forge-core",
+ "forge-ipc",
  "forge-manifest",
  "forge-registry",
  "futures",
