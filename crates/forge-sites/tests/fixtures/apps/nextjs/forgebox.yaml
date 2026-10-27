@@ -1,0 +1,26 @@
+apiVersion: forgebox.dev/v1
+kind: Project
+metadata: { name: app }
+spec:
+  site:
+    host: app.test
+    secure: true
+  runtimes:
+    - { tool: nodejs, version: "20" }
+  processes:
+    web:
+      cmd: "npm run dev -- --port $PORT"
+      port: auto
+      proxy: true
+      runtime: nodejs@20
+      autostart: on-visit
+      env:
+        NEXT_TELEMETRY_DISABLED: "1"
+        NEXT_PUBLIC_API: "http://127.0.0.1:$PORT/api"
+    queue:
+      cmd: "node worker.js"
+      restart: always
+      autostart: false
+    vite: { cmd: "node vite.js --port $PORT", port: 5173 }
+  proxies:
+    - { host: api.app.test, upstream: "http://127.0.0.1:4000", websocket: false, secure: false }

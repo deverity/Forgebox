@@ -149,7 +149,7 @@ Forgebox/
 │   │   └── tests/
 │   │       └── fake_php_cgi/     # projeto cargo independente (sem deps) compilado pelos testes: php-cgi falso (FastCGI)
 │   ├── forge-render/
-│   │   ├── templates/            # *.j2 embutidos (include_dir): apache/, nginx/, caddy/, php/, mysql/, mariadb/, postgresql/, redis/, mailpit/
+│   │   ├── templates/            # *.j2 embutidos (include_dir): apache/, nginx/, caddy/, php/, mysql/, mariadb/, postgresql/, redis/, mailpit/, pages/ (HTML servido pelo daemon: starting.html.j2)
 │   │   └── src/
 │   │       ├── engine.rs         # minijinja env, filtros (win_path, posix_path, quote...)
 │   │       ├── managed.rs        # blocos "# forgebox:begin/end", preservação de edições do usuário
@@ -167,8 +167,10 @@ Forgebox/
 │   │       ├── case_parity.rs    # estado Aa/aA por site (pasta do projeto), reverify no boot, jobs site_case e lint_case
 │   │       ├── parity.rs         # git_parity_init: core.ignorecase/autocrlf=false, .gitattributes, .editorconfig (forge new)
 │   │       ├── vhost.rs          # gera modelo de vhost (independente de servidor) → forge-render
-│   │       ├── proxy.rs          # sites proxy (Node/Next/Vite...), websocket, headers
-│   │       ├── apps.rs           # Procfile / processes: web, worker, scheduler, com $PORT
+│   │       ├── proxy.rs          # sites proxy (Node/Next/Vite...): ProxyOptions (websocket, headers), ProxyTarget, proxy_vhost → ProxyModel
+│   │       ├── apps/             # Procfile / processes (ADR-0028): command.rs ($PORT, argumentos MSVCRT, direto vs `cmd.exe /d /c %FORGEBOX_COMMAND%`),
+│   │       │                     #   runtime.rs (RuntimeCatalog: runtime tool@série, version_files, config.env do manifesto), spec.rs (AppSite → AppPlan →
+│   │       │                     #   AppSpec → InstanceSpec), manager.rs (ator `apps`: AppManager, Job por site, on-visit, página /_forgebox/starting)
 │   │       └── project_file.rs   # leitura de forgebox.yaml do projeto (kind: Project)
 │   ├── forge-net/
 │   │   ├── examples/dns_serve.rs # teste manual do resolvedor (docs/06 §5.5)

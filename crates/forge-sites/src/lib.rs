@@ -15,8 +15,11 @@
 //!   `forge site case-sensitive` and `forge site lint-case` as jobs).
 //! - [`parity`]: Git/`.gitattributes`/`.editorconfig` parity for `forge new`/`site add`.
 //!
-//! Proxies and Procfile apps arrive with M1-E4-T5.
+//! - [`proxy`]: reverse-proxy sites (`ProxyModel`: upstream, WebSocket, headers, TLS).
+//! - [`apps`]: Procfile 2.0 processes (`$PORT`, `runtime:`, deterministic `PATH`,
+//!   `autostart: on-visit`) supervised by `AppManager`.
 
+pub mod apps;
 pub mod case_parity;
 pub mod drivers;
 pub mod lint_case;
@@ -24,15 +27,18 @@ pub mod messages;
 pub mod parity;
 pub mod parked;
 pub mod project_file;
+pub mod proxy;
 pub mod service;
 pub mod site;
 pub mod vhost;
 
+pub use apps::{AppManager, AppSite, AppSpec};
 pub use case_parity::{CaseParity, SiteCaseCheck};
 pub use drivers::{Confidence, Detection, Driver, VhostContext};
 pub use parity::{GitParityOptions, GitParityReport, git_parity_init};
 pub use parked::{ParkedConfig, ParkedDir, ParkedSync, ParkedWatcher};
 pub use project_file::ProjectPlan;
+pub use proxy::{ProxyOptions, ProxyTarget};
 pub use service::SiteService;
 pub use site::{Site, SiteDraft, SiteKind, SiteRules};
 

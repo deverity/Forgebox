@@ -15,6 +15,7 @@
 mod php;
 mod web;
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use forge_core::error::{ForgeError, Result};
@@ -46,6 +47,12 @@ pub struct VhostContext {
     pub default_php_series: String,
     /// Hand-written per-server snippets of the user, inserted verbatim.
     pub extra: ExtraModel,
+    /// Ports the apps manager allocated to the processes of the site being rendered
+    /// (process name → port in the `apps` range); fixed ports are read from the process.
+    pub app_ports: BTreeMap<String, u16>,
+    /// Proxy options by primary host (`websocket`, headers...); hosts without an entry get
+    /// [`crate::proxy::ProxyOptions::default`].
+    pub proxy_options: BTreeMap<String, crate::proxy::ProxyOptions>,
 }
 
 /// Detection and rules of one kind of project.
