@@ -749,11 +749,8 @@ pub fn convert_tree(
         tracing::warn!(dir = %dir.display(), %err, "case conversion failed while moving; restoring");
         return Err(with_rollback(err, restore_into(cs, &tmp, &dir, progress)));
     }
-    if let Some(meta) = cs.capture_dir_meta(&dir) {
-        if let Err(err) = cs.apply_dir_meta(&tmp, &meta) {
-            tracing::warn!(dir = %tmp.display(), %err, "could not copy directory attributes");
-        }
-    }
+    // (The mover already gave the top folder's attributes and times, captured before its
+    // entries left, to the new one.)
     progress(ConvertProgress {
         phase: ConvertPhase::Swapping,
         done: 0,

@@ -112,7 +112,7 @@ forge path add|remove|show                           # gerencia entradas do PATH
 ```
 forge fs case-sensitive status [<dir>] | enable <dir> | disable <dir> | convert <dir> [--revert]
 forge site case-sensitive loja.test on|off
-forge site lint-case loja.test [--fix] [--json]    # Case Mismatch Finder
+forge site lint-case loja.test [--fix [--dry-run] [--strategy auto|rename|edit]] [--json]    # Case Mismatch Finder (docs/15 §6)
 ```
 
 ### jobs

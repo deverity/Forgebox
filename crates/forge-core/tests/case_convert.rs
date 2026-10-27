@@ -199,6 +199,7 @@ fn convert_and_revert_keep_everything_and_flip_case_sensitivity() {
         .unwrap()
         .modified()
         .unwrap();
+    let root_mtime = fs::metadata(&www).unwrap().modified().unwrap();
     let (dirs, sensitive) = flags(&www);
     assert_eq!(sensitive, 0, "temp folders start insensitive");
 
@@ -224,6 +225,7 @@ fn convert_and_revert_keep_everything_and_flip_case_sensitivity() {
             .unwrap(),
         views_mtime
     );
+    assert_eq!(fs::metadata(&www).unwrap().modified().unwrap(), root_mtime);
     let ro = fs::metadata(www.join("Loja/LICENSE")).unwrap();
     assert_ne!(ro.file_attributes() & ATTR_READONLY, 0);
     // The junction still points outside and its target was not converted.
