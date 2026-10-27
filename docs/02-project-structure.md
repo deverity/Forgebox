@@ -32,13 +32,14 @@ Forgebox/
 │   │       ├── jobs/             # JobRegistry: JobId imediato, JobProgress, cancelamento cooperativo, eventos job.* (payload.rs, v1)
 │   │       ├── sync.rs           # OrderedMutex/LockLevel: travas curtas com ordem verificada por debug_assert
 │   │       ├── runtime.rs        # build_runtime (max(4, núcleos) workers, 2 × núcleos blocking, threads nomeadas); feature `console`
-│   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs...),
+│   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, DnsPolicy) + current();
-│   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE)
-│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID)
+│   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
+│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
+│   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
 │   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono),
@@ -63,7 +64,7 @@ Forgebox/
 │   │       ├── service.rs        # `Registry`: refresh(name) -> JobId, load, find, search, list; metadados em `registries`
 │   │       ├── messages.rs       # strings pt-BR (badges "não verificado", "terceiro")
 │   │       ├── search.rs         # busca por id/nome/tag/categoria, ranking
-│   │       └── discover.rs       # heurísticas para pastas soltas em bin/ (php.exe, httpd.exe, mysqld.exe...)
+│   │       └── discover.rs       # discover() + import_discovered(): pastas soltas em bin/ reconhecidas só pelos manifestos (spec.discover)
 │   ├── forge-provider/
 │   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
 │   │   └── src/

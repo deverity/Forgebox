@@ -28,11 +28,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
+pub mod probe;
 pub mod process;
 pub mod process_stats;
 #[cfg(windows)]
 pub mod windows;
 
+pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
