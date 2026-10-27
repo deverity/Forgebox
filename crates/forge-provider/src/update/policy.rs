@@ -11,10 +11,11 @@
 //!   `derive: from_provider`, like the PHP compiler, are not part of the key: the
 //!   provider decides them). `8.3.36-nts-vs16-x64` and `8.3.37-nts-vs16-x64` are one
 //!   group; `8.3.37-ts-...` is another.
-//! * **Active version** of a group: the newest installed one, except after a rollback:
-//!   when the newest `completed` history row whose target is in the group is a rollback,
-//!   its target is active and the group is *pinned* (nothing is applied automatically
-//!   until the user updates it by hand).
+//! * **Active version** of a group (the one its pools serve): the target of the newest
+//!   `completed` history row whose target is in the group; without one, the newest
+//!   installed version that no `failed` update targeted. When that row is a rollback the
+//!   group is *pinned*: nothing is applied automatically until the user updates it by
+//!   hand. The daemon resolves a series to a pool version with [`active_versions`] too.
 //! * **Reach**: `notify`/`manual` report what `auto-patch` would install (same series);
 //!   `auto-patch` stays in the series; `auto-minor` follows minors, never a major;
 //!   `auto` takes anything.
@@ -250,15 +251,28 @@ pub fn active_versions<'r>(
                     .is_some_and(|id| members.iter().any(|m| m.id == id))
         });
         let (active, pinned) = match last {
-            Some(h) if h.triggered_by == UpdateTrigger::Rollback => {
+            Some(h) => {
                 let target = members
                     .iter()
                     .find(|m| Some(m.id) == h.to_version_id)
                     .copied()
                     .unwrap_or(members[0]);
-                (target, true)
+                (target, h.triggered_by == UpdateTrigger::Rollback)
             }
-            _ => (members[0], false),
+            None => {
+                // No switch recorded: the newest version no failed update targeted.
+                let failed = |m: &&ToolVersionRow| {
+                    history
+                        .iter()
+                        .any(|h| h.status == UpdateStatus::Failed && h.to_version_id == Some(m.id))
+                };
+                let target = members
+                    .iter()
+                    .find(|m| !failed(m))
+                    .copied()
+                    .unwrap_or(members[0]);
+                (target, false)
+            }
         };
         out.push((key, active, pinned));
     }

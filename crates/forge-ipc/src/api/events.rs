@@ -20,7 +20,9 @@ use super::services::{FailureReasonDto, PortHolderDto, PortProtocol, ServiceStat
 use forge_core::Timestamp;
 pub use forge_core::actor::{ACTOR_EVENT_VERSION, ActorFailedPayload, ActorRestartedPayload};
 use forge_core::event::Event;
-use forge_core::ids::{EventId, InstanceId, JobId, SiteId, SubscriptionId, ToolId, VersionId};
+use forge_core::ids::{
+    EventId, InstanceId, JobId, SiteId, SubscriptionId, ToolId, UpdateId, VersionId,
+};
 use forge_core::jobs::{JobErrorInfo, JobProgress};
 
 /// Version of the payloads defined in this module.
@@ -230,13 +232,32 @@ pub struct ToolInstallPayload {
 }
 
 /// `tool.updated|rollback`.
+///
+/// Published by `forge_provider::update::ToolUpdateEventPayload`. `series`, `job_id`,
+/// `update_id`, `rollback_of` and `removed` were added without bumping `v` (optional, may
+/// be missing).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct ToolVersionChangePayload {
     pub v: u32,
     pub tool: ToolId,
     pub from: String,
     pub to: String,
+    /// Version serving after the update (or the rollback).
     pub version_id: VersionId,
+    /// Series of the replaced version (`8.3`).
+    #[serde(default)]
+    pub series: Option<String>,
+    #[serde(default)]
+    pub job_id: Option<JobId>,
+    /// Row of the update history (`forge tool rollback` undoes the newest one).
+    #[serde(default)]
+    pub update_id: Option<UpdateId>,
+    /// On `tool.rollback`: the update that was undone.
+    #[serde(default)]
+    pub rollback_of: Option<UpdateId>,
+    /// Old version folders removed by retention.
+    #[serde(default)]
+    pub removed: Vec<String>,
 }
 
 /// `tool.current_changed`: the `bin/<tool>/current` junction was switched (`forge use`).

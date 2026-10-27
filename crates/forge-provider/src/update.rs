@@ -23,7 +23,8 @@
 //!   beyond `update.retention`, are removed; never before the switch succeeded, never
 //!   `current`, a version a pool still serves or one used by instances) → `tool.updated`.
 //!   A failure marks the row `failed`; a failed switch re-renders the configuration back
-//!   for the old version, which keeps serving.
+//!   for the old version, which keeps serving, and removes the version the job had just
+//!   installed.
 //! * [`UpdateEngine::rollback`] undoes the newest `completed` update of a series:
 //!   re-renders for the retained version, switches the pools back, moves `current` back,
 //!   records a `rollback` row (`rollback_of`) and marks the update `rolled_back`;
@@ -790,9 +791,24 @@ impl Core {
         let pools_switched = match self.switch(manifest, switch).await {
             Ok(switched) => switched,
             Err(err) => {
-                // The old version keeps serving: its configuration comes back.
+                // The old version keeps serving: its configuration comes back, and a
+                // version this job installed goes away (it never passed its health check).
                 if let Err(e) = self.deps.layout.rerender(Arc::clone(manifest), from).await {
                     tracing::error!(tool = %from.tool_id, "could not restore the configuration: {e}");
+                }
+                if installed {
+                    match self
+                        .deps
+                        .layout
+                        .remove_version(Arc::clone(manifest), to.id)
+                        .await
+                    {
+                        Ok(_) => return Err((None, err)),
+                        Err(e) => tracing::warn!(
+                            folder = %to.canonical_name,
+                            "could not remove the version that failed to switch: {e}"
+                        ),
+                    }
                 }
                 return Err(fail(err));
             }
