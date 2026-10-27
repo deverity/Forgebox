@@ -139,6 +139,8 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 5. Re-aponta `bin/php/current` se a versão ativa de CLI era 8.3.
 6. Mantém 8.3.36 por `retention` (padrão: 1 versão anterior) para rollback. Evento `tool.updated`.
 
+Implementação: `forge_provider::update::UpdateEngine` ([05 §4.1](05-providers-and-updates.md), [ADR-0027](adr/0027-update-engine-active-version-rollback-retention.md)); a política padrão do PHP no registry é `auto-patch`. O passo 3 é `update.migrate` (`copy_dir` de `ext/`) + re-render das ações `render` do `post_install` para a versão nova, antes da troca do passo 4 (`PoolSwitcher`, ligado pelo daemon ao `forge_fcgi::Switcher`); a retenção só roda depois da troca.
+
 ### 5.4 Trocar a versão ativa de CLI (Node, PHP, Python...) sem mexer em env-vars
 `forge use node 22`
 1. Valida que `bin/node/22.x.y` existe (oferece instalar).
