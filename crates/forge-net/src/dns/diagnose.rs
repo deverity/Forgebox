@@ -451,7 +451,12 @@ impl DnsDiagnostics {
         let hosts = spawn_blocking_timeout("reading hosts", timeout, move || policy.read_hosts());
         let ports = Arc::clone(&self.ports);
         let port53 = spawn_blocking_timeout("reading the port tables", timeout, move || {
-            let mut owners = ports.udp_endpoints()?;
+            // A table without a UDP view still reports the TCP listeners.
+            let mut owners = match ports.udp_endpoints() {
+                Ok(owners) => owners,
+                Err(err) if err.code() == "unsupported_platform" => Vec::new(),
+                Err(err) => return Err(err),
+            };
             owners.extend(ports.listeners()?);
             Ok(owners)
         });

@@ -69,7 +69,7 @@ Perfis por cliente: `admin` (tudo), `operator` (start/stop/logs/sites, sem insta
 - Seletor de **contexto** no topo da sidebar: "Local · hml (Linux) · vps". Troca instantânea; cada contexto mantém seu estado/cache. Cor de destaque diferente por contexto remoto (evita start/stop no servidor errado).
 - Indicador de latência e de conexão; reconexão automática com replay de eventos desde o último `seq`.
 - Ações `local_only` aparecem com explicação ("Abrir no editor não está disponível em remotos; use 'Abrir via SSH no VS Code'", que abre `vscode-remote://ssh-remote+host/path`).
-- DNS do lado do cliente: ao adicionar um remoto, oferecer zona `*.hml.test → 10.0.0.5` no resolver local do Windows (já existe), para que `https://loja.hml.test` abra no navegador do desenvolvedor com a CA remota instalada (botão "Confiar na CA do remoto").
+- DNS do lado do cliente: ao adicionar um remoto, oferecer zona `*.hml.test → 10.0.0.5` no resolver local do Windows (já existe), para que `https://loja.hml.test` abra no navegador do desenvolvedor com a CA remota instalada (botão "Confiar na CA do remoto"). A zona fica em `forgebox.toml` (`[[dns.remote_zones]] zone = "hml.test", address = "10.0.0.5"`), sempre abaixo de um TLD local, e é respondida pelo resolver local (`forge_net::dns::ZoneSet`, mais específica vence; sem `AAAA` quando o remoto só tem IPv4); a regra NRPT do TLD já a cobre ([06](06-sites-vhosts-multi-php.md) §5.4).
 - Métricas ([14](14-observability-metrics.md)) funcionam igual, vindas do remoto.
 
 ## 6. Headless em servidor

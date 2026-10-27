@@ -38,19 +38,28 @@ Forgebox/
 │   │       │                     #   ports.rs (PortRepo: reservas de porta)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder)
-│   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, DnsPolicy) + current();
+│   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas, [dns] extra_tlds/remote_zones)
+│   │       ├── dns_name.rs       # sintaxe de nomes DNS (rótulos minúsculos), sufixos de uso local (test, localhost, home.arpa...)
+│   │       ├── helper/           # protocolo do forgebox-helper (ADR-0021): op.rs (HelperOp allowlist + HelperPolicy/validate),
+│   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
+│   │       │                     #   hosts.rs (bloco gerenciado do hosts), client.rs (HelperClient, FakeElevation)
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore) + current();
+│   │                             #   dns_policy.rs: DnsPolicy (regras NRPT, hosts, flush do cache; mudanças via helper), NrptRule;
+│   │                             #   elevation.rs: Elevation (forgebox-helper elevado); net_adapters.rs: NetAdapters (adaptadores + DNS);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
-│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta);
+│   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta, sockets UDP);
 │   │                             #   runtime_deps.rs: RuntimeDeps, RuntimeDep, VcRedistFlavor (vc15/vs16/vs17/vs18 → versão mínima)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
 │   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
 │   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
-│   │                             #   net_table.rs (GetExtendedTcpTable + QueryFullProcessImageNameW),
+│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
+│   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
+│   │                             #   dns_policy.rs (NRPT no registro, DataBasePath do hosts, DnsFlushResolverCache, ops via helper),
+│   │                             #   net_adapters.rs (GetAdaptersAddresses),
 │   │                             #   vcredist.rs (registro VC\Runtimes\x64 + versão de vcruntime140.dll/msvcp140.dll),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE)
 │   ├── forge-manifest/
@@ -125,10 +134,14 @@ Forgebox/
 │   │       ├── apps.rs           # Procfile / processes: web, worker, scheduler, com $PORT
 │   │       └── project_file.rs   # leitura de forgebox.yaml do projeto (kind: Project)
 │   ├── forge-net/
+│   │   ├── examples/dns_serve.rs # teste manual do resolvedor (docs/06 §5.5)
 │   │   └── src/
 │   │       ├── ports.rs          # PortAllocator: faixas do forgebox.toml, reservas (PortRepo), bind de teste, conflicts()
-│   │       ├── dns/              # servidor hickory: zonas *.test (configurável), upstream passthrough
-│   │       ├── policy.rs         # NRPT via helper; hosts fallback; verificação (resolve de teste)
+│   │       ├── dns/              # zones.rs (ZoneSet: TLDs locais, zonas remotas, NXDOMAIN fora; sem upstream),
+│   │       │                     #   server.rs (DnsServer: hickory UDP+TCP, ator dns-server, fallback 127.0.0.53:53),
+│   │       │                     #   client.rs (consulta direta UDP/TCP), diagnose.rs (DnsDiagnostics → DnsDiagnosis + hints)
+│   │       ├── policy.rs         # DnsPolicyManager: NRPT via helper, hosts fallback, flush, eventos dns.policy_applied/helper.op
+│   │       ├── messages.rs       # textos pt-BR das dicas de diagnóstico
 │   │       └── firewall.rs       # regras via helper (netsh/API) só se o usuário quiser acesso LAN
 │   ├── forge-tls/
 │   │   └── src/
@@ -150,7 +163,7 @@ Forgebox/
 │   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
 │   ├── forge-daemon/             # bin forgeboxd.exe: main.rs, boot.rs, scheduler.rs, tray-less
 │   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
-│   ├── forge-helper/             # bin forgebox-helper.exe: allowlist de ops, manifest UAC, logging
+│   ├── forge-helper/             # bin forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0021), manifest UAC, logging
 │   └── forge-mcp/                # bin forge-mcp.exe: expõe tools MCP (list_sites, create_site, logs, ...)
 │
 ├── apps/

@@ -198,7 +198,7 @@ processes:
 ## 5. DNS: `*.test` sem editar `hosts`
 
 ### 5.1 Estratégia (ordem de preferência)
-1. **Resolver próprio + NRPT** (padrão): `forge-net::dns` sobe um servidor DNS (hickory) em `127.0.0.1:53` (ou `127.0.0.53:53`) respondendo `A 127.0.0.1` para as zonas configuradas (`.test` por padrão; `.local` é desencorajado por mDNS, `.localhost` já resolve nativamente). O helper elevado adiciona **uma** regra NRPT: `Add-DnsClientNrptRule -Namespace ".test" -NameServers 127.0.0.1` (equivalente via API `DnsClientNrptRule` WMI). A partir daí, qualquer `*.test`, inclusive subdomínios arbitrários, resolve sem tocar em `hosts`. Funciona em Windows 10/11 em todas as edições. Sem admin → cai para o modo 2.
+1. **Resolver próprio + NRPT** (padrão): `forge-net::dns` sobe um servidor DNS (hickory) em `127.0.0.1:53` (ou `127.0.0.53:53`) respondendo `A 127.0.0.1` e `AAAA ::1` para as zonas configuradas (`.test` por padrão; `.local` é desencorajado por mDNS, `.localhost` já resolve nativamente). O helper elevado adiciona **uma** regra NRPT: `Add-DnsClientNrptRule -Namespace ".test" -NameServers 127.0.0.1` (equivalente via API `DnsClientNrptRule` WMI). A partir daí, qualquer `*.test`, inclusive subdomínios arbitrários, resolve sem tocar em `hosts`. Funciona em Windows 10/11 em todas as edições. Sem admin → cai para o modo 2.
 2. **hosts gerenciado** (fallback): bloco `# forgebox:begin … end` em `C:\Windows\System32\drivers\etc\hosts` com uma linha por host **e por alias** (sem wildcard). Escrita via helper. Flush de cache DNS após alteração.
 3. **Sem gerenciamento**: usuário cuida; a UI mostra diagnóstico "loja.test não resolve para 127.0.0.1".
 
@@ -207,6 +207,35 @@ Ao criar/abrir um site a UI resolve o host via API do Windows e via nosso resolv
 
 ### 5.3 Acesso pela LAN/celular
 `forge site expose-lan loja.test` → opcional: servidor escuta também em `0.0.0.0`, regra de firewall via helper, QR code com `https://<ip-da-maquina>` + instrução para instalar a CA no celular (`http://<ip>/_forgebox/ca.crt`). Para domínio real sem CA: integração `*.local-ip.sh`/`nip.io` como alias (Laragon usa `192-168-137-1.local-ip.sh`).
+
+### 5.4 Implementação (M1-E4-T3)
+- **Zonas** (`forge_net::dns::ZoneSet`): uma zona local por TLD (`tld` + `[dns] extra_tlds` do `forgebox.toml`); **qualquer** nome da zona, inclusive o ápice, responde `A 127.0.0.1` e `AAAA ::1`, TTL 30 s. Zonas remotas (`[[dns.remote_zones]] zone = "hml.test", address = "10.0.0.5"`, [13](13-remote-mode.md) §5) ficam abaixo de um TLD e vencem por serem mais específicas; família sem endereço responde NOERROR vazio (nunca NXDOMAIN). Outros tipos (`MX`, `TXT`, `HTTPS`...) respondem NOERROR vazio com o `SOA` da zona (TTL negativo 10 s). Fora das zonas: NXDOMAIN, sem `aa`, **sem repasse** a upstream (a NRPT só manda as zonas para cá). Classe diferente de `IN` → REFUSED.
+- **Servidor** (`forge_net::dns::DnsServer`): hickory-server UDP + TCP no mesmo endereço, ator `dns-server` ([03](03-engine.md) §7.2) com `start` (primeiro endereço livre de `127.0.0.1:53`, `127.0.0.53:53`; nenhum livre → `port_in_use` com os motivos), `stop`, `reload` (troca as zonas na hora via `watch`, sem mexer nos sockets), `stats` (endereço, `nrpt_capable` = porta 53 em loopback, contadores de perguntas/respostas/NODATA/NXDOMAIN/erros, último erro). Zonas, contadores e "deveria estar rodando" ficam fora do ator: reiniciado após pânico, ele volta a escutar sozinho. Medido nesta máquina: o Host Network Service (Hyper-V/WSL, `svchost`) ocupa `0.0.0.0:53` UDP e mesmo assim `127.0.0.1:53` é aceito (o bind mais específico vence).
+- **Política** (`forge_net::policy::DnsPolicyManager` sobre `forge_core::platform::DnsPolicy`): `enable` tenta NRPT para cada TLD (`nrpt.add` via helper, [ADR-0021](adr/0021-elevated-helper-protocol.md); regra já correta não pede UAC) e confere a leitura depois; sem porta 53, sem NRPT no SO ou com regras NRPT de **política de grupo** (enquanto existirem, o Windows ignora as locais) cai para `hosts.set_block` (`127.0.0.1` e `::1` por host e alias); UAC recusado → `needs_elevation` sem tentar mais nada. `disable` remove a regra Forgebox e o bloco; `sync_hosts` reescreve o bloco só quando os sites mudam. Toda mudança termina com `DnsFlushResolverCache` e publica `dns.policy_applied {v, tld, policy}` e `helper.op {v, name, ok, error}`. Leitura sem elevação: regras NRPT do registro (`HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig` e `HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\DnsPolicyConfig`), `hosts` em `DataBasePath` de `Tcpip\Parameters`.
+- **Bloco no `hosts`** (`forge_core::helper::hosts`): mesmos marcadores e hash dos blocos gerenciados do `forge-render` (`# forgebox:begin hosts (hash=…)`), mantém as quebras de linha do arquivo (CRLF no `hosts` de fábrica), fora do bloco nada muda byte a byte.
+- **Diagnóstico** (`forge_net::dns::DnsDiagnostics::diagnose(host, zonas, servidor)` → `DnsDiagnosis`): resolve pelo SO (`getaddrinfo`: hosts, NRPT, cache) e direto no nosso resolvedor (UDP), lê regras NRPT, `hosts`, donos da porta 53 (UDP e TCP, `PortTable::udp_endpoints`) e adaptadores (`NetAdapters`), tudo em paralelo e com timeout; devolve `system_resolves_to`, `our_server_resolves_to`, `nrpt_present`, `hosts_block_present`, `hosts_entries`, `port53_owner`, `vpn_adapters`, `ok` e `hints` com código estável, severidade e texto pt-BR (`server_not_running`, `server_not_on_port53`, `nrpt_missing`, `nrpt_points_elsewhere`, `group_policy_nrpt`, `hosts_override`, `port53_acrylic`, `port53_docker`, `port53_dns_server`, `port53_vpn`, `port53_system_service`, `vpn_adapter`, `system_mismatch`, `system_unresolved`...). Fonte ilegível vai para `read_errors`; o diagnóstico nunca falha.
+
+### 5.5 Teste manual (aceite de M1-E4-T3, smoke M1)
+Pedem um humano diante da máquina (o prompt UAC não é automatizável). Com o daemon e a CLI (M1-E5-T2/T3):
+```powershell
+forge dns enable                       # 1 prompt UAC; cria a regra NRPT .test -> 127.0.0.1 (ou 127.0.0.53)
+Get-DnsClientNrptRule | Where-Object Namespace -contains '.test'
+Resolve-DnsName qualquer.test          # esperado: A 127.0.0.1 e AAAA ::1
+Resolve-DnsName api.qualquer.test      # subdomínio arbitrário, idem
+Resolve-DnsName google.com             # continua no DNS normal
+forge dns test qualquer.test           # diagnóstico: ok = true, sem hints de erro
+forge dns disable                      # 1 prompt; Resolve-DnsName qualquer.test volta a falhar
+```
+Antes da CLI existir, o mesmo pode ser feito com o exemplo do crate e a regra criada à mão num PowerShell elevado:
+```powershell
+cargo run -p forge-net --example dns_serve -- --diagnose qualquer.test --for 300   # sem admin
+Resolve-DnsName qualquer.test -Server 127.0.0.1 -DnsOnly                           # direto no resolvedor
+# PowerShell como administrador (equivale ao nrpt.add do helper):
+Add-DnsClientNrptRule -Namespace ".test" -NameServers "127.0.0.1" -Comment "Forgebox (teste manual)"
+Resolve-DnsName qualquer.test                                                      # via NRPT
+Get-DnsClientNrptRule | Where-Object Comment -like 'Forgebox*' | Remove-DnsClientNrptRule -Force
+```
+Executado nesta máquina (Windows 10 19045, sem elevação) com o exemplo em `127.0.0.1:53`: `Resolve-DnsName qualquer.test -Server 127.0.0.1` → `A 127.0.0.1` + `AAAA ::1` (TTL 30); `loja.hml.test` com `--remote hml.test=10.0.0.5` → `A 10.0.0.5`; `-TcpOnly` idem; `x.com` → "O nome DNS não existe". A parte com NRPT (`Add-DnsClientNrptRule`) fica para o smoke M1.
 
 ## 6. SSL/TLS
 
