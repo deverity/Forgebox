@@ -98,13 +98,16 @@ fn quote_ps(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// `PATH` entries for a project: each installed tool with a `current` link, at the
-/// version the project selects (`install.version_files` up from `dir`), an override, or
-/// `current`.
+/// Environment for a project (`forge env`, `forge exec`): each installed tool with a
+/// `current` link at the version the project selects (`install.version_files` up from
+/// `dir`), an override, or `current`. `PATH` gets the version folders first and then
+/// `bin/shims` (commands that only exist as shims, such as `composer`); `vars` carries
+/// the tool's `config.env` for that version (`PHPRC`, `PHP_INI_SCAN_DIR`), so a CLI run
+/// sees the same configuration as the services.
 async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellEnvDto> {
     let manifests = installed_manifests(&daemon).await?;
     let mut path_prepend = Vec::new();
-    let vars = BTreeMap::new();
+    let mut vars = BTreeMap::new();
     for manifest in manifests {
         let install = &manifest.spec.install;
         if !install.current_link {
@@ -112,7 +115,8 @@ async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellE
         }
         let id = manifest.metadata.id.clone();
         let rows = catalog::installed(&daemon.reader, &id, Some(&manifest)).await?;
-        let mut wanted = params.versions.get(id.as_str()).cloned();
+        let explicit = params.versions.get(id.as_str()).cloned();
+        let mut wanted = explicit.clone();
         if wanted.is_none() {
             if let Some(dir) = params.dir.clone() {
                 let files = install.version_files.clone();
@@ -136,12 +140,30 @@ async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellE
                 .flatten();
             }
         }
-        let base = match wanted
+        let picked = wanted
             .as_deref()
-            .and_then(|w| catalog::pick(&manifest, &rows, w))
-        {
-            Some(row) => PathBuf::from(&row.path),
-            None => daemon.root.tool_current_link(&id),
+            .and_then(|w| catalog::pick(&manifest, &rows, w));
+        let (base, row) = match picked {
+            Some(row) => {
+                if explicit.is_some() {
+                    // `forge exec --php 8.3`: the shims (`composer` → `php.cmd`) run the
+                    // same version as the PATH.
+                    vars.insert(
+                        forge_provider::layout::shims::version_override_var(id.as_str()),
+                        row.version.clone(),
+                    );
+                }
+                (PathBuf::from(&row.path), Some(row.clone()))
+            }
+            None => {
+                let current = daemon.layout.current_version(&id).await.ok().flatten();
+                let row = current.and_then(|c| {
+                    rows.iter()
+                        .find(|r| r.canonical_name == c.canonical_name)
+                        .cloned()
+                });
+                (daemon.root.tool_current_link(&id), row)
+            }
         };
         for sub in &install.path {
             let sub = sub.trim_matches('/');
@@ -152,22 +174,54 @@ async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellE
             };
             path_prepend.push(dir.to_string_lossy().replace('/', "\\"));
         }
+        if let Some(row) = row {
+            let template = daemon.layout.vars_for(&manifest, &row);
+            for (name, value) in &manifest.spec.config.env {
+                match template.substitute(value) {
+                    Ok(value) => {
+                        vars.insert(name.clone(), value);
+                    }
+                    Err(err) => {
+                        tracing::warn!(tool = %id, var = %name, %err, "config.env left out of the shell environment");
+                    }
+                }
+            }
+        }
     }
+    path_prepend.push(daemon.root.bin_shims().to_string_lossy().replace('/', "\\"));
     let script = match params.format {
         ShellFormat::Json => None,
-        ShellFormat::Powershell => Some(format!(
-            "$env:PATH = {} + ';' + $env:PATH",
-            quote_ps(&path_prepend.join(";"))
-        )),
-        ShellFormat::Cmd => Some(format!("set \"PATH={};%PATH%\"", path_prepend.join(";"))),
-        ShellFormat::Bash => Some(format!(
-            "export PATH=\"{}:$PATH\"",
-            path_prepend
-                .iter()
-                .map(|p| p.replace('\\', "/"))
-                .collect::<Vec<_>>()
-                .join(":")
-        )),
+        ShellFormat::Powershell => {
+            let mut lines = vec![format!(
+                "$env:PATH = {} + ';' + $env:PATH",
+                quote_ps(&path_prepend.join(";"))
+            )];
+            for (name, value) in &vars {
+                lines.push(format!("$env:{name} = {}", quote_ps(value)));
+            }
+            Some(lines.join("\n"))
+        }
+        ShellFormat::Cmd => {
+            let mut lines = vec![format!("set \"PATH={};%PATH%\"", path_prepend.join(";"))];
+            for (name, value) in &vars {
+                lines.push(format!("set \"{name}={value}\""));
+            }
+            Some(lines.join("\r\n"))
+        }
+        ShellFormat::Bash => {
+            let mut lines = vec![format!(
+                "export PATH=\"{}:$PATH\"",
+                path_prepend
+                    .iter()
+                    .map(|p| p.replace('\\', "/"))
+                    .collect::<Vec<_>>()
+                    .join(":")
+            )];
+            for (name, value) in &vars {
+                lines.push(format!("export {name}='{}'", value.replace('\'', "'\\''")));
+            }
+            Some(lines.join("\n"))
+        }
     };
     Ok(ShellEnvDto {
         path_prepend,

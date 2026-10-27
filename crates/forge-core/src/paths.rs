@@ -218,6 +218,11 @@ impl ForgeRoot {
     pub fn certs_ca(&self) -> PathBuf {
         self.join(&["certs", "ca"])
     }
+    /// `certs/ca-bundle.pem`: the roots the OS trusts plus the local CA, for tools with
+    /// their own TLS stack (PHP's OpenSSL and curl, Composer).
+    pub fn certs_ca_bundle(&self) -> PathBuf {
+        self.join(&["certs", "ca-bundle.pem"])
+    }
     /// `certs/sites/`: leaf certificates.
     pub fn certs_sites(&self) -> PathBuf {
         self.join(&["certs", "sites"])

@@ -24,6 +24,30 @@ pub fn repo_registry() -> PathBuf {
         .unwrap()
 }
 
+/// Compiles `tests/fixtures/<name>.rs` (no dependencies) with rustc into
+/// `CARGO_TARGET_TMPDIR/<name>/<name>.exe` and returns the executable.
+pub fn compile_fixture(name: &str) -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    let exe = dir.join(format!("{name}.exe"));
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(format!("{name}.rs"));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-O", "-o"])
+        .arg(&exe)
+        .arg(&source)
+        .output()
+        .expect("running rustc");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    exe
+}
+
 /// A free TCP port of 127.0.0.1 right now.
 pub fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")

@@ -200,6 +200,7 @@ Forgebox/
 │   │       ├── leaf.rs           # cert por site: SAN host + *.host + aliases, 825 dias, serverAuth, CRL DP; certs/sites/
 │   │       ├── crl.rs            # CRL vazia assinada pela CA + responder HTTP mínimo em 127.0.0.1 (Schannel/curl.exe)
 │   │       ├── cert.rs           # PEM, leitura de volta (x509-parser), thumbprints, escrita atômica de par cert/chave
+│   │       ├── bundle.rs         # certs/ca-bundle.pem: CA local + raízes confiadas pelo Windows (PHP/curl/Composer, docs/06 §6.5)
 │   │       ├── trust.rs          # livro certs/ca/trust.json (raízes adicionadas por thumbprint) + instruções Node/Firefox/Python/Java
 │   │       ├── manager.rs        # ator `tls` (TlsManager): issue, renew, rotate (duas fases), status, install/uninstall,
 │   │       │                     #   verificação diária, eventos tls.* (forma de TlsPayload) e helper.op
@@ -229,7 +230,8 @@ Forgebox/
 │   │   │                         #   convert.rs domínio → DTO, not_implemented.rs com a tarefa do roadmap)
 │   │   └── tests/                # processo real em raiz temporária: lifecycle.rs, up_down_loop.rs (aceite 100×);
 │   │                             #   #[ignore] com binários oficiais (common/online.rs): php_pool_online.rs,
-│   │                             #   web_nginx_php_online.rs, mailpit_service_online.rs
+│   │                             #   web_nginx_php_online.rs, mailpit_service_online.rs; concurrency.rs (orçamentos de
+│   │                             #   docs/03 §7.6 com fixtures/fake_mailpit.rs: serviço travado, cliente lento, download + start)
 │   ├── forge-cli/                # bin forge.exe (lib forge_cli + main.rs): cli.rs (árvore clap com todos os comandos de docs/09),
 │   │   │                         #   commands/*.rs (um por grupo), context.rs (flags globais + cliente), connect.rs (daemon automático),
 │   │   │                         #   jobs.rs (acompanha jobs: eventos + poll, barras), output.rs (tabelas, cores, --json), render.rs

@@ -25,6 +25,14 @@ default_charset = "UTF-8"
 [Session]
 session.save_path = "C:/fb-test/tmp/php/8.3/sessions"
 
+; TLS roots: the local CA plus the roots the OS trusts (certs/ca-bundle.pem, docs/06 section 6.5),
+; so curl, streams and Composer trust what the browser trusts.
+[openssl]
+openssl.cafile = "C:/fb-test/certs/ca-bundle.pem"
+
+[curl]
+curl.cainfo = "C:/fb-test/certs/ca-bundle.pem"
+
 [opcache]
 zend_extension = opcache
 opcache.enable = 1

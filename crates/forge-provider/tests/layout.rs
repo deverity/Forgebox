@@ -92,6 +92,9 @@ spec:
       - copy: { from: "php.ini-development", to: "{{ paths.etc }}/php/{{ series }}/php.ini", if_missing: true }
       - render: { template: "php/php.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/10-forgebox.ini" }
       - mkdir: "{{ paths.tmp }}/php/{{ series }}/sessions"
+  config:
+    env:
+      PHPRC: "{{ paths.etc }}/php/{{ series }}"
 "#;
 
 fn manifest(text: &str) -> Arc<ToolManifest> {
@@ -168,6 +171,13 @@ impl TemplateRenderer for FakeRenderer {
             ),
         )
         .unwrap();
+        // The shipped files are reachable while rendering (staged copy during an install),
+        // even though `paths.version` already names the final folder.
+        assert!(
+            request.files_dir.join("php.exe").is_file(),
+            "files_dir {} holds the version's files",
+            request.files_dir.display()
+        );
         self.calls.lock().unwrap().push(request.clone());
         Ok(())
     }
@@ -463,6 +473,62 @@ async fn two_versions_current_switch_shims_and_path() {
     .unwrap();
     let out = run_shim(&env.root, "php", &project, &["-v"]);
     assert_eq!(out.status.code(), Some(1));
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("INJECTED"),
+        "{out:?}"
+    );
+
+    // The environment of the version the shim runs (config.env through forgebox-env.cmd,
+    // relative to the root, also through the `current` junction).
+    let phprc = |out: &std::process::Output| {
+        let text = stdout(out);
+        let value = text.split_once(" ENV ").map(|(_, v)| v.to_owned()).unwrap();
+        std::path::PathBuf::from(value).canonicalize().unwrap()
+    };
+    let etc = |series: &str| {
+        env.root
+            .etc()
+            .join("php")
+            .join(series)
+            .canonicalize()
+            .unwrap()
+    };
+    let out = run_shim(&env.root, "php", &plain, &["--env", "PHPRC"]);
+    assert!(stdout(&out).starts_with("PHP 8.4.14 ENV "), "{out:?}");
+    assert_eq!(phprc(&out), etc("8.4"), "current = 8.4");
+    let script = std::fs::read_to_string(
+        env.root
+            .bin()
+            .join("php")
+            .join("8.3.37-nts-x64")
+            .join("forgebox-env.cmd"),
+    )
+    .unwrap();
+    assert!(
+        script.contains(r#"set "PHPRC=%~dp0..\..\..\etc\php\8.3""#),
+        "{script}"
+    );
+    // FORGEBOX_PHP_VERSION (forge exec --php) wins over project files and current.
+    let script = env.root.bin_shims().join("php.cmd");
+    let out = Command::new("cmd.exe")
+        .args(["/d", "/c"])
+        .arg(&script)
+        .args(["--env", "PHPRC"])
+        .current_dir(&plain)
+        .env("FORGEBOX_PHP_VERSION", "8.3")
+        .output()
+        .unwrap();
+    assert!(stdout(&out).starts_with("PHP 8.3.37 ENV "), "{out:?}");
+    assert_eq!(phprc(&out), etc("8.3"));
+    let out = Command::new("cmd.exe")
+        .args(["/d", "/c"])
+        .arg(&script)
+        .arg("-v")
+        .current_dir(&plain)
+        .env("FORGEBOX_PHP_VERSION", "8.3\"&echo.INJECTED&\"")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
     assert!(
         !String::from_utf8_lossy(&out.stdout).contains("INJECTED"),
         "{out:?}"

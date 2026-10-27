@@ -49,6 +49,10 @@ pub struct RenderRequest {
     pub dest: PathBuf,
     /// Final variables: `paths.version` is `bin/<tool>/<canonical_name>`.
     pub vars: TemplateVars,
+    /// Where the version's files are right now: the staged copy during an install (they
+    /// move to `paths.version` afterwards), the version folder on a re-render. For checks
+    /// on the shipped files (which extensions exist).
+    pub files_dir: PathBuf,
 }
 
 /// Renders `post_install[].render` templates. Implemented by the daemon on top of
@@ -261,6 +265,7 @@ fn render_action(
         template: render.template.clone(),
         dest,
         vars: ctx.final_vars.clone(),
+        files_dir: ctx.staged_dir.to_path_buf(),
     })
 }
 

@@ -154,6 +154,9 @@ spec:
       source: bundled            # bundled → ext/*.dll do próprio zip
       ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
       pattern: "php_{name}.dll"  # precisa de {name}
+      dir: ext                   # pasta dos arquivos de extensão, relativa à versão (padrão `ext`). Item de
+                                 # defaults_on sem arquivo ali é embutido naquele build (PHP 8.4 Windows: bcmath)
+                                 # ou ausente: não entra no overlay (evita o aviso "Unable to load dynamic library")
       defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
       zend_extensions: [{ name: opcache, constraint: "<8.5" }]  # PHP 8.5+ embute o OPcache
     # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de
@@ -240,7 +243,7 @@ service:
       then: ctrl-break               # ctrl-c | ctrl-break | close | kill: próximo passo se o comando não parar
     reload: null                     # ou { command: "..." } ou { signal: ctrl-c | ctrl-break }
     restart_policy: { on: failure, max: 3, window: 60s }   # on: never | failure | always; max/window limitam `failure` (`always` não tem limite); espera exponencial 1s..30s entre reinícios (docs/03 §1.4)
-    logs:
+    logs:                            # a pasta de cada arquivo (dentro da raiz) é criada pelo daemon antes de cada start
       - { label: Error log, path: "{{ paths.logs }}/mysql/{{ instance.name }}/error.log", format: mysql }
     data:
       dir: "{{ paths.data }}/mysql/{{ instance.name }}"
@@ -271,6 +274,7 @@ Strings dos manifestos só **substituem variáveis**: `{{ caminho.da.variavel }}
 | Onde | Variáveis |
 |---|---|
 | Tool e Extension (qualquer campo de `spec`) | `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` (key declarada em `versioning.variants`; em Extension, as da tool alvo), `{{ paths.root\|bin\|etc\|data\|logs\|tmp\|www\|certs\|version }}`, `{{ instance.name\|data_dir }}`, `{{ instance.ports.<n> }}` (porta declarada em `service.daemon.ports`), `{{ instance.config.<id> }}` (id de `config.files`), `{{ prefs.<chave> }}` |
+| `spec.install` (Tool e Extension) | só `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` e `{{ paths.<dir> }}`: `install` roda **uma vez por versão, antes de existir instância** (`instance.*` e `prefs.*` são erro de lint, regra 5). Pastas e arquivos por instância (`logs/mysql/<instância>/`, `my.ini`) vêm do alvo de render e de `service.daemon.logs` no start |
 | `config.quick_settings[]` | + `{{ value }}` (valor escolhido, em `also_set`) |
 | `service.pool` | + `{{ port }}`, `{{ recycle.max_requests\|max_rss_mb\|max_age }}`, `{{ scaling.min\|max\|idle_timeout }}` |
 | Stack e Project | `{{ dir }}`, `{{ site.slug\|host\|root }}`, `{{ paths.* }}`, `{{ prefs.* }}`, `{{ instances.<tool>.<instance>.ports.<n>\|config.<id>\|name\|data_dir }}` (tool listada em `spec.tools`/`spec.services`) |

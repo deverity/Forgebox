@@ -114,6 +114,28 @@ fn invalid_fixtures_fail_with_the_expected_codes() {
     );
 }
 
+#[test]
+fn install_time_variable_message_lists_what_is_allowed() {
+    let text = read(&fixtures().join("invalid/install-instance-variable.yaml"));
+    let registry = TempRegistry::new();
+    registry.add_manifest("install-instance-variable", &text);
+    let report = registry.lint(&context());
+    let message = report
+        .issues
+        .iter()
+        .find(|i| i.code.as_str() == "unknown_template_variable")
+        .map(ToString::to_string)
+        .expect("unknown_template_variable issue");
+    assert!(
+        message.contains(concat!(
+            "is not available at install time ",
+            "(allowed in install: version, series, variant.<key>, paths.<dir>)"
+        )),
+        "{message}"
+    );
+    assert!(!message.contains("  "), "stray spaces: {message:?}");
+}
+
 fn code_rule(code: &str) -> u8 {
     match code {
         "missing_checksum" => 2,

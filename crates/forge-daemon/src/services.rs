@@ -56,6 +56,35 @@ const RELOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// Wait for the services turn (create/remove).
 const TURN_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The folders of the log files a manifest declares (`service.daemon.logs[].path`) for
+/// one instance, keeping only those inside the root (no `..`): a manifest never makes the
+/// daemon create folders elsewhere.
+fn log_dirs_of(
+    root: &ForgeRoot,
+    manifest: &ToolManifest,
+    vars: &RuntimeVars,
+) -> Result<Vec<PathBuf>> {
+    let Some(daemon) = manifest.spec.service.daemon.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let mut dirs = Vec::new();
+    for log in &daemon.logs {
+        let path = PathBuf::from(vars.substitute(&log.path)?);
+        let inside = |p: &&std::path::Path| {
+            p.starts_with(root.path())
+                && !p
+                    .components()
+                    .any(|c| matches!(c, std::path::Component::ParentDir))
+        };
+        if let Some(parent) = path.parent().filter(inside) {
+            if !dirs.iter().any(|d: &PathBuf| d == parent) {
+                dirs.push(parent.to_path_buf());
+            }
+        }
+    }
+    Ok(dirs)
+}
+
 /// One instance: its row, its resolved runtime facts and its actor.
 #[derive(Clone)]
 pub struct Entry {
@@ -513,14 +542,17 @@ impl ServiceManager {
             let reservation = match self.inner.ports.get(&owner).await? {
                 Some(existing) => existing,
                 None => {
+                    // The manifest's default port, when free and still part of the
+                    // range: a range reconfigured to leave it out (`[ports.ranges] web =
+                    // [8080, 8443]`) means "not that port".
                     let preferred = match spec.default {
-                        Some(port) => self
+                        Some(port) if self.inner.ports.in_range(&spec.range, port) => self
                             .inner
                             .ports
                             .reserve(port, Some(&spec.range), owner.clone())
                             .await
                             .ok(),
-                        None => None,
+                        _ => None,
                     };
                     match preferred {
                         Some(r) => r,
@@ -593,7 +625,33 @@ impl ServiceManager {
         if let Some(renderer) = self.inner.renderer.get().cloned() {
             renderer.render_instance(entry).await?;
         }
+        self.log_dirs(entry).await?;
         self.data_init(entry).await
+    }
+
+    /// Creates the folders of the log files the manifest declares
+    /// (`service.daemon.logs[].path`, usually per instance: `logs/mysql/<name>/`): the
+    /// tool writes the file but most tools do not create its folder.
+    async fn log_dirs(&self, entry: &Entry) -> Result<()> {
+        let (Some(manifest), Some(vars)) = (&entry.manifest, &entry.vars) else {
+            return Ok(());
+        };
+        let dirs = log_dirs_of(&self.inner.root, manifest, vars)?;
+        if dirs.is_empty() {
+            return Ok(());
+        }
+        forge_core::runtime::spawn_blocking_timeout(
+            "creating the log folders",
+            Duration::from_secs(10),
+            move || {
+                for dir in &dirs {
+                    std::fs::create_dir_all(dir)
+                        .map_err(|e| ForgeError::io_at("creating", dir, e))?;
+                }
+                Ok(())
+            },
+        )
+        .await
     }
 
     /// Runs `service.daemon.data.init` once, when the data folder does not exist.
@@ -1195,6 +1253,38 @@ mod tests {
         precheck_ports.sort_unstable();
         assert_eq!(precheck_ports, [8080, 8443]);
         assert!(spec.stop.ctrl_break);
+    }
+
+    #[test]
+    fn log_folders_come_from_the_manifest_and_stay_inside_the_root() {
+        let (root, manifest, row, instance) = setup("mysql", "8.4.6");
+        let ports = BTreeMap::from([("main".to_owned(), 3306)]);
+        let vars = vars_for(&root, &manifest, &row, &instance, &ports);
+        // M1 gate: mysqld does not create `logs/mysql/<instance>/` and refused to start.
+        assert_eq!(
+            log_dirs_of(&root, &manifest, &vars).unwrap(),
+            [PathBuf::from("C:/fb/logs/mysql/default")]
+        );
+
+        let mut outside = manifest.clone();
+        let logs = &mut outside.spec.service.daemon.as_mut().unwrap().logs;
+        let template = logs[0].clone();
+        logs.clear();
+        for path in [
+            "C:/elsewhere/mysql/error.log",
+            "{{ paths.logs }}/../../escape/error.log",
+            "{{ paths.logs }}/mysql/{{ instance.name }}/slow.log",
+            "{{ paths.logs }}/mysql/{{ instance.name }}/general.log",
+        ] {
+            let mut log = template.clone();
+            log.path = path.into();
+            logs.push(log);
+        }
+        assert_eq!(
+            log_dirs_of(&root, &outside, &vars).unwrap(),
+            [PathBuf::from("C:/fb/logs/mysql/default")],
+            "outside the root and `..` are ignored, duplicates once"
+        );
     }
 
     #[test]

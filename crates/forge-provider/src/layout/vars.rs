@@ -80,6 +80,32 @@ pub struct TemplateVars {
 }
 
 impl TemplateVars {
+    /// Variables of an installed version of `manifest`: `series` under
+    /// `versioning.series_key` (the version itself when it cannot be parsed),
+    /// `paths.version = dir`.
+    pub fn of_version(
+        root: &ForgeRoot,
+        manifest: &forge_manifest::schema::ToolManifest,
+        version: &str,
+        canonical_name: &str,
+        variant: &BTreeMap<String, String>,
+        dir: &Path,
+    ) -> Self {
+        let versioning = &manifest.spec.versioning;
+        let series = forge_manifest::version::Version::parse(versioning.scheme, version)
+            .ok()
+            .and_then(|v| v.series(&versioning.series_key).ok())
+            .unwrap_or_else(|| version.to_owned());
+        Self {
+            tool: manifest.metadata.id.to_string(),
+            version: version.to_owned(),
+            series,
+            canonical_name: canonical_name.to_owned(),
+            variant: variant.clone(),
+            paths: PathVars::new(root, dir),
+        }
+    }
+
     /// The same variables with `paths.version` pointing at `dir`.
     pub fn with_version_dir(&self, dir: &Path) -> Self {
         let mut out = self.clone();

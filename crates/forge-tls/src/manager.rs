@@ -337,6 +337,10 @@ struct Shared {
     rotations: AtomicU64,
     /// The CRL being served (survives actor restarts).
     crl: watch::Sender<Option<CrlDocument>>,
+    /// `certs/ca-bundle.pem` ([`crate::bundle`]).
+    ca_bundle: PathBuf,
+    /// Read for the system roots of the bundle (never written by the actor).
+    trust: Arc<dyn TrustStore>,
 }
 
 /// A leaf known to the actor.
@@ -555,7 +559,39 @@ impl TlsActor {
             entry.signed_by_ca = false;
         }
         self.refresh_crl(true).await;
+        self.refresh_bundle().await;
         Ok(ca)
+    }
+
+    /// Rewrites `certs/ca-bundle.pem` ([`crate::bundle`]) with the current CA and the
+    /// roots the OS trusts now. Failures are logged: tools then keep the previous file.
+    async fn refresh_bundle(&self) {
+        let local = self.ca.as_ref().map(|ca| ca.cert_der().to_vec());
+        let result = self
+            .blocking(
+                "tls: writing the CA bundle",
+                self.shared.config.io_timeout,
+                move |shared| {
+                    let roots = shared.trust.system_roots().unwrap_or_else(|err| {
+                        tracing::warn!(%err, "tls: the OS roots cannot be read; bundle without them");
+                        Vec::new()
+                    });
+                    let text = crate::bundle::render(local.as_deref(), &roots);
+                    crate::bundle::write_if_changed(&shared.ca_bundle, &text)
+                        .map(|written| (written, roots.len()))
+                },
+            )
+            .await;
+        match result {
+            Ok((written, roots)) => tracing::info!(
+                path = %self.shared.ca_bundle.display(),
+                roots,
+                local_ca = self.ca.is_some(),
+                written,
+                "tls: CA bundle ready"
+            ),
+            Err(err) => tracing::error!(%err, "tls: could not write the CA bundle"),
+        }
     }
 
     /// Validity of a new leaf: the configured one, never past the CA's `notAfter`.
@@ -852,6 +888,7 @@ impl TlsActor {
         self.ca = Some(Arc::clone(&ca));
         self.ca_error = None;
         self.refresh_crl(true).await;
+        self.refresh_bundle().await;
         let targets: Vec<(String, Vec<String>)> = self
             .leaves
             .iter()
@@ -952,6 +989,7 @@ impl Actor for TlsActor {
 
     async fn on_start(&mut self, ctx: &mut Context<Self>) {
         self.reload().await;
+        self.refresh_bundle().await;
         self.refresh_crl(false).await;
         self.start_crl_server().await;
         self.start_scheduler(ctx);
@@ -1093,6 +1131,8 @@ impl TlsManager {
             acl,
             rotations: AtomicU64::new(0),
             crl: watch::channel(None).0,
+            ca_bundle: root.certs_ca_bundle(),
+            trust: Arc::clone(&trust),
         });
         let factory_shared = Arc::clone(&shared);
         let handle = supervisor.spawn(

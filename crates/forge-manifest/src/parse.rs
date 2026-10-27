@@ -410,6 +410,15 @@ fn check_var(scope: &Scope, field: &str, var: &VarRef) -> Result<(), String> {
                     Err(format!("`{}`: keys are {}", var.path(), keys.join(", ")))
                 }
             };
+            // `spec.install` runs once per version, before any instance exists
+            // (`forge_provider::layout::TemplateVars`): no `instance.*` nor `prefs.*`.
+            let at_install = field.starts_with("spec.install.") || field == "spec.install";
+            if at_install && matches!(segs[0].as_str(), "instance" | "prefs") {
+                return Err(format!(
+                    "`{}` is not available at install time (allowed in install: version, series, variant.<key>, paths.<dir>)",
+                    var.path()
+                ));
+            }
             match segs[0].as_str() {
                 "version" | "series" if leaf => Ok(()),
                 "value" if leaf && in_quick => Ok(()),
@@ -1107,6 +1116,16 @@ impl Checker<'_> {
                 );
             }
             self.not_empty("spec.config.extensions.ini_dir", &ext.ini_dir);
+            if ext.dir.contains(['\\', ':'])
+                || ext.dir.starts_with('/')
+                || ext.dir.split('/').any(|p| p == "..")
+            {
+                self.push(
+                    IssueCode::InvalidValue,
+                    "spec.config.extensions.dir",
+                    "must be a folder inside the version folder (relative, `/`, no `..`)",
+                );
+            }
             for (i, z) in ext.zend_extensions.iter().enumerate() {
                 let f = format!("spec.config.extensions.zend_extensions[{i}]");
                 self.not_empty(&format!("{f}.name"), z.name());

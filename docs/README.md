@@ -23,6 +23,7 @@ Esta pasta é a fonte da verdade do projeto. Agentes e humanos devem ler na orde
 | 13 | [Modo remoto](13-remote-mode.md) | Controlar um Forgebox em Linux/outro Windows a partir da GUI/CLI: transportes, pareamento mTLS/SSH, perfis, diferenças por SO |
 | 14 | [Observabilidade por vhost](14-observability-metrics.md) | CPU, memória, req/s, p50/p90/p99, erros e consultas lentas por projeto; pipeline, UI, CLI, exportação |
 | 15 | [Paridade Linux: case-sensitive por padrão](15-linux-parity-case-sensitivity.md) | Flag NTFS por diretório, conversão, servidores/PHP/bancos, Case Mismatch Finder, outras paridades (LF, UTF-8, Git) |
+| 16 | [Smoke do gate M1](16-smoke-m1.md) | `scripts/smoke.ps1`: instalação → serviços → site Laravel HTTPS → migrate → e-mail no Mailpit, tudo pela CLI; modos interativo e `-NonInteractive` |
 | ADR | [Decisões de arquitetura](adr/README.md) | Registros curtos de cada decisão relevante e alternativas rejeitadas |
 | design | [Artefatos de design](design/README.md) | Tokens, mockups, componentes, motion, ícones |
 

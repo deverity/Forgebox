@@ -34,6 +34,15 @@
 //! table with a warning. The `.cmd` files use CRLF (batch labels and `goto` misbehave
 //! with LF-only files) and ASCII only (the console code page is not UTF-8); this is the
 //! one exception to the LF rule of generated files (docs/15 §7).
+//!
+//! Environment (M1 gate): `FORGEBOX_<TOOL>_VERSION` (`FORGEBOX_PHP_VERSION=8.3`), when
+//! set, selects the version before any project file (what `forge exec --php 8.3` sets,
+//! so `composer` → `php.cmd` runs the same PHP). Before running a version the shim calls
+//! its `forgebox-env.cmd` ([`ENV_SCRIPT`]), written in each version folder from the
+//! manifest's `config.env` (`PHPRC`, `PHP_INI_SCAN_DIR`): without it `php` would start
+//! without the Forgebox `php.ini` and its extensions. The script finds the root from its
+//! own location (`%~dp0..\..\..`), so it also works through the `current` junction and in
+//! a moved portable root.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -46,10 +55,24 @@ use forge_manifest::schema::tool::{Layout, Shim};
 use forge_manifest::version::{Build, Version, cmp_builds};
 use serde::{Deserialize, Serialize};
 
+use super::vars::TemplateVars;
 use crate::messages;
 
 /// Line every generated shim carries, followed by the tool id.
 pub const SHIM_MARKER: &str = "rem forgebox-shim tool=";
+/// Per-version environment script called by the shims (`config.env` of the manifest).
+pub const ENV_SCRIPT: &str = "forgebox-env.cmd";
+/// First line after `@echo off` of every [`ENV_SCRIPT`].
+const ENV_MARKER: &str = "rem forgebox-env tool=";
+
+/// Environment variable that selects the version of `tool` for the shims and
+/// `forge exec` (`FORGEBOX_PHP_VERSION`, `FORGEBOX_NODEJS_VERSION`).
+pub fn version_override_var(tool: &str) -> String {
+    format!(
+        "FORGEBOX_{}_VERSION",
+        tool.to_ascii_uppercase().replace(['-', '.'], "_")
+    )
+}
 /// The `forgebox.yaml` reader shared by the shims, in `bin/shims/`.
 pub const PROJECT_HELPER: &str = "forgebox-project.ps1";
 /// Extensions tried, in order, for a shim without `file`.
@@ -232,6 +255,8 @@ fn render_cmd(s: &ShimScript<'_>) -> String {
     l.push("set \"FB_SEL=\"".into());
     l.push("set \"FB_SRC=\"".into());
     l.push("set \"FB_D=%CD%\"".into());
+    let override_var = version_override_var(tool);
+    l.push(format!("if defined {override_var} goto fb_env"));
     l.push(":fb_walk".into());
     for file in s.version_files {
         l.push(format!("set \"FB_SRC=%FB_D%\\{file}\""));
@@ -245,6 +270,15 @@ fn render_cmd(s: &ShimScript<'_>) -> String {
     l.push("if \"%FB_UP%\"==\"%FB_D%\" goto fb_current".into());
     l.push("set \"FB_D=%FB_UP%\"".into());
     l.push("goto fb_walk".into());
+    l.push(String::new());
+    // The override is only expanded with delayed expansion (like project files).
+    l.push(":fb_env".into());
+    l.push("setlocal EnableDelayedExpansion".into());
+    l.push(format!(
+        "for /f \"delims=\" %%V in (\"!{override_var}!\") do endlocal & set \"FB_SEL=%%V\""
+    ));
+    l.push(format!("set \"FB_SRC={override_var}\""));
+    l.push("goto fb_select".into());
     l.push(String::new());
     l.push(":fb_current".into());
     l.push(format!("set \"FB_DIR={}\"", s.fallback));
@@ -277,6 +311,9 @@ fn render_cmd(s: &ShimScript<'_>) -> String {
     l.push(format!("set \"FB_EXE=%FB_SHIMS%%FB_DIR%\\{}\"", s.file));
     l.push("if not exist \"%FB_EXE%\" goto fb_missing".into());
     l.push("for %%E in (\"%FB_EXE%\") do set \"FB_EXE=%%~fE\"".into());
+    l.push(format!(
+        "if exist \"%FB_SHIMS%%FB_DIR%\\{ENV_SCRIPT}\" call \"%FB_SHIMS%%FB_DIR%\\{ENV_SCRIPT}\""
+    ));
     match &s.launch {
         Launch::Direct => l.push("\"%FB_EXE%\" %*".into()),
         Launch::Call => l.push("call \"%FB_EXE%\" %*".into()),
@@ -459,6 +496,74 @@ fn resolve_file(manifest: &ToolManifest, shim: &Shim, dirs: &[PathBuf]) -> Optio
     None
 }
 
+/// The [`ENV_SCRIPT`] of version `v` (CRLF, ASCII): `config.env` substituted for that
+/// version, values under the root written relative to the script (`%~dp0..\..\..\etc\...`).
+/// `None` when the manifest declares no environment or `v` is not under `bin/`. Values
+/// `cmd.exe` would interpret are left out with a warning.
+fn render_env_script(
+    root: &ForgeRoot,
+    manifest: &ToolManifest,
+    v: &ShimVersion,
+    warnings: &mut Vec<String>,
+) -> Option<String> {
+    let env = &manifest.spec.config.env;
+    if env.is_empty() || !v.path.starts_with(root.bin()) {
+        return None;
+    }
+    let tool = manifest.metadata.id.as_str();
+    let depth = v.path.strip_prefix(root.path()).ok()?.components().count();
+    let up = format!("%~dp0{}", "..\\".repeat(depth));
+    let root_posix = root.to_posix_string();
+    let vars = TemplateVars::of_version(
+        root,
+        manifest,
+        &v.version,
+        &v.canonical_name,
+        &v.variant,
+        &v.path,
+    );
+    let mut l: Vec<String> = vec![
+        "@echo off".into(),
+        format!("{ENV_MARKER}{tool}"),
+        format!(
+            "rem Environment of {tool} {} (config.env), set by the Forgebox shims before they run it.",
+            v.canonical_name
+        ),
+        "rem Generated by Forgebox: do not edit, it is rewritten with the shims.".into(),
+    ];
+    for (name, value) in env {
+        let value = match vars.substitute(value) {
+            Ok(value) => value,
+            Err(err) => {
+                warnings.push(format!(
+                    "{tool}: config.env {name} left out of {ENV_SCRIPT}: {err}"
+                ));
+                continue;
+            }
+        };
+        if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || !is_batch_safe(&value)
+            || !value.is_ascii()
+        {
+            warnings.push(format!(
+                "{tool}: config.env {name} left out of {ENV_SCRIPT} (characters cmd.exe interprets)"
+            ));
+            continue;
+        }
+        let value = match value.strip_prefix(&root_posix) {
+            Some(rest) if rest.is_empty() || rest.starts_with('/') => {
+                let rest = rest.trim_start_matches('/').replace('/', "\\");
+                format!("{up}{rest}").trim_end_matches('\\').to_owned()
+            }
+            _ => value,
+        };
+        l.push(format!("set \"{name}={value}\""));
+    }
+    let mut text = l.join("\r\n");
+    text.push_str("\r\n");
+    Some(text)
+}
+
 /// Generates (or refreshes) the shims of `manifest` for its installed `versions` and
 /// removes the tool's stale ones (module docs). Blocking.
 pub fn ensure(
@@ -484,6 +589,25 @@ pub fn ensure(
                 v.canonical_name,
                 v.path.display()
             )),
+        }
+    }
+
+    // The environment script of each version the shims can run.
+    if !install.shims.is_empty() {
+        for (v, _) in &usable {
+            let path = v.path.join(ENV_SCRIPT);
+            match render_env_script(root, manifest, v, &mut report.warnings) {
+                Some(text) => {
+                    write_if_changed(&path, &text)?;
+                }
+                None => {
+                    let ours = std::fs::read_to_string(&path)
+                        .is_ok_and(|t| t.lines().any(|l| l.starts_with(ENV_MARKER)));
+                    if ours {
+                        std::fs::remove_file(&path).at("removing", &path)?;
+                    }
+                }
+            }
         }
     }
 
@@ -661,6 +785,15 @@ mod tests {
         assert!(interpreted.contains(r#"call "%FB_SHIMS%php.cmd" "%FB_EXE%" %*"#));
         // Values read from project files are only expanded with delayed expansion.
         assert!(!text.contains("%FB_SEL%"));
+        // The version override and the per-version environment.
+        assert_eq!(version_override_var("nodejs"), "FORGEBOX_NODEJS_VERSION");
+        assert_eq!(version_override_var("my-tool"), "FORGEBOX_MY_TOOL_VERSION");
+        assert!(text.contains("if defined FORGEBOX_NODEJS_VERSION goto fb_env\r\n"));
+        assert!(text.contains(r#"("!FORGEBOX_NODEJS_VERSION!")"#));
+        assert!(!text.contains("%FORGEBOX_NODEJS_VERSION%"));
+        assert!(text.contains(
+            r#"if exist "%FB_SHIMS%%FB_DIR%\forgebox-env.cmd" call "%FB_SHIMS%%FB_DIR%\forgebox-env.cmd""#
+        ));
     }
 
     #[test]

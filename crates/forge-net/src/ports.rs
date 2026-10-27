@@ -32,6 +32,8 @@ use std::net::{Ipv4Addr, TcpListener};
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::sync::watch;
+
 use forge_core::config::PortsConfig;
 use forge_core::error::{ForgeError, Result};
 use forge_core::model::port::{
@@ -82,7 +84,9 @@ pub struct PortAllocator {
     writer: StoreWriter,
     reader: StoreReader,
     table: Arc<dyn PortTable>,
-    config: Arc<PortsConfig>,
+    /// The `[ports]` section in use, shared by every clone and replaced live by
+    /// [`PortAllocator::set_config`] (`forge config set ports.ranges.web ...`).
+    config: Arc<watch::Sender<Arc<PortsConfig>>>,
     options: AllocatorOptions,
 }
 
@@ -90,7 +94,7 @@ impl std::fmt::Debug for PortAllocator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PortAllocator")
             .field("table", &self.table)
-            .field("ranges", &self.config.ranges.keys().collect::<Vec<_>>())
+            .field("ranges", &self.config().ranges.keys().collect::<Vec<_>>())
             .field("options", &self.options)
             .finish_non_exhaustive()
     }
@@ -112,7 +116,7 @@ impl PortAllocator {
             writer: store.writer().clone(),
             reader: store.reader().clone(),
             table,
-            config: Arc::new(config),
+            config: Arc::new(watch::Sender::new(Arc::new(config))),
             options: AllocatorOptions::default(),
         }
     }
@@ -123,9 +127,23 @@ impl PortAllocator {
         self
     }
 
-    /// The `[ports]` configuration in use.
-    pub fn config(&self) -> &PortsConfig {
-        &self.config
+    /// The `[ports]` configuration in use (a snapshot).
+    pub fn config(&self) -> Arc<PortsConfig> {
+        Arc::clone(&self.config.borrow())
+    }
+
+    /// Replaces the `[ports]` configuration for every clone of this allocator (the
+    /// preferences changed). Existing reservations are kept: an owner keeps its port
+    /// even if the range no longer contains it; only new allocations see the new ranges.
+    pub fn set_config(&self, config: PortsConfig) {
+        self.config.send_replace(Arc::new(config));
+    }
+
+    /// Whether `port` belongs to the range `range` of the current configuration.
+    pub fn in_range(&self, range: &str, port: u16) -> bool {
+        self.config()
+            .range(range)
+            .is_some_and(|set| set.contains(port))
     }
 
     /// Current TCP listeners (blocking call off the async workers, bounded).
@@ -158,8 +176,8 @@ impl PortAllocator {
     /// port, `invalid_input` for a malformed owner.
     pub async fn allocate(&self, range: &str, owner: ReservationOwner) -> Result<PortReservation> {
         owner.validate()?;
-        let set = self
-            .config
+        let config = self.config();
+        let set = config
             .range(range)
             .ok_or_else(|| ForgeError::NotFound(format!("port range {range:?}")))?
             .clone();
@@ -174,7 +192,7 @@ impl PortAllocator {
                 BTreeSet::new()
             }
         };
-        let reserved: BTreeSet<u16> = self.config.reserved.iter().copied().collect();
+        let reserved: BTreeSet<u16> = config.reserved.iter().copied().collect();
         let mut refused = 0_usize;
         loop {
             let skip: BTreeSet<u16> = busy.union(&reserved).copied().collect();
@@ -514,6 +532,27 @@ mod tests {
         let err = ports.allocate("nope", owner("e")).await.unwrap_err();
         assert_eq!(err.code(), "not_found");
         assert_eq!(ports.list().await.unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn new_ranges_apply_live_to_every_clone_and_keep_existing_reservations() {
+        let table = Arc::new(FakeTable::default());
+        let (_store, ports) = allocator(table, config(&[("web", "41080, 41443")], &[]));
+        let clone = ports.clone();
+        let a = ports.allocate("web", owner("a")).await.unwrap();
+        assert_eq!(a.port, 41080);
+        assert!(clone.in_range("web", 41443));
+        assert!(!clone.in_range("web", 42080));
+        assert!(!clone.in_range("nope", 41080));
+
+        // `forge config set ports.ranges.web [42080, 42443]` while the daemon runs.
+        ports.set_config(config(&[("web", "42080, 42443")], &[]));
+        assert!(clone.in_range("web", 42080), "clones see the new ranges");
+        assert!(!clone.in_range("web", 41080));
+        let b = clone.allocate("web", owner("b")).await.unwrap();
+        assert_eq!(b.port, 42080, "new allocations use the new range");
+        let again = clone.allocate("web", owner("a")).await.unwrap();
+        assert_eq!(again.port, 41080, "an owner keeps its port");
     }
 
     #[tokio::test]

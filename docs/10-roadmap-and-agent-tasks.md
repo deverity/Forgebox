@@ -52,7 +52,7 @@ Convenção de IDs: `M<milestone>-E<épico>-T<tarefa>`. Estados: `todo | doing |
 - **M1-E5-T4 Helper elevado**: allowlist, validação, log, invocação `runas`. **Aceite:** tentativa de op fora da allowlist falha; teste de validação de parâmetros.
 - **M1-E5-T5 Import do Laragon** (`forge import laragon`). **Aceite:** importa `C:\laragon` do usuário (vhosts `auto.*.conf`, `bin\php\*`, `data\mysql-8`) com relatório.
 
-**Gate M1:** script `scripts/smoke.ps1` faz do zero: instala php@8.4 + nginx + mysql@8.4 + mailpit, cria site Laravel, abre `https://loja.test`, roda `php artisan migrate`, envia e-mail capturado no Mailpit. Tudo via CLI.
+**Gate M1:** script `scripts/smoke.ps1` faz do zero: instala php@8.4 + nginx + mysql@8.4 + mailpit, cria site Laravel, abre `https://loja.test`, roda `php artisan migrate`, envia e-mail capturado no Mailpit. Tudo via CLI. (Uso, modos e resultado: [16](16-smoke-m1.md); correções e decisões: [ADR-0032](adr/0032-m1-gate-integration.md).)
 
 ## M2 — GUI (3 agentes em paralelo após M1-E5-T1)
 - **M2-E1 Shell do app**: Tauri 2 setup, titlebar custom, vibrancy + fallback, sidebar, roteamento, tema light/dark, tokens de [07](07-ui-ux.md), primitives, command palette, tray, autostart, updater. **Aceite:** checklist §11 de [07]; cold start < 800 ms.

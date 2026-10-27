@@ -541,6 +541,10 @@
             "type": "string"
           }
         },
+        "dir": {
+          "description": "Folder of the extension files, relative to the version folder, `/`-separated.\nDefault `ext`. An extension of `defaults_on` without its file there is built into\nthat build (or absent) and is not written to the overlay.",
+          "type": "string"
+        },
         "ini_dir": {
           "description": "Where the generated `.ini` files go.",
           "type": "string"
