@@ -12,6 +12,9 @@
 //! * [`PortAllocator::reserve`]: an explicit port (user choice, "Trocar porta"); moves the
 //!   owner's reservation atomically.
 //! * [`PortAllocator::release`] / [`PortAllocator::release_owner`].
+//! * [`forge_core::model::port::PortReservations`] is implemented by delegation, so crates
+//!   that cannot depend on `forge-net` (the PHP pools of `forge-fcgi`) get their ports
+//!   from the same allocator through an `Arc<dyn PortReservations>` given by the daemon.
 //! * [`PortAllocator::conflicts`]: crosses the reservations with the TCP listeners,
 //!   stores each reservation's state (`bound` when its owner listens, `conflict` with the
 //!   external PID/exe, `reserved` otherwise) and returns the conflicts. The daemon
@@ -32,7 +35,8 @@ use std::time::Duration;
 use forge_core::config::PortsConfig;
 use forge_core::error::{ForgeError, Result};
 use forge_core::model::port::{
-    OwnerKind, PortHolder, PortProtocol, PortReservation, PortState, ReservationOwner,
+    OwnerKind, PortFuture, PortHolder, PortProtocol, PortReservation, PortReservations, PortState,
+    ReservationOwner,
 };
 use forge_core::platform::{PortOwner, PortTable};
 use forge_core::runtime::spawn_blocking_timeout;
@@ -382,6 +386,27 @@ impl PortAllocator {
     }
 }
 
+impl PortReservations for PortAllocator {
+    fn allocate<'a>(
+        &'a self,
+        range: &'a str,
+        owner: ReservationOwner,
+    ) -> PortFuture<'a, PortReservation> {
+        Box::pin(PortAllocator::allocate(self, range, owner))
+    }
+
+    fn release<'a>(
+        &'a self,
+        owner: &'a ReservationOwner,
+    ) -> PortFuture<'a, Option<PortReservation>> {
+        Box::pin(PortAllocator::release(self, owner))
+    }
+
+    fn release_owner<'a>(&'a self, kind: OwnerKind, id: &'a str) -> PortFuture<'a, usize> {
+        Box::pin(PortAllocator::release_owner(self, kind, id))
+    }
+}
+
 /// `C:\xampp\mysql\bin\mysqld.exe (PID 4412)` or `PID 4`.
 fn describe(holder: &PortOwner) -> String {
     match holder.exe_display() {
@@ -480,6 +505,28 @@ mod tests {
         let err = ports.allocate("nope", owner("e")).await.unwrap_err();
         assert_eq!(err.code(), "not_found");
         assert_eq!(ports.list().await.unwrap().len(), 4);
+    }
+
+    #[tokio::test]
+    async fn serves_pools_through_the_core_trait() {
+        let table = Arc::new(FakeTable::default());
+        let (_store, ports) = allocator(table, config(&[("php-pools", "19000-19009")], &[]));
+        let ports: Arc<dyn PortReservations> = Arc::new(ports);
+        let pool = "01J0000000000000000000POOL";
+        let worker = |slot: u32| {
+            ReservationOwner::new(OwnerKind::Pool, pool, format!("worker-{slot}")).unwrap()
+        };
+        let a = ports.allocate("php-pools", worker(1)).await.unwrap();
+        let b = ports.allocate("php-pools", worker(2)).await.unwrap();
+        assert_eq!((a.port, b.port), (19000, 19001));
+        let again = ports.allocate("php-pools", worker(1)).await.unwrap();
+        assert_eq!(again.port, 19000);
+        let released = ports.release(&worker(1)).await.unwrap().unwrap();
+        assert_eq!(released.port, 19000);
+        assert_eq!(ports.release(&worker(1)).await.unwrap(), None);
+        ports.allocate("php-pools", worker(3)).await.unwrap();
+        let removed = ports.release_owner(OwnerKind::Pool, pool).await.unwrap();
+        assert_eq!(removed, 2);
     }
 
     #[tokio::test]

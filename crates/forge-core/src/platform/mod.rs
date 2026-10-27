@@ -39,7 +39,7 @@ pub mod runtime_deps;
 #[cfg(windows)]
 pub mod windows;
 
-pub use net_table::{PortOwner, PortProto, PortTable, port_table};
+pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
 pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,

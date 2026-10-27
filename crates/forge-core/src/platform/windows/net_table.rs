@@ -1,8 +1,9 @@
 //! TCP table with owning processes (docs/03 §1.5, §2.1, §4): `GetExtendedTcpTable` with
 //! `TCP_TABLE_OWNER_PID_LISTENER` (listeners) or `TCP_TABLE_OWNER_PID_CONNECTIONS`
-//! (connections), for `AF_INET` and `AF_INET6`, and `QueryFullProcessImageNameW` for the
-//! executable of each owning PID (one `PROCESS_QUERY_LIMITED_INFORMATION` handle per
-//! distinct PID, closed at once).
+//! (connections in every state but `LISTEN`, `TIME_WAIT` included, owned by PID 0), for
+//! `AF_INET` and `AF_INET6`, and `QueryFullProcessImageNameW` for the executable of each
+//! owning PID (one `PROCESS_QUERY_LIMITED_INFORMATION` handle per distinct PID, closed at
+//! once).
 //!
 //! The table size is asked first and the call repeated while it returns
 //! `ERROR_INSUFFICIENT_BUFFER` (connections come and go between the two calls). Ports
@@ -10,16 +11,19 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
 use std::os::windows::ffi::OsStringExt;
 use std::os::windows::io::{AsRawHandle, OwnedHandle};
 use std::path::PathBuf;
 
 use ::windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, HANDLE, NO_ERROR};
 use ::windows::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, MIB_TCP_STATE_ESTAB, MIB_TCP6ROW_OWNER_PID, MIB_TCP6TABLE_OWNER_PID,
-    MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_CLASS, TCP_TABLE_OWNER_PID_CONNECTIONS,
-    TCP_TABLE_OWNER_PID_LISTENER,
+    GetExtendedTcpTable, MIB_TCP_STATE, MIB_TCP_STATE_CLOSE_WAIT, MIB_TCP_STATE_CLOSED,
+    MIB_TCP_STATE_CLOSING, MIB_TCP_STATE_DELETE_TCB, MIB_TCP_STATE_ESTAB, MIB_TCP_STATE_FIN_WAIT1,
+    MIB_TCP_STATE_FIN_WAIT2, MIB_TCP_STATE_LAST_ACK, MIB_TCP_STATE_LISTEN, MIB_TCP_STATE_SYN_RCVD,
+    MIB_TCP_STATE_SYN_SENT, MIB_TCP_STATE_TIME_WAIT, MIB_TCP6ROW_OWNER_PID,
+    MIB_TCP6TABLE_OWNER_PID, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_CLASS,
+    TCP_TABLE_OWNER_PID_CONNECTIONS, TCP_TABLE_OWNER_PID_LISTENER,
 };
 use ::windows::Win32::System::Threading::{
     PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
@@ -28,7 +32,7 @@ use ::windows::core::PWSTR;
 
 use super::process::{open_process, win32_code};
 use crate::error::{ForgeError, Result};
-use crate::platform::net_table::{PortOwner, PortProto, PortTable};
+use crate::platform::net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState};
 
 /// `AF_INET` / `AF_INET6` (ws2def.h), as the `ulAf` argument of `GetExtendedTcpTable`.
 const AF_INET: u32 = 2;
@@ -122,6 +126,39 @@ fn ipv4(raw: u32) -> Ipv4Addr {
     Ipv4Addr::from(raw.to_ne_bytes())
 }
 
+/// [`TcpState`] of a `dwState` value.
+fn tcp_state(raw: u32) -> TcpState {
+    let known = [
+        (MIB_TCP_STATE_CLOSED, TcpState::Closed),
+        (MIB_TCP_STATE_LISTEN, TcpState::Listen),
+        (MIB_TCP_STATE_SYN_SENT, TcpState::SynSent),
+        (MIB_TCP_STATE_SYN_RCVD, TcpState::SynReceived),
+        (MIB_TCP_STATE_ESTAB, TcpState::Established),
+        (MIB_TCP_STATE_FIN_WAIT1, TcpState::FinWait1),
+        (MIB_TCP_STATE_FIN_WAIT2, TcpState::FinWait2),
+        (MIB_TCP_STATE_CLOSE_WAIT, TcpState::CloseWait),
+        (MIB_TCP_STATE_CLOSING, TcpState::Closing),
+        (MIB_TCP_STATE_LAST_ACK, TcpState::LastAck),
+        (MIB_TCP_STATE_TIME_WAIT, TcpState::TimeWait),
+        (MIB_TCP_STATE_DELETE_TCB, TcpState::DeleteTcb),
+    ];
+    known
+        .iter()
+        .find(|(state, _): &&(MIB_TCP_STATE, TcpState)| state.0 as u32 == raw)
+        .map_or(TcpState::Other, |(_, state)| *state)
+}
+
+/// IPv6 socket address of a row (the port in network byte order like IPv4 rows, the
+/// scope id as a plain `u32`).
+fn v6_socket(addr: [u8; 16], port_raw: u32, scope: u32) -> SocketAddr {
+    SocketAddr::V6(SocketAddrV6::new(
+        Ipv6Addr::from(addr),
+        port(port_raw),
+        0,
+        scope,
+    ))
+}
+
 /// Full path of the executable of `pid`; `None` when it cannot be read.
 fn image_path(pid: u32) -> Option<PathBuf> {
     // PID 0 is the idle process and 4 the kernel: they have no image file.
@@ -203,6 +240,33 @@ impl PortTable for WindowsPortTable {
             .count();
         Ok(u32::try_from(v4 + v6).unwrap_or(u32::MAX))
     }
+
+    fn connections(&self, ports: &[u16]) -> Result<Vec<TcpConnection>> {
+        let wanted = |local: u16, remote: u16| ports.contains(&local) || ports.contains(&remote);
+        let mut found = Vec::new();
+        for row in v4_rows(TCP_TABLE_OWNER_PID_CONNECTIONS)? {
+            let (local, remote) = (port(row.dwLocalPort), port(row.dwRemotePort));
+            if wanted(local, remote) {
+                found.push(TcpConnection {
+                    local: SocketAddr::new(IpAddr::V4(ipv4(row.dwLocalAddr)), local),
+                    remote: SocketAddr::new(IpAddr::V4(ipv4(row.dwRemoteAddr)), remote),
+                    state: tcp_state(row.dwState),
+                    pid: row.dwOwningPid,
+                });
+            }
+        }
+        for row in v6_rows(TCP_TABLE_OWNER_PID_CONNECTIONS)? {
+            if wanted(port(row.dwLocalPort), port(row.dwRemotePort)) {
+                found.push(TcpConnection {
+                    local: v6_socket(row.ucLocalAddr, row.dwLocalPort, row.dwLocalScopeId),
+                    remote: v6_socket(row.ucRemoteAddr, row.dwRemotePort, row.dwRemoteScopeId),
+                    state: tcp_state(row.dwState),
+                    pid: row.dwOwningPid,
+                });
+            }
+        }
+        Ok(found)
+    }
 }
 
 #[cfg(test)]
@@ -217,6 +281,14 @@ mod tests {
         assert_eq!(port(raw | 0xABCD_0000), 3306, "high word ignored");
         let loopback = u32::from_ne_bytes([127, 0, 0, 1]);
         assert_eq!(ipv4(loopback), Ipv4Addr::LOCALHOST);
+    }
+
+    #[test]
+    fn states_are_mapped() {
+        assert_eq!(tcp_state(5), TcpState::Established);
+        assert_eq!(tcp_state(11), TcpState::TimeWait);
+        assert_eq!(tcp_state(2), TcpState::Listen);
+        assert_eq!(tcp_state(99), TcpState::Other);
     }
 
     #[test]
