@@ -41,7 +41,7 @@ Forgebox/
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas, [dns] extra_tlds/remote_zones)
 │   │       ├── dns_name.rs       # sintaxe de nomes DNS (rótulos minúsculos), sufixos de uso local (test, localhost, home.arpa...)
-│   │       ├── fs/               # case/ (docs/15, ADR-0024): status (flag, FS, build), convert_tree (recria a árvore em
+│   │       ├── fs/               # case/ (docs/15, ADR-0026): status (flag, FS, build), convert_tree (recria a árvore em
 │   │       │                     #   <dir>.cs-tmp, rename de arquivos/links, troca, verificação, rollback), recover, tree_flags,
 │   │       │                     #   CaseConversions (job, progresso, fs.case_sensitivity_*), fold_case, messages.rs (pt-BR)
 │   │       ├── helper/           # protocolo do forgebox-helper (ADR-0022): op.rs (HelperOp allowlist + HelperPolicy/validate),

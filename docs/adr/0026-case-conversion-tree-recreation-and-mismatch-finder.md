@@ -1,4 +1,4 @@
-# ADR-0024 — Conversão case-sensitive recriando a árvore de pastas; Case Mismatch Finder por listagem exata
+# ADR-0026 — Conversão case-sensitive recriando a árvore de pastas; Case Mismatch Finder por listagem exata
 
 **Status:** aceito · **Data:** 2026-10-27
 
