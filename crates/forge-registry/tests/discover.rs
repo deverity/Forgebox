@@ -304,6 +304,37 @@ async fn import_registers_manual_versions_idempotently() {
 }
 
 #[tokio::test]
+async fn guessed_version_is_not_saved_and_a_later_scan_registers_the_exact_one() {
+    let fx = Fixture::new();
+    // The version command fails (freshly copied binary under load, antivirus...).
+    fx.garbage("php/php-8.3-Win32-vs16-x64", "php.exe");
+    fx.garbage("php/php-8.3-Win32-vs16-x64", "php-cgi.exe");
+    let folder = fx.root.bin().join("php").join("php-8.3-Win32-vs16-x64");
+    let store = Store::open_in_memory().unwrap();
+    let repo = || ToolVersionRepo::new(store.conn());
+
+    let found = fx.discover().await;
+    assert_eq!(found.len(), 1, "{found:#?}");
+    assert_eq!(found[0].confidence, Confidence::Medium);
+    assert_eq!(found[0].version.as_deref(), Some("8.3"));
+    let first = import_discovered(store.writer(), &found).await.unwrap();
+    assert!(first.imported.is_empty(), "{first:?}");
+    assert_eq!(first.needs_confirmation, std::slice::from_ref(&folder));
+    assert!(repo().list(None).unwrap().is_empty());
+
+    // The tool answers now.
+    fx.fake("php/php-8.3-Win32-vs16-x64", "php.exe");
+    let found = fx.discover().await;
+    assert_eq!(found[0].confidence, Confidence::High);
+    let second = import_discovered(store.writer(), &found).await.unwrap();
+    assert_eq!(second.imported, [folder]);
+    assert!(second.needs_confirmation.is_empty());
+    let rows = repo().list(None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].version, "8.3.21");
+}
+
+#[tokio::test]
 async fn import_leaves_registry_installed_versions_alone() {
     let fx = Fixture::new();
     fx.fake("php/8.3.21-nts-vs17-x64", "php.exe");

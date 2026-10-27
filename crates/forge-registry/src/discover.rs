@@ -488,9 +488,17 @@ pub struct ImportReport {
     pub already_registered: Vec<PathBuf>,
     /// Recognized folders without a version, which cannot be registered.
     pub unknown_version: Vec<PathBuf>,
+    /// Folders whose version is only a guess from the folder name
+    /// ([`Confidence::Medium`], e.g. the version command timed out). Not saved: a later
+    /// scan that gets the tool's own answer registers the exact version.
+    pub needs_confirmation: Vec<PathBuf>,
 }
 
-/// Registers `discovered` as `source: manual` versions. Idempotent: registered folders
+/// Registers `discovered` as `source: manual` versions, **only those whose version the
+/// tool itself printed** ([`Confidence::High`]). A version taken from the folder name
+/// (`8.3` from `php-8.3-Win32-vs16-x64`) would be stored as if exact and, since existing
+/// rows are never updated, stay wrong forever; such folders are listed in
+/// [`ImportReport::needs_confirmation`] instead. Idempotent: registered folders
 /// (same path or same folder name for the tool, whatever their source) are left alone.
 /// The folder keeps its name; `tool_versions.canonical_name` holds the folder name and
 /// `path` where it is. One atomic operation (savepoint) on the store's writer thread.
@@ -508,6 +516,10 @@ pub async fn import_discovered(
                     report.unknown_version.push(found.path.clone());
                     continue;
                 };
+                if found.confidence < Confidence::High {
+                    report.needs_confirmation.push(found.path.clone());
+                    continue;
+                }
                 let new = NewToolVersion {
                     tool_id: found.tool_id.clone(),
                     tool_name: found.tool_name.clone(),
