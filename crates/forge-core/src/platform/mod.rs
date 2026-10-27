@@ -5,15 +5,26 @@
 //! slow volumes, antivirus or network shares): async code calls them from
 //! `tokio::task::spawn_blocking` (ADR-0011).
 //!
-//! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows;
-//! [`CodeSign`] (Authenticode, M1-E2-T2) too. [`ProcessGroup`] (M1-E3-T1), [`TrustStore`]
-//! (M1-E4-T4) and [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still
-//! grow in those tasks.
+//! Status: [`LinkFs`] and [`CaseSensitiveFs`] (M0-E1-T4), [`CodeSign`] (Authenticode,
+//! M1-E2-T2), [`FileAcl`] (owner-only secret files) and [`windows::pipe_security`]
+//! (DACL and owner check of the local API pipe; M1-E5-T1) and the process primitives of
+//! [`process`] ([`ProcessGroup`], [`ProcessControl`]: Job Objects, spawn, `CTRL_BREAK`,
+//! `WM_CLOSE`; M1-E3-T1), the per-process counters of [`process_stats`]
+//! ([`ProcessStats`]: CPU time, working set, handles; M1-E3-T2), the TCP table of
+//! [`net_table`] ([`PortTable`]: listeners with owning PID/exe, established connections
+//! per port; every connection of a set of ports, `TIME_WAIT` included, since M1-E3-T4)
+//! and the system runtimes of [`runtime_deps`] ([`RuntimeDeps`]: VC++
+//! Redistributable; both M1-E3-T3) are implemented for Windows, as are the DNS side of
+//! M1-E4-T3: [`Elevation`] (launching `forgebox-helper` through UAC), [`DnsPolicy`] (NRPT
+//! rules and `hosts`, changed through the helper; resolver cache flush), [`NetAdapters`]
+//! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`]. M1-E4-T4 added
+//! [`TrustStore`] (root certificates of `CurrentUser\Root` and, through the helper,
+//! `LocalMachine\Root`, by SHA-1 [`CertThumbprint`]; server chain checks by the OS
+//! verifier against an explicit anchor).
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
 use std::fmt;
-use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -23,8 +34,35 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
+pub mod dns_policy;
+pub mod elevation;
+pub mod net_adapters;
+pub mod net_table;
+pub mod probe;
+pub mod process;
+pub mod process_stats;
+pub mod runtime_deps;
+pub mod trust_store;
 #[cfg(windows)]
 pub mod windows;
+
+pub use dns_policy::{
+    DnsPolicy, DnsPolicyStatus, NrptRule, NrptSource, dns_policy, effective_nrpt_rules,
+};
+pub use elevation::{Elevation, elevation};
+pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
+pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
+pub use probe::{PROBE_MAX_OUTPUT, PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
+pub use process::{
+    ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
+    ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
+    SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
+};
+pub use process_stats::{ProcStats, ProcessStats, process_stats};
+pub use runtime_deps::{
+    RuntimeDep, RuntimeDeps, VCREDIST_X64_URL, VcRedistFlavor, VcRuntimeVersion, runtime_deps,
+};
+pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.
@@ -78,6 +116,18 @@ pub trait CaseSensitiveFs: Send + Sync {
     fn set(&self, dir: &Path, enabled: bool) -> Result<()>;
 }
 
+/// Restricts files holding secrets (`state/ipc.token`, the CA key) to the current OS user
+/// (docs/11 §3-§4).
+pub trait FileAcl: Send + Sync {
+    /// Replaces the access rules of the existing file `path` so that only the current
+    /// user can open it (Windows: protected DACL with one ACE; Unix: mode `0600`).
+    /// `NotFound` if `path` does not exist.
+    fn restrict_to_current_user(&self, path: &Path) -> Result<()>;
+
+    /// Whether `path` is accessible to the current user only.
+    fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool>;
+}
+
 /// Where the Authenticode signature of a file was found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,63 +165,20 @@ pub trait CodeSign: Send + Sync {
     fn verify(&self, path: &Path) -> Result<CodeSignInfo>;
 }
 
-/// Group of processes that die together (Job Object on Windows, cgroup on Linux).
-/// Implemented in M1-E3-T1.
-pub trait ProcessGroup: Send + Sync {
-    /// Adds the running process `pid` to the group.
-    fn assign(&self, pid: u32) -> Result<()>;
-    /// PIDs currently in the group.
-    fn pids(&self) -> Result<Vec<u32>>;
-    /// Kills every process of the group.
-    fn terminate_all(&self, exit_code: u32) -> Result<()>;
-}
-
-/// Where a root certificate is trusted (docs/06 §6, docs/11).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrustScope {
-    /// `CurrentUser\Root`, no elevation.
-    CurrentUser,
-    /// `LocalMachine\Root`, through `forgebox-helper`.
-    LocalMachine,
-}
-
-/// OS certificate trust store. Implemented in M1-E4-T4.
-pub trait TrustStore: Send + Sync {
-    /// Whether the DER certificate is trusted in `scope`.
-    fn is_trusted(&self, cert_der: &[u8], scope: TrustScope) -> Result<bool>;
-    /// Adds the DER root certificate to `scope`.
-    fn add_root(&self, cert_der: &[u8], scope: TrustScope) -> Result<()>;
-    /// Removes the DER root certificate from `scope`.
-    fn remove_root(&self, cert_der: &[u8], scope: TrustScope) -> Result<()>;
-}
-
-/// State of the OS resolver policy for a TLD.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DnsPolicyStatus {
-    /// Queries for the TLD go to `nameserver`.
-    Applied {
-        nameserver: IpAddr,
-    },
-    NotApplied,
-}
-
-/// OS resolver policy (NRPT on Windows, docs/06 §5). Implemented in M1-E4-T3.
-pub trait DnsPolicy: Send + Sync {
-    /// Current policy for `tld` (`.test`).
-    fn status(&self, tld: &str) -> Result<DnsPolicyStatus>;
-    /// Routes `tld` to `nameserver` (needs elevation through the helper).
-    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<()>;
-    /// Removes the policy for `tld`.
-    fn remove(&self, tld: &str) -> Result<()>;
-}
-
 /// Implementations for the running OS. Cheap to clone.
 #[derive(Clone)]
 pub struct Platform {
     name: &'static str,
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
+    processes: Arc<dyn ProcessControl>,
+    process_stats: Arc<dyn ProcessStats>,
     code_sign: Arc<dyn CodeSign>,
+    file_acl: Arc<dyn FileAcl>,
+    port_table: Arc<dyn PortTable>,
+    runtime_deps: Arc<dyn RuntimeDeps>,
+    elevation: Arc<dyn Elevation>,
+    net_adapters: Arc<dyn NetAdapters>,
 }
 
 impl fmt::Debug for Platform {
@@ -183,8 +190,14 @@ impl fmt::Debug for Platform {
 }
 
 impl Platform {
-    /// Assembles a platform from parts (tests use fakes). Code signing defaults to the
-    /// implementation of the running OS; see [`Platform::with_code_sign`].
+    /// Assembles a platform from parts (tests use fakes). Process operations default to
+    /// [`process_control`] with default options; process counters, code signing, file
+    /// ACLs, the TCP table, runtime detection, elevation and network adapters to the
+    /// implementations of the running OS. See [`Platform::with_processes`],
+    /// [`Platform::with_process_stats`], [`Platform::with_code_sign`],
+    /// [`Platform::with_file_acl`], [`Platform::with_port_table`],
+    /// [`Platform::with_runtime_deps`], [`Platform::with_elevation`] and
+    /// [`Platform::with_net_adapters`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -194,13 +207,62 @@ impl Platform {
             name,
             link_fs,
             case_sensitive_fs,
+            processes: process_control(ProcessControlOptions::default()),
+            process_stats: process_stats(),
             code_sign: default_code_sign(),
+            file_acl: default_file_acl(),
+            port_table: port_table(),
+            runtime_deps: runtime_deps(),
+            elevation: elevation(),
+            net_adapters: net_adapters(),
         }
+    }
+
+    /// Replaces the process operations (custom `forgebox-ctrl` location, fakes).
+    pub fn with_processes(mut self, processes: Arc<dyn ProcessControl>) -> Self {
+        self.processes = processes;
+        self
+    }
+
+    /// Replaces the per-process counters (fakes in tests).
+    pub fn with_process_stats(mut self, process_stats: Arc<dyn ProcessStats>) -> Self {
+        self.process_stats = process_stats;
+        self
     }
 
     /// Replaces the code signing verifier (fakes in tests).
     pub fn with_code_sign(mut self, code_sign: Arc<dyn CodeSign>) -> Self {
         self.code_sign = code_sign;
+        self
+    }
+
+    /// Replaces the secret file ACL implementation (fakes in tests).
+    pub fn with_file_acl(mut self, file_acl: Arc<dyn FileAcl>) -> Self {
+        self.file_acl = file_acl;
+        self
+    }
+
+    /// Replaces the TCP table (fakes in tests).
+    pub fn with_port_table(mut self, port_table: Arc<dyn PortTable>) -> Self {
+        self.port_table = port_table;
+        self
+    }
+
+    /// Replaces the runtime detection (fakes in tests).
+    pub fn with_runtime_deps(mut self, runtime_deps: Arc<dyn RuntimeDeps>) -> Self {
+        self.runtime_deps = runtime_deps;
+        self
+    }
+
+    /// Replaces the elevation mechanism ([`crate::helper::FakeElevation`] in tests).
+    pub fn with_elevation(mut self, elevation: Arc<dyn Elevation>) -> Self {
+        self.elevation = elevation;
+        self
+    }
+
+    /// Replaces the adapter listing (fakes in tests).
+    pub fn with_net_adapters(mut self, net_adapters: Arc<dyn NetAdapters>) -> Self {
+        self.net_adapters = net_adapters;
         self
     }
 
@@ -217,9 +279,53 @@ impl Platform {
         self.case_sensitive_fs.as_ref()
     }
 
+    /// Job Objects, spawn, console control events, window close requests.
+    pub fn processes(&self) -> &Arc<dyn ProcessControl> {
+        &self.processes
+    }
+
+    /// CPU time, memory and handles of single processes (shared, so it can move into
+    /// `spawn_blocking`).
+    pub fn process_stats(&self) -> &Arc<dyn ProcessStats> {
+        &self.process_stats
+    }
+
     /// Authenticode verification (shared, so it can move into `spawn_blocking`).
     pub fn code_sign(&self) -> &Arc<dyn CodeSign> {
         &self.code_sign
+    }
+
+    /// Owner-only ACLs for secret files (`state/ipc.token`, the CA and site keys).
+    pub fn file_acl(&self) -> &dyn FileAcl {
+        self.file_acl.as_ref()
+    }
+
+    /// [`Platform::file_acl`] as a shared handle, to move into `spawn_blocking` or into an
+    /// actor (`forge_tls::TlsManager`).
+    pub fn shared_file_acl(&self) -> Arc<dyn FileAcl> {
+        Arc::clone(&self.file_acl)
+    }
+
+    /// TCP listeners and connections with their owning processes (shared, so it can
+    /// move into `spawn_blocking`).
+    pub fn port_table(&self) -> &Arc<dyn PortTable> {
+        &self.port_table
+    }
+
+    /// VC++ Redistributable detection (shared, so it can move into `spawn_blocking`).
+    pub fn runtime_deps(&self) -> &Arc<dyn RuntimeDeps> {
+        &self.runtime_deps
+    }
+
+    /// Launches `forgebox-helper` elevated (shared, so it can move into `spawn_blocking`).
+    pub fn elevation(&self) -> &Arc<dyn Elevation> {
+        &self.elevation
+    }
+
+    /// Network adapters and their DNS servers (shared, so it can move into
+    /// `spawn_blocking`).
+    pub fn net_adapters(&self) -> &Arc<dyn NetAdapters> {
+        &self.net_adapters
     }
 }
 
@@ -230,6 +336,16 @@ fn default_code_sign() -> Arc<dyn CodeSign> {
 
 #[cfg(not(windows))]
 fn default_code_sign() -> Arc<dyn CodeSign> {
+    Arc::new(unsupported::Unsupported)
+}
+
+#[cfg(windows)]
+fn default_file_acl() -> Arc<dyn FileAcl> {
+    Arc::new(windows::WindowsFileAcl)
+}
+
+#[cfg(not(windows))]
+fn default_file_acl() -> Arc<dyn FileAcl> {
     Arc::new(unsupported::Unsupported)
 }
 
@@ -291,6 +407,33 @@ mod unsupported {
         }
     }
 
+    /// Unix permission bits; other OSes fail with `UnsupportedPlatform`.
+    impl FileAcl for Unsupported {
+        #[cfg(unix)]
+        fn restrict_to_current_user(&self, path: &Path) -> Result<()> {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| ForgeError::io_at("restricting permissions of", path, e))
+        }
+        #[cfg(not(unix))]
+        fn restrict_to_current_user(&self, _: &Path) -> Result<()> {
+            err("file ACLs")
+        }
+        #[cfg(unix)]
+        fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool> {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(path)
+                .map_err(|e| ForgeError::io_at("reading permissions of", path, e))?
+                .permissions()
+                .mode();
+            Ok(mode & 0o077 == 0)
+        }
+        #[cfg(not(unix))]
+        fn is_restricted_to_current_user(&self, _: &Path) -> Result<bool> {
+            err("file ACLs")
+        }
+    }
+
     impl CaseSensitiveFs for Unsupported {
         fn support(&self, _: &Path) -> CaseSensitivitySupport {
             CaseSensitivitySupport::Unsupported(format!(
@@ -328,6 +471,27 @@ mod tests {
         assert_eq!(err.code(), "unsupported_platform");
         let err = platform.code_sign().verify(&dir).unwrap_err();
         assert_eq!(err.code(), "unsupported_platform");
+    }
+
+    #[test]
+    fn file_acl_can_be_replaced() {
+        struct AlwaysRestricted;
+        impl FileAcl for AlwaysRestricted {
+            fn restrict_to_current_user(&self, _: &Path) -> Result<()> {
+                Ok(())
+            }
+            fn is_restricted_to_current_user(&self, _: &Path) -> Result<bool> {
+                Ok(true)
+            }
+        }
+        let platform = current().with_file_acl(Arc::new(AlwaysRestricted));
+        let missing = std::env::temp_dir().join("forgebox-no-such-file");
+        assert!(
+            platform
+                .file_acl()
+                .is_restricted_to_current_user(&missing)
+                .unwrap()
+        );
     }
 
     #[test]

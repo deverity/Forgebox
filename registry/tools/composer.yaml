@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 2.10.3 7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+#   (https://getcomposer.org/download/2.10.3/composer.phar.sha256sum == sha256 of the composer.phar
+#   asset of the GitHub release composer/composer 2.10.3, both hashed locally)
+# Single-file tool (composer.phar). The shim `composer` (a generated composer.cmd that calls the
+# `php` of `current`, docs/12) is created by the install engine, not by this manifest.
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: composer
+  name: Composer
+  summary: Gerenciador de dependências do PHP
+  description: |
+    Composer 2 (`composer.phar`). Usa o `php` da versão `current` ou `--php`.
+  category: devtool
+  tags: [composer, php, packages]
+  homepage: https://getcomposer.org
+  docs: https://getcomposer.org/doc/
+  license: MIT
+  icon: composer.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+  depends_on: [php]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=2 <3" }
+    series_key: "{major}.{minor}"
+
+  source:
+    providers:
+      - type: http
+        url: "https://getcomposer.org/download/{version}/composer.phar"
+        checksum: { type: sha256, url: "{url}.sha256sum" }
+        version_source:
+          url: https://getcomposer.org/versions
+          json_path: "$.stable[*].version"
+    releases:
+      - version: "2.10.3"
+        url: https://getcomposer.org/download/2.10.3/composer.phar
+        sha256: "7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6"
+        size: 3642137
+
+  install:
+    archive: file
+    strip_root: false
+    layout: versioned
+    current_link: true
+    path:
+      - "."
+    shims: [composer]
+    size_estimate_mb: 4
+
+  discover:
+    match_files: [composer.phar]
+
+  update:
+    policy: auto-minor
+    retention: 1
+    check_interval: 24h
+
+  ui:
+    color: "#885630"

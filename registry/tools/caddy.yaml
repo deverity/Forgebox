@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 2.11.7 0a1edc0b799512051c57071ce0e798d3f2cf67dc98171366f1d2b326072e3b06
+#   (sha256 computed locally; upstream caddy_2.11.7_checksums.txt publishes sha512
+#   c308154504e53755958f... for the same zip, which matched the local sha512)
+# The Caddyfile is rendered by the forge-render caddy target (docs/03 section 3.2.1).
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: caddy
+  name: Caddy
+  summary: Servidor web Caddy 2 (HTTPS automático desativado em favor da CA do Forgebox)
+  description: |
+    Caddy 2 como servidor web frontal alternativo. Os certificados vêm da CA local do Forgebox
+    (consistência entre servidores), não do HTTPS automático do Caddy.
+  category: webserver
+  tags: [caddy, webserver, proxy]
+  homepage: https://caddyserver.com
+  docs: https://caddyserver.com/docs/
+  license: Apache-2.0
+  icon: caddy.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+  suggests: [php]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=2 <3" }
+    series_key: "{major}.{minor}"
+
+  source:
+    providers:
+      - type: github-release
+        repo: caddyserver/caddy
+        asset: "^caddy_.*_windows_amd64\\.zip$"
+        checksum: { type: sha512, asset: "caddy_{version}_checksums.txt" }
+    releases:
+      - version: "2.11.7"
+        url: https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_windows_amd64.zip
+        sha256: "0a1edc0b799512051c57071ce0e798d3f2cf67dc98171366f1d2b326072e3b06"
+        size: 18479498
+
+  install:
+    archive: zip
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "."
+    shims: [caddy]
+    verify:
+      command: "caddy.exe version"
+      regex: "^v(\\d+\\.\\d+\\.\\d+)"
+    post_install:
+      - mkdir: "{{ paths.logs }}/caddy"
+      - mkdir: "{{ paths.etc }}/caddy"
+    uninstall:
+      keep: ["{{ paths.etc }}/caddy"]
+    size_estimate_mb: 45
+
+  config:
+    files:
+      - id: caddyfile
+        path: "{{ paths.etc }}/caddy/Caddyfile"
+        format: text
+        label: Caddyfile
+        editable: true
+
+  service:
+    kind: daemon
+    daemon:
+      exe: caddy.exe
+      args: ["run", "--config", "{{ instance.config.caddyfile }}", "--adapter", "caddyfile"]
+      cwd: "{{ paths.version }}"
+      console_group: true
+      ports:
+        - { name: http, default: 80, range: web }
+        - { name: https, default: 443, range: web }
+      check: { command: "caddy.exe validate --config {{ instance.config.caddyfile }} --adapter caddyfile" }
+      start_timeout: 20s
+      health:
+        tcp: "127.0.0.1:{{ instance.ports.http }}"
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop:
+        command: "caddy.exe stop"
+        timeout: 15s
+        then: ctrl-break
+      reload:
+        command: "caddy.exe reload --config {{ instance.config.caddyfile }} --adapter caddyfile"
+      restart_policy: { on: failure, max: 3, window: 60s }
+      logs:
+        - { label: Access log (JSON), path: "{{ paths.logs }}/caddy/access.json", format: forgebox-json }
+      autostart: false
+
+  discover:
+    match_files: [caddy.exe]
+    version_command: "caddy.exe version"
+    version_regex: "v(\\d+\\.\\d+\\.\\d+)"
+
+  update:
+    policy: auto-patch
+    retention: 1
+    check_interval: 12h
+
+  ui:
+    color: "#1F88C0"
+    actions:
+      - { label: "Caddyfile", icon: file-text, open: config:caddyfile }

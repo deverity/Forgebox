@@ -46,7 +46,7 @@ Regras:
 | Extração | `zip`, `sevenz-rust2`, `tar` + `flate2`/`lzma-rust2` ([ADR-0017](adr/0017-verify-extract-stack.md)) | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz; sem toolchain C |
 | DNS | **hickory-server** | Resolver `*.test` → 127.0.0.1 em `127.0.0.1:53` (ou porta alta + NRPT) |
 | TLS/CA | **rcgen** + `windows::Win32::Security::Cryptography` | CA raiz local e certificados folha; instalação no store `CurrentUser\Root` sem admin |
-| IPC | **JSON-RPC 2.0** sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md)) | Named pipe tem ACL por usuário; mesma API local e remota |
+| IPC | **JSON-RPC 2.0** (NDJSON, `request_id` obrigatório, handshake `system.hello`) sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md), [ADR-0015](adr/0015-ipc-protocol.md)) | Named pipe tem ACL por usuário; mesma API local e remota |
 | GUI | **Tauri 2** + WebView2 (presente em todo Win10/11) | Frontend web permite acabamento Apple-ish; bundle ~10 MB; `window-vibrancy` para Mica/Acrylic. Ver [ADR-0002](adr/0002-gui-tauri.md) |
 | Frontend | **React 19 + TypeScript + Vite + Tailwind 4 + Radix Primitives + Motion** | Acessibilidade de graça (Radix), motion com springs, tokens via CSS vars |
 | CLI | **clap** v4 + `tabled`/`indicatif` + saída `--json` | UX de CLI moderna; cada comando tem saída humana e JSON |
@@ -148,7 +148,7 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 
 ## 6. Observabilidade
 - Cada operação do daemon gera `Event` persistido (ring buffer de 50k + arquivo).
-- Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `windows` PDH/`GetProcessTimes`).
+- Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `GetProcessTimes`/`GetProcessMemoryInfo`/`GetProcessHandleCount`, sem PDH; somadas por Job da instância, [03 §6](03-engine.md)).
 - Logs das tools são "tailados" sob demanda pelo daemon e enviados por stream para a GUI/CLI (`forge logs nginx -f`).
 - Health de cada Instance: `tcp`, `http`, `command`, `pid`. Resultados alimentam o estado exibido.
 

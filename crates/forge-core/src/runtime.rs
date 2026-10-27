@@ -25,8 +25,11 @@ use std::io;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use tokio::runtime::{Builder, Runtime};
+
+use crate::error::{ForgeError, Result};
 
 /// Lower bound of worker threads, whatever the machine.
 pub const MIN_WORKER_THREADS: usize = 4;
@@ -87,6 +90,25 @@ pub fn build_runtime(config: &RuntimeConfig) -> io::Result<Runtime> {
         .build()
 }
 
+/// Runs the blocking `f` (Win32 call, file or registry read) on tokio's blocking pool and
+/// waits at most `timeout` for it (ADR-0011: nothing synchronous on an async worker,
+/// every wait bounded). On timeout the call keeps running on its thread and the caller
+/// gets `Timeout` mentioning `operation`; a panic in `f` is reported as `internal`.
+pub async fn spawn_blocking_timeout<T, F>(operation: &str, timeout: Duration, f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    match tokio::time::timeout(timeout, tokio::task::spawn_blocking(f)).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(join)) => Err(ForgeError::Internal(format!("{operation}: {join}"))),
+        Err(_) => Err(ForgeError::Timeout {
+            operation: operation.to_owned(),
+            after: timeout,
+        }),
+    }
+}
+
 /// Whether this build has the `console` feature.
 pub const fn console_enabled() -> bool {
     cfg!(feature = "console")
@@ -121,6 +143,32 @@ mod tests {
         assert_eq!(default.max_blocking_threads, 2 * available_cores());
         assert_eq!(default.thread_name, DEFAULT_THREAD_NAME);
         assert!(!console_enabled() || cfg!(feature = "console"));
+    }
+
+    #[tokio::test]
+    async fn blocking_calls_are_bounded() {
+        let ok = spawn_blocking_timeout("add", Duration::from_secs(5), || Ok(1 + 1)).await;
+        assert_eq!(ok.unwrap(), 2);
+        let err = spawn_blocking_timeout("slow call", Duration::from_millis(20), || {
+            std::thread::sleep(Duration::from_millis(300));
+            Ok(())
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(err.code(), "timeout");
+        assert!(err.to_string().contains("slow call"), "{err}");
+        let err = spawn_blocking_timeout::<(), _>("panicking call", Duration::from_secs(5), || {
+            panic!("boom")
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(err.code(), "internal");
+        let err = spawn_blocking_timeout::<(), _>("failing call", Duration::from_secs(5), || {
+            Err(ForgeError::NotFound("x".into()))
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(err.code(), "not_found");
     }
 
     #[test]

@@ -6,14 +6,19 @@
 //! `spawn_blocking` (docs/03 §7, ADR-0011). The concurrency skeleton lives in
 //! [`actor`] (actors, supervisor, lock order), [`jobs`] (long operations as `job_id` +
 //! `job.*` events), [`store`] (dedicated SQLite writer thread + read pool) and
-//! [`runtime`] (tokio runtime configuration, opt-in tokio-console).
+//! [`runtime`] (tokio runtime configuration, opt-in tokio-console). [`helper`] is the
+//! protocol of the elevated `forgebox-helper` (allowlist, validation, request/response,
+//! `hosts` managed block), shared by the daemon and the helper (ADR-0022).
 
 pub mod actor;
 pub mod config;
+pub mod dns_name;
 pub mod error;
 pub mod event;
+pub mod helper;
 pub mod ids;
 pub mod jobs;
+pub mod model;
 pub mod paths;
 pub mod platform;
 pub mod runtime;

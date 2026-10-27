@@ -18,6 +18,8 @@ Isso é viável porque, desde a v1, GUI e CLI já são **clientes finos** da API
 | Download de tools é feito **pelo daemon remoto**, nunca pelo cliente | O servidor baixa de windows.php.net/apt/github diretamente |
 | Ações que abrem coisas no SO (`open in editor`, `browse`) são marcadas `local_only` ou traduzidas (abrir `https://loja.test` do remoto = abrir `https://loja.<remote>.test` ou túnel) | Evita botões quebrados na GUI remota |
 
+Implementado em M1-E5-T1 ([ADR-0015](adr/0015-ipc-protocol.md)): `forge_ipc::transport::Transport` (named pipe, unix socket mínimo, em memória; `WebSocketTls` é placeholder até M6), `request_id` obrigatório em todo request com cache de idempotência no servidor, papéis e `local_only` na tabela `METHODS` (conexões não locais recebem `forbidden` nos métodos `local_only`), streams `events|logs|metrics.subscribe` com `seq`, fila drop-oldest + `*.lagged` e `resume_from`, e `fs.read|write|tail|list` restritos a `etc/`, `logs/`, `www/`. O cliente reconecta e reassina sozinho a partir do último `seq` recebido (ou, se nada chegou ainda, do `last_seq` devolvido pelo subscribe), sem perder nem repetir eventos.
+
 ## 3. Arquitetura do modo remoto
 
 ```
@@ -67,7 +69,7 @@ Perfis por cliente: `admin` (tudo), `operator` (start/stop/logs/sites, sem insta
 - Seletor de **contexto** no topo da sidebar: "Local · hml (Linux) · vps". Troca instantânea; cada contexto mantém seu estado/cache. Cor de destaque diferente por contexto remoto (evita start/stop no servidor errado).
 - Indicador de latência e de conexão; reconexão automática com replay de eventos desde o último `seq`.
 - Ações `local_only` aparecem com explicação ("Abrir no editor não está disponível em remotos; use 'Abrir via SSH no VS Code'", que abre `vscode-remote://ssh-remote+host/path`).
-- DNS do lado do cliente: ao adicionar um remoto, oferecer zona `*.hml.test → 10.0.0.5` no resolver local do Windows (já existe), para que `https://loja.hml.test` abra no navegador do desenvolvedor com a CA remota instalada (botão "Confiar na CA do remoto").
+- DNS do lado do cliente: ao adicionar um remoto, oferecer zona `*.hml.test → 10.0.0.5` no resolver local do Windows (já existe), para que `https://loja.hml.test` abra no navegador do desenvolvedor com a CA remota instalada (botão "Confiar na CA do remoto"). A zona fica em `forgebox.toml` (`[[dns.remote_zones]] zone = "hml.test", address = "10.0.0.5"`), sempre abaixo de um TLD local, e é respondida pelo resolver local (`forge_net::dns::ZoneSet`, mais específica vence; sem `AAAA` quando o remoto só tem IPv4); a regra NRPT do TLD já a cobre ([06](06-sites-vhosts-multi-php.md) §5.4).
 - Métricas ([14](14-observability-metrics.md)) funcionam igual, vindas do remoto.
 
 ## 6. Headless em servidor

@@ -1,0 +1,24 @@
+---
+source: crates/forge-render/tests/snapshots.rs
+expression: content
+---
+# forgebox:begin main (hash=ec8a375b752893b3)
+{
+    admin 127.0.0.1:2019
+    http_port 80
+    https_port 443
+    default_bind 127.0.0.1
+    auto_https disable_redirects
+    skip_install_trust
+}
+
+# Structured access log consumed by forge-metrics (docs/14 section 2).
+(forgebox_log) {
+    log {
+        output file "C:/fb-test/logs/caddy/access.json"
+        format json
+    }
+}
+
+import sites/*
+# forgebox:end main

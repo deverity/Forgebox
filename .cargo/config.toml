@@ -1,2 +1,13 @@
 [alias]
 xtask = "run --package xtask --"
+
+# Disk hygiene (see README "Espaço em disco"): the worktrees share one target dir, so incremental
+# sessions never get reused and full debuginfo PDBs balloon `deps/`. Keep this block identical to
+# C:\apps_src\Forgebox-wt\.cargo\config.toml, otherwise artifacts get different hashes and duplicate.
+# Override locally with CARGO_INCREMENTAL=1 if you want incremental builds.
+[profile.dev]
+incremental = false
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

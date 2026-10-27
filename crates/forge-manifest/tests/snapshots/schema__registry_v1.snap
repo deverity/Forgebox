@@ -126,16 +126,6 @@ expression: text
           "format": "uint32",
           "minimum": 0
         },
-        "signature": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Signature"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "stacks": {
           "description": "`stacks/*.yaml`.",
           "type": "array",
@@ -165,34 +155,6 @@ expression: text
       "description": "SHA-256 digest (64 hexadecimal digits).",
       "type": "string",
       "pattern": "^[0-9a-fA-F]{64}$"
-    },
-    "Signature": {
-      "description": "`spec.signature`.",
-      "type": "object",
-      "properties": {
-        "key_id": {
-          "type": "string"
-        },
-        "sig": {
-          "type": "string"
-        },
-        "type": {
-          "$ref": "#/$defs/SignatureType"
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "key_id",
-        "sig"
-      ]
-    },
-    "SignatureType": {
-      "description": "Signature scheme of a registry.",
-      "type": "string",
-      "enum": [
-        "minisign"
-      ]
     },
     "ToolId": {
       "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",

@@ -30,6 +30,11 @@ fn full_registry() -> TempRegistry {
     registry
 }
 
+/// The sha256 the index must carry for `relative` (`tools/php.yaml`).
+fn sha_of(registry: &TempRegistry, relative: &str) -> String {
+    forge_manifest::index::sha256_hex(read(&registry.root().join(relative)).as_bytes())
+}
+
 fn write_index(registry: &TempRegistry, tools: &[&str], stacks: &[&str]) {
     let mut text = String::from(
         "apiVersion: forgebox.dev/v1\nkind: Registry\nmetadata: { name: test }\n\
@@ -37,13 +42,15 @@ fn write_index(registry: &TempRegistry, tools: &[&str], stacks: &[&str]) {
     );
     for id in tools {
         text.push_str(&format!(
-            "    - {{ id: {id}, path: tools/{id}.yaml, sha256: \"{ZERO_SHA}\" }}\n"
+            "    - {{ id: {id}, path: tools/{id}.yaml, sha256: \"{}\" }}\n",
+            sha_of(registry, &format!("tools/{id}.yaml"))
         ));
     }
     text.push_str("  stacks:\n");
     for id in stacks {
         text.push_str(&format!(
-            "    - {{ id: {id}, path: stacks/{id}.yaml, sha256: \"{ZERO_SHA}\" }}\n"
+            "    - {{ id: {id}, path: stacks/{id}.yaml, sha256: \"{}\" }}\n",
+            sha_of(registry, &format!("stacks/{id}.yaml"))
         ));
     }
     registry.write("index.yaml", &text);
@@ -89,10 +96,14 @@ fn index_must_match_the_manifest_files() {
     // nodejs not listed, a ghost entry, and an id that does not match its file.
     let mut text = read(&registry.root().join("index.yaml"));
     text = text.replace(
-        &format!("    - {{ id: nodejs, path: tools/nodejs.yaml, sha256: \"{ZERO_SHA}\" }}\n"),
+        &format!(
+            "    - {{ id: nodejs, path: tools/nodejs.yaml, sha256: \"{}\" }}\n",
+            sha_of(&registry, "tools/nodejs.yaml")
+        ),
         &format!(
             "    - {{ id: ghost, path: tools/ghost.yaml, sha256: \"{ZERO_SHA}\" }}\n\
-             \x20   - {{ id: node, path: tools/nginx.yaml, sha256: \"{ZERO_SHA}\" }}\n"
+             \x20   - {{ id: node, path: tools/nginx.yaml, sha256: \"{}\" }}\n",
+            sha_of(&registry, "tools/nginx.yaml")
         ),
     );
     registry.write("index.yaml", &text);
@@ -114,6 +125,46 @@ fn index_must_match_the_manifest_files() {
             .any(|m| m.contains("ghost.yaml does not exist"))
     );
     assert!(messages.iter().any(|m| m.contains("entry `node`")));
+}
+
+#[test]
+fn index_sha256_must_match_the_file() {
+    let registry = full_registry();
+    let nodejs = sha_of(&registry, "tools/nodejs.yaml");
+    let text = read(&registry.root().join("index.yaml")).replace(&nodejs, ZERO_SHA);
+    registry.write("index.yaml", &text);
+    let report = registry.lint(&context());
+    assert_eq!(
+        codes(&report),
+        ["index_mismatch".to_owned()].into_iter().collect()
+    );
+    assert_eq!(report.issues.len(), 1, "{:#?}", report.issues);
+    let message = report.issues[0].to_string();
+    assert!(
+        message.contains("spec.tools") && message.contains(&nodejs),
+        "{message}"
+    );
+
+    // Editing a manifest after indexing it is caught the same way.
+    let registry = full_registry();
+    let path = registry.root().join("tools/nginx.yaml");
+    registry.write("tools/nginx.yaml", &format!("{}# edited\n", read(&path)));
+    let report = registry.lint(&context());
+    assert_eq!(report.issues.len(), 1, "{:#?}", report.issues);
+    assert!(report.issues[0].message.contains("sha256"));
+}
+
+#[test]
+fn a_legacy_inline_signature_is_refused() {
+    // The signature is the detached `index.yaml.minisig` (ADR-0018); `spec.signature` is gone.
+    let registry = full_registry();
+    let text = read(&registry.root().join("index.yaml"));
+    let legacy = format!(
+        "{text}  signature: {{ type: minisign, key_id: dev, sig: \"\" }}
+"
+    );
+    registry.write("index.yaml", &legacy);
+    assert!(!registry.lint(&context()).is_clean());
 }
 
 #[test]
@@ -197,6 +248,13 @@ fn cross_references_need_known_ids() {
     let stack = read(&registry.root().join("stacks/laravel.yaml"))
         .replace("{ id: composer }", "{ id: composer, extensions: [xdebug] }");
     registry.write("stacks/laravel.yaml", &stack);
+    write_index(
+        &registry,
+        &[
+            "composer", "mailpit", "memurai", "mysql", "nginx", "nodejs", "php", "xdebug",
+        ],
+        &["laravel"],
+    );
     let report = registry.lint(&context());
     assert_eq!(report.issues.len(), 1, "{:#?}", report.issues);
     assert_eq!(

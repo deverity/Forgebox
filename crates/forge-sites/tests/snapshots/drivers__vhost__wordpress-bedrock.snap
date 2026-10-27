@@ -1,0 +1,45 @@
+---
+source: crates/forge-sites/tests/drivers.rs
+expression: "model_json(name, driver, root)"
+---
+{
+  "kind": "php",
+  "hosts": [
+    "wordpress-bedrock.test",
+    "*.wordpress-bedrock.test",
+    "admin.wordpress-bedrock.test"
+  ],
+  "root": "C:/fb-test/www/wordpress-bedrock/web",
+  "index": [
+    "index.php",
+    "index.html"
+  ],
+  "php_upstream": "php_8_3",
+  "try_files": [
+    "$uri",
+    "$uri/",
+    "/index.php?$args"
+  ],
+  "static_locations": [],
+  "deny": [
+    "/\\.ht",
+    "/\\.env",
+    "/\\.git",
+    "/wp-content/uploads/.*\\.php$"
+  ],
+  "headers": {},
+  "client_max_body": "256M",
+  "ssl": {
+    "cert": "C:/fb-test/certs/sites/wordpress-bedrock.test.crt",
+    "key": "C:/fb-test/certs/sites/wordpress-bedrock.test.key"
+  },
+  "http_redirect": true,
+  "proxy": null,
+  "env": {},
+  "extra": {
+    "apache": null,
+    "nginx": null,
+    "caddy": null
+  },
+  "fallback_resource": "/index.php"
+}

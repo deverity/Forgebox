@@ -14,3 +14,30 @@ workspace = true
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+# PEM bodies of certificates read back as DER.
+base64 = { workspace = true }
+# Random serial numbers and scheduler jitter.
+getrandom = { workspace = true }
+jiff = { workspace = true }
+# CA and leaf generation (ECDSA P-256, name constraints). `x509-parser` lets a CA loaded from
+# certs/ca/ sign leaves (`Issuer::from_ca_cert_der`).
+rcgen = { workspace = true, features = ["x509-parser"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# SHA-256 thumbprints (API, events).
+sha2 = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+# Reads certificates back (validity, SANs, name constraints) and checks leaf signatures
+# against the CA (`verify`, ring).
+x509-parser = { workspace = true, features = ["verify"] }
+
+[dev-dependencies]
+# Contract test only: tls.* event payloads match forge_ipc::api::events::TlsPayload.
+forge-ipc = { path = "../forge-ipc" }
+pretty_assertions = { workspace = true }
+rustls = { workspace = true }
+rustls-webpki = { workspace = true }
+tempfile = { workspace = true }
+tokio-rustls = { workspace = true }

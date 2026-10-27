@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=../schema/tool.v1.json
+# verified: 2026-10-26 1.30.6 c6ee35edb0a861063323f709192ae50d1eefaf2ea7d00678bd2b22d8542dc61e
+#   (nginx.org publishes only PGP signatures; PGP could not be checked here. The sha256 below was
+#   observed on two independent downloads of https://nginx.org/download/nginx-1.30.6.zip and is
+#   registered as curated, see docs/05 section 6.)
+# verified: 2026-10-26 1.31.8 fbb1501009be34655cc238d460714cf20391b639013f4c73859813d7938783fd
+#   (single download of https://nginx.org/download/nginx-1.31.8.zip, curated, no PGP check)
+# Config files are rendered by forge-render targets, not by manifest actions (docs/03 section 3.2.1).
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: nginx
+  name: Nginx
+  summary: Nginx para Windows (builds nginx.org)
+  description: |
+    Servidor web e reverse proxy. Padrão do Forgebox para sites PHP (FastCGI) e proxies de apps
+    Node. Access log JSON `forgebox` gerado pelos templates.
+  category: webserver
+  tags: [nginx, webserver, proxy, fastcgi]
+  homepage: https://nginx.org
+  docs: https://nginx.org/en/docs/
+  license: BSD-2-Clause
+  icon: nginx.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+
+spec:
+  platforms: [windows-x64]
+  suggests: [php]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: "~1.30 || ~1.28" }
+      mainline: { constraint: ">=1.31" }
+    series_key: "{major}.{minor}"
+
+  source:
+    providers:
+      - type: nginx-org
+    releases:
+      - version: "1.30.6"
+        url: https://nginx.org/download/nginx-1.30.6.zip
+        sha256: "c6ee35edb0a861063323f709192ae50d1eefaf2ea7d00678bd2b22d8542dc61e"
+        size: 2773293
+      - version: "1.31.8"
+        url: https://nginx.org/download/nginx-1.31.8.zip
+        sha256: "fbb1501009be34655cc238d460714cf20391b639013f4c73859813d7938783fd"
+        size: 2794487
+
+  install:
+    archive: zip
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "."
+    shims: [nginx]
+    verify:
+      command: "nginx.exe -v"
+      regex: "nginx/(\\d+\\.\\d+\\.\\d+)"
+    post_install:
+      - mkdir: "{{ paths.logs }}/nginx"
+      - mkdir: "{{ paths.etc }}/nginx"
+      - mkdir: "{{ paths.tmp }}/nginx"
+    uninstall:
+      keep: ["{{ paths.etc }}/nginx"]
+    size_estimate_mb: 6
+
+  config:
+    files:
+      - id: nginx_conf
+        path: "{{ paths.etc }}/nginx/nginx.conf"
+        format: conf-directive
+        label: nginx.conf
+        editable: true
+    quick_settings:
+      - key: worker_processes
+        label: Worker processes
+        file: nginx_conf
+        directive: "worker_processes"
+        type: select
+        options: [auto, 1, 2, 4]
+        default: auto
+        apply: restart
+      - key: client_max_body_size
+        label: Tamanho máximo do corpo (client_max_body_size)
+        file: nginx_conf
+        directive: "client_max_body_size"
+        type: text
+        default: 128M
+        apply: reload
+      - key: keepalive_timeout
+        label: Keep-alive timeout (s)
+        file: nginx_conf
+        directive: "keepalive_timeout"
+        type: number
+        min: 0
+        max: 3600
+        default: 65
+        apply: reload
+
+  service:
+    kind: daemon
+    daemon:
+      exe: nginx.exe
+      args: ["-p", "{{ paths.version }}", "-c", "{{ instance.config.nginx_conf }}"]
+      cwd: "{{ paths.version }}"
+      console_group: true
+      ports:
+        - { name: http, default: 80, range: web }
+        - { name: https, default: 443, range: web }
+      check: { command: "nginx.exe -t -p {{ paths.version }} -c {{ instance.config.nginx_conf }}" }
+      start_timeout: 20s
+      health:
+        tcp: "127.0.0.1:{{ instance.ports.http }}"
+        interval: 5s
+        success_threshold: 1
+        failure_threshold: 3
+      stop:
+        command: "nginx.exe -s quit -p {{ paths.version }} -c {{ instance.config.nginx_conf }}"
+        timeout: 15s
+        then: ctrl-break
+      reload:
+        command: "nginx.exe -s reload -p {{ paths.version }} -c {{ instance.config.nginx_conf }}"
+      restart_policy: { on: failure, max: 3, window: 60s }
+      logs:
+        - { label: Error log, path: "{{ paths.logs }}/nginx/error.log", format: nginx-error }
+        - { label: Access log (JSON), path: "{{ paths.logs }}/nginx/access.json", format: forgebox-json }
+      autostart: true
+
+  discover:
+    match_files: [nginx.exe]
+    version_command: "nginx.exe -v"
+    version_regex: "nginx/(\\d+\\.\\d+\\.\\d+)"
+
+  update:
+    policy: auto-patch
+    retention: 1
+    check_interval: 12h
+
+  ui:
+    color: "#009639"
+    actions:
+      - { label: "nginx.conf", icon: file-text, open: config:nginx_conf }
+      - { label: "Terminal com esta versão", icon: terminal, shell: { path_prepend: ["{{ paths.version }}"] } }

@@ -20,11 +20,14 @@
 //! Closing blocks for at most [`STORE_CLOSE_TIMEOUT`]; do it from a blocking context.
 //!
 //! Repositories are added per aggregate (docs/02). M0-E1-T4 ships the migration runner
-//! and [`events::EventRepo`].
+//! and [`events::EventRepo`]; M1-E3-T3 adds [`ports::PortRepo`] (port reservations).
 
 pub mod events;
 pub mod migrations;
+pub mod ports;
 mod reader;
+pub mod sites;
+pub mod tool_versions;
 pub mod writer;
 
 use std::path::{Path, PathBuf};
@@ -35,7 +38,12 @@ use rusqlite::{Connection, OpenFlags};
 use crate::error::{ForgeError, IoResultExt, Result};
 pub use events::EventRepo;
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
+pub use ports::PortRepo;
 pub use reader::StoreReader;
+pub use sites::{Site, SiteKind, SitePhp, SiteRepo, SiteXdebug};
+pub use tool_versions::{
+    NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,
+};
 pub use writer::{StoreWriter, WriterStats};
 
 /// How long a statement waits for a lock held by another connection.
@@ -234,6 +242,11 @@ impl Store {
     /// Events repository on the maintenance connection.
     pub fn events(&self) -> EventRepo<'_> {
         EventRepo::new(&self.conn)
+    }
+
+    /// Port reservations repository on the maintenance connection.
+    pub fn ports(&self) -> PortRepo<'_> {
+        PortRepo::new(&self.conn)
     }
 }
 

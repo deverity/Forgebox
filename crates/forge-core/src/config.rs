@@ -3,8 +3,9 @@
 //! The file is 100 % owned by Forgebox (written by Settings and `forge config set`) and
 //! carries a header saying so (ADR-0007). Missing keys take the defaults below, so an
 //! empty or partial file is valid; unknown keys are ignored (a newer Forgebox may have
-//! written them). Defaults come from docs/03 §4 (port ranges), docs/06 (TLD, server),
-//! docs/14 (metrics) and docs/15 (case sensitivity).
+//! written them). Defaults come from docs/03 §4 (port ranges), docs/06 (TLD, server, DNS
+//! zones), docs/13 §5 (zones of remote daemons), docs/14 (metrics) and docs/15 (case
+//! sensitivity).
 //!
 //! Port ranges are named; manifests refer to them by name (`port_range: php-pools`,
 //! `ports[].range: databases`, docs/04). Each range is a list of single ports and
@@ -18,11 +19,13 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::net::IpAddr;
 use std::path::Path;
 use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::dns_name;
 use crate::error::{ForgeError, IoResultExt, Result};
 use crate::ids::ToolId;
 use crate::paths::write_atomic;
@@ -46,6 +49,7 @@ pub struct ForgeConfig {
     /// Linux parity: case-sensitive directories by default (docs/15, ADR-0010).
     pub case_sensitive: bool,
     pub ports: PortsConfig,
+    pub dns: DnsConfig,
     pub metrics: MetricsConfig,
     pub updates: UpdatesConfig,
     pub editor: EditorConfig,
@@ -60,6 +64,7 @@ impl Default for ForgeConfig {
             parked_dirs: vec!["www".to_owned()],
             case_sensitive: true,
             ports: PortsConfig::default(),
+            dns: DnsConfig::default(),
             metrics: MetricsConfig::default(),
             updates: UpdatesConfig::default(),
             editor: EditorConfig::default(),
@@ -93,6 +98,9 @@ fn default_ranges() -> BTreeMap<String, PortSet> {
         ("apps", "3000-3999"),
         ("mail", "1025, 8025"),
         ("storage", "9000, 9001"),
+        // CRL responder of the local CA (forge-tls, ADR-0023): its address is written in
+        // every site certificate, so it must not move.
+        ("tls-crl", "47480"),
     ]
     .into_iter()
     .map(|(name, spec)| (name.to_owned(), spec.parse().expect("valid default")))
@@ -256,6 +264,29 @@ impl<'de> Deserialize<'de> for PortSet {
     }
 }
 
+/// `[dns]` (docs/06 §5, docs/13 §5): what the local resolver answers besides `tld`.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DnsConfig {
+    /// More suffixes answered with `127.0.0.1`/`::1` and routed to the resolver
+    /// (`[".localhost"]`), same syntax as `tld`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extra_tlds: Vec<String>,
+    /// Zones of remote daemons (docs/13 §5): every name under `zone` (`hml.test`, below one
+    /// of the TLDs) resolves to `address` (`10.0.0.5`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub remote_zones: Vec<RemoteZoneConfig>,
+}
+
+/// One entry of `[[dns.remote_zones]]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteZoneConfig {
+    /// Zone name without dots around it, lowercase (`hml.test`).
+    pub zone: String,
+    /// Address of the remote machine (IPv4 answers `A`, IPv6 answers `AAAA`).
+    pub address: IpAddr,
+}
+
 /// `[metrics]` (docs/14).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -342,6 +373,18 @@ pub struct TerminalConfig {
 }
 
 impl ForgeConfig {
+    /// Every suffix answered by the local resolver: `tld` then `[dns] extra_tlds`, without
+    /// duplicates (`[".test"]` by default).
+    pub fn tlds(&self) -> Vec<String> {
+        let mut out = vec![self.tld.clone()];
+        for extra in &self.dns.extra_tlds {
+            if !out.contains(extra) {
+                out.push(extra.clone());
+            }
+        }
+        out
+    }
+
     /// Reads `path`; a missing file yields the defaults. The result is validated.
     ///
     /// Blocking file I/O: call from `spawn_blocking` in async code.
@@ -385,18 +428,34 @@ impl ForgeConfig {
     /// Checks values that serde cannot express.
     pub fn validate(&self) -> Result<()> {
         let invalid = |msg: String| Err(ForgeError::ConfigInvalid(msg));
-        let label = self.tld.strip_prefix('.').unwrap_or("");
-        if label.is_empty()
-            || !label
-                .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'.')
-            || label.starts_with(['.', '-'])
-            || label.ends_with(['.', '-'])
-        {
-            return invalid(format!(
-                "tld {:?} must look like \".test\" (lowercase, leading dot)",
-                self.tld
-            ));
+        for tld in std::iter::once(&self.tld).chain(&self.dns.extra_tlds) {
+            if let Err(reason) = dns_name::parse_suffix(tld) {
+                return invalid(format!(
+                    "tld {tld:?} must look like \".test\" (lowercase, leading dot): {reason}"
+                ));
+            }
+        }
+        let tlds = self.tlds();
+        for remote in &self.dns.remote_zones {
+            if let Err(reason) = dns_name::check_name(&remote.zone) {
+                return invalid(format!("dns remote zone: {reason}"));
+            }
+            let under_tld = tlds.iter().any(|tld| {
+                let tld = &tld[1..];
+                remote.zone != tld && dns_name::is_within(&remote.zone, tld)
+            });
+            if !under_tld {
+                return invalid(format!(
+                    "dns remote zone {:?} must be below one of the TLDs {tlds:?} (like \"hml.test\")",
+                    remote.zone
+                ));
+            }
+            if remote.address.is_unspecified() || remote.address.is_multicast() {
+                return invalid(format!(
+                    "dns remote zone {:?}: address {} cannot be answered",
+                    remote.zone, remote.address
+                ));
+            }
         }
         if self.parked_dirs.iter().any(|d| d.trim().is_empty()) {
             return invalid("parked_dirs must not contain empty entries".to_owned());
@@ -440,6 +499,8 @@ mod tests {
         assert_eq!(c.updates.quiet_hours, None);
         assert_eq!(c.editor.command, None);
         assert_eq!(c.terminal.command, None);
+        assert_eq!(c.dns, DnsConfig::default());
+        assert_eq!(c.tlds(), vec![".test".to_owned()]);
 
         let p = &c.ports;
         let web: Vec<u16> = p.range("web").unwrap().ports().collect();
@@ -511,6 +572,7 @@ mod tests {
             "tld = \"test\"",
             "tld = \".TEST\"",
             "tld = \".\"",
+            "tld = \".loja..test\"",
             "default_server = \"Nginx\"",
             "[ports.ranges]\nweb = [0]",
             "[ports.ranges]\nweb = [\"90-80\"]",
@@ -520,6 +582,42 @@ mod tests {
             "[updates]\nquiet_hours = { start = \"25:00\", end = \"07:00\" }",
             "[updates]\nmetered = \"sometimes\"",
             "case_sensitive = \"yes\"",
+        ] {
+            let err = ForgeConfig::from_toml(bad).unwrap_err();
+            assert_eq!(err.code(), "config_invalid", "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn dns_section_round_trips_and_validates() {
+        let c = ForgeConfig::from_toml(
+            "[dns]\nextra_tlds = [\".localhost\", \".test\"]\n\
+             [[dns.remote_zones]]\nzone = \"hml.test\"\naddress = \"10.0.0.5\"\n",
+        )
+        .unwrap();
+        assert_eq!(c.tlds(), vec![".test".to_owned(), ".localhost".to_owned()]);
+        assert_eq!(c.dns.remote_zones[0].zone, "hml.test");
+        assert_eq!(c.dns.remote_zones[0].address, IpAddr::from([10, 0, 0, 5]));
+        let text = c.to_toml().unwrap();
+        assert!(text.contains("[[dns.remote_zones]]"), "{text}");
+        assert_eq!(ForgeConfig::from_toml(&text).unwrap(), c);
+        assert!(
+            !ForgeConfig::default()
+                .to_toml()
+                .unwrap()
+                .contains("remote_zones"),
+            "empty lists are not written"
+        );
+
+        for bad in [
+            "[dns]\nextra_tlds = [\"localhost\"]",
+            "[dns]\nextra_tlds = [\".Local\"]",
+            "[[dns.remote_zones]]\nzone = \"test\"\naddress = \"10.0.0.5\"",
+            "[[dns.remote_zones]]\nzone = \"hml.example\"\naddress = \"10.0.0.5\"",
+            "[[dns.remote_zones]]\nzone = \"HML.test\"\naddress = \"10.0.0.5\"",
+            "[[dns.remote_zones]]\nzone = \"hml.test\"\naddress = \"0.0.0.0\"",
+            "[[dns.remote_zones]]\nzone = \"hml.test\"\naddress = \"224.0.0.1\"",
+            "[[dns.remote_zones]]\nzone = \"hml.test\"\naddress = \"nope\"",
         ] {
             let err = ForgeConfig::from_toml(bad).unwrap_err();
             assert_eq!(err.code(), "config_invalid", "{bad}: {err}");

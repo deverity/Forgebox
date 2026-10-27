@@ -73,6 +73,7 @@ impl Default for JobConfig {
 pub struct JobSpec {
     name: String,
     request_id: Option<RequestId>,
+    job_id: Option<JobId>,
 }
 
 impl JobSpec {
@@ -81,7 +82,16 @@ impl JobSpec {
         Self {
             name: name.into(),
             request_id: None,
+            job_id: None,
         }
+    }
+
+    /// Uses a pre-allocated id (from [`JobId::new`]) so the caller can publish the id
+    /// before the job exists, e.g. to reserve a slot under a lock and start the job after
+    /// releasing it. The id must not belong to another job.
+    pub fn job_id(mut self, job_id: JobId) -> Self {
+        self.job_id = Some(job_id);
+        self
     }
 
     /// Idempotency key: starting again with the same id returns the same job.
@@ -177,7 +187,7 @@ impl JobRegistry {
         Fut: Future<Output = Result<T>> + Send + 'static,
         T: Serialize + Send + 'static,
     {
-        let id = JobId::new();
+        let id = spec.job_id.unwrap_or_default();
         let token = CancellationToken::new();
         let info_rx = {
             let mut table = self.inner.table.lock();

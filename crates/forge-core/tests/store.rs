@@ -44,7 +44,7 @@ fn new_database_gets_every_table() {
     let report = store.migration_report();
     assert_eq!(report.from_version, 0);
     assert_eq!(report.to_version, latest_version());
-    assert_eq!(report.applied, vec![1]);
+    assert_eq!(report.applied, vec![1, 2]);
     assert_eq!(report.backup, None, "nothing to back up for a new file");
     assert_eq!(store.schema_version().unwrap(), latest_version());
     assert_eq!(store.path(), Some(path.as_path()));
@@ -240,4 +240,45 @@ fn events_round_trip_since_seq() {
         .map(|e| e.seq)
         .collect();
     assert_eq!(left, vec![4, 5]);
+}
+
+#[test]
+fn migration_0002_adds_the_registry_loader_columns() {
+    let store = Store::open_in_memory().unwrap();
+    let columns: Vec<String> = store
+        .conn()
+        .prepare("SELECT name FROM pragma_table_info('registries')")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    for wanted in [
+        "trusted_unsigned",
+        "public_key",
+        "ttl_secs",
+        "verification",
+        "index_sha256",
+        "last_error",
+    ] {
+        assert!(columns.iter().any(|c| c == wanted), "missing {wanted}");
+    }
+    // Existing rows (from 0001) get the defaults.
+    store
+        .conn()
+        .execute(
+            "INSERT INTO registries (id, name, url, kind, created_at, updated_at) \
+             VALUES ('r1', 'x', 'u', 'dir', 't', 't')",
+            [],
+        )
+        .unwrap();
+    let (unsigned, ttl): (i64, i64) = store
+        .conn()
+        .query_row(
+            "SELECT trusted_unsigned, ttl_secs FROM registries",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((unsigned, ttl), (0, 3600));
 }

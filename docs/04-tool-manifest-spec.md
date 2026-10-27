@@ -47,7 +47,7 @@ metadata:
 
 spec:
   platforms: [windows-x64]       # windows-x64 | windows-arm64 | macos-arm64 | linux-x64 (futuro); não pode ser vazio
-  runtime_deps: [vcredist-vs17]  # pré-requisitos do sistema; ids conhecidos pelo motor
+  runtime_deps: [vcredist-vs17]  # pré-requisitos do sistema; ids conhecidos pelo motor: vcredist-vc15|vs16|vs17|vs18 (VC++ x64 ≥ 14.10|14.20|14.30|14.50; docs/03 §1.5)
   depends_on: []                 # outras tools obrigatórias (ex. phpmyadmin → php)
   suggests: [composer, xdebug]   # UI oferece após instalar
 
@@ -85,7 +85,7 @@ spec:
 
   # ---------- Como instala ----------
   install:
-    archive: zip                 # zip | 7z | tar.gz | tar.xz | file (arquivo único: .exe/.dll/.phar) | msi (não suportado em v1); omitido = deduzido do nome do arquivo
+    archive: zip                 # zip | 7z | tar.gz | tar.xz | file (arquivo único: .exe/.dll/.phar) | msi (não suportado em v1; extração `msiexec /a` ainda sem tarefa no roadmap, necessária para Memurai); omitido = deduzido do nome do arquivo
     strip_root: auto             # auto: remove a pasta de topo quando TODAS as entradas estão nela | true: exige essa pasta (erro se não houver) | false
     layout: versioned            # versioned → bin/<id>/<version>/ (padrão) | single → bin/<id>/ (tools sem versão)
     current_link: true           # cria/atualiza junction bin/<id>/current
@@ -99,6 +99,7 @@ spec:
       - copy: { from: "php.ini-development", to: "{{ paths.etc }}/php/{{ series }}/php.ini", if_missing: true }
       - render: { template: "php/php.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/10-forgebox.ini" }
       - mkdir: "{{ paths.tmp }}/php/{{ series }}/sessions"
+      - mkdir: "{{ paths.tmp }}/php/{{ series }}/uploads"   # upload_tmp_dir do overlay
       # - run: { command: "bin/tool.exe --init", cwd: "{{ paths.version }}", timeout: 60s }   # só executáveis da própria versão (regra 6)
     uninstall:
       keep: ["{{ paths.etc }}/php/{{ series }}"]  # o que preservar ao remover a versão
@@ -151,6 +152,10 @@ spec:
       ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
       pattern: "php_{name}.dll"  # precisa de {name}
       defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
+      zend_extensions: [{ name: opcache, constraint: "<8.5" }]  # PHP 8.5+ embute o OPcache
+    # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de
+    # versioning.channels.*.constraint (scheme da tool) e o item só é emitido quando casa com a versão
+    # instalada (ausente = sempre). Resolvido por ExtensionsConfig::zend_extensions_for.
     env:                         # variáveis injetadas nos processos desta tool
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"
@@ -161,12 +166,12 @@ spec:
     # kind: pool → gerenciado pelo forge-fcgi (só faz sentido para PHP)
     pool:
       exe: php-cgi.exe
-      args: ["-b", "127.0.0.1:{{ port }}", "-c", "{{ paths.etc }}/php/{{ series }}/php.ini"]
+      args: ["-b", "127.0.0.1:{{ port }}", "-c", "{{ paths.etc }}/php/{{ series }}/php.ini"]  # {{ port }}: um por worker, preenchido pelo pool; exatamente um `<ip de loopback>:{{ port }}`
       protocol: fastcgi
       port_range: php-pools      # nome de faixa definida em forgebox.toml (regra 3)
       scaling: { min: 2, max: 12, idle_timeout: 120s }
       recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
-      env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }
+      env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }  # o forge-fcgi sobrescreve com um teto acima de max_requests (docs/03 §2.1)
       health: { fastcgi: "/_forgebox/health.php" }
 
   # ---------- Descoberta de instalação manual ----------
@@ -219,7 +224,7 @@ service:
     console_group: true            # CREATE_NEW_PROCESS_GROUP (para CTRL_BREAK); padrão true
     ports:
       - { name: main, default: 3306, env: null, range: databases }   # range deve existir (regra 3)
-    check: { command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --validate-config" }
+    check: { command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --validate-config" }   # pré-checagem antes do start e do restart (docs/03 §1.5); saída ≠ 0 = config_invalid; prazo fixo de 30 s
     start_timeout: 45s
     health:
       tcp: "127.0.0.1:{{ instance.ports.main }}"   # ou http: {url, expect_status} ou command: {cmd, exit_code}; exatamente um
@@ -231,7 +236,7 @@ service:
       timeout: 20s
       then: ctrl-break               # ctrl-c | ctrl-break | close | kill: próximo passo se o comando não parar
     reload: null                     # ou { command: "..." } ou { signal: ctrl-c | ctrl-break }
-    restart_policy: { on: failure, max: 3, window: 60s }   # on: never | failure | always
+    restart_policy: { on: failure, max: 3, window: 60s }   # on: never | failure | always; max/window limitam `failure` (`always` não tem limite); espera exponencial 1s..30s entre reinícios (docs/03 §1.4)
     logs:
       - { label: Error log, path: "{{ paths.logs }}/mysql/{{ instance.name }}/error.log", format: mysql }
     data:
@@ -275,7 +280,7 @@ Campos de cada provider (comportamento em [05](05-providers-and-updates.md) §1)
 | `php-windows` | `include_archives` (padrão `true`), `qa` (padrão `false`) | sim |
 | `apache-lounge` | `builds` (páginas, padrão `[vs17, vs18]`), `asset` (regex do arquivo; padrão: o zip do httpd) | sim |
 | `nginx-org` | — | **não** (só PGP) |
-| `github-release` | `repo` (`owner/name`), `asset` (regex), `checksum: {type, asset}` (`checksums.txt`, `{asset}.sha256`), `prerelease` (padrão `false`), `version_regex` (padrão: tag sem `v`) | se `checksum` |
+| `github-release` | `repo` (`owner/name`), `asset` (regex), `checksum: {type, asset}` (`checksums.txt`, `{asset}.sha256`; no nome do asset, `{asset}` e `{version}` são substituídos), `prerelease` (padrão `false`), `version_regex` (padrão: tag sem `v`) | se `checksum` |
 | `mysql`, `postgresql-edb` | — (lista curada em `releases:`) | **não** |
 | `mariadb`, `nodejs-dist` | — | sim |
 | `python-embed` | `package: embed \| nuget` (padrão `embed`) | **não** (curado) |
@@ -338,6 +343,8 @@ spec:
       - { key: client_port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true }
   toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }
 ```
+`source.releases[].variants` de uma Extension aceita chaves livres (as variantes reais são as da tool alvo): o catálogo usa `php_series` (`{php_series}`) para distinguir DLLs que compartilham `ts`/`compiler` (PHP 8.4 e 8.5 são ambos `nts`/`vs17`). Como xdebug.org não publica `.sha256`, cada release traz `url` e `sha256` curados.
+
 `install` de Extension aceita `archive`, `strip_root`, `target` (obrigatório, começa com `{{ paths.version }}`), `post_install`, `uninstall` e `size_estimate_mb`. Versões de Extension usam `semver`.
 
 ---
@@ -427,10 +434,14 @@ spec:
     - { id: nginx, path: tools/nginx.yaml, sha256: "<64 hex>" }
   stacks:
     - { id: laravel, path: stacks/laravel.yaml, sha256: "<64 hex>" }
-  signature: { type: minisign, key_id: "RWR...", sig: "..." }
 ```
-- `schema_version` é `1`; `sha256` tem 64 dígitos hexadecimais; `path` é relativo à raiz do registry.
-- Registries de terceiros: `forge registry add https://.../index.yaml` (exibidos com badge "terceiro"; manifestos com `post_install.run` são recusados, [11](11-security.md) §2).
+- `schema_version` é `1`; `sha256` tem 64 dígitos hexadecimais **e é conferido pelo lint contra os bytes do arquivo** (`index_mismatch`); `path` é relativo à raiz do registry.
+- `registry/index.yaml` é **gerado** por `cargo xtask registry-index` (ordenado por id; `categories` vem de `metadata.category`; `latest` é a maior versão estável de `source.releases` quando houver, senão ausente; `updated_at` só muda quando as entradas mudam). Depois de editar qualquer manifesto, rode o comando; `lint-registry` falha com `index_mismatch` se o índice estiver velho.
+- Assinatura ([ADR-0018](adr/0018-detached-index-signature.md)): o índice é assinado por uma **assinatura minisign destacada, `index.yaml.minisig`, ao lado dele, sobre os bytes crus de `index.yaml`**. Não há canonicalização nem dependência do emissor YAML: o payload é exatamente o arquivo, então qualquer implementação de minisign assina e verifica, inclusive autores de registries de terceiros e o bot do registry (`minisign -S -s <chave> -m index.yaml`). `spec.signature` **não existe mais** no schema (um `signature:` antigo é recusado por `deny_unknown_fields`). `cargo xtask registry-index` gera o índice sem assinatura e `cargo xtask registry-sign --key <secreta> [--dir <registry>]` escreve `index.yaml.minisig` (e confere com o próprio loader antes de gravar); editar o `index.yaml` depois de assinar, por um byte que seja, invalida a assinatura e exige `registry-sign` de novo. Como os bytes são o contrato, toda fonte entrega o arquivo intacto: `Http` baixa `<URL do index>.minisig`, `Git` faz checkout byte-exato (`core.autocrlf=false`; `.gitattributes` fixa LF), `Dir` lê o par de arquivos, e o cache guarda os dois. O loader só aceita um índice sem `.minisig` se o registry estiver marcado `trusted_unsigned` (desenvolvimento; aparece como "não verificado"); uma assinatura presente e errada (outra chave, índice editado, arquivo ilegível) é **sempre** recusada, e uma assinatura sem chave configurada só carrega com `trusted_unsigned`. O `key_id` mostrado vem da chave pública configurada que verificou. A chave de desenvolvimento pública é `registry/keys/dev.pub` (embutida em `forge_registry::index::DEV_PUBLIC_KEY`); a secreta não é commitada. `lint-registry` confere a assinatura quando `registry/keys/dev.pub` existe. Um teste golden (`forge-registry`, `index.rs`) fixa o hash do `index.yaml` da fixture e verifica a assinatura commitada, para pegar mudanças de comportamento em atualizações de dependências.
+- Verificação no loader (`forge-registry`): (1) assinatura do índice **antes** de qualquer manifesto ser lido/baixado; (2) sha256 de cada arquivo contra o índice (diferença = a carga inteira falha e o cache anterior continua valendo); (3) cada manifesto é parseado e validado; um manifesto inválido, com `id`/`kind` diferente do índice ou, em registry não oficial, com `post_install.run` é **ignorado e listado** (`skipped`), sem derrubar o resto. `path` do índice é confinado a `tools/` ou `stacks/`, termina em `.yaml`, sem `..`, `:`, `\` nem caminho absoluto.
+- Fontes: pasta local (`Dir`, também `file://` e compartilhamentos de rede), `Http` (URL do `index.yaml`; manifestos relativos a ela; `ETag`/`If-None-Match`) e `Git` (URL do repositório com `index.yaml` na raiz; usa o comando `git` da máquina, `--depth 1`, sem libgit2 e sem caminho especial para o GitHub; sem `git` no PATH o erro é claro e dá para usar `Http` com `raw.githubusercontent.com`). Esquemas aceitos para git: `https`, `http`, `ssh`, `git`, `file`.
+- Cache: `state/registry/<nome>/` guarda só o que foi verificado (`index.yaml` + manifestos listados) e é **reverificado a cada leitura**; o cache guarda também o `index.yaml.minisig`; metadados (etag/commit, `last_refresh_at`, `verification`, `index_sha256`, `last_error`, `ttl_secs`, `trusted_unsigned`, `public_key`) ficam na tabela `registries` (migration `0002_registry_loader.sql`). Dentro do TTL (padrão 1 h) `load` não toca a fonte; `refresh` sempre pergunta (condicional) e só reescreve o cache se algo mudou. As operações de **um** registry são serializadas (`load`, jobs de `refresh`, `remove`; ver o módulo `service` e [03](03-engine.md) §7.2): nunca há dois escritores do mesmo `state/registry/<nome>/`. `add` não espera, mas inicia uma nova *geração*: o que estava em andamento sob a configuração antiga é descartado e refeito (um registry rebaixado de oficial para terceiro nunca serve manifestos com `post_install.run`), e `remove` cancela o refresh em curso e só apaga o cache depois de ter a vez. Trocar a URL de um registry `Git` busca sempre da URL configurada (`git fetch -- <url> HEAD`), nunca do remote gravado no clone original.
+- Registries de terceiros: `forge registry add https://.../index.yaml` (exibidos com badge "terceiro"; manifestos com `post_install.run` são recusados, [11](11-security.md) §2). A flag `official` por registry (coluna `registries.official`) é o que libera `run`.
 - Manifesto **embutido no pacote**: se o zip da tool contém `forgebox.yaml` na raiz, `forge tool add-local <zip>` instala direto. Permite que qualquer autor distribua sua ferramenta "pronta para Forgebox" sem passar pelo registry.
 
 ---
@@ -438,7 +449,7 @@ spec:
 ## 6. Regras de lint (`cargo xtask lint-registry`)
 Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::parse::validate` (um manifesto). Cada problema tem um código estável (`IssueCode`, também chave de i18n) e a regra a que pertence.
 
-1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id` e `kind` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui.
+1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui.
 2. Provider sem checksum upstream (`http`/`github-release` sem `checksum`, `nginx-org`, `mysql`, `postgresql-edb`, `python-embed`) precisa de `releases[].sha256` em todas as releases.
 3. `service.daemon.ports[].range` e `service.pool.port_range` devem existir nas faixas conhecidas (`forge_core::config`, [03](03-engine.md) §4).
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).

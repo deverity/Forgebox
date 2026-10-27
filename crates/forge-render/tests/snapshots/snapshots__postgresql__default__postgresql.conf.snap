@@ -1,0 +1,23 @@
+---
+source: crates/forge-render/tests/snapshots.rs
+expression: content
+---
+# forgebox:begin main (hash=36c9cb5e1c7fdcfd)
+data_directory = 'C:/fb-test/data/postgresql/default'
+hba_file = 'C:/fb-test/etc/postgresql/default/pg_hba.conf'
+ident_file = 'C:/fb-test/etc/postgresql/default/pg_ident.conf'
+listen_addresses = '127.0.0.1'
+port = 5432
+max_connections = 100
+shared_buffers = 128MB
+# Development defaults: favor speed over durability.
+synchronous_commit = off
+timezone = 'UTC'
+log_timezone = 'UTC'
+client_encoding = 'UTF8'
+log_destination = 'stderr'
+logging_collector = on
+log_directory = 'C:/fb-test/logs/postgresql/default'
+log_filename = 'postgresql.log'
+log_min_duration_statement = -1
+# forgebox:end main

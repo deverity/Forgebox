@@ -31,7 +31,15 @@ cargo test --workspace                                     # testes unitários e
 cargo clippy --workspace --all-targets -- -D warnings      # lint, warnings são erro
 cargo fmt --all -- --check                                 # formatação
 cargo deny check                                           # licenças, advisories, bans e fontes
-cargo xtask schema | gen-ts | lint-registry                # tarefas de desenvolvimento (placeholders até M0-E1-T2)
+cargo xtask schema | gen-ts | lint-registry | registry-index # tarefas de desenvolvimento (placeholders até M0-E1-T2)
 ```
+
+### Espaço em disco (`target/`)
+
+Cada worktree do workflow (`C:\apps_src\Forgebox-wt\E*`) compila no **seu próprio** `target/`. Já tentamos compartilhar `C:\apps_src\Forgebox\target` entre eles e não funciona: o cargo calcula o hash dos pacotes de caminho relativo à raiz do workspace, então crates de branches diferentes recebem o mesmo nome de artefato e um worktree acaba linkando o código do outro (e binários MSVC como `deps/xtask.exe` nem têm hash). Para o custo em disco ficar aceitável:
+
+- `.cargo/config.toml` (repo) e `C:\apps_src\Forgebox-wt\.cargo\config.toml` definem `[profile.dev] incremental = false`, `debug = "line-tables-only"` e `debug = false` para dependências externas. Mantenha os dois iguais. Backtraces continuam com arquivo e linha; quem quiser incremental local usa `CARGO_INCREMENTAL=1`.
+- **Workers/agentes:** não alterem esses profiles nem passem `RUSTFLAGS`/`--profile` custom, não rodem `cargo clean` fora do seu worktree, não matem processos de build de outros worktrees e não registrem tarefas agendadas ou serviços. Se o disco tiver menos de 10 GB livres, parem e reportem.
+- `scripts/clean-target.ps1` (opcional; `-Register` cria a tarefa agendada "Forgebox target sweep" para o usuário atual) remove `incremental/`, artefatos sem escrita há 5 dias e, abaixo de 30 GB livres, os diretórios de profile inteiros de um `target/`. Log em `target/clean-target.log`.
 
 Antes de começar uma tarefa, leia [CLAUDE.md](CLAUDE.md) e o [índice da documentação](docs/README.md). O estado das tarefas do roadmap fica em [docs/STATUS.md](docs/STATUS.md).

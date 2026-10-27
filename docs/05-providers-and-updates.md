@@ -9,7 +9,7 @@ Um provider resolve `(tool, constraint, variants) → Vec<Release{version, url, 
 | `php-windows` | windows.php.net | `GET https://downloads.php.net/~windows/releases/releases.json` → chaves `"8.4"`, `"8.3"`… cada uma com `version` e variantes `ts-vs17-x64`, `nts-vs17-x64`, `ts-vs16-x64`… contendo `zip.path`, `zip.size`, `zip.sha256`, `debug_pack`, `devel_pack`. Versões anteriores em `releases/archives/` (listagem HTML parseada; sha256 via `.sha256` quando existir) | sha256 oficial | Builds de QA (`qa/`) só no canal preview. Observado em 26/10/2026: 7.4 (vc15), 8.0–8.3 (vs16), 8.4–8.5 (vs17) |
 | `apache-lounge` | apachelounge.com | Parse das páginas `download/VS17/` e `download/VS18/`, arquivos `httpd-2.4.NN-YYMMDD-win64-VS1x.zip`; `.txt` com sha; mod_fcgid e outros módulos na mesma página | sha256/sha512 publicados | Site sem API; cache agressivo; fallback para `releases:` estático no manifesto |
 | `nginx-org` | nginx.org | Parse de `nginx.org/en/download.html` (mainline/stable) → `nginx-1.NN.N.zip` | sem checksum upstream (só PGP) → verificamos PGP com chave embutida | |
-| `github-release` | api.github.com | `releases` + filtro por regex de asset; rate-limit tratado com ETag/cache; token opcional | `*.sha256`/`checksums.txt` quando existir | Usado por caddy, frankenphp, mailpit, minio, meilisearch, cloudflared, composer, bun, mongosh… |
+| `github-release` | api.github.com | `releases` + filtro por regex de asset; rate-limit tratado com ETag/cache; token opcional | `*.sha256`/`checksums.txt` quando existir | Usado por caddy, frankenphp, mailpit, minio, meilisearch, cloudflared, bun, mongosh… |
 | `mysql` | dev.mysql.com | Parse de `downloads/mysql/` (zip "Windows (x86, 64-bit), ZIP Archive") e `archives/`; md5 publicado → **exigimos sha256** via `downloads.mysql.com/archives/get/p/23/file/...` + hash calculado e fixado no registry (`releases:` curado) | sha256 curado | API instável → lista curada no registry, atualizada por bot |
 | `mariadb` | mariadb.org / archive.mariadb.org | `https://downloads.mariadb.org/rest-api/mariadb/<series>/` (REST oficial) → `winx64-packages.zip` com sha256 | sha256 oficial | API REST estável |
 | `postgresql-edb` | enterprisedb.com | Lista curada (`postgresql-<ver>-windows-x64-binaries.zip`); sha256 curado | sha256 curado | EDB não publica índice; bot do registry atualiza |
@@ -66,7 +66,7 @@ Implementação: `forge_provider::verify` (`Verifier::verify(path, Expect) -> Ve
 |---|---|
 | `manual` | Nunca checa. Usuário clica "Verificar". |
 | `notify` | Checa; mostra badge e notificação; nada é baixado. |
-| `auto-patch` *(padrão para runtimes e web servers)* | Baixa e instala patch dentro da mesma série (8.3.36 → 8.3.37); troca pools blue/green; mantém `retention` versões. |
+| `auto-patch` *(padrão para runtimes e web servers)* | Baixa e instala patch dentro da mesma série (8.3.36 → 8.3.37); troca pools blue/green (`forge_fcgi::Switcher::switch(de, para)`, [03 §2.2](03-engine.md)); mantém `retention` versões. |
 | `auto-minor` | Também segue minor (1.28 → 1.30 do Nginx). Nunca cruza major. |
 | `auto` | Tudo, inclusive major. Só para tools sem estado (cloudflared, composer). |
 
@@ -87,4 +87,4 @@ GitHub Action (`registry/.github/workflows/bump.yml`) roda a cada 6 h: executa c
 ## 7. Offline e ambientes corporativos
 - `forge bundle export php@8.3 nginx mysql@8.4 -o stack.fbx` gera um pacote (zip + manifestos + hashes) para instalar em máquinas sem internet (`forge bundle import`).
 - Proxy corporativo: usa configuração do sistema (WinHTTP) por padrão; permite CA corporativa extra (`prefs.extra_ca_bundle`) para os downloads.
-- Registry espelhado interno: `forge registry add file://\\servidor\forgebox\index.yaml`.
+- Registry espelhado interno: `forge registry add file://\\servidor\forgebox\index.yaml` (fonte `Dir`; o espelho tem de manter o `index.yaml` assinado, senão só carrega como `trusted_unsigned`). O cache em `state/registry/<nome>/` permite abrir o catálogo sem rede: se a fonte falha, `load` serve o último catálogo verificado com um aviso; `refresh` (job explícito) reporta a falha.

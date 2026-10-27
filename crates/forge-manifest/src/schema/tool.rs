@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::version::{Constraint, Version};
 use forge_core::Timestamp;
 use forge_core::ids::ToolId;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
@@ -766,6 +767,61 @@ pub struct ExtensionsConfig {
     pub pattern: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defaults_on: Vec<String>,
+    /// `zend_extension=` lines of the overlay (`opcache`), optionally gated by a version
+    /// constraint (same syntax as `versioning.channels.*.constraint`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub zend_extensions: Vec<ZendExtension>,
+}
+
+impl ExtensionsConfig {
+    /// Names of the zend extensions that apply to `version` (items without a
+    /// constraint always apply; an unparsable constraint never matches).
+    pub fn zend_extensions_for(&self, scheme: VersionScheme, version: &Version) -> Vec<String> {
+        self.zend_extensions
+            .iter()
+            .filter(|z| match z.constraint() {
+                None => true,
+                Some(c) => Constraint::parse(scheme, c).is_ok_and(|c| c.matches(version)),
+            })
+            .map(|z| z.name().to_owned())
+            .collect()
+    }
+}
+
+/// An item of `config.extensions.zend_extensions`: `opcache` or `{ name, constraint }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ZendExtension {
+    /// Always emitted.
+    Name(String),
+    /// Emitted only when `constraint` matches the installed version.
+    Gated(GatedZendExtension),
+}
+
+/// Object form of [`ZendExtension`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GatedZendExtension {
+    pub name: String,
+    /// Version constraint in the tool scheme (`"<8.5"`); absent = always.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constraint: Option<String>,
+}
+
+impl ZendExtension {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Name(n) => n,
+            Self::Gated(g) => &g.name,
+        }
+    }
+
+    pub fn constraint(&self) -> Option<&str> {
+        match self {
+            Self::Name(_) => None,
+            Self::Gated(g) => g.constraint.as_deref(),
+        }
+    }
 }
 
 /// Where bundled extensions come from.
@@ -1313,6 +1369,25 @@ pub struct ShellAction {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zend_extensions_follow_constraint() {
+        let cfg: ExtensionsConfig = serde_yaml_ng::from_str(
+            "ini_dir: x
+pattern: 'php_{name}.dll'
+zend_extensions: [{ name: opcache, constraint: '<8.5' }, xdebug]",
+        )
+        .unwrap();
+        let v = |t: &str| Version::parse(VersionScheme::Semver, t).unwrap();
+        assert_eq!(
+            cfg.zend_extensions_for(VersionScheme::Semver, &v("8.4.1")),
+            ["opcache", "xdebug"]
+        );
+        assert_eq!(
+            cfg.zend_extensions_for(VersionScheme::Semver, &v("8.5.0")),
+            ["xdebug"]
+        );
+    }
 
     #[test]
     fn archive_format_is_inferred_from_file_name() {

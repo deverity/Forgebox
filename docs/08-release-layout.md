@@ -23,6 +23,7 @@ C:\Forgebox\
 ├── forgeboxd.exe                 # daemon (motor). ~7 MB
 ├── forge.exe                     # CLI. ~4 MB
 ├── forgebox-helper.exe           # helper elevado (manifest requireAdministrator; só roda sob demanda)
+├── forgebox-ctrl.exe             # auxiliar interno do daemon, sem elevação: entrega CTRL_BREAK a um serviço (ADR-0016)
 ├── forge-mcp.exe                 # servidor MCP (opcional)
 ├── uninstall.exe                 # NSIS
 ├── portable.flag                 # presente só no portátil: força tudo relativo e sem registro/PATH
@@ -88,15 +89,18 @@ C:\Forgebox\
 │
 ├── certs\
 │   ├── ca\forgebox-ca.crt , forgebox-ca.key (ACL: só o usuário)
-│   └── sites\loja.test.crt , loja.test.key , ...
+│   │      forgebox-ca.crl                      # CRL vazia assinada pela CA (servida em 127.0.0.1:47480, ADR-0023)
+│   │      trust.json                           # thumbprints SHA-1 das raízes que o Forgebox pôs no Windows (remoção limpa)
+│   └── sites\loja.test.crt , loja.test.key (ACL: só o usuário) , ...
 │
 ├── logs\
 │   ├── forgeboxd.log , forgeboxd.log.1 ...   # daemon (tracing, JSON lines)
 │   ├── helper.log                             # tudo que o helper elevado fez
-│   ├── nginx\access.log , error.log
+│   ├── nginx\access.json , error.log
 │   ├── apache\...
 │   ├── php\8.3\error.log , 8.3\pool.log
 │   ├── mysql\default\error.log
+│   ├── mysql\default.out.log , default.out.log.1 … .4   # stdout/stderr capturados pelo supervisor (10 MiB × 5)
 │   └── apps\loja.test\web.log , queue.log
 │
 ├── state\                        # ESTADO INTERNO (não editar à mão)
@@ -131,7 +135,7 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 | PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` | Onboarding, se o usuário marcar | Desinstalador remove entradas que contenham `\Forgebox\bin\` |
 | Iniciar com Windows | `HKCU\...\Run\Forgebox` | Opt-in | Desinstalador remove |
 | Protocolo `forgebox://` | `HKCU\Software\Classes\forgebox` | Instalação | Desinstalador remove |
-| CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover (identifica pelo thumbprint salvo) |
+| CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover: a CA atual e toda raiz registrada em `certs\ca\trust.json` (thumbprint SHA-1 + escopo; inclui CAs antigas cuja remoção foi recusada numa rotação). Remover de `CurrentUser\Root` mostra o diálogo do Windows; `LocalMachine` vai pelo helper |
 | Regra NRPT `.test` | Política DNS do sistema | Opt-in via helper | Desinstalador remove via helper |
 | `hosts` | bloco gerenciado | Fallback | Bloco removido |
 | Firewall | regras `Forgebox-*` | Só com "expor na LAN" | Removidas |

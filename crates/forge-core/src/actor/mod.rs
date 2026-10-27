@@ -33,6 +33,11 @@
 //! | 10 | `actor.children` ([`ActorSupervisor`]) | registering or listing children; publishes nothing |
 //! | 10 | `jobs.table` ([`crate::jobs::JobRegistry`]) | updating a job; publishes `job.*`, so it takes `event_bus.seq` inside |
 //! | 10 | `store.readers` ([`crate::store::StoreReader`]) | checking a read connection in or out; never runs a query |
+//! | 10 | `ipc.outbox` (`forge_ipc` server connection) | queueing a response or stream item, or taking a batch for the writer; publishes nothing |
+//! | 10 | `ipc.idempotency` (`forge_ipc` server) | looking up or recording a `request_id`; never runs a handler |
+//! | 10 | `ipc.connections` (`forge_ipc` server) | registering, listing or cancelling connections |
+//! | 10 | `ipc.client` (`forge_ipc` client: connection slot, pending calls, routes, subscription queues) | map/queue operations only; each is a separate mutex, never nested |
+//! | 10 | `registry.state` (`forge_registry` service: slots, snapshots, refresh marks) | map operations only; leaf lock: never held while starting a job, awaiting or publishing |
 //! | 200 | `event_bus.seq` ([`crate::event::EventBus`]) | numbering an event and handing it to the broadcast channel |
 //!
 //! Rules: no lock is ever held across `.await` (clippy `await_holding_lock` and
@@ -54,7 +59,7 @@ use tokio::sync::mpsc;
 
 use crate::event::EventBus;
 
-pub use mailbox::{ActorRef, AskError, DEFAULT_MAILBOX_CAPACITY, Reply, TellError};
+pub use mailbox::{ActorRef, AskError, DEFAULT_MAILBOX_CAPACITY, Reply, TellError, WeakActorRef};
 pub use supervisor::{
     ACTOR_EVENT_VERSION, ActorFailedPayload, ActorHandle, ActorRestartedPayload, ActorSpec,
     ActorStatus, ActorSupervisor, ChildStatus, DEFAULT_STOP_TIMEOUT, RestartPolicy, StopOutcome,
@@ -142,6 +147,11 @@ impl<A: Actor> Context<A> {
         ActorRef::from_weak(Arc::clone(&self.name), &self.myself)
     }
 
+    /// Address of this actor that does not keep it alive, for the tasks it spawns.
+    pub fn myself_weak(&self) -> WeakActorRef<A::Msg> {
+        WeakActorRef::new(Arc::clone(&self.name), self.myself.clone())
+    }
+
     /// Event bus of the supervisor, for domain events.
     pub fn events(&self) -> &EventBus {
         &self.events
@@ -175,7 +185,7 @@ impl<A: Actor> fmt::Debug for Context<A> {
 }
 
 /// Human readable message of a caught panic payload.
-pub(crate) fn panic_message(payload: &(dyn Any + Send)) -> String {
+pub fn panic_message(payload: &(dyn Any + Send)) -> String {
     if let Some(text) = payload.downcast_ref::<&'static str>() {
         (*text).to_owned()
     } else if let Some(text) = payload.downcast_ref::<String>() {
