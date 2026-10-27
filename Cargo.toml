@@ -60,7 +60,20 @@ reqwest = { version = "0.13.5", default-features = false, features = ["rustls", 
 sha2 = "0.11.1"
 # Config rendering (forge-render): embedded templates and fake certs for e2e tests.
 include_dir = "0.7.4"
-rcgen = "0.14"
+# Local CA and site certificates (forge-tls, ADR-0023). Default features (ring, pem); forge-tls
+# adds `x509-parser` to sign leaves with a CA loaded from certs/ca/.
+rcgen = "0.14.10"
+# Reads back what rcgen wrote (validity, SANs, name constraints) in forge-tls.
+x509-parser = "0.18.1"
+# rcgen's validity fields are `time::OffsetDateTime`; forge-tls converts from jiff at the edge.
+time = "0.3.55"
+# SHA-1 certificate thumbprints: the identity Windows uses for roots (forge_core::platform).
+sha1 = "0.10.7"
+# TLS handshake tests of forge-tls (dev only): a local tokio-rustls server and a rustls/webpki
+# client that must enforce the CA name constraints. Same crypto provider as reqwest (aws-lc-rs).
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26.6", default-features = false }
+rustls-webpki = { version = "0.103.16", default-features = false, features = ["std", "aws-lc-rs"] }
 url = "2.5.8"
 # Verification and extraction (forge-provider verify/extract, ADR-0017). Pure Rust only:
 # no C toolchain (sequoia/nettle, liblzma-sys, zstd-sys, bzip2) and no non-allowed licenses.

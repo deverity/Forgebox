@@ -37,6 +37,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 # Hash of the hosts managed block (same format as forge-render's managed blocks).
 sha2 = { workspace = true }
+# SHA-1 thumbprints of root certificates (platform::trust_store, docs/11 §3).
+sha1 = { workspace = true }
 specta = { workspace = true, features = ["derive"], optional = true }
 specta-typescript = { workspace = true, optional = true }
 thiserror = { workspace = true }
