@@ -1,4 +1,6 @@
-//! `CTRL_BREAK` stops a real `php-cgi.exe` (roadmap M1-E3-T1 acceptance).
+//! `CTRL_BREAK` stops a real `php-cgi.exe` (roadmap M1-E3-T1 acceptance); a TCP health
+//! check gates `Running` on its FastCGI listener and the metrics sampler reads it
+//! (M1-E3-T2).
 //!
 //! Downloads the current PHP 8.4 NTS VS17 x64 build listed in
 //! `https://windows.php.net/downloads/releases/releases.json`, verifies its SHA-256
@@ -16,7 +18,9 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use forge_core::ids::{InstanceId, ToolId};
-use forge_supervisor::{InstanceSpec, InstanceState, QUICK_ASK_TIMEOUT, SpawnSpec, StopStrategy};
+use forge_supervisor::{
+    HealthSpec, InstanceSpec, InstanceState, Probe, QUICK_ASK_TIMEOUT, SpawnSpec, StopStrategy,
+};
 use sha2::{Digest, Sha256};
 use support::*;
 
@@ -132,9 +136,8 @@ async fn wait_port_open(port: u16, timeout: Duration) -> bool {
     false
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "downloads PHP from windows.php.net"]
-async fn php_cgi_stops_with_ctrl_break_online() {
+/// The verified PHP zip extracted to a temp dir: (dir guard, folder, version).
+async fn extract_php() -> (tempfile::TempDir, PathBuf, String) {
     let (zip, version) = tokio::task::spawn_blocking(php_zip).await.unwrap();
     let extracted = tempfile::tempdir().unwrap();
     let status = Command::new(system32().join("tar.exe"))
@@ -146,8 +149,19 @@ async fn php_cgi_stops_with_ctrl_break_online() {
         .unwrap();
     assert!(status.success(), "extracting {}", zip.display());
     let dir = extracted.path().to_path_buf();
+    assert!(
+        dir.join("php-cgi.exe").is_file(),
+        "php-cgi.exe missing in {}",
+        dir.display()
+    );
+    (extracted, dir, version)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "downloads PHP from windows.php.net"]
+async fn php_cgi_stops_with_ctrl_break_online() {
+    let (_extracted, dir, version) = extract_php().await;
     let php_cgi = dir.join("php-cgi.exe");
-    assert!(php_cgi.is_file(), "{} missing", php_cgi.display());
 
     let port = free_port();
     let spawn = SpawnSpec::new(&php_cgi, &dir)
@@ -193,4 +207,67 @@ async fn php_cgi_stops_with_ctrl_break_online() {
         .map(|(_, strategy)| strategy)
         .collect();
     assert_eq!(stopping, vec!["ctrl_break"]);
+}
+
+/// `Running` only once php-cgi accepts FastCGI connections (tcp probe), and the sampler
+/// reports the real process.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "downloads PHP from windows.php.net"]
+async fn php_cgi_tcp_health_and_metrics_online() {
+    let (_extracted, dir, version) = extract_php().await;
+    let port = free_port();
+    let spawn = SpawnSpec::new(dir.join("php-cgi.exe"), &dir)
+        .args(["-b".to_owned(), format!("127.0.0.1:{port}")])
+        .path_entry(&dir);
+    let mut spec = InstanceSpec::new(
+        InstanceId::new(),
+        ToolId::new("php").unwrap(),
+        "8.4-health",
+        spawn,
+    )
+    .with_health(HealthSpec::new(Probe::Tcp {
+        addr: format!("127.0.0.1:{port}"),
+    }));
+    spec.metrics.interval = Duration::from_millis(500);
+    let (supervisor, _bus) = supervisor();
+    let instance = supervisor.spawn_instance(spec).unwrap();
+    let started = Instant::now();
+    let pid = instance.start(ASK).await.unwrap();
+    println!(
+        "php-cgi {version} pid {pid} Running after {:?}",
+        started.elapsed()
+    );
+    // Running means the listener is up: no waiting here.
+    TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(500))
+        .expect("php-cgi accepts connections once Running");
+    let status = instance.status(QUICK_ASK_TIMEOUT).await.unwrap();
+    assert_eq!(status.state, InstanceState::Running);
+    let health = status.health.expect("health status");
+    assert_eq!((health.probe.as_str(), health.passing), ("tcp", Some(true)));
+
+    let mut samples = instance.subscribe_metrics(ASK).await.unwrap();
+    let sample = tokio::time::timeout(Duration::from_secs(10), samples.wait_for(|m| m.is_some()))
+        .await
+        .expect("a metrics sample within 10 s")
+        .unwrap()
+        .clone()
+        .unwrap();
+    println!(
+        "metrics: {} processes, rss {:.1} MiB, private {:.1} MiB, handles {}, cpu {:.2} %",
+        sample.processes.len(),
+        sample.rss_bytes as f64 / 1_048_576.0,
+        sample.private_bytes as f64 / 1_048_576.0,
+        sample.handles,
+        sample.cpu_pct
+    );
+    assert_eq!(sample.pid, Some(pid));
+    assert!(sample.processes.iter().any(|p| p.pid == pid));
+    assert!(
+        sample.rss_bytes > 1024 * 1024 && sample.handles > 0,
+        "{sample:?}"
+    );
+
+    let report = instance.stop(Duration::from_secs(60)).await.unwrap();
+    assert_eq!(report.strategy, Some(StopStrategy::CtrlBreak));
+    assert!(!alive(pid));
 }

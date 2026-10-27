@@ -38,10 +38,12 @@ Forgebox/
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, DnsPolicy) + current();
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE)
+│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
 │   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
+│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE)
 │   ├── forge-manifest/
 │   │   └── src/
@@ -81,10 +83,11 @@ Forgebox/
 │   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
 │   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
 │   │   │   ├── events.rs         # ServiceEventPayload: payloads service.* (v1), mesma forma de forge_ipc ServicePayload
-│   │   │   ├── health.rs         # probes tcp/http/command/pid com backoff (M1-E3-T2)
-│   │   │   ├── policy.rs         # restart: never|on-failure|always; limites; cooldown (M1-E3-T2)
-│   │   │   ├── metrics.rs        # cpu/rss/handles por pid (M1-E3-T2)
-│   │   │   ├── service.rs        # InstanceActor (máquina de estados da Instance), InstanceHandle, Supervisor
+│   │   │   ├── health.rs         # probes tcp/http/command/pid, limiares, start_timeout, intervalo com jitter
+│   │   │   ├── policy.rs         # restart: never|on-failure{max, window, backoff}|always; RestartTracker (puro)
+│   │   │   ├── metrics.rs        # sampler por Job da instância: CPU % (Δcpu/Δparede/CPUs lógicas), working set, handles
+│   │   │   ├── service/          # mod.rs: InstanceActor, InstanceHandle, Supervisor;
+│   │   │   │                     #   state.rs: máquina de estados pura (next_state), FailureReason, StopCause
 │   │   │   └── bin/forgebox-ctrl.rs  # auxiliar que entrega CTRL_BREAK ao console de um serviço (ADR-0016)
 │   │   └── tests/
 │   │       └── fake_service/     # projeto cargo independente (sem deps) compilado pelos testes: serviço falso

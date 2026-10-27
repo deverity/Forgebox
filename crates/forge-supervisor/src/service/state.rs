@@ -235,8 +235,15 @@ impl FailureReason {
             Self::MissingDll { .. } => ForgeError::NotFound(self.message()),
             Self::ConfigInvalid { stderr } => ForgeError::ConfigInvalid(stderr.clone()),
             Self::Permission { message } => ForgeError::NeedsElevation(message.clone()),
-            Self::HealthTimeout { timeout_ms, .. } => ForgeError::Timeout {
-                operation: self.message(),
+            // "timed out after 30s: waiting for the health check (last error: ...)".
+            Self::HealthTimeout {
+                timeout_ms,
+                last_error,
+            } => ForgeError::Timeout {
+                operation: match last_error {
+                    Some(err) => format!("waiting for the health check (last error: {err})"),
+                    None => "waiting for the health check".to_owned(),
+                },
                 after: std::time::Duration::from_millis(*timeout_ms),
             },
             Self::ExitedDuringStart { .. } | Self::CrashLoop { .. } => {
@@ -820,6 +827,15 @@ mod tests {
                 reason
             );
         }
+        let timeout = FailureReason::HealthTimeout {
+            timeout_ms: 30_000,
+            last_error: Some("connect 127.0.0.1:3306: refused".into()),
+        };
+        assert_eq!(
+            timeout.to_error().to_string(),
+            "timed out after 30s: waiting for the health check (last error: connect \
+             127.0.0.1:3306: refused)"
+        );
     }
 
     #[test]
