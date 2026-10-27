@@ -832,6 +832,14 @@ pub struct ExtensionsConfig {
     pub ini_dir: String,
     /// File name of an extension with `{name}` (`php_{name}.dll`).
     pub pattern: String,
+    /// Folder of the extension files, relative to the version folder, `/`-separated.
+    /// Default `ext`. An extension of `defaults_on` without its file there is built into
+    /// that build (or absent) and is not written to the overlay.
+    #[serde(
+        default = "default_extensions_dir",
+        skip_serializing_if = "is_default_extensions_dir"
+    )]
+    pub dir: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub defaults_on: Vec<String>,
     /// `zend_extension=` lines of the overlay (`opcache`), optionally gated by a version
@@ -840,7 +848,30 @@ pub struct ExtensionsConfig {
     pub zend_extensions: Vec<ZendExtension>,
 }
 
+fn default_extensions_dir() -> String {
+    "ext".to_owned()
+}
+
+fn is_default_extensions_dir(value: &String) -> bool {
+    value == "ext"
+}
+
 impl ExtensionsConfig {
+    /// File of extension `name` inside `version_dir` (`<dir>/<pattern>`).
+    pub fn file_of(&self, version_dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+        self.dir_in(version_dir)
+            .join(self.pattern.replace("{name}", name))
+    }
+
+    /// Folder of the extension files inside `version_dir`.
+    pub fn dir_in(&self, version_dir: &std::path::Path) -> std::path::PathBuf {
+        let mut path = version_dir.to_path_buf();
+        for part in self.dir.split('/').filter(|p| !p.is_empty() && *p != ".") {
+            path.push(part);
+        }
+        path
+    }
+
     /// Names of the zend extensions that apply to `version` (items without a
     /// constraint always apply; an unparsable constraint never matches).
     pub fn zend_extensions_for(&self, scheme: VersionScheme, version: &Version) -> Vec<String> {

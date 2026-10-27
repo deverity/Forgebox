@@ -10,7 +10,7 @@
 //! [`forge_fcgi::Switcher`]) and the swap ([`forge_fcgi::PoolDirectory`]).
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -202,7 +202,7 @@ impl PoolManager {
         let row = catalog::version(&self.inner.reader, version).await?;
         let tool = catalog::require_tool(&self.inner.registry, &row.tool_id)?;
         let config = (self.inner.config)();
-        let ctx = render::base_context(&self.inner.root, &config, &tool.manifest, &row);
+        let mut ctx = render::base_context(&self.inner.root, &config, &tool.manifest, &row);
         let owner = format!(
             "{}@{}",
             row.tool_id,
@@ -213,10 +213,14 @@ impl PoolManager {
             self.inner.engine.clone(),
             self.inner.bus.clone(),
         );
+        let manifest = Arc::clone(&tool.manifest);
         forge_core::runtime::spawn_blocking_timeout(
             "rendering the pool configuration",
             Duration::from_secs(30),
-            move || render::apply_target(&root, &engine, &bus, &ctx, &owner).map(|_| ()),
+            move || {
+                render::keep_present_extensions(&manifest, Path::new(&row.path), &mut ctx);
+                render::apply_target(&root, &engine, &bus, &ctx, &owner).map(|_| ())
+            },
         )
         .await
     }
@@ -415,7 +419,14 @@ pub fn pool_spec(
         .iter()
         .filter_map(|d| d.parse::<RuntimeDep>().ok())
         .collect();
-    spec.expect_php_version = Some(row.version.clone());
+    // What the worker reports is `PHP_VERSION`: no semver build metadata (`8.4.27+1` is
+    // the php-windows provider's second build of 8.4.27, which reports `8.4.27`).
+    spec.expect_php_version = Some(
+        row.version
+            .split_once('+')
+            .map_or(row.version.as_str(), |(v, _)| v)
+            .to_owned(),
+    );
     spec.log_dir = Some(
         root.logs()
             .join(manifest.metadata.id.as_str())
@@ -480,5 +491,13 @@ mod tests {
         assert_eq!(spec.ini_dir, root.etc().join("php").join("8.4"));
         assert_eq!(spec.expect_php_version.as_deref(), Some("8.4.27"));
         assert_eq!(spec.runtime_deps.len(), 1);
+
+        // A rebuilt release (`php-8.4.27-1-nts...zip` = 8.4.27+1) still reports 8.4.27.
+        let rebuilt = ToolVersionRow {
+            version: "8.4.27+1".into(),
+            ..row.clone()
+        };
+        let spec = pool_spec(&root, &manifest, &rebuilt, &layout, BTreeMap::new()).unwrap();
+        assert_eq!(spec.expect_php_version.as_deref(), Some("8.4.27"));
     }
 }

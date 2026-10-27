@@ -133,7 +133,7 @@ async fn ext_list(daemon: Daemon, params: PhpVersionParams, _ctx: Ctx) -> Result
             extensions: Vec::new(),
         });
     };
-    let dir = PathBuf::from(&row.path).join("ext");
+    let dir = config.dir_in(std::path::Path::new(&row.path));
     let pattern = config.pattern.clone();
     let names = tokio::task::spawn_blocking(move || {
         let (prefix, suffix) = pattern.split_once("{name}").unwrap_or(("php_", ".dll"));

@@ -154,6 +154,9 @@ spec:
       source: bundled            # bundled → ext/*.dll do próprio zip
       ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
       pattern: "php_{name}.dll"  # precisa de {name}
+      dir: ext                   # pasta dos arquivos de extensão, relativa à versão (padrão `ext`). Item de
+                                 # defaults_on sem arquivo ali é embutido naquele build (PHP 8.4 Windows: bcmath)
+                                 # ou ausente: não entra no overlay (evita o aviso "Unable to load dynamic library")
       defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
       zend_extensions: [{ name: opcache, constraint: "<8.5" }]  # PHP 8.5+ embute o OPcache
     # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de

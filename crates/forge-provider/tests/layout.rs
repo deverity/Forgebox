@@ -168,6 +168,13 @@ impl TemplateRenderer for FakeRenderer {
             ),
         )
         .unwrap();
+        // The shipped files are reachable while rendering (staged copy during an install),
+        // even though `paths.version` already names the final folder.
+        assert!(
+            request.files_dir.join("php.exe").is_file(),
+            "files_dir {} holds the version's files",
+            request.files_dir.display()
+        );
         self.calls.lock().unwrap().push(request.clone());
         Ok(())
     }

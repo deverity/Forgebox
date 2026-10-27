@@ -64,6 +64,32 @@ pub fn php_model(manifest: &ToolManifest, row: &ToolVersionRow) -> Option<PhpMod
     })
 }
 
+/// Leaves out of `ctx.php.extensions` the ones whose file (`config.extensions.dir` +
+/// `pattern`) is not in `version_dir`: compiled into that build (PHP 8.4 for Windows
+/// has `bcmath` built in, so `extension = bcmath` would only print a startup warning)
+/// or not shipped. Blocking (file checks): call from `spawn_blocking`.
+pub fn keep_present_extensions(
+    manifest: &ToolManifest,
+    version_dir: &Path,
+    ctx: &mut RenderContext,
+) {
+    let (Some(config), Some(php)) = (manifest.spec.config.extensions.as_ref(), ctx.php.as_mut())
+    else {
+        return;
+    };
+    php.extensions.retain(|name| {
+        let present = config.file_of(version_dir, name).is_file();
+        if !present {
+            tracing::debug!(
+                extension = %name,
+                dir = %version_dir.display(),
+                "extension file not shipped (built in or absent): left out of the overlay"
+            );
+        }
+        present
+    });
+}
+
 /// Files written (or found identical) by [`apply_target`].
 #[derive(Debug, Clone, Default)]
 pub struct Applied {
@@ -178,7 +204,11 @@ impl TemplateRenderer for DaemonRenderer {
             source: forge_core::store::VersionSource::Registry,
         };
         let mut ctx = match catalog::tool(&self.registry, &request.tool) {
-            Some(entry) => base_context(&self.root, &config, &entry.manifest, &row),
+            Some(entry) => {
+                let mut ctx = base_context(&self.root, &config, &entry.manifest, &row);
+                keep_present_extensions(&entry.manifest, &request.files_dir, &mut ctx);
+                ctx
+            }
             None => {
                 let mut ctx = RenderContext::new(&self.root, request.tool.as_str(), &vars.version);
                 ctx.tool.dir = vars.paths.version.clone();
@@ -240,6 +270,32 @@ mod tests {
         assert!(old.extensions.contains(&"mbstring".to_owned()));
         let new = php_model(&manifest, &row("8.5.1")).unwrap();
         assert!(new.zend_extensions.is_empty(), "8.5 embeds OPcache");
+    }
+
+    #[test]
+    fn built_in_extensions_are_left_out_of_the_overlay() {
+        // PHP 8.4 for Windows ships no php_bcmath.dll (bcmath is built in): the overlay
+        // must not ask for it (M1 gate: a startup warning on every CLI run).
+        let dir = tempfile::tempdir().unwrap();
+        let root = ForgeRoot::new(dir.path()).unwrap();
+        let version_dir = dir.path().join("bin/php/8.4.27-nts-vs17-x64");
+        std::fs::create_dir_all(version_dir.join("ext")).unwrap();
+        for name in ["curl", "mbstring"] {
+            std::fs::write(version_dir.join(format!("ext/php_{name}.dll")), b"").unwrap();
+        }
+        let manifest = php_manifest();
+        let mut row = row("8.4.27");
+        row.path = posix_string(&version_dir);
+        let mut ctx = base_context(&root, &ForgeConfig::default(), &manifest, &row);
+        assert!(
+            ctx.php
+                .as_ref()
+                .unwrap()
+                .extensions
+                .contains(&"bcmath".to_owned())
+        );
+        keep_present_extensions(&manifest, &version_dir, &mut ctx);
+        assert_eq!(ctx.php.unwrap().extensions, ["curl", "mbstring"]);
     }
 
     #[test]
