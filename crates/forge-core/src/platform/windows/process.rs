@@ -9,6 +9,15 @@
 //!   every job of the chain → `ResumeThread`: the child, and anything it starts, never
 //!   runs outside the job. If the assignment fails the child is terminated before it ran
 //!   a single instruction.
+//! * Job termination is asynchronous. `TerminateJobObject` returns before the processes
+//!   exited, and the job then refuses `AssignProcessToJobObject` with
+//!   `ERROR_ACCESS_DENIED` for a few milliseconds **even after** its last process left
+//!   (measured on Windows 10 19045: `ActiveProcesses` reaches 0 within ~100 µs, the
+//!   refusals last 1–8 ms when idle and tens of ms under load; nothing observable —
+//!   the job's signaled state, its accounting, `SetInformationJobObject` — tells when
+//!   they stop). So `terminate_all` waits until `ActiveProcesses == 0` (bounded by
+//!   [`TERMINATE_TIMEOUT`]) and the assignment retries `ERROR_ACCESS_DENIED` with a
+//!   short backoff for at most [`ASSIGN_RETRY_LIMIT`].
 //! * Inheritance is limited to the three std handles with
 //!   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`: concurrent spawns never leak each other's pipe
 //!   ends (a leaked write end would delay EOF on a service's stdout).
@@ -26,12 +35,13 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use ::windows::Win32::Foundation::{
-    ERROR_BAD_EXE_FORMAT, ERROR_DIRECTORY, ERROR_ELEVATION_REQUIRED, ERROR_FILE_NOT_FOUND,
-    ERROR_INVALID_PARAMETER, ERROR_MORE_DATA, ERROR_PATH_NOT_FOUND, HANDLE, INVALID_HANDLE_VALUE,
-    WAIT_OBJECT_0, WAIT_TIMEOUT,
+    ERROR_ACCESS_DENIED, ERROR_BAD_EXE_FORMAT, ERROR_DIRECTORY, ERROR_ELEVATION_REQUIRED,
+    ERROR_FILE_NOT_FOUND, ERROR_INVALID_PARAMETER, ERROR_MORE_DATA, ERROR_PATH_NOT_FOUND, HANDLE,
+    INVALID_HANDLE_VALUE, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use ::windows::Win32::Security::SECURITY_ATTRIBUTES;
 use ::windows::Win32::Storage::FileSystem::{
@@ -42,7 +52,8 @@ use ::windows::Win32::Storage::FileSystem::{
 use ::windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
     JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    JOBOBJECT_BASIC_PROCESS_ID_LIST, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_BASIC_PROCESS_ID_LIST,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
     JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
     SetInformationJobObject, TerminateJobObject,
 };
@@ -63,12 +74,17 @@ use tokio::sync::oneshot;
 
 use crate::error::{ForgeError, Result};
 use crate::platform::process::{
-    ConsoleMode, ExitSource, GroupOptions, PipeReader, ProcessCommand, ProcessControl,
-    ProcessControlOptions, ProcessExit, ProcessGroup, SpawnedProcess, StdioTarget,
+    ASSIGN_RETRY_LIMIT, ConsoleMode, ExitSource, GroupOptions, PipeReader, ProcessCommand,
+    ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup, SpawnedProcess, StdioTarget,
+    TERMINATE_TIMEOUT,
 };
 
 /// Size of each captured pipe buffer.
 const PIPE_BUFFER: u32 = 64 * 1024;
+
+/// First and longest pause between two checks of a settling job (the backoff doubles).
+const SETTLE_POLL_FIRST: Duration = Duration::from_micros(250);
+const SETTLE_POLL_MAX: Duration = Duration::from_millis(20);
 
 /// Variables every child inherits from the daemon (docs/03 §1.2: minimal env, never PATH).
 const BASE_ENV_VARS: &[&str] = &[
@@ -235,14 +251,86 @@ impl Job {
         chain
     }
 
-    /// Assigns `process` to every job of the chain, root first.
-    fn assign_process(&self, process: HANDLE) -> Result<()> {
+    /// Assigns `process` to every job of the chain, root first. A job that refuses it
+    /// with `ERROR_ACCESS_DENIED` (a termination still settling, see the module docs) is
+    /// retried with backoff for at most [`ASSIGN_RETRY_LIMIT`]. Returns how many attempts
+    /// were refused before the process was accepted everywhere.
+    fn assign_process(&self, process: HANDLE) -> Result<u32> {
+        let started = Instant::now();
+        let mut refused = 0_u32;
+        let mut pause = SETTLE_POLL_FIRST;
         for job in self.chain() {
-            // SAFETY: both handles are valid for the duration of the call.
-            unsafe { AssignProcessToJobObject(raw(&job.handle), process) }
-                .map_err(|e| win_err("assigning a process to its job object", &e))?;
+            loop {
+                // SAFETY: both handles are valid for the duration of the call.
+                match unsafe { AssignProcessToJobObject(raw(&job.handle), process) } {
+                    Ok(()) => break,
+                    Err(err)
+                        if win32_code(&err) == Some(ERROR_ACCESS_DENIED.0)
+                            && started.elapsed() < ASSIGN_RETRY_LIMIT =>
+                    {
+                        refused += 1;
+                        std::thread::sleep(pause);
+                        pause = (pause * 2).min(SETTLE_POLL_MAX);
+                    }
+                    Err(err) if refused > 0 => {
+                        return Err(win_err(
+                            format!(
+                                "assigning a process to its job object (refused for {} ms: \
+                                 the job may still be terminating its previous processes)",
+                                started.elapsed().as_millis()
+                            ),
+                            &err,
+                        ));
+                    }
+                    Err(err) => {
+                        return Err(win_err("assigning a process to its job object", &err));
+                    }
+                }
+            }
         }
-        Ok(())
+        if refused > 0 {
+            tracing::debug!(
+                refused,
+                waited_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+                "job object accepted the process once its termination settled"
+            );
+        }
+        Ok(refused)
+    }
+
+    /// Processes currently running in the job (nested jobs included).
+    fn active_processes(&self) -> Result<u32> {
+        let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        // SAFETY: `info` is a writable JOBOBJECT_BASIC_ACCOUNTING_INFORMATION of the size
+        // passed.
+        unsafe {
+            QueryInformationJobObject(
+                Some(raw(&self.handle)),
+                JobObjectBasicAccountingInformation,
+                (&raw mut info).cast(),
+                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .map_err(|e| win_err("reading the accounting of a job object", &e))?;
+        Ok(info.ActiveProcesses)
+    }
+
+    /// Waits at most `timeout` until no process runs in the job; `false` on timeout.
+    fn wait_empty(&self, timeout: Duration) -> Result<bool> {
+        let started = Instant::now();
+        let mut pause = SETTLE_POLL_FIRST;
+        loop {
+            if self.active_processes()? == 0 {
+                return Ok(true);
+            }
+            let elapsed = started.elapsed();
+            if elapsed >= timeout {
+                return Ok(false);
+            }
+            std::thread::sleep(pause.min(timeout - elapsed));
+            pause = (pause * 2).min(SETTLE_POLL_MAX);
+        }
     }
 
     fn pids(&self) -> Result<Vec<u32>> {
@@ -289,10 +377,30 @@ impl Job {
         }
     }
 
-    fn terminate_all(&self, exit_code: u32) -> Result<()> {
+    /// `TerminateJobObject` alone: returns while the processes may still be exiting.
+    fn terminate(&self, exit_code: u32) -> Result<()> {
         // SAFETY: valid job handle.
-        unsafe { TerminateJobObject(raw(&self.handle), exit_code) }
-            .map_err(|e| win_err("terminating a job object", &e))
+        match unsafe { TerminateJobObject(raw(&self.handle), exit_code) } {
+            Ok(()) => Ok(()),
+            // A termination already in flight: the caller's wait covers it.
+            Err(err) if win32_code(&err) == Some(ERROR_ACCESS_DENIED.0) => Ok(()),
+            Err(err) => Err(win_err("terminating a job object", &err)),
+        }
+    }
+
+    /// Terminates the job and waits until it is empty (see the module docs).
+    fn terminate_all(&self, exit_code: u32) -> Result<()> {
+        self.terminate(exit_code)?;
+        if self.wait_empty(TERMINATE_TIMEOUT)? {
+            return Ok(());
+        }
+        Err(ForgeError::Timeout {
+            operation: format!(
+                "waiting for the {} processes of a terminated job object to exit",
+                self.active_processes().unwrap_or(0)
+            ),
+            after: TERMINATE_TIMEOUT,
+        })
     }
 }
 
@@ -324,7 +432,7 @@ impl ProcessGroup for JobGroup {
             pid,
             PROCESS_ACCESS_RIGHTS(PROCESS_SET_QUOTA.0 | PROCESS_TERMINATE.0),
         )?;
-        self.job.assign_process(raw(&process))
+        self.job.assign_process(raw(&process)).map(drop)
     }
 
     fn pids(&self) -> Result<Vec<u32>> {
@@ -961,6 +1069,8 @@ impl ProcessControl for WindowsProcessControl {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
 
     fn line(exe: &str, args: &[&str]) -> String {
@@ -1056,6 +1166,103 @@ mod tests {
         assert_eq!(
             control.watch(u32::MAX - 3).err().unwrap().code(),
             "not_found"
+        );
+    }
+
+    /// `ping -n <seconds> 127.0.0.1`: runs long enough and needs no console input.
+    fn ping(control: &WindowsProcessControl, seconds: u32) -> ProcessCommand {
+        let system = system_directory();
+        let mut cmd = ProcessCommand::new(system.join("PING.EXE"), &system);
+        cmd.args = vec!["-n".into(), seconds.to_string().into(), "127.0.0.1".into()];
+        cmd.env = control.base_env();
+        cmd
+    }
+
+    /// Regression (review of M1-E3-T1): `terminate_all` returned while the job was still
+    /// terminating, and adding a process to the same job right after it failed with
+    /// `ERROR_ACCESS_DENIED`. Each round terminates the job and, at once, assigns an
+    /// already running process (so nothing slow such as `CreateProcessW` sits between the
+    /// two calls: the race is hit every time) and spawns a new one.
+    #[tokio::test]
+    async fn job_takes_processes_right_after_terminate_all() {
+        let control = WindowsProcessControl::new(ProcessControlOptions::default());
+        let root = control.create_group(GroupOptions::ROOT).unwrap();
+        let job = root.create_child(GroupOptions::INSTANCE).unwrap();
+        let cmd = ping(&control, 30);
+        for round in 1..=20 {
+            let mut member = job.spawn(&cmd).unwrap();
+            // Outside our jobs until assigned below.
+            let mut newcomer = std::process::Command::new(&cmd.exe)
+                .args(&cmd.args)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+
+            job.terminate_all(9).unwrap();
+            let assigned = job.assign(newcomer.id());
+            let spawned = job.spawn(&cmd);
+
+            assigned
+                .unwrap_or_else(|err| panic!("round {round}: assign after terminate_all: {err}"));
+            let spawned = spawned
+                .unwrap_or_else(|err| panic!("round {round}: spawn after terminate_all: {err}"));
+            let pids = job.pids().unwrap();
+            assert!(pids.contains(&newcomer.id()), "round {round}: {pids:?}");
+            assert!(pids.contains(&spawned.pid), "round {round}: {pids:?}");
+            assert!(!pids.contains(&member.pid), "round {round}: {pids:?}");
+            let code = member
+                .exit
+                .wait_timeout(Duration::from_secs(2))
+                .await
+                .unwrap();
+            assert_eq!(code, Some(9), "round {round}");
+
+            job.terminate_all(9).unwrap();
+            assert!(job.pids().unwrap().is_empty(), "round {round}: job emptied");
+            assert_eq!(newcomer.wait().unwrap().code(), Some(9), "round {round}");
+        }
+        // Nothing left: returns at once.
+        let started = Instant::now();
+        job.terminate_all(9).unwrap();
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    /// The race itself, without the wait of `terminate_all`: right after a bare
+    /// `TerminateJobObject` the job refuses new members (even once empty), and the
+    /// assignment retries until the termination settled.
+    #[tokio::test]
+    async fn assignment_retries_while_a_termination_settles() {
+        let control = WindowsProcessControl::new(ProcessControlOptions::default());
+        let root = Job::create(GroupOptions::ROOT, None).unwrap();
+        let job = Job::create(GroupOptions::INSTANCE, Some(Arc::clone(&root))).unwrap();
+        let cmd = ping(&control, 30);
+        let mut refused_total = 0;
+        for round in 1..=10 {
+            let member = create_process(Some(&job), &cmd).unwrap();
+            // Already running (outside our jobs) so the assignment follows the
+            // termination within microseconds.
+            let newcomer = create_process(None, &cmd).unwrap();
+            job.terminate(1).unwrap();
+            job.terminate(1).unwrap(); // a second termination in flight is fine
+            let started = Instant::now();
+            let refused = job
+                .assign_process(raw(&newcomer.process))
+                .unwrap_or_else(|err| panic!("round {round}: {err}"));
+            println!(
+                "round {round}: accepted after {refused} refusals in {:?}",
+                started.elapsed()
+            );
+            refused_total += refused;
+            assert!(job.pids().unwrap().contains(&newcomer.pid), "round {round}");
+            assert!(!job.pids().unwrap().contains(&member.pid), "round {round}");
+            job.terminate_all(1).unwrap();
+        }
+        assert!(
+            refused_total > 0,
+            "the job never refused a process right after TerminateJobObject: this test no \
+             longer reproduces the race it guards against"
         );
     }
 

@@ -29,9 +29,9 @@ pub mod process;
 pub mod windows;
 
 pub use process::{
-    CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader, ProcessCommand,
-    ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup, SpawnedProcess, StdioTarget,
-    ctrl_break_helper_main, process_control,
+    ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
+    ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
+    SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
 };
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are

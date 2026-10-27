@@ -31,6 +31,13 @@ use crate::error::{ForgeError, Result};
 /// supervised process' console (docs/03 §1.3, ADR-0015). Shipped next to `forgeboxd`.
 pub const CTRL_BREAK_HELPER_NAME: &str = "forgebox-ctrl";
 
+/// How long [`ProcessGroup::terminate_all`] waits for the killed processes to be gone.
+pub const TERMINATE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long adding a process to a group keeps retrying while the group refuses new
+/// members because a termination is still settling (see [`ProcessGroup::spawn`]).
+pub const ASSIGN_RETRY_LIMIT: Duration = Duration::from_secs(2);
+
 /// Async reading end of a captured stdout/stderr pipe.
 pub type PipeReader = Pin<Box<dyn AsyncRead + Send>>;
 
@@ -202,22 +209,34 @@ impl Future for ProcessExit {
 /// Group of processes that die together (Job Object on Windows, cgroup on Linux).
 /// Dropping the last reference closes the group, which kills its members when it was
 /// created with [`GroupOptions::kill_on_close`].
+///
+/// Termination is asynchronous in the OS: on Windows `TerminateJobObject` returns before
+/// the processes are gone, and the job keeps refusing new members
+/// (`ERROR_ACCESS_DENIED`) for a few milliseconds even after its last process left
+/// (docs/03 §1.1). The implementations hide both: [`terminate_all`](Self::terminate_all)
+/// returns only once the group is empty, and [`spawn`](Self::spawn)/[`assign`](Self::assign)
+/// retry while a termination settles.
 pub trait ProcessGroup: Send + Sync + fmt::Debug {
     /// New empty group nested in this one: its members are also members of `self`.
     fn create_child(&self, opts: GroupOptions) -> Result<Arc<dyn ProcessGroup>>;
 
     /// Starts `cmd` suspended, adds it to this group (and its ancestors) and only then
     /// lets it run, so no grandchild can escape. Needs a tokio runtime context when a
-    /// stream is [`StdioTarget::Pipe`].
+    /// stream is [`StdioTarget::Pipe`]. If the group refuses the new member because a
+    /// termination is still settling, the assignment is retried for at most
+    /// [`ASSIGN_RETRY_LIMIT`]; if it still fails the child is killed before it ran.
     fn spawn(&self, cmd: &ProcessCommand) -> Result<SpawnedProcess>;
 
-    /// Adds the running process `pid` to the group.
+    /// Adds the running process `pid` to the group (same retry as [`spawn`](Self::spawn)).
     fn assign(&self, pid: u32) -> Result<()>;
 
     /// PIDs currently in the group, nested groups included.
     fn pids(&self) -> Result<Vec<u32>>;
 
-    /// Kills every process of the group (and of nested groups).
+    /// Kills every process of the group (and of nested groups) and waits, at most
+    /// [`TERMINATE_TIMEOUT`], until none is left: on `Ok` every member has exited.
+    /// `Timeout` when some process outlives the deadline (stuck in the kernel). Calling
+    /// it while another termination of the same group is in flight is fine.
     fn terminate_all(&self, exit_code: u32) -> Result<()>;
 }
 
