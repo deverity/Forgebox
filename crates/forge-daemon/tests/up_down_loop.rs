@@ -25,7 +25,6 @@ struct Round {
 
 async fn run(rounds: usize) {
     let root = TestRoot::new();
-    let baseline_daemons = pids_of("forgeboxd.exe");
     let me = std::process::id();
     let mut pids = Vec::new();
     let mut measured = Vec::new();
@@ -68,9 +67,10 @@ async fn run(rounds: usize) {
     }
     let ws_end = working_set_kib(me);
 
+    // Only the daemons of this run (another test may be running its own right now).
     let alive: Vec<u32> = pids_of("forgeboxd.exe")
         .into_iter()
-        .filter(|p| !baseline_daemons.contains(p))
+        .filter(|p| pids.contains(p))
         .collect();
     assert!(alive.is_empty(), "daemons still running: {alive:?}");
     let orphans = children_of(&pids);
