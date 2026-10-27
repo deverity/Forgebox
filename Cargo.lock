@@ -1359,6 +1359,14 @@ name = "forge-supervisor"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "forge-ipc",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

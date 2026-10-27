@@ -70,6 +70,14 @@ impl<M: Send + 'static> ActorRef<M> {
         &self.name
     }
 
+    /// Address that does not keep the actor alive (see [`WeakActorRef`]).
+    pub fn weak(&self) -> WeakActorRef<M> {
+        WeakActorRef {
+            name: Arc::clone(&self.name),
+            tx: self.tx.downgrade(),
+        }
+    }
+
     /// Fire-and-forget. Fails at once, giving the message back, when the mailbox is full
     /// or the actor is stopped.
     pub fn tell(&self, msg: M) -> Result<(), TellError<M>> {
@@ -137,6 +145,47 @@ impl<M: Send + 'static> ActorRef<M> {
     /// Size of the mailbox.
     pub fn max_capacity(&self) -> usize {
         self.tx.max_capacity()
+    }
+}
+
+/// Address that does not keep the actor alive: tasks spawned by an actor (process
+/// watchers, timers) hold one so that the actor still stops once every external
+/// [`ActorRef`] is gone.
+pub struct WeakActorRef<M> {
+    name: Arc<str>,
+    tx: mpsc::WeakSender<M>,
+}
+
+impl<M> Clone for WeakActorRef<M> {
+    fn clone(&self) -> Self {
+        Self {
+            name: Arc::clone(&self.name),
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+impl<M> fmt::Debug for WeakActorRef<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WeakActorRef")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<M: Send + 'static> WeakActorRef<M> {
+    pub(crate) fn new(name: Arc<str>, tx: mpsc::WeakSender<M>) -> Self {
+        Self { name, tx }
+    }
+
+    /// Strong address, or `None` once the actor's mailbox was dropped.
+    pub fn upgrade(&self) -> Option<ActorRef<M>> {
+        ActorRef::from_weak(Arc::clone(&self.name), &self.tx)
+    }
+
+    /// Name of the actor.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -257,6 +306,19 @@ mod tests {
         let err = actor.tell(3).unwrap_err();
         assert!(!err.is_full());
         assert_eq!(format!("{err:?}"), "Stopped { actor: \"unit\", .. }");
+    }
+
+    #[tokio::test]
+    async fn weak_ref_does_not_keep_the_mailbox_open() {
+        let (actor, mut rx) = channel::<u32>("unit".into(), 4);
+        let weak = actor.weak();
+        assert_eq!(weak.name(), "unit");
+        weak.upgrade().unwrap().tell(1).unwrap();
+        assert_eq!(rx.recv().await, Some(1));
+        drop(actor);
+        assert_eq!(rx.recv().await, None, "only the weak ref is left");
+        assert!(weak.upgrade().is_none());
+        assert!(format!("{weak:?}").contains("unit"));
     }
 
     #[tokio::test]
