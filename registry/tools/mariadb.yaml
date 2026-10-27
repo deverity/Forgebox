@@ -57,8 +57,7 @@ spec:
       regex: "Ver (\\d+\\.\\d+\\.\\d+)"
     post_install:
       - mkdir: "{{ paths.data }}/mariadb"
-      - mkdir: "{{ paths.logs }}/mariadb/{{ instance.name }}"
-      - render: { template: "mariadb/my.ini.j2", to: "{{ paths.etc }}/mariadb/{{ instance.name }}/my.ini" }
+      - mkdir: "{{ paths.tmp }}/mariadb"   # pid files; per-instance folders (logs, my.ini) are made at start
     uninstall:
       keep: ["{{ paths.etc }}/mariadb", "{{ paths.data }}/mariadb"]
     size_estimate_mb: 400

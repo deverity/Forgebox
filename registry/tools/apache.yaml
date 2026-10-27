@@ -74,6 +74,7 @@ spec:
     post_install:
       - mkdir: "{{ paths.logs }}/apache"
       - mkdir: "{{ paths.etc }}/apache"
+      - mkdir: "{{ paths.tmp }}/apache"   # PidFile and the SSL session cache of httpd.conf
     uninstall:
       keep: ["{{ paths.etc }}/apache"]
     size_estimate_mb: 55

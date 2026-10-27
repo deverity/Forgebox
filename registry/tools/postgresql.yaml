@@ -60,9 +60,6 @@ spec:
       regex: "\\(PostgreSQL\\) (\\d+\\.\\d+)"
     post_install:
       - mkdir: "{{ paths.data }}/postgresql"
-      - mkdir: "{{ paths.logs }}/postgresql/{{ instance.name }}"
-      - render: { template: "postgresql/postgresql.conf.j2", to: "{{ paths.etc }}/postgresql/{{ instance.name }}/postgresql.conf" }
-      - render: { template: "postgresql/pg_hba.conf.j2", to: "{{ paths.etc }}/postgresql/{{ instance.name }}/pg_hba.conf" }
     uninstall:
       keep: ["{{ paths.etc }}/postgresql", "{{ paths.data }}/postgresql"]
     size_estimate_mb: 1000

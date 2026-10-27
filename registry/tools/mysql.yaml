@@ -58,8 +58,7 @@ spec:
       regex: "Ver (\\d+\\.\\d+\\.\\d+)"
     post_install:
       - mkdir: "{{ paths.data }}/mysql"
-      - mkdir: "{{ paths.logs }}/mysql/{{ instance.name }}"
-      - render: { template: "mysql/my.ini.j2", to: "{{ paths.etc }}/mysql/{{ instance.name }}/my.ini" }
+      - mkdir: "{{ paths.tmp }}/mysql"   # pid files; per-instance folders (logs, my.ini) are made at start
     uninstall:
       keep: ["{{ paths.etc }}/mysql", "{{ paths.data }}/mysql"]
     size_estimate_mb: 620
