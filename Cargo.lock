@@ -1380,12 +1380,14 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "forge-core",
+ "forge-ipc",
  "hickory-server",
  "pretty_assertions",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

@@ -19,8 +19,12 @@ hickory-server = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+# CancellationToken of the hickory server (same tokio-util as hickory-server).
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# Contract test only: dns.policy_applied / helper.op payloads match forge_ipc::api::events.
+forge-ipc = { path = "../forge-ipc" }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
