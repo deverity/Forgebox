@@ -77,9 +77,18 @@ impl UpstreamModel {
         self.backends.is_empty()
     }
 
-    /// `127.0.0.1:19083`, ... (event payloads, renderer input).
+    /// `127.0.0.1:19083`, ... (event payloads).
     pub fn backend_strings(&self) -> Vec<String> {
         self.backends.iter().map(ToString::to_string).collect()
+    }
+
+    /// `(host, port)` of each backend: the `servers` of
+    /// `forge_render::model::UpstreamModel`, which renders the upstream block.
+    pub fn servers(&self) -> Vec<(String, u16)> {
+        self.backends
+            .iter()
+            .map(|b| (b.ip().to_string(), b.port()))
+            .collect()
     }
 }
 

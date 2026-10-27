@@ -614,3 +614,46 @@ async fn dropping_the_pool_kills_its_workers() {
     .await;
     eventually("ports released", WAIT, || fx.ports.held().is_empty()).await;
 }
+
+/// "Generation of the upstream block": the model of a running pool, mapped like the
+/// daemon does, renders with the real nginx and Apache templates of forge-render.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn running_pool_renders_its_upstream_block() {
+    let _serial = SERIAL.lock().await;
+    let fx = fixture("php_8_3");
+    let pool = fx.spawn(fake_spec(fx.root.path(), "8.3.99", "8.3"));
+    let model = pool.start(ASK).await.unwrap();
+    let render_model = forge_render::model::UpstreamModel::new(
+        model.name.clone(),
+        model
+            .servers()
+            .into_iter()
+            .map(|(host, port)| forge_render::model::UpstreamServer { host, port })
+            .collect(),
+    );
+    render_model.validate().unwrap();
+    let engine = forge_render::Engine::embedded_only();
+    let ctx = serde_json::json!({ "upstream": render_model });
+    let nginx = engine.render("nginx/upstream.conf.j2", &ctx).unwrap();
+    let apache = engine.render("apache/upstream.conf.j2", &ctx).unwrap();
+    println!(
+        "{nginx}
+{apache}"
+    );
+    assert!(nginx.contains("upstream php_8_3 {"), "{nginx}");
+    assert!(nginx.contains("least_conn;"));
+    assert!(
+        apache.contains("<Proxy \"balancer://php_8_3/\">"),
+        "{apache}"
+    );
+    for backend in &model.backends {
+        assert!(nginx.contains(&format!("server {backend};")), "{nginx}");
+        assert!(
+            apache.contains(&format!(
+                "BalancerMember \"fcgi://{backend}\" enablereuse=off max=1"
+            )),
+            "{apache}"
+        );
+    }
+    pool.stop(ASK).await.unwrap();
+}

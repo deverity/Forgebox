@@ -1302,6 +1302,7 @@ version = "0.1.0"
 dependencies = [
  "forge-core",
  "forge-ipc",
+ "forge-render",
  "forge-supervisor",
  "pretty_assertions",
  "serde",
