@@ -1,6 +1,7 @@
 //! The local CA (docs/06 §6.1, docs/11 §3, ADR-0023).
 //!
-//! * ECDSA P-256, `CN=Forgebox Local CA <hostname> <year>`, `O=Forgebox`, 10 years,
+//! * ECDSA P-256, `CN=Forgebox Local CA <hostname> <year>`, `O=Forgebox`,
+//!   `OU=created <RFC 3339 instant>` (tells two CAs of the same year apart), 10 years,
 //!   `basicConstraints` CA with `pathLenConstraint = 0` (it signs leaves only, never another
 //!   CA), `keyUsage` `keyCertSign | cRLSign`, subject key identifier.
 //! * **Name constraints** (critical): `permittedSubtrees` = one `dNSName` per configured TLD
@@ -218,6 +219,13 @@ impl LocalCa {
         params
             .distinguished_name
             .push(DnType::OrganizationName, "Forgebox");
+        // Tells CAs of the same machine and year apart (after a rotation both may be listed
+        // for a while): people see it in certmgr, verifiers that match issuers by name only
+        // pick the right one.
+        params.distinguished_name.push(
+            DnType::OrganizationalUnitName,
+            format!("created {}", opts.now.strftime("%Y-%m-%dT%H:%M:%SZ")),
+        );
         params.not_before = cert::to_offset(not_before)?;
         params.not_after = cert::to_offset(not_after)?;
         params.serial_number = Some(cert::random_serial()?);
