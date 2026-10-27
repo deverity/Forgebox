@@ -44,7 +44,7 @@ fn new_database_gets_every_table() {
     let report = store.migration_report();
     assert_eq!(report.from_version, 0);
     assert_eq!(report.to_version, latest_version());
-    assert_eq!(report.applied, vec![1, 2]);
+    assert_eq!(report.applied, (1..=latest_version()).collect::<Vec<_>>());
     assert_eq!(report.backup, None, "nothing to back up for a new file");
     assert_eq!(store.schema_version().unwrap(), latest_version());
     assert_eq!(store.path(), Some(path.as_path()));
