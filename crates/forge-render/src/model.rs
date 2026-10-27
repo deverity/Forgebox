@@ -4,8 +4,13 @@
 //! Nginx/Apache/Caddy through templates. Nothing here knows about a specific server.
 //! All path strings are POSIX (`/`) and hosts are lowercase (docs/15 §7).
 //!
-//! Values reach config files, so [`VhostModel::normalized`] rejects anything that could
-//! break out of a directive (quotes, `;`, braces, newlines). The only escape hatch is
+//! Values reach config files, so [`VhostModel::normalized`] validates them by position:
+//! quoted values (env, header values, `cache_control`, root, ssl paths) reject `"`,
+//! control characters (newlines) and a trailing `\` (which would escape the closing
+//! quote); `$` and `%{` are also rejected where the server interpolates. Unquoted
+//! tokens (index, try_files, deny, static patterns, `client_max_body`, upstream host)
+//! additionally reject whitespace, quotes, `;`, `{` and `}`. Quoted values may contain
+//! `;`, `{`, `}` because they stay inside the quotes. The only escape hatch is
 //! [`ExtraModel`], which is raw by design and written by the user.
 
 use std::collections::BTreeMap;
@@ -170,6 +175,7 @@ fn has_control(s: &str) -> bool {
 fn check_token(field: &str, value: &str, extra_forbidden: &str) -> Result<()> {
     let bad = value.is_empty()
         || has_control(value)
+        || value.ends_with('\\')
         || value.chars().any(|c| {
             c.is_whitespace()
                 || matches!(c, '"' | '\'' | ';' | '{' | '}')
@@ -194,7 +200,8 @@ fn check_literal(field: &str, value: &str) -> Result<()> {
 }
 
 fn check_text(field: &str, value: &str) -> Result<()> {
-    if value.is_empty() || has_control(value) || value.contains('"') {
+    // A trailing backslash would escape the closing quote in nginx, Apache and Caddy.
+    if value.is_empty() || has_control(value) || value.contains('"') || value.ends_with('\\') {
         return Err(invalid(format!("invalid {field}: '{value}'")));
     }
     Ok(())
@@ -638,6 +645,41 @@ mod tests {
             m.headers.insert("X-Test".into(), bad.into());
             assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
         }
+    }
+
+    #[test]
+    fn rejects_trailing_backslash() {
+        let mut m = php_site();
+        m.env.insert("APP_DIR".into(), "C:\\data\\".into());
+        assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+        let mut m = php_site();
+        m.headers.insert("X-Test".into(), "x\\".into());
+        assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+        let mut m = php_site();
+        m.deny = vec!["/x\\".into()];
+        assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+        let mut m = php_site();
+        m.index = vec!["index.php\\".into()];
+        assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+    }
+
+    #[test]
+    fn rejects_backslash_quote_escape_injection() {
+        // APP_A ends in a backslash, so it would escape the closing quote and let
+        // APP_B / APP_C be parsed as config (reproduced against nginx 1.30.6).
+        let payloads = [
+            ("APP_A", "x\\"),
+            (
+                "APP_B",
+                "; } location /pwn/ { alias C:/; autoindex on; } location /zz { fastcgi_param Y ",
+            ),
+            ("APP_C", "; #"),
+        ];
+        let mut m = php_site();
+        for (k, v) in payloads {
+            m.env.insert(k.into(), v.into());
+        }
+        assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
     }
 
     #[test]
