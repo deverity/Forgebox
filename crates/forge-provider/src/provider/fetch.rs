@@ -353,8 +353,21 @@ async fn write_entry(dir: &Path, key: &str, meta: &Meta, body: &[u8]) {
     }
 }
 
+/// Every write gets its own temp file (unique per call, same directory), so
+/// concurrent fetches of the same URL can never interleave body and sidecar.
 async fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let tmp = path.with_extension("tmp");
-    tokio::fs::write(&tmp, bytes).await?;
-    tokio::fs::rename(&tmp, path).await
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tmp = path.with_file_name(format!("{name}.{}.tmp", ulid::Ulid::generate()));
+    if let Err(err) = tokio::fs::write(&tmp, bytes).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(err);
+    }
+    if let Err(err) = tokio::fs::rename(&tmp, path).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(err);
+    }
+    Ok(())
 }

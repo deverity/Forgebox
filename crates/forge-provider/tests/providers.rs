@@ -1029,3 +1029,49 @@ async fn expired_cache_is_served_when_the_upstream_fails() {
         .await;
     assert!(matches!(probe, Err(ForgeError::NotFound(_))));
 }
+
+#[tokio::test]
+async fn concurrent_fetches_of_one_url_do_not_corrupt_the_cache() {
+    let env = Env::with(|c| c.ttl = std::time::Duration::ZERO).await;
+    env.upstream
+        .serve_fixture("/en/download.html", "nginx-org/download.html");
+    let expected = provider_support::fixture("nginx-org/download.html");
+    let url = format!("{}/en/download.html", env.upstream.base());
+
+    let mut tasks = Vec::new();
+    for _ in 0..24 {
+        let fetcher = env.registry.fetcher().clone();
+        let url = url.clone();
+        tasks.push(tokio::spawn(async move {
+            fetcher
+                .get(forge_provider::provider::FetchRequest {
+                    provider: "nginx-org",
+                    url: &url,
+                    ..Default::default()
+                })
+                .await
+                .map(|f| f.body.to_vec())
+        }));
+    }
+    for t in tasks {
+        assert_eq!(t.await.unwrap().unwrap(), expected);
+    }
+
+    env.registry.set_offline(true);
+    let cached = env
+        .registry
+        .fetcher()
+        .get(forge_provider::provider::FetchRequest {
+            provider: "nginx-org",
+            url: &url,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(cached.body.to_vec(), expected);
+    let dir = env.cache.path().join("cache").join("nginx-org");
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+        assert!(!name.ends_with(".tmp"), "leftover temp file {name}");
+    }
+}
