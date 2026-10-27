@@ -24,7 +24,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 2. Cada download: SHA-256 obrigatório (do upstream ou curado no registry pelo bot, com PR revisado). Sem hash → bloqueado por padrão.
 3. Assinaturas upstream verificadas quando existem (PGP nginx/Node com keyrings embutidos e fingerprints fixados por teste; Authenticode sem checagem de revogação, para funcionar offline). Ver [ADR-0017](adr/0017-verify-extract-stack.md).
 4. Staging em `tmp/stage` e extração com proteção contra zip-slip: o arquivo inteiro é recusado se alguma entrada tiver `..`, caminho absoluto, letra de drive, `:` (ADS), caractere proibido no Windows, nome reservado (`CON`, `NUL.txt`, `COM1`...), componente terminado em `.`/espaço, link simbólico ou físico, reparse point, device/fifo ou dados criptografados; limites de bytes escritos e de número de entradas contra bombas de descompressão. A extração nunca usa `extract()`/`unpack()` das bibliotecas.
-5. `post_install` só executa binários dentro da própria versão instalada.
+5. `post_install` só executa binários dentro da própria versão instalada, e só quando o manifesto vem do registry oficial ou é do próprio usuário (`InstallOptions::allow_run`, conferido de novo na instalação além do loader); roda na cópia em staging, num Job Object próprio, com ambiente explícito e timeout ([ADR-0025](adr/0025-layout-staging-shims-user-path.md)).
 
 ## 3. CA local
 Detalhes e medições em [ADR-0023](adr/0023-local-ca-name-constraints-trust.md).

@@ -44,7 +44,9 @@ Forgebox/
 │   │       ├── helper/           # protocolo do forgebox-helper (ADR-0022): op.rs (HelperOp allowlist + HelperPolicy/validate),
 │   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts), client.rs (HelperClient, FakeElevation)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore) + current();
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, UserEnv) + current();
+│   │                             #   user_env.rs: UserEnv (PATH persistente do usuário), PathValue (lista crua, sem duplicatas),
+│   │                             #   MemoryUserEnv (fake em memória); probe.rs também tem run_probe_with_env (ações run);
 │   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
 │   │                             #   verify_server: cadeia pelo verificador do SO com raiz exclusiva, revogação opcional);
 │   │                             #   dns_policy.rs: DnsPolicy (regras NRPT, hosts, flush do cache; mudanças via helper), NrptRule;
@@ -68,7 +70,9 @@ Forgebox/
 │   │                             #   dns_policy.rs (NRPT no registro, DataBasePath do hosts, DnsFlushResolverCache, ops via helper),
 │   │                             #   net_adapters.rs (GetAdaptersAddresses),
 │   │                             #   vcredist.rs (registro VC\Runtimes\x64 + versão de vcruntime140.dll/msvcp140.dll),
-│   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE)
+│   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0016), window_close.rs (EnumWindows + WM_CLOSE),
+│   │                             #   user_env.rs (HKCU\Environment\Path via RegQueryValueExW/RegSetValueExW, REG_EXPAND_SZ
+│   │                             #   preservado, SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE "Environment"))
 │   ├── forge-manifest/
 │   │   └── src/
 │   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema: common, tool,
@@ -99,8 +103,11 @@ Forgebox/
 │   │       ├── verify.rs         # tamanho, sha256/sha512, minisign, Authenticode (platform::CodeSign); verify/pgp.rs (rpgp, keyrings)
 │   │       ├── extract.rs        # zip/7z/tar.gz/tar.xz/arquivo único; strip_root; staging em tmp/stage e move atômico;
 │   │       │                     #   extract/{entry (nomes seguros), formats, install (strip, rename, cópia entre volumes)}.rs
-│   │       ├── messages.rs       # textos de progresso pt-BR de verify/extract (até existir i18n)
-│   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims
+│   │       ├── messages.rs       # textos pt-BR de verify/extract/layout e dos shims (até existir i18n)
+│   │       ├── layout.rs         # Layout: install_from_archive -> JobId (verify → staging → extract → post_install →
+│   │       │                     #   move → tool_versions → current → shims), use_version/current_version, ensure_shims/path;
+│   │       │                     #   layout/{actions (post_install, TemplateRenderer, install.verify), current (seleção de versão),
+│   │       │                     #   shims (.cmd + forgebox-project.ps1), path (PATH do usuário via UserEnv), vars}.rs
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
 │   │   ├── src/
