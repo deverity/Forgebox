@@ -537,6 +537,31 @@ export type ExternalPortDto = {
 };
 
 /**
+ *  Structured diagnosis of a `failed` instance (docs/03 §1.4), tagged by `kind`.
+ * 
+ *  Published by `forge_supervisor::FailureReason` (same shape). Exit codes are the bits
+ *  of the Windows `DWORD` as `i32`. `kind` decides the UI action (`missing_dll` → offer
+ *  the VC++ Redistributable, `port_in_use` → stop the holder or change the port).
+ */
+export type FailureReasonDto = 
+/**  A declared port is taken (by `pid`/`exe` when known). */
+{ kind: "port_in_use"; port: number; pid: number | null; exe: string | null } | 
+/**  A DLL (or an entry point in one) is missing: exit `0xC0000135` / `0xC0000139`. */
+{ kind: "missing_dll"; exit_code: number } | 
+/**  The configuration check failed; its output. */
+{ kind: "config_invalid"; stderr: string } | 
+/**  Access denied starting or running the executable. */
+{ kind: "permission"; message: string } | 
+/**  Health did not pass within `start_timeout`. */
+{ kind: "health_timeout"; timeout_ms: number; last_error: string | null } | 
+/**  The process exited before it became healthy. */
+{ kind: "exited_during_start"; exit_code: number } | 
+/**  The restart policy gave up after `restarts` automatic restarts in `window_ms`. */
+{ kind: "crash_loop"; restarts: number; window_ms: number; exit_code: number | null } | 
+/**  Anything else; `code` is a stable error code (`not_found`, `internal`...). */
+{ kind: "other"; code: string; message: string };
+
+/**
  *  A file on the daemon's machine. `path` is informative (absolute, `/` separators);
  *  `fs_path`, when present, is the root-relative path usable with `fs.read`/`fs.write`
  *  (ADR-0009, rule 5).
@@ -1366,7 +1391,35 @@ export type ServiceCreateParams = {
 };
 
 /**
- *  `service.starting|running|stopping|stopped|crashed|failed`.
+ *  `service.metrics`: periodic CPU/memory sample of an instance (sum over the processes
+ *  of its Job Object; opt-in per instance, docs/03 §6). Published by
+ *  `forge_supervisor::metrics::ServiceMetricsPayload` (same shape).
+ */
+export type ServiceMetricsPayload = {
+	v: number,
+	instance_id: InstanceId,
+	/**  `mysql/default`. */
+	name: string,
+	tool: ToolId,
+	/**  Main process of the run. */
+	pid: number | null,
+	/**  Share of the whole machine since the previous sample (0–100, like Task Manager). */
+	cpu_pct: number | null,
+	/**  Working sets, summed. */
+	rss_bytes: number,
+	/**  Private commit, summed. */
+	private_bytes: number,
+	handles: number,
+	/**  Processes in the instance's job. */
+	processes: number,
+	/**  Uptime of the main process. */
+	uptime_ms: number,
+	/**  Wall time covered by `cpu_pct`. */
+	window_ms: number,
+};
+
+/**
+ *  `service.starting|running|stopping|stopped|crashed|failed|maintenance`.
  * 
  *  Published by `forge_supervisor::events::ServiceEventPayload`, which serializes the
  *  same fields (docs/03 §8). The fields after `error` were added without bumping `v`:
@@ -1405,6 +1458,19 @@ export type ServicePayload = {
 	 *  process exited, then terminated.
 	 */
 	leftovers_killed?: number | null,
+	/**
+	 *  `service.stopping`: why (`user`, `restart`, `maintenance`, `unhealthy`,
+	 *  `start_timeout`); `service.crashed`: `unhealthy` when it was stopped for failing
+	 *  health checks.
+	 */
+	cause?: string | null,
+	/**
+	 *  `service.crashed`: the restart policy starts it again after this delay (absent: no
+	 *  automatic restart).
+	 */
+	restart_in_ms?: number | null,
+	/**  `service.failed`: structured diagnosis. */
+	reason?: FailureReasonDto | null,
 };
 
 /**  Params of `services.remove`. */

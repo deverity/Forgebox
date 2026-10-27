@@ -297,7 +297,7 @@ export interface ApiNotifications {
   "events.lagged": T.LaggedDto;
 }
 
-export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updated", "tool.rollback", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
+export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updated", "tool.rollback", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** Payload type of each event kind (`EventDto.payload`). */
@@ -325,6 +325,8 @@ export interface EventPayloads {
   "service.stopped": T.ServicePayload;
   "service.crashed": T.ServicePayload;
   "service.failed": T.ServicePayload;
+  "service.maintenance": T.ServicePayload;
+  "service.metrics": T.ServiceMetricsPayload;
   "pool.scaled": T.PoolScaledPayload;
   "pool.worker.recycled": T.PoolWorkerRecycledPayload;
   "site.created": T.SitePayload;

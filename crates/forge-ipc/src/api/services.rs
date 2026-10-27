@@ -23,6 +23,45 @@ pub enum ServiceState {
     Maintenance,
 }
 
+/// Structured diagnosis of a `failed` instance (docs/03 §1.4), tagged by `kind`.
+///
+/// Published by `forge_supervisor::FailureReason` (same shape). Exit codes are the bits
+/// of the Windows `DWORD` as `i32`. `kind` decides the UI action (`missing_dll` → offer
+/// the VC++ Redistributable, `port_in_use` → stop the holder or change the port).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FailureReasonDto {
+    /// A declared port is taken (by `pid`/`exe` when known).
+    PortInUse {
+        port: u16,
+        pid: Option<u32>,
+        exe: Option<String>,
+    },
+    /// A DLL (or an entry point in one) is missing: exit `0xC0000135` / `0xC0000139`.
+    MissingDll { exit_code: i32 },
+    /// The configuration check failed; its output.
+    ConfigInvalid { stderr: String },
+    /// Access denied starting or running the executable.
+    Permission { message: String },
+    /// Health did not pass within `start_timeout`.
+    HealthTimeout {
+        #[specta(type = specta_typescript::Number)]
+        timeout_ms: u64,
+        last_error: Option<String>,
+    },
+    /// The process exited before it became healthy.
+    ExitedDuringStart { exit_code: i32 },
+    /// The restart policy gave up after `restarts` automatic restarts in `window_ms`.
+    CrashLoop {
+        restarts: u32,
+        #[specta(type = specta_typescript::Number)]
+        window_ms: u64,
+        exit_code: Option<i32>,
+    },
+    /// Anything else; `code` is a stable error code (`not_found`, `internal`...).
+    Other { code: String, message: String },
+}
+
 /// Transport protocol of a port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]

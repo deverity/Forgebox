@@ -16,7 +16,7 @@ use specta::Type;
 
 use super::common::{ApiVersion, Resumable};
 use super::net::DnsPolicyState;
-use super::services::{PortHolderDto, PortProtocol, ServiceState};
+use super::services::{FailureReasonDto, PortHolderDto, PortProtocol, ServiceState};
 use forge_core::Timestamp;
 pub use forge_core::actor::{ACTOR_EVENT_VERSION, ActorFailedPayload, ActorRestartedPayload};
 use forge_core::event::Event;
@@ -229,7 +229,7 @@ pub struct ToolVersionChangePayload {
     pub version_id: VersionId,
 }
 
-/// `service.starting|running|stopping|stopped|crashed|failed`.
+/// `service.starting|running|stopping|stopped|crashed|failed|maintenance`.
 ///
 /// Published by `forge_supervisor::events::ServiceEventPayload`, which serializes the
 /// same fields (docs/03 §8). The fields after `error` were added without bumping `v`:
@@ -270,6 +270,51 @@ pub struct ServicePayload {
     /// process exited, then terminated.
     #[serde(default)]
     pub leftovers_killed: Option<u32>,
+    /// `service.stopping`: why (`user`, `restart`, `maintenance`, `unhealthy`,
+    /// `start_timeout`); `service.crashed`: `unhealthy` when it was stopped for failing
+    /// health checks.
+    #[serde(default)]
+    pub cause: Option<String>,
+    /// `service.crashed`: the restart policy starts it again after this delay (absent: no
+    /// automatic restart).
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub restart_in_ms: Option<u64>,
+    /// `service.failed`: structured diagnosis.
+    #[serde(default)]
+    pub reason: Option<FailureReasonDto>,
+}
+
+/// `service.metrics`: periodic CPU/memory sample of an instance (sum over the processes
+/// of its Job Object; opt-in per instance, docs/03 §6). Published by
+/// `forge_supervisor::metrics::ServiceMetricsPayload` (same shape).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct ServiceMetricsPayload {
+    pub v: u32,
+    pub instance_id: InstanceId,
+    /// `mysql/default`.
+    pub name: String,
+    pub tool: ToolId,
+    /// Main process of the run.
+    pub pid: Option<u32>,
+    /// Share of the whole machine since the previous sample (0–100, like Task Manager).
+    pub cpu_pct: f64,
+    /// Working sets, summed.
+    #[specta(type = specta_typescript::Number)]
+    pub rss_bytes: u64,
+    /// Private commit, summed.
+    #[specta(type = specta_typescript::Number)]
+    pub private_bytes: u64,
+    #[specta(type = specta_typescript::Number)]
+    pub handles: u64,
+    /// Processes in the instance's job.
+    pub processes: u32,
+    /// Uptime of the main process.
+    #[specta(type = specta_typescript::Number)]
+    pub uptime_ms: u64,
+    /// Wall time covered by `cpu_pct`.
+    #[specta(type = specta_typescript::Number)]
+    pub window_ms: u64,
 }
 
 /// `pool.scaled`.
@@ -392,6 +437,8 @@ pub const EVENT_PAYLOADS: &[(&str, &str)] = &[
     ("service.stopped", "ServicePayload"),
     ("service.crashed", "ServicePayload"),
     ("service.failed", "ServicePayload"),
+    ("service.maintenance", "ServicePayload"),
+    ("service.metrics", "ServiceMetricsPayload"),
     ("pool.scaled", "PoolScaledPayload"),
     ("pool.worker.recycled", "PoolWorkerRecycledPayload"),
     ("site.created", "SitePayload"),
@@ -424,6 +471,7 @@ pub(crate) fn register_payload_types(types: specta::Types) -> specta::Types {
         .register::<ToolInstallPayload>()
         .register::<ToolVersionChangePayload>()
         .register::<ServicePayload>()
+        .register::<ServiceMetricsPayload>()
         .register::<PoolScaledPayload>()
         .register::<PoolWorkerRecycledPayload>()
         .register::<SitePayload>()
