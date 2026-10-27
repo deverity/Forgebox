@@ -1,10 +1,7 @@
 //! Domain types → API DTOs (`forge_ipc::api`). Paths become informative `/` strings;
 //! identities stay ULIDs (ADR-0009).
 
-use std::collections::BTreeMap;
-
 use forge_core::model::port::{OwnerKind, PortReservation, PortState as DomainPortState};
-use forge_core::paths::posix_string;
 use forge_core::store::{
     Site, SiteKind as DomainSiteKind, SiteXdebug as DomainXdebug, ToolVersionRow, VersionSource,
     VersionState,
@@ -358,13 +355,4 @@ pub fn xdebug_mode(enabled: bool) -> XdebugMode {
     } else {
         XdebugMode::Off
     }
-}
-
-/// `{"a": "b"}` → `BTreeMap`.
-pub fn string_map(map: &BTreeMap<String, String>) -> BTreeMap<String, String> {
-    map.clone()
-}
-
-pub fn path(p: &std::path::Path) -> String {
-    posix_string(p)
 }

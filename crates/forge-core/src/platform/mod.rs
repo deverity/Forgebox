@@ -61,7 +61,7 @@ pub use dns_policy::{
 pub use elevation::{Elevation, elevation};
 pub use host::{
     DAEMON_MUTEX_PREFIX, InstanceMutex, NetworkCost, NeverMetered, acquire_instance_mutex,
-    daemon_mutex_name, network_cost, spawn_detached,
+    daemon_mutex_name, long_path, network_cost, spawn_detached,
 };
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};

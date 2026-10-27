@@ -35,11 +35,12 @@ Forgebox/
 │   │       │                     #   spawn_blocking_timeout (chamada bloqueante com prazo)
 │   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
-│   │       │                     #   ports.rs (PortRepo: reservas de porta), update_history.rs (UpdateHistoryRepo: updates e rollbacks)
+│   │       │                     #   ports.rs (PortRepo: reservas de porta), update_history.rs (UpdateHistoryRepo: updates e rollbacks),
+│   │       │                     #   instances.rs (InstanceRepo: instâncias de serviço, desired_state, settings)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder e o trait
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
-│   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas, [dns] extra_tlds/remote_zones)
+│   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas, [dns] enabled/extra_tlds/remote_zones)
 │   │       ├── dns_name.rs       # sintaxe de nomes DNS (rótulos minúsculos), sufixos de uso local (test, localhost, home.arpa...)
 │   │       ├── fs/               # case/ (docs/15, ADR-0026): status (flag, FS, build), convert_tree (recria a árvore em
 │   │       │                     #   <dir>.cs-tmp, rename de arquivos/links, troca, verificação, rollback), recover, tree_flags,
@@ -58,6 +59,9 @@ Forgebox/
 │   │                             #   secure_file.rs: open_no_follow/final_path (arquivos da raiz sem seguir links);
 │   │                             #   dns_policy.rs: DnsPolicy (regras NRPT, hosts, flush do cache; mudanças via helper), NrptRule;
 │   │                             #   elevation.rs: Elevation (forgebox-helper elevado); net_adapters.rs: NetAdapters (adaptadores + DNS);
+│   │                             #   host.rs: mutex de instância única do daemon (InstanceMutex, daemon_mutex_name), NetworkCost
+│   │                             #   (conexão medida), spawn_detached (daemon.restart); impl em windows/host.rs (CreateMutexW,
+│   │                             #   INetworkCostManager);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
@@ -210,7 +214,19 @@ Forgebox/
 │   │       ├── server/           # dispatcher (Router/Ctx), conexão (leitor/escritor/outbox), idempotência por request_id,
 │   │       │                     #   events.rs (subscribe + resume_from: anel do EventBus + tabela events), fs.rs (FsScope), builtins
 │   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
-│   ├── forge-daemon/             # bin forgeboxd.exe: main.rs, boot.rs, scheduler.rs, tray-less
+│   ├── forge-daemon/             # bin forgeboxd.exe (lib forge_daemon + main.rs), tray-less; ADR-0029
+│   │   ├── src/                  # args.rs (clap), instance_lock.rs (mutex + state/locks/forgeboxd.lock), logging.rs (JSON lines
+│   │   │                         #   diários em logs/forgeboxd.log.<data>), boot.rs (docs/01 §5.1), daemon.rs (componentes),
+│   │   │                         #   event_log.rs (eventos → tabela events), catalog.rs (manifestos + versões instaladas),
+│   │   │                         #   vars.rs (variáveis de execução dos manifestos), services.rs (instâncias ← service.daemon),
+│   │   │                         #   pools.rs (pools ← service.pool, por VersionId), web.rs (sites → pools → servidores web,
+│   │   │                         #   UpstreamListener), render.rs (alvos do forge-render, TemplateRenderer do layout),
+│   │   │                         #   install.rs (tools.install: provider → download → layout), scheduler.rs (tarefas periódicas
+│   │   │                         #   e reações), shutdown.rs (parada em cascata), messages.rs (pt-BR), api/ (um módulo por grupo,
+│   │   │                         #   convert.rs domínio → DTO, not_implemented.rs com a tarefa do roadmap)
+│   │   └── tests/                # processo real em raiz temporária: lifecycle.rs, up_down_loop.rs (aceite 100×);
+│   │                             #   #[ignore] com binários oficiais (common/online.rs): php_pool_online.rs,
+│   │                             #   web_nginx_php_online.rs, mailpit_service_online.rs
 │   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
 │   ├── forge-helper/             # forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022/0024); lib + bin (test = false)
 │   │   ├── build.rs              # manifest requireAdministrator embutido (crate embed-manifest)

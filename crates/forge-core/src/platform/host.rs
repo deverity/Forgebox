@@ -102,6 +102,22 @@ impl NetworkCost for NeverMetered {
     }
 }
 
+/// `path` with every 8.3 short component expanded to its long name (`GUSTAV~1` →
+/// `gustavo_assis`) when it exists; junctions and symlinks are **not** resolved and the
+/// path is otherwise unchanged. Paths written into server configs must be long (the
+/// Windows nginx refuses short names, docs/03 §3.1). `path` itself when it cannot be
+/// expanded (missing, other OSes). Blocking (one syscall).
+pub fn long_path(path: &Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        super::windows::long_path(path).unwrap_or_else(|| path.to_path_buf())
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_path_buf()
+    }
+}
+
 /// Starts `exe` with `args` in `cwd`, detached from the caller's console and process
 /// group and, when the caller's Job Object allows it, outside that job; standard handles
 /// go to `NUL`. Returns the pid. The caller never waits for it.
@@ -127,6 +143,20 @@ pub fn spawn_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Result<u32> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn short_names_are_expanded_and_missing_paths_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let long = dir.path().join("a long folder name");
+        std::fs::create_dir_all(&long).unwrap();
+        let expanded = long_path(&long);
+        let text = expanded.to_string_lossy().into_owned();
+        assert!(text.ends_with("a long folder name"), "{text}");
+        assert!(!text.contains('~'), "{text}");
+        let missing = long.join("missing");
+        assert_eq!(long_path(&missing), missing);
+    }
 
     #[test]
     fn mutex_name_follows_the_root_key() {

@@ -33,7 +33,12 @@ async fn boots_serves_the_api_and_stops_cleanly() {
     assert_eq!(hello.role, forge_ipc::api::Role::Admin);
     let status = client.call::<daemon_status>(NoParams {}).await.unwrap();
     assert_eq!(status.pid, daemon.pid());
-    assert_eq!(status.root, root.root.to_posix_string());
+    // The daemon works with the long spelling of the root (%TEMP% is often `GUSTAV~1`).
+    assert_eq!(
+        status.root,
+        forge_core::paths::posix_string(&forge_core::platform::long_path(root.path()))
+    );
+    assert!(!status.root.contains('~'), "{}", status.root);
     assert!(status.last_event_seq >= 1, "daemon.ready was published");
     let info = forge_daemon::instance_lock::read_lock_info(&root.root)
         .unwrap()
@@ -229,4 +234,56 @@ async fn a_second_daemon_on_the_same_root_fails_fast() {
     assert_eq!(status.pid, first.pid());
     let (exit, _) = stop(&client, &mut first, Duration::from_secs(60)).await;
     assert!(exit.success());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn restart_starts_a_new_daemon_on_the_same_root() {
+    use forge_ipc::api::methods::daemon_restart;
+    let root = TestRoot::new();
+    let mut first = spawn_daemon(&root, &[]);
+    let (client, _) = connect(&root, &mut first, Duration::from_secs(30)).await;
+    let old_pid = first.pid();
+    client.call::<daemon_restart>(NoParams {}).await.unwrap();
+    let exit = first
+        .wait_exit(Duration::from_secs(60))
+        .expect("old daemon exits");
+    assert!(exit.success(), "{}", first.output());
+    client.close();
+
+    // The new daemon (detached, not our child) answers on the same pipe.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let (client, status) = loop {
+        if let Ok(credentials) = forge_ipc::Credentials::local(&root.root, "t", "0") {
+            if let Ok(client) = forge_ipc::Client::connect(
+                forge_ipc::transport::local_transport(&root.root),
+                credentials,
+                options(),
+            )
+            .await
+            {
+                if let Ok(status) = client.call::<daemon_status>(NoParams {}).await {
+                    if status.pid != old_pid {
+                        break (client, status);
+                    }
+                }
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no new daemon:\n{}",
+            first.output()
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert_ne!(status.pid, old_pid);
+    client
+        .call::<forge_ipc::api::methods::daemon_stop>(forge_ipc::api::DaemonStopParams::default())
+        .await
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while pids_of("forgeboxd.exe").contains(&status.pid) {
+        assert!(Instant::now() < deadline, "restarted daemon did not stop");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(root.stray_lock_files().is_empty());
 }

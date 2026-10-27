@@ -94,7 +94,7 @@ C:\Forgebox\
 │   └── sites\loja.test.crt , loja.test.key (ACL: só o usuário) , ...
 │
 ├── logs\
-│   ├── forgeboxd.log , forgeboxd.log.1 ...   # daemon (tracing, JSON lines)
+│   ├── forgeboxd.log.2026-10-27 ...          # daemon (tracing, JSON lines; um arquivo por dia, últimos 14)
 │   ├── helper.log                             # tudo que o helper elevado fez (JSON lines: ts, request_id, op, dry_run, ok, code, message)
 │   ├── nginx\access.json , error.log
 │   ├── apache\...
@@ -107,7 +107,7 @@ C:\Forgebox\
 │   ├── forgebox.db               # SQLite: tools, versões, instâncias, sites, portas, eventos, histórico de updates
 │   ├── ipc.token                 # token da API local (ACL: só o usuário)
 │   ├── registry\                 # cache do(s) registry(ies) + índices de providers
-│   └── locks\
+│   └── locks\                    # forgeboxd.lock (pid, versão e pipe do daemon em execução; removido na parada) + arquivos de troca do helper
 │
 ├── tmp\                          # efêmero (limpo automaticamente)
 │   ├── downloads\ , stage\ , sessions\php\8.3\ , uploads\

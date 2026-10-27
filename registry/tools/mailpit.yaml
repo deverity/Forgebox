@@ -50,7 +50,8 @@ spec:
     shims: [mailpit]
     verify:
       command: "mailpit.exe version"
-      regex: "mailpit v(\\d+\\.\\d+\\.\\d+)"
+      # `version` prints the executable as invoked (`C:\...\mailpit.exe v1.32.0 compiled with ...`).
+      regex: "mailpit(?:\\.exe)? v(\\d+\\.\\d+\\.\\d+)"
     post_install:
       - mkdir: "{{ paths.data }}/mailpit"
     uninstall:
@@ -90,7 +91,7 @@ spec:
   discover:
     match_files: [mailpit.exe]
     version_command: "mailpit.exe version"
-    version_regex: "mailpit v(\\d+\\.\\d+\\.\\d+)"
+    version_regex: "mailpit(?:\\.exe)? v(\\d+\\.\\d+\\.\\d+)"
 
   update:
     policy: auto-minor

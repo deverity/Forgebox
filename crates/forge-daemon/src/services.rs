@@ -22,11 +22,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use forge_core::Timestamp;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::{InstanceId, ToolId};
 use forge_core::model::port::{OwnerKind, ReservationOwner};
-use forge_core::paths::{ForgeRoot, posix_string};
+use forge_core::paths::ForgeRoot;
 use forge_core::platform::{ProbeCommand, RuntimeDep};
 use forge_core::store::{
     DesiredState, InstanceRepo, InstanceRow, StoreReader, StoreWriter, ToolVersionRow,
@@ -356,18 +355,29 @@ impl ServiceManager {
         }
         let mut row = InstanceRow::new(tool.manifest.metadata.id.clone(), version.id, name);
         row.autostart = autostart;
-        if let (Some(port), Some(first)) = (port, daemon.ports.first()) {
-            let owner = instance_owner(row.id, &first.name)?;
-            self.inner
-                .ports
-                .reserve(port, Some(&first.range), owner)
-                .await?;
-        }
         let inserted = row.clone();
         self.inner
             .writer
             .execute(move |conn| InstanceRepo::new(conn).insert(&inserted))
             .await?;
+        if let (Some(port), Some(first)) = (port, daemon.ports.first()) {
+            // The explicit main port; on refusal the new row goes away again.
+            let owner = instance_owner(row.id, &first.name)?;
+            if let Err(err) = self
+                .inner
+                .ports
+                .reserve(port, Some(&first.range), owner)
+                .await
+            {
+                let id = row.id;
+                let _ = self
+                    .inner
+                    .writer
+                    .execute(move |conn| InstanceRepo::new(conn).delete(id))
+                    .await;
+                return Err(err);
+            }
+        }
         let mut entry = self.build(row).await;
         if let Some(vars) = &entry.vars {
             if let Some(dir) = vars.instance.as_ref().map(|i| i.data_dir.clone()) {
@@ -809,13 +819,6 @@ impl ServiceManager {
             );
         }
     }
-
-    /// The instances (any state) whose job contains `pid` — used to tell our own
-    /// listeners from intruders.
-    pub fn owns_pid(&self, owner: &ReservationOwner, pid: u32) -> bool {
-        let _ = (owner, pid);
-        false
-    }
 }
 
 /// The last `max` bytes of `text` (on a character boundary).
@@ -1031,16 +1034,6 @@ pub fn topological_waves(entries: &[Entry]) -> Vec<Vec<Entry>> {
         remaining = blocked;
     }
     waves
-}
-
-/// Timestamp of the current state, for DTOs.
-pub fn since(status: &InstanceStatus) -> Option<Timestamp> {
-    status.state.is_active().then_some(status.since)
-}
-
-/// Posix path helper for DTOs.
-pub fn posix(path: &std::path::Path) -> String {
-    posix_string(path)
 }
 
 #[cfg(test)]

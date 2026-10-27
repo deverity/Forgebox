@@ -423,10 +423,13 @@ impl AsRef<Path> for ForgeRoot {
 /// (`C:\Forgebox`), otherwise 16 hex digits of FNV-1a 64 over the lowercased root path
 /// with `/` separators and no trailing slash. Used by the API pipe name
 /// (`\\.\pipe\forgebox[-<key>]`, docs/11 §4) and the daemon's single-instance mutex
-/// (`Global\Forgebox.Daemon[-<key>]`, docs/01 §1), so both always agree.
+/// (`Global\Forgebox.Daemon[-<key>]`, docs/01 §1), so both always agree. Short 8.3
+/// components of an existing root are expanded first
+/// ([`crate::platform::long_path`]): a client that reached the root through a short name
+/// (`GUSTAV~1`) finds the daemon started with the long one.
 pub fn root_instance_key(root: &ForgeRoot) -> Option<String> {
     fn normalized(path: &Path) -> String {
-        posix_string(path)
+        posix_string(&crate::platform::long_path(path))
             .trim_end_matches('/')
             .to_ascii_lowercase()
     }

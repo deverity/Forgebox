@@ -3,6 +3,8 @@
 //! through the named pipe of that root.
 #![allow(dead_code)]
 
+pub mod online;
+
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;

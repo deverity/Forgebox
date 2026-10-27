@@ -308,6 +308,25 @@ impl WebManager {
             app_ports: BTreeMap::new(),
             proxy_options: BTreeMap::new(),
         };
+        // Document roots spelled with long names (servers refuse 8.3 names, docs/03 §3.1).
+        let sites: Vec<Site> = {
+            let sites = sites.to_vec();
+            tokio::task::spawn_blocking(move || {
+                sites
+                    .into_iter()
+                    .map(|mut s| {
+                        if let Some(root) = s.root.as_deref().filter(|r| r.contains('~')) {
+                            s.root = Some(forge_core::paths::posix_string(
+                                &forge_core::platform::long_path(std::path::Path::new(root)),
+                            ));
+                        }
+                        s
+                    })
+                    .collect()
+            })
+            .await
+            .unwrap_or_default()
+        };
         let mut out = Vec::new();
         for site in sites.iter().filter(|s| s.enabled) {
             let served_by = site

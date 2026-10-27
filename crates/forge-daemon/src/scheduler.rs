@@ -140,6 +140,8 @@ async fn update_loop(daemon: Daemon, stop: CancellationToken) {
                 Vec::new()
             }
         };
+        // `manual` tools (no next check) are asked again: the policy may have changed.
+        next.retain(|_, at| at.is_some());
         let now = Timestamp::now();
         for tool in &tools {
             if next.contains_key(tool) {

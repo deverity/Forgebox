@@ -81,7 +81,7 @@ pub async fn installed(
 ) -> Result<Vec<ToolVersionRow>> {
     let id = tool.clone();
     let mut rows = reader
-        .query(move |conn| ToolVersionRepo::new(conn).list(Some(&id)))
+        .query(move |conn| Ok(long_paths(ToolVersionRepo::new(conn).list(Some(&id))?)))
         .await?;
     rows.retain(|r| r.state == VersionState::Installed);
     if let Some(manifest) = manifest {
@@ -90,10 +90,24 @@ pub async fn installed(
     Ok(rows)
 }
 
+/// Version folders spelled with long names (rows written before the daemon normalized its
+/// root, or imported, may hold 8.3 short names that servers refuse, docs/03 §3.1). Runs
+/// inside the reader's blocking task.
+fn long_paths(mut rows: Vec<ToolVersionRow>) -> Vec<ToolVersionRow> {
+    for row in &mut rows {
+        if row.path.contains('~') {
+            row.path = forge_core::paths::posix_string(&forge_core::platform::long_path(
+                std::path::Path::new(&row.path),
+            ));
+        }
+    }
+    rows
+}
+
 /// Every installed version of every tool.
 pub async fn all_installed(reader: &StoreReader) -> Result<Vec<ToolVersionRow>> {
     let mut rows = reader
-        .query(|conn| ToolVersionRepo::new(conn).list(None))
+        .query(|conn| Ok(long_paths(ToolVersionRepo::new(conn).list(None)?)))
         .await?;
     rows.retain(|r| r.state == VersionState::Installed);
     Ok(rows)
@@ -102,7 +116,11 @@ pub async fn all_installed(reader: &StoreReader) -> Result<Vec<ToolVersionRow>> 
 /// One version by id.
 pub async fn version(reader: &StoreReader, id: VersionId) -> Result<ToolVersionRow> {
     reader
-        .query(move |conn| ToolVersionRepo::new(conn).get(id))
+        .query(move |conn| {
+            Ok(ToolVersionRepo::new(conn)
+                .get(id)?
+                .map(|row| long_paths(vec![row]).remove(0)))
+        })
         .await?
         .ok_or_else(|| ForgeError::NotFound(format!("version {id}")))
 }

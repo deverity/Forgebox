@@ -168,6 +168,8 @@ async fn add(daemon: Daemon, params: SiteAddParams, ctx: Ctx) -> Result<JobDto> 
             if !dir2.is_dir() {
                 return Err(ForgeError::NotFound(format!("folder {}", dir2.display())));
             }
+            // Stored with long names: they end up in server configs (docs/03 §3.1).
+            let dir2 = forge_core::platform::long_path(&dir2);
             SiteDraft::from_dir(&dir2, &host2, driver.as_deref())
         })
         .await

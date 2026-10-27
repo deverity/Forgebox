@@ -52,4 +52,6 @@ url = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
+# Checks the PHP zip of the online test (php_pool_online).
+sha2 = { workspace = true }
 tempfile = { workspace = true }

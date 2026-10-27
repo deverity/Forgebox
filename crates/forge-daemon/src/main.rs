@@ -19,6 +19,15 @@ fn main() {
     std::process::exit(run(args));
 }
 
+/// The root folder exists and is spelled with long names: every path rendered into a
+/// server config derives from it, and the Windows nginx refuses 8.3 short names
+/// (docs/03 §3.1).
+fn long_root(root: ForgeRoot) -> forge_core::Result<ForgeRoot> {
+    std::fs::create_dir_all(root.path())
+        .map_err(|e| forge_core::ForgeError::io_at("creating", root.path(), e))?;
+    ForgeRoot::new(forge_core::platform::long_path(root.path()))
+}
+
 fn prepare_root(root: &ForgeRoot) -> forge_core::Result<(ForgeConfig, InitReport)> {
     let config = ForgeConfig::load_or_default(&root.forgebox_toml())?;
     let report = root.init(InitOptions {
@@ -36,8 +45,8 @@ fn run(args: Args) -> i32 {
         eprintln!("{}", messages::not_available("--listen", "M6-E3"));
         return exit::USAGE;
     }
-    let root = match ForgeRoot::discover(args.root.clone()) {
-        Ok((root, _)) => root,
+    let root = match ForgeRoot::discover(args.root.clone()).and_then(|(root, _)| long_root(root)) {
+        Ok(root) => root,
         Err(err) => {
             eprintln!("{}", messages::root_failed("?", &err.to_string()));
             return exit::FAILED;

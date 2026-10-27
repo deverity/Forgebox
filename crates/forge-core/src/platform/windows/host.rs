@@ -13,6 +13,7 @@ use ::windows::Win32::Networking::NetworkListManager::{
     NLM_CONNECTION_COST_OVERDATALIMIT, NLM_CONNECTION_COST_ROAMING, NLM_CONNECTION_COST_VARIABLE,
     NetworkListManager,
 };
+use ::windows::Win32::Storage::FileSystem::GetLongPathNameW;
 use ::windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 use ::windows::Win32::System::Threading::{
     CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CreateMutexW, DETACHED_PROCESS,
@@ -100,6 +101,28 @@ impl NetworkCost for WindowsNetworkCost {
         .any(|flag| cost & (flag.0 as u32) != 0);
         Ok(metered)
     }
+}
+
+/// `GetLongPathNameW`: every 8.3 component of an existing `path` expanded
+/// (`GUSTAV~1` → `gustavo_assis`); junctions are not resolved. `None` when the path does
+/// not exist or the call fails.
+pub fn long_path(path: &Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let input = ::windows::core::PCWSTR(wide.as_ptr());
+    // SAFETY: `input` is NUL-terminated; no buffer asks for the needed size.
+    let needed = unsafe { GetLongPathNameW(input, None) };
+    if needed == 0 {
+        return None;
+    }
+    let mut buf = vec![0u16; needed as usize];
+    // SAFETY: `buf` has room for `needed` UTF-16 units, the NUL included.
+    let written = unsafe { GetLongPathNameW(input, Some(&mut buf)) } as usize;
+    if written == 0 || written >= buf.len() {
+        return None;
+    }
+    buf.truncate(written);
+    Some(std::path::PathBuf::from(OsString::from_wide(&buf)))
 }
 
 /// Detached start: own process group, no console, outside the caller's job when allowed.

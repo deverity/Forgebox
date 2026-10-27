@@ -1,9 +1,11 @@
 # forge-daemon
 
-**O que é:** Binário `forgeboxd.exe`: compõe os crates de domínio, faz o boot, o scheduler e serve a API via `forge-ipc`.
+**O que é:** Binário `forgeboxd.exe` (lib `forge_daemon` + `main.rs`): compõe os crates de domínio e serve a API de `forge-ipc`. Instância única por raiz (mutex `Global\Forgebox.Daemon[-<chave>]`, saída 4 em ~50 ms se já houver um), boot de [docs/01 §5.1](../../docs/01-architecture.md) com prazo por passo, instâncias e pools derivados dos manifestos (`service.daemon`, `service.pool`), sites renderizados nos servidores web (blocos gerenciados, drift preservado), todos os métodos do contrato respondidos (backend real ou `not_implemented` com a tarefa do roadmap), eventos persistidos, scheduler com jitter (updates, registry, `tmp/`, portas; respeita conexão medida e `quiet_hours`), shutdown gracioso em cascata com orçamento global, logs JSON diários em `logs/forgeboxd.log.<data>`. Decisões em [ADR-0029](../../docs/adr/0029-daemon-composition.md).
 
-**O que não é:** Não tem GUI nem lógica de CLI. Não contém lógica específica de tool.
+**O que não é:** Não tem GUI nem lógica de CLI. Não contém lógica específica de tool (nenhum `if tool == ...`: tudo vem do manifesto e dos alvos do `forge-render`) nem Win32 (fica em `forge-core/src/platform/windows/`).
 
 **Quem depende dele:** ninguém (é o ponto de composição).
 
-**Referência:** [docs/01-architecture.md](../../docs/01-architecture.md) §5.1 e [ADR-0001](../../docs/adr/0001-rust-user-space-daemon.md).
+**Uso:** `forgeboxd --root <dir> [--foreground] [--log-level info]`; `FORGEBOX_OFFICIAL_REGISTRY=<pasta|url>` troca a fonte do registry oficial (dev/testes).
+
+**Testes:** unitários nos módulos; `tests/lifecycle.rs` (processo real numa raiz temporária: hello/status/eventos com replay, todos os métodos respondem, parada limpa, instância única, `daemon.restart`), `tests/up_down_loop.rs` (10 voltas; aceite com `cargo test -p forge-daemon --test up_down_loop -- --ignored up_down_100_times --nocapture`), `tests/php_pool_online.rs` (`--ignored`: PHP 8.4.27 oficial do cache compartilhado, pool sobe no boot para um site já cadastrado, requisição FastCGI, nenhum `php-cgi` sobra), `tests/web_nginx_php_online.rs` (`--ignored`: nginx 1.30.6 + PHP 8.4.27, render de `etc/nginx`, `nginx -t`, HTTP com `Host: app.test` até o PHP, log JSON de acesso), `tests/mailpit_service_online.rs` (`--ignored`: `tools.install mailpit@1.32.0` pelo pipeline inteiro, instância `default`, start, autostart no boot seguinte). Binários oficiais via `tests/common/online.rs` (sha256 conferido, cache compartilhado).
