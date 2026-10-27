@@ -2113,13 +2113,29 @@ export type ToolUseParams = {
 	version: string,
 };
 
-/**  `tool.updated|rollback`. */
+/**
+ *  `tool.updated|rollback`.
+ * 
+ *  Published by `forge_provider::update::ToolUpdateEventPayload`. `series`, `job_id`,
+ *  `update_id`, `rollback_of` and `removed` were added without bumping `v` (optional, may
+ *  be missing).
+ */
 export type ToolVersionChangePayload = {
 	v: number,
 	tool: ToolId,
 	from: string,
 	to: string,
+	/**  Version serving after the update (or the rollback). */
 	version_id: VersionId,
+	/**  Series of the replaced version (`8.3`). */
+	series?: string | null,
+	job_id?: JobId | null,
+	/**  Row of the update history (`forge tool rollback` undoes the newest one). */
+	update_id?: UpdateId | null,
+	/**  On `tool.rollback`: the update that was undone. */
+	rollback_of?: UpdateId | null,
+	/**  Old version folders removed by retention. */
+	removed?: string[],
 };
 
 /**  An installed version of a tool: `bin/<tool>/<canonical_name>`. */
@@ -2187,6 +2203,9 @@ export type TrustScopeDto =
 export type UnsubscribeParams = {
 	subscription_id: SubscriptionId,
 };
+
+/**  A row of `update_history` (an update or the rollback of one, docs/05 §4). */
+export type UpdateId = string;
 
 /**  Update policy of a tool (docs/05 §4). */
 export type UpdatePolicy = "manual" | "notify" | "auto-patch" | "auto-minor" | "auto";
