@@ -25,6 +25,7 @@
 pub mod events;
 pub mod migrations;
 mod reader;
+pub mod tool_versions;
 pub mod writer;
 
 use std::path::{Path, PathBuf};
@@ -36,6 +37,9 @@ use crate::error::{ForgeError, IoResultExt, Result};
 pub use events::EventRepo;
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use reader::StoreReader;
+pub use tool_versions::{
+    NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,
+};
 pub use writer::{StoreWriter, WriterStats};
 
 /// How long a statement waits for a lock held by another connection.
