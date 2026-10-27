@@ -9,12 +9,40 @@ authors.workspace = true
 description = "Forgebox elevated helper (forgebox-helper): allowlisted privileged operations with logging."
 publish = false
 
+# All the logic lives in the library so that it can be unit tested: the binary carries a
+# `requireAdministrator` manifest (build.rs), and a test harness built from it could not
+# be started by a non-elevated `cargo test` (ERROR_ELEVATION_REQUIRED).
+[lib]
+name = "forge_helper"
+path = "src/lib.rs"
+
 [[bin]]
 name = "forgebox-helper"
 path = "src/main.rs"
+test = false
+doctest = false
 
 [lints]
 workspace = true
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+jiff = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[build-dependencies]
+embed-manifest = { workspace = true }
+
+[dev-dependencies]
+# Contract test only: the CA that forge-tls generates is one the helper trusts machine-wide.
+forge-tls = { path = "../forge-tls" }
+pretty_assertions = { workspace = true }
+# Test CAs with and without Name Constraints for trust.add_machine_root.
+rcgen = { workspace = true }
+tempfile = { workspace = true }
+
+[target.'cfg(windows)'.dev-dependencies]
+# Junctions planted in the test roots (link-following checks).
+junction = { workspace = true }

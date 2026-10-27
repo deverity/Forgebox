@@ -40,6 +40,15 @@ use crate::error::{ForgeError, Result};
 /// Authenticode signature.
 pub const VCREDIST_X64_URL: &str = "https://aka.ms/vc14/vc_redist.x64.exe";
 
+/// Signer (simple display name of the Authenticode certificate) the helper requires on
+/// `vc_redist.x64.exe` before running it (`vcredist.install`, docs/11 §1).
+pub const VCREDIST_PUBLISHER: &str = "Microsoft Corporation";
+
+/// Arguments of an unattended VC++ Redistributable installation: no UI, never reboots.
+/// Exit codes 0, 3010 (reboot required) and 1638 (same or newer already installed) mean
+/// the runtime is there.
+pub const VCREDIST_INSTALL_ARGS: &[&str] = &["/install", "/quiet", "/norestart"];
+
 /// Build flavor of an MSVC-compiled tool (the `compiler` variant of PHP builds:
 /// `vc15`, `vs16`, `vs17`, `vs18`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

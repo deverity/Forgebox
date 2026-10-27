@@ -15,8 +15,8 @@ use ::windows::Win32::Security::Authorization::{
     SDDL_REVISION_1, SE_FILE_OBJECT, SE_KERNEL_OBJECT,
 };
 use ::windows::Win32::Security::{
-    GetTokenInformation, OBJECT_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY,
-    TOKEN_USER, TokenUser,
+    GetTokenInformation, OBJECT_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, TOKEN_ELEVATION,
+    TOKEN_QUERY, TOKEN_USER, TokenElevation, TokenUser,
 };
 use ::windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use ::windows::core::{HSTRING, PWSTR};
@@ -32,6 +32,12 @@ pub(crate) fn win_err(context: impl Into<String>, err: ::windows::core::Error) -
 pub(crate) struct LocalBox(*mut c_void);
 
 impl LocalBox {
+    /// Takes ownership of memory allocated with `LocalAlloc` by a Win32 API (null is
+    /// accepted and never freed).
+    pub(crate) fn new(ptr: *mut c_void) -> Self {
+        Self(ptr)
+    }
+
     pub(crate) fn as_ptr(&self) -> *mut c_void {
         self.0
     }
@@ -81,6 +87,31 @@ pub fn current_user_sid() -> Result<String> {
     // SAFETY: `token` is a valid handle opened above and closed exactly once.
     let _ = unsafe { CloseHandle(token) };
     result
+}
+
+/// Whether this process runs with an elevated token (`TokenElevation`): an administrator
+/// after consent, or with UAC disabled. The elevated helper refuses to act otherwise.
+pub fn process_is_elevated() -> Result<bool> {
+    let mut token = HANDLE::default();
+    // SAFETY: pseudo handle of the current process; `token` is closed below.
+    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+        .map_err(|e| win_err("opening the process token", e))?;
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut len = 0_u32;
+    // SAFETY: `elevation` is writable and its size is passed.
+    let result = unsafe {
+        GetTokenInformation(
+            token,
+            TokenElevation,
+            Some((&mut elevation as *mut TOKEN_ELEVATION).cast()),
+            size_of::<TOKEN_ELEVATION>() as u32,
+            &mut len,
+        )
+    }
+    .map_err(|e| win_err("querying the token elevation", e));
+    // SAFETY: `token` is a valid handle opened above and closed exactly once.
+    let _ = unsafe { CloseHandle(token) };
+    result.map(|()| elevation.TokenIsElevated != 0)
 }
 
 fn token_user_sid(token: HANDLE) -> Result<String> {

@@ -21,6 +21,11 @@ use crate::error::ForgeError;
 use crate::error::{IoResultExt, Result};
 use crate::helper::{HelperClient, HostsEntry};
 
+/// Comment of the NRPT rules created by `forgebox-helper` (`nrpt.add`). Only local rules
+/// whose comment starts with it are replaced or removed by the helper; anything else
+/// (corporate, VPN, hand-made) is left alone.
+pub const FORGEBOX_NRPT_COMMENT: &str = "Forgebox";
+
 /// Where an NRPT rule is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -48,6 +53,15 @@ pub struct NrptRule {
 }
 
 impl NrptRule {
+    /// A local rule created by Forgebox (comment starting with [`FORGEBOX_NRPT_COMMENT`]).
+    pub fn is_forgebox(&self) -> bool {
+        self.source == NrptSource::Local
+            && self
+                .comment
+                .as_deref()
+                .is_some_and(|c| c.starts_with(FORGEBOX_NRPT_COMMENT))
+    }
+
     /// Whether the rule applies to `name` (`loja.test`, no trailing dot, any case).
     pub fn covers(&self, name: &str) -> bool {
         let name = name.trim_end_matches('.').to_ascii_lowercase();
@@ -202,6 +216,19 @@ mod tests {
         fn flush_cache(&self) -> Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn forgebox_rules_are_local_and_tagged() {
+        let mut r = rule(NrptSource::Local, &[".test"], &["127.0.0.1"]);
+        assert!(!r.is_forgebox(), "no comment");
+        r.comment = Some("Forgebox .test".into());
+        assert!(r.is_forgebox());
+        r.comment = Some("forgebox".into());
+        assert!(!r.is_forgebox(), "case-sensitive tag");
+        r.comment = Some("Forgebox".into());
+        r.source = NrptSource::GroupPolicy;
+        assert!(!r.is_forgebox(), "Group Policy rules are never ours");
     }
 
     #[test]
