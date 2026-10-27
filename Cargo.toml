@@ -88,6 +88,9 @@ notify = { version = "8.2.0", default-features = false }
 hickory-server = { version = "0.26.3", default-features = false }
 # hickory-server's RequestHandler is an #[async_trait] trait.
 async-trait = "0.1.89"
+# Embeds the application manifest (requireAdministrator) of forgebox-helper.exe from its
+# build.rs: MIT, no dependencies, no rc.exe/mt.exe needed (ADR-0023).
+embed-manifest = "1.5.1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
