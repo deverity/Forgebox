@@ -5,6 +5,7 @@ use std::process::Command as Process;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use forge_manifest::lint::{LintContext, RegistryDir};
 
 #[derive(Debug, Parser)]
 #[command(name = "xtask", about = "Forgebox development tasks")]
@@ -61,21 +62,36 @@ fn gen_ts(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Collects `*.yaml` files in `dir` (non-recursive), sorted.
-fn yaml_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
-    if !dir.is_dir() {
-        return Ok(());
-    }
-    let mut found = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let path = entry?.path();
-        if path.extension().is_some_and(|e| e == "yaml") {
-            found.push(path);
+/// Template paths (relative, `/` separators) under `dir`, recursively, sorted.
+fn template_files(dir: &Path) -> Result<Vec<String>> {
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
+        for entry in std::fs::read_dir(dir).with_context(|| format!("listing {}", dir.display()))? {
+            let path = entry?.path();
+            if path.is_dir() {
+                walk(base, &path, out)?;
+            } else if let Ok(relative) = path.strip_prefix(base) {
+                let parts: Vec<String> = relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect();
+                out.push(parts.join("/"));
+            }
         }
+        Ok(())
     }
-    found.sort();
-    out.extend(found);
-    Ok(())
+    let mut out = Vec::new();
+    if dir.is_dir() {
+        walk(dir, dir, &mut out)?;
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Lint context of the official registry: templates embedded by forge-render (read from
+/// `crates/forge-render/templates/`), default port ranges of forge-core.
+fn lint_context(root: &Path) -> Result<LintContext> {
+    let templates = template_files(&root.join("crates/forge-render/templates"))?;
+    Ok(LintContext::new(templates, Vec::new()))
 }
 
 /// Returns the number of issues found.
@@ -85,22 +101,30 @@ fn lint_registry(root: &Path) -> Result<usize> {
         println!("registry/ not found, nothing to lint");
         return Ok(0);
     }
-    let mut files = Vec::new();
-    yaml_files(&registry.join("tools"), &mut files)?;
-    yaml_files(&registry.join("stacks"), &mut files)?;
-    let index = registry.join("index.yaml");
-    if index.is_file() {
-        files.push(index);
+    let ctx = lint_context(root)?;
+    let report = forge_manifest::lint::lint_registry(&RegistryDir::new(&registry), &ctx);
+    for issue in &report.issues {
+        let shown = issue.path.strip_prefix(root).unwrap_or(&issue.path);
+        let mut issue = issue.clone();
+        issue.path = shown.to_path_buf();
+        println!("{issue}");
     }
-    let mut count = 0;
-    for file in &files {
-        for issue in forge_manifest::lint::lint_file(file)? {
-            println!("{issue}");
-            count += 1;
+    let per_rule: Vec<String> = report
+        .count_by_rule()
+        .iter()
+        .map(|(rule, n)| format!("rule {rule}: {n}"))
+        .collect();
+    println!(
+        "linted {} file(s), {} issue(s){}",
+        report.files_checked,
+        report.issues.len(),
+        if per_rule.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", per_rule.join(", "))
         }
-    }
-    println!("linted {} file(s), {count} issue(s)", files.len());
-    Ok(count)
+    );
+    Ok(report.issues.len())
 }
 
 fn run_step(root: &Path, program: &str, args: &[&str]) -> Result<()> {
@@ -172,10 +196,16 @@ mod tests {
     }
 
     #[test]
-    fn schema_writes_three_files() {
+    fn schema_writes_five_files() {
         let dir = tempfile::tempdir().unwrap();
         schema(dir.path()).unwrap();
-        for name in ["tool.v1.json", "stack.v1.json", "project.v1.json"] {
+        for name in [
+            "tool.v1.json",
+            "extension.v1.json",
+            "stack.v1.json",
+            "project.v1.json",
+            "registry.v1.json",
+        ] {
             let text =
                 std::fs::read_to_string(dir.path().join("registry/schema").join(name)).unwrap();
             assert!(text.ends_with("}\n"));
@@ -206,17 +236,64 @@ mod tests {
         assert_eq!(lint_registry(dir.path()).unwrap(), 0);
     }
 
+    /// A minimal valid tool manifest with id `id`, plus `extra` lines under `spec:`.
+    fn tool_yaml(id: &str, extra: &str) -> String {
+        format!(
+            r#"apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: {{ id: {id}, name: Test, category: devtool }}
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+{extra}"#
+        )
+    }
+
     #[test]
     fn lint_counts_issues() {
         let dir = tempfile::tempdir().unwrap();
         let tools = dir.path().join("registry/tools");
         std::fs::create_dir_all(&tools).unwrap();
-        std::fs::write(
-            tools.join("ok.yaml"),
-            "apiVersion: forgebox.dev/v1\nkind: Tool\n",
-        )
-        .unwrap();
+        std::fs::write(tools.join("ok.yaml"), tool_yaml("ok", "")).unwrap();
         std::fs::write(tools.join("bad.yaml"), "kind: Nope\n").unwrap();
-        assert_eq!(lint_registry(dir.path()).unwrap(), 2);
+        assert_eq!(lint_registry(dir.path()).unwrap(), 1);
+    }
+
+    #[test]
+    fn lint_uses_forge_render_templates() {
+        let dir = tempfile::tempdir().unwrap();
+        let templates = dir.path().join("crates/forge-render/templates/php");
+        std::fs::create_dir_all(&templates).unwrap();
+        std::fs::write(templates.join("php.ini.j2"), "x").unwrap();
+        let tools = dir.path().join("registry/tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let extra = r#"  install:
+    post_install:
+      - render: { template: php/php.ini.j2, to: "{{ paths.etc }}/t.ini" }
+"#;
+        std::fs::write(tools.join("t.yaml"), tool_yaml("t", extra)).unwrap();
+        assert_eq!(lint_registry(dir.path()).unwrap(), 0);
+        std::fs::remove_file(templates.join("php.ini.j2")).unwrap();
+        assert_eq!(lint_registry(dir.path()).unwrap(), 1);
+        assert_eq!(
+            template_files(&dir.path().join("crates/forge-render/templates")).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn template_files_are_relative_with_slashes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        std::fs::write(dir.path().join("a/b/c.j2"), "x").unwrap();
+        std::fs::write(dir.path().join("top.j2"), "x").unwrap();
+        assert_eq!(template_files(dir.path()).unwrap(), ["a/b/c.j2", "top.j2"]);
+        assert!(
+            template_files(&dir.path().join("missing"))
+                .unwrap()
+                .is_empty()
+        );
     }
 }

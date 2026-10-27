@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../../../../registry/schema/stack.v1.json
+# docs/04 §3, complete.
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata: { id: laravel, name: Laravel, summary: "PHP 8.4 + Nginx + MySQL 8 + Redis + Mailpit", icon: laravel.svg }
+spec:
+  tools:
+    - { id: php, series: "8.4", extensions: [xdebug] }
+    - { id: composer }
+    - { id: nginx }
+    - { id: mysql, series: "8.4", instance: default }
+    - { id: memurai }
+    - { id: mailpit }
+    - { id: nodejs, series: "22" }
+  site:
+    create_with: "composer create-project laravel/laravel {{ dir }}"
+    driver: laravel
+    php: "8.4"
+    secure: true
+    env_patch:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "{{ instances.mysql.default.ports.main }}"
+      DB_DATABASE: "{{ site.slug }}"
+      REDIS_PORT: "{{ instances.memurai.default.ports.main }}"
+      MAIL_HOST: 127.0.0.1
+      MAIL_PORT: "{{ instances.mailpit.default.ports.smtp }}"
+    post_create:
+      - create_database: { instance: mysql/default, name: "{{ site.slug }}" }
+      - run: { command: "php artisan key:generate", cwd: "{{ dir }}" }

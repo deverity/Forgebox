@@ -259,6 +259,23 @@ impl<'de> Deserialize<'de> for ToolId {
     }
 }
 
+/// JSON Schema of the slug (feature `schemars`, used by the manifest schemas).
+#[cfg(feature = "schemars")]
+impl schemars::JsonSchema for ToolId {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ToolId".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+            "not": { "enum": RESERVED_TOOL_IDS }
+        })
+    }
+}
+
 impl ToSql for ToolId {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(ToSqlOutput::from(self.0.as_str()))
@@ -336,6 +353,16 @@ mod tests {
         ] {
             assert!(ToolId::new(bad).is_err(), "{bad:?} must be rejected");
         }
+    }
+
+    #[cfg(feature = "schemars")]
+    #[test]
+    fn tool_id_json_schema_has_pattern() {
+        let schema = schemars::schema_for!(ToolId);
+        let value = serde_json::to_value(&schema).unwrap();
+        assert_eq!(value["type"], "string");
+        assert_eq!(value["pattern"], "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$");
+        assert_eq!(value["not"]["enum"][0], "shims");
     }
 
     #[test]

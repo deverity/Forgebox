@@ -10,7 +10,17 @@ targets = [
 # Vulnerabilidades são sempre erro (chave removida no cargo-deny atual); unmaintained só para deps diretas do workspace.
 unmaintained = "workspace"
 yanked = "warn"
-ignore = []
+# Each ignore needs a reason and a revisit condition (ADR-0017).
+ignore = [
+    # rsa (via pgp): Marvin timing side channel in RSA *private key* operations. Forgebox only
+    # verifies PGP signatures with public keys (docs/05 §3); no secret is ever processed.
+    # No patched rsa release exists; revisit when pgp moves to a fixed rsa.
+    { id = "RUSTSEC-2023-0071", reason = "pgp is used for signature verification with public keys only; no RSA private key operations" },
+    # crypto-bigint 0.5 (via pgp -> elliptic-curve 0.13): non constant-time arithmetic. Only
+    # public values (keys, signatures, file digests) reach it. Revisit when pgp moves to
+    # elliptic-curve 0.14 / crypto-bigint >= 0.7.6.
+    { id = "RUSTSEC-2026-0387", reason = "pgp verification handles public data only; timing leaks no secret" },
+]
 
 [licenses]
 # GPL/AGPL/LGPL não estão na lista: não entram no núcleo (ver docs/00 e LICENSE).

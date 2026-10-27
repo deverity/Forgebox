@@ -85,7 +85,7 @@ Troca de `8.3.36 → 8.3.37` ou de um site de `8.2 → 8.4`:
 Zero requests perdidas, zero restart de Apache/Nginx.
 
 ### 2.3 Xdebug e extensões
-- Extensões são `kind: Extension` no registry, com `requires: php ~8.3, build: vs17, ts: nts`. Instaladas em `bin/php/8.3.36/ext/` + `etc/php/8.3/conf.d/20-xdebug.ini`.
+- Extensões são `kind: Extension` no registry, com `extends: php` e `compat: [{ tool: "~8.4", variant: { ts: nts, compiler: vs17 }, version: "3.4.*" }]` ([04](04-tool-manifest-spec.md) §2). Instaladas em `bin/php/8.3.36/ext/` + `etc/php/8.3/conf.d/20-xdebug.ini`.
 - Toggle de Xdebug é por **versão** (afeta o pool) ou por **site** (via `FORGEBOX_XDEBUG=1` → `php.ini` com `xdebug.mode=${XDEBUG_MODE}`). Reload = recycle do pool, não restart.
 - Porta do Xdebug (9003) é reservada no alocador para nunca colidir com pools (bug histórico do Laragon #374).
 
@@ -140,7 +140,7 @@ resolve(version) → fetch(url, sha256, size) → verify → stage(tmp/stage/<id
 ```
 - Download com retomada (`Range`), 4 conexões paralelas para arquivos > 50 MB, mirrors em ordem, limite de banda configurável.
 - Verificação **obrigatória**: SHA-256 do manifesto/provider. Sem hash = instalação só com `--allow-unverified` e aviso vermelho na UI.
-- Staging fora do destino + `MoveFileEx` garante que `bin/<tool>/<version>` nunca fica meio instalado.
+- Staging fora do destino + `MoveFileEx` garante que `bin/<tool>/<version>` nunca fica meio instalado. Implementação (`forge_provider::extract`, [ADR-0017](adr/0017-verify-extract-stack.md)): `tmp/stage/<ulid>/` novo por extração, com a sensibilidade a maiúsculas do pai do destino (a flag viaja com o diretório no rename; `bin/` fica insensitive, docs/15); cada entrada validada antes de ser escrita (zip e 7z varridos por inteiro antes do primeiro byte); orçamento de bytes realmente escritos (padrão 4 GiB) e de entradas (200 000); `strip_root`; rename do diretório (repetido por até ~1,4 s em violação de acesso/compartilhamento, comum com antivírus); entre volumes, cópia para `.<versão>.forgebox-partial-<id>` ao lado do destino, conferência de caminhos e tamanhos e rename. Substituir um destino existente só com pedido explícito (o antigo vai para `.<versão>.forgebox-old-<id>` e volta se a troca falhar). Progresso por entrada em `job.progress` ("Extraindo 120/2400"); cancelamento entre entradas e buffers; staging sempre removido.
 - `post_install` restrito a ações declarativas do manifesto (copiar arquivo, renderizar template, rodar comando **da própria tool** como `mysqld --initialize-insecure`), nunca scripts arbitrários baixados.
 
 ### 5.2 Layout versionado + `current`
@@ -154,7 +154,7 @@ bin/apache/2.4.69/     bin/nginx/1.30.6/
 - Pools web não dependem de `current`: cada site aponta para a versão exata.
 
 ### 5.3 Descoberta de tools soltas
-`forge-registry::discover` varre `bin/*/*/` e reconhece pastas sem registro (ex. o usuário copiou `php-8.1-Win32-vs16-x64` do Laragon). Heurísticas por manifesto (`discover.match: ["php.exe", "php-cgi.exe"]`, `discover.version_cmd: "php.exe -v"`). Reconhecidas → importadas como `ToolVersion{source: manual}`; podem virar pools normalmente.
+`forge-registry::discover` varre `bin/*/*/` e reconhece pastas sem registro (ex. o usuário copiou `php-8.1-Win32-vs16-x64` do Laragon). Heurísticas por manifesto (`discover.match_files: ["php.exe", "php-cgi.exe"]`, `discover.version_command: "php.exe -v"`, `version_regex`, `variant_detect`; [04](04-tool-manifest-spec.md) §1). Reconhecidas → importadas como `ToolVersion{source: manual}`; podem virar pools normalmente.
 
 ## 6. Scheduler interno
 - Tarefas periódicas (tokio): checagem de updates (padrão 6 h, jitter), renovação de certificados (diária), limpeza de `tmp/` (diária), refresh do registry (12 h), métricas (2 s), health (5 s por instance).
@@ -193,7 +193,7 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server, o servidor 
 
 ### 7.4 API assíncrona por natureza
 - Nenhum método JSON-RPC segura a conexão mais de ~1 s, exceto streams. Operações longas (instalar, iniciar serviço, trocar PHP, exportar banco) devolvem **imediatamente** um `job_id`; progresso e conclusão vêm por eventos (`job.progress`, `job.done`, `job.failed`). CLI mostra barra; GUI mostra estado otimista.
-- Implementação (`forge_core::jobs`): `JobRegistry::start(nome, |ctx| async { … })` devolve o `JobId` na hora; `ctx.progress(JobProgress::new().pct(40.0).message("…"))` (no máximo um `job.progress` a cada 100 ms; o snapshot de `get/list` é sempre atual); `job.cancel` → `CancellationToken` cooperativo (`ctx.cancelled()`, `ctx.check_cancelled()?`), e após 10 s de tolerância o future é descartado (`job.cancelled{forced: true}`); pânico → `job.failed` com código `internal`; `request_id` repetido devolve o mesmo job; ficam retidos os últimos 100 jobs terminados. Eventos de um job saem em ordem de `seq` (`started < progress < done|failed|cancelled`).
+- Implementação (`forge_core::jobs`): `JobRegistry::start(nome, |ctx| async { … })` devolve o `JobId` na hora; `ctx.progress(JobProgress::new().pct(40.0).message("…"))` (também `.bytes(done, total)` e `.rate(speed_bps, eta_secs)`) (no máximo um `job.progress` a cada 100 ms; o snapshot de `get/list` é sempre atual); `job.cancel` → `CancellationToken` cooperativo (`ctx.cancelled()`, `ctx.check_cancelled()?`), e após 10 s de tolerância o future é descartado (`job.cancelled{forced: true}`); pânico → `job.failed` com código `internal`; `request_id` repetido devolve o mesmo job; ficam retidos os últimos 100 jobs terminados. Eventos de um job saem em ordem de `seq` (`started < progress < done|failed|cancelled`).
 - Prioridade: ações do usuário sobre tarefas de fundo. O download manager tem fila com prioridade; o scheduler de updates pausa quando há job do usuário em curso; o sampler de métricas reduz frequência sob carga.
 - O servidor IPC aceita conexões em task própria; cada conexão tem sua task; parsing de JSON não acontece na task de accept.
 

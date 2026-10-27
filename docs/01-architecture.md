@@ -42,7 +42,8 @@ Regras:
 | Config do usuário | **YAML** (`serde_yaml_ng`, ver [ADR-0012](adr/0012-yaml-crate-serde-yaml-ng.md)) + **TOML** para preferências simples | YAML é o formato do manifesto; preferências em `forgebox.toml` |
 | Templates de config | **minijinja** | Sintaxe Jinja2 conhecida, sandbox, sem dependências pesadas |
 | HTTP client | **reqwest** (rustls) + resume + mirrors | Downloads grandes com retomada |
-| Extração | `zip`, `sevenz-rust`, `tar` + `flate2`/`xz2` | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz |
+| Verificação | `sha2`, `pgp` (rpgp), `minisign-verify`, Authenticode via `WinVerifyTrust` ([ADR-0017](adr/0017-verify-extract-stack.md)) | Tudo em Rust puro; chaves PGP de nginx/Node embutidas |
+| Extração | `zip`, `sevenz-rust2`, `tar` + `flate2`/`lzma-rust2` ([ADR-0017](adr/0017-verify-extract-stack.md)) | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz; sem toolchain C |
 | DNS | **hickory-server** | Resolver `*.test` → 127.0.0.1 em `127.0.0.1:53` (ou porta alta + NRPT) |
 | TLS/CA | **rcgen** + `windows::Win32::Security::Cryptography` | CA raiz local e certificados folha; instalação no store `CurrentUser\Root` sem admin |
 | IPC | **JSON-RPC 2.0** (NDJSON, `request_id` obrigatório, handshake `system.hello`) sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md), [ADR-0015](adr/0015-ipc-protocol.md)) | Named pipe tem ACL por usuário; mesma API local e remota |

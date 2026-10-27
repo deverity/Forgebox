@@ -1,0 +1,209 @@
+---
+source: crates/forge-manifest/tests/schema.rs
+expression: text
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RegistryManifest",
+  "description": "A complete `kind: Registry` manifest (`index.yaml`).",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/$defs/ApiVersion"
+    },
+    "kind": {
+      "$ref": "#/$defs/RegistryKind"
+    },
+    "metadata": {
+      "$ref": "#/$defs/RegistryMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/RegistrySpec"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "$defs": {
+    "ApiVersion": {
+      "description": "`apiVersion` of a manifest. Anything other than `forgebox.dev/v1` is rejected.",
+      "type": "string",
+      "enum": [
+        "forgebox.dev/v1"
+      ]
+    },
+    "Category": {
+      "description": "Catalog category (`metadata.category`).",
+      "type": "string",
+      "enum": [
+        "runtime",
+        "webserver",
+        "database",
+        "cache",
+        "queue",
+        "search",
+        "storage",
+        "mail",
+        "tunnel",
+        "devtool",
+        "gui",
+        "library"
+      ]
+    },
+    "RegistryEntry": {
+      "description": "`spec.tools[]` / `spec.stacks[]`.",
+      "type": "object",
+      "properties": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Category"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/ToolId"
+        },
+        "latest": {
+          "description": "Newest stable version, for the catalog list.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Relative to the registry root, `/` separators (`tools/php.yaml`).",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Of the manifest file.",
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ]
+    },
+    "RegistryKind": {
+      "description": "`kind: Registry`.",
+      "type": "string",
+      "enum": [
+        "Registry"
+      ]
+    },
+    "RegistryMetadata": {
+      "description": "`metadata` of a Registry.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "RegistrySpec": {
+      "description": "`spec` of a Registry.",
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "description": "Must be `1`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "signature": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signature"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stacks": {
+          "description": "`stacks/*.yaml`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RegistryEntry"
+          }
+        },
+        "tools": {
+          "description": "Tools and extensions (`tools/*.yaml`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RegistryEntry"
+          }
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "updated_at"
+      ]
+    },
+    "Sha256": {
+      "description": "SHA-256 digest (64 hexadecimal digits).",
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "Signature": {
+      "description": "`spec.signature`.",
+      "type": "object",
+      "properties": {
+        "key_id": {
+          "type": "string"
+        },
+        "sig": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SignatureType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "key_id",
+        "sig"
+      ]
+    },
+    "SignatureType": {
+      "description": "Signature scheme of a registry.",
+      "type": "string",
+      "enum": [
+        "minisign"
+      ]
+    },
+    "ToolId": {
+      "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",
+      "type": "string",
+      "not": {
+        "enum": [
+          "shims",
+          "current"
+        ]
+      },
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    }
+  }
+}

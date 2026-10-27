@@ -13,11 +13,20 @@ publish = false
 workspace = true
 
 [dependencies]
-forge-core = { path = "../forge-core" }
+# `schemars`: ToolId gets a JSON Schema with the slug pattern.
+forge-core = { path = "../forge-core", features = ["schemars"] }
+humantime = { workspace = true }
+jiff = { workspace = true }
+regex = { workspace = true }
+# `jiff02`: JSON Schema of `updated_at`/`published_at` timestamps.
+schemars = { workspace = true, features = ["jiff02"] }
+semver = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
-schemars = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+insta = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

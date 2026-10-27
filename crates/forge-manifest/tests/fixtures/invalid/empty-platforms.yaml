@@ -1,0 +1,9 @@
+# expect: empty_platforms
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: empty-platforms, name: Fixture, category: devtool }
+spec:
+  platforms: []
+  source:
+    providers:
+      - type: nodejs-dist

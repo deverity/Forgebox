@@ -14,6 +14,6 @@
 
 **tokio-console (dev):** feature opt-in `console` + `RUSTFLAGS="--cfg tokio_unstable"`, por exemplo `RUSTFLAGS="--cfg tokio_unstable" cargo run -p forge-daemon --features forge-core/console`, e chamar `forge_core::runtime::init_console()` no início do binário; depois rodar `tokio-console` (porta 6669). O build padrão não exige `tokio_unstable`.
 
-**Notas:** feature `specta` (ligada por `forge-ipc`, que re-exporta `RequestId`) deriva os tipos TS dos IDs. Testes de integração em `tests/` usam junction e NTFS case-sensitive reais; `FORGEBOX_REQUIRE_CASE_SENSITIVE=1` transforma o "skip" em falha.
+**Notas:** feature `specta` (ligada por `forge-ipc`, que re-exporta `RequestId`) deriva os tipos TS dos IDs; feature `schemars` (ligada por `forge-manifest`) implementa `JsonSchema` para `ToolId` (padrão do slug) nos JSON Schemas dos manifestos. Testes de integração em `tests/` usam junction e NTFS case-sensitive reais; `FORGEBOX_REQUIRE_CASE_SENSITIVE=1` transforma o "skip" em falha.
 
 **Referência:** [docs/01](../../docs/01-architecture.md) §3-§7, [docs/02](../../docs/02-project-structure.md), [docs/03](../../docs/03-engine.md) §7-§8, [docs/08](../../docs/08-release-layout.md) §2, [docs/15](../../docs/15-linux-parity-case-sensitivity.md) §3, [ADR-0011](../../docs/adr/0011-actor-concurrency-model.md), [ADR-0014](../../docs/adr/0014-concurrency-skeleton.md).

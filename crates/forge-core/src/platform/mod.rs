@@ -6,9 +6,9 @@
 //! `tokio::task::spawn_blocking` (ADR-0011).
 //!
 //! Status (M0-E1-T4): [`LinkFs`] and [`CaseSensitiveFs`] are implemented for Windows;
-//! M1-E5-T1 added [`FileAcl`] (owner-only secret files) and
-//! [`windows::pipe_security`] (DACL and owner check of the local API pipe).
-//! [`ProcessGroup`] (M1-E3-T1), [`TrustStore`] (M1-E4-T4) and [`DnsPolicy`]
+//! [`CodeSign`] (Authenticode, M1-E2-T2) too. M1-E5-T1 added [`FileAcl`] (owner-only
+//! secret files) and [`windows::pipe_security`] (DACL and owner check of the local API
+//! pipe). [`ProcessGroup`] (M1-E3-T1), [`TrustStore`] (M1-E4-T4) and [`DnsPolicy`]
 //! (M1-E4-T3) are declared only; their signatures may still grow in those tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
@@ -17,6 +17,8 @@ use std::fmt;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(windows))]
 use crate::error::ForgeError;
@@ -89,6 +91,43 @@ pub trait FileAcl: Send + Sync {
     fn is_restricted_to_current_user(&self, path: &Path) -> Result<bool>;
 }
 
+/// Where the Authenticode signature of a file was found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CodeSignKind {
+    /// PKCS#7 signature embedded in the file (security directory of a PE).
+    Embedded,
+    /// The file hash is listed in a signed system catalog (`System32\CatRoot`), as for
+    /// most binaries shipped with Windows.
+    Catalog,
+}
+
+/// Result of [`CodeSign::verify`] (docs/05 §3 item 4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodeSignInfo {
+    /// The file carries a signature (embedded or through a catalog), valid or not.
+    pub signed: bool,
+    /// The signature is intact and chains to a trusted root.
+    pub trusted: bool,
+    /// Simple display name of the signer certificate (`Microsoft Windows`,
+    /// `Cloudflare, Inc.`), when a signature could be read.
+    pub publisher: Option<String>,
+    pub kind: Option<CodeSignKind>,
+    /// Why the file is not trusted (`CERT_E_UNTRUSTEDROOT (0x800B0109)`...); `None` when
+    /// trusted.
+    pub status: Option<String>,
+}
+
+/// Code signing verification of executables (Authenticode on Windows).
+pub trait CodeSign: Send + Sync {
+    /// Checks the signature of `path`: embedded first, then the system catalogs.
+    /// Revocation is not checked (works offline and never stalls on CRL/OCSP servers);
+    /// the downloaded file is already pinned by its sha256 (docs/11 §2).
+    /// Unsigned or untrusted files are `Ok` with `signed`/`trusted` false; `Err` only when
+    /// the file cannot be opened or the OS has no such mechanism.
+    fn verify(&self, path: &Path) -> Result<CodeSignInfo>;
+}
+
 /// Group of processes that die together (Job Object on Windows, cgroup on Linux).
 /// Implemented in M1-E3-T1.
 pub trait ProcessGroup: Send + Sync {
@@ -145,6 +184,7 @@ pub struct Platform {
     name: &'static str,
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
+    code_sign: Arc<dyn CodeSign>,
     file_acl: Arc<dyn FileAcl>,
 }
 
@@ -157,19 +197,33 @@ impl fmt::Debug for Platform {
 }
 
 impl Platform {
-    /// Assembles a platform from parts (tests use fakes).
+    /// Assembles a platform from parts (tests use fakes). Code signing and file ACLs
+    /// default to the implementations of the running OS; see
+    /// [`Platform::with_code_sign`] and [`Platform::with_file_acl`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
         case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
-        file_acl: Arc<dyn FileAcl>,
     ) -> Self {
         Self {
             name,
             link_fs,
             case_sensitive_fs,
-            file_acl,
+            code_sign: default_code_sign(),
+            file_acl: default_file_acl(),
         }
+    }
+
+    /// Replaces the code signing verifier (fakes in tests).
+    pub fn with_code_sign(mut self, code_sign: Arc<dyn CodeSign>) -> Self {
+        self.code_sign = code_sign;
+        self
+    }
+
+    /// Replaces the secret file ACL implementation (fakes in tests).
+    pub fn with_file_acl(mut self, file_acl: Arc<dyn FileAcl>) -> Self {
+        self.file_acl = file_acl;
+        self
     }
 
     /// `"windows"`, `"linux"`, `"macos"`...
@@ -185,9 +239,35 @@ impl Platform {
         self.case_sensitive_fs.as_ref()
     }
 
+    /// Authenticode verification (shared, so it can move into `spawn_blocking`).
+    pub fn code_sign(&self) -> &Arc<dyn CodeSign> {
+        &self.code_sign
+    }
+
+    /// Owner-only ACLs for secret files (`state/ipc.token`).
     pub fn file_acl(&self) -> &dyn FileAcl {
         self.file_acl.as_ref()
     }
+}
+
+#[cfg(windows)]
+fn default_code_sign() -> Arc<dyn CodeSign> {
+    Arc::new(windows::WindowsCodeSign)
+}
+
+#[cfg(not(windows))]
+fn default_code_sign() -> Arc<dyn CodeSign> {
+    Arc::new(unsupported::Unsupported)
+}
+
+#[cfg(windows)]
+fn default_file_acl() -> Arc<dyn FileAcl> {
+    Arc::new(windows::WindowsFileAcl)
+}
+
+#[cfg(not(windows))]
+fn default_file_acl() -> Arc<dyn FileAcl> {
+    Arc::new(unsupported::Unsupported)
 }
 
 /// Implementations for the OS this binary runs on.
@@ -197,7 +277,6 @@ pub fn current() -> Platform {
         "windows",
         Arc::new(windows::WindowsLinkFs),
         Arc::new(windows::WindowsCaseSensitiveFs),
-        Arc::new(windows::WindowsFileAcl),
     )
 }
 
@@ -206,7 +285,6 @@ pub fn current() -> Platform {
 pub fn current() -> Platform {
     Platform::new(
         std::env::consts::OS,
-        Arc::new(unsupported::Unsupported),
         Arc::new(unsupported::Unsupported),
         Arc::new(unsupported::Unsupported),
     )
@@ -241,6 +319,12 @@ mod unsupported {
         }
         fn replace_junction(&self, _: &Path, _: &Path) -> Result<()> {
             err("junctions")
+        }
+    }
+
+    impl CodeSign for Unsupported {
+        fn verify(&self, _: &Path) -> Result<CodeSignInfo> {
+            err("code signing verification")
         }
     }
 
@@ -306,5 +390,44 @@ mod tests {
         assert!(!platform.case_sensitive_fs().is_supported(&dir));
         let err = platform.link_fs().is_junction(&dir).unwrap_err();
         assert_eq!(err.code(), "unsupported_platform");
+        let err = platform.code_sign().verify(&dir).unwrap_err();
+        assert_eq!(err.code(), "unsupported_platform");
+    }
+
+    #[test]
+    fn file_acl_can_be_replaced() {
+        struct AlwaysRestricted;
+        impl FileAcl for AlwaysRestricted {
+            fn restrict_to_current_user(&self, _: &Path) -> Result<()> {
+                Ok(())
+            }
+            fn is_restricted_to_current_user(&self, _: &Path) -> Result<bool> {
+                Ok(true)
+            }
+        }
+        let platform = current().with_file_acl(Arc::new(AlwaysRestricted));
+        let missing = std::env::temp_dir().join("forgebox-no-such-file");
+        assert!(
+            platform
+                .file_acl()
+                .is_restricted_to_current_user(&missing)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn code_sign_info_wire_format() {
+        let info = CodeSignInfo {
+            signed: true,
+            trusted: false,
+            publisher: Some("Example, Inc.".into()),
+            kind: Some(CodeSignKind::Catalog),
+            status: Some("CERT_E_UNTRUSTEDROOT (0x800B0109)".into()),
+        };
+        let json = serde_json::to_value(&info).unwrap();
+        assert_eq!(json["kind"], "catalog");
+        assert_eq!(json["publisher"], "Example, Inc.");
+        let back: CodeSignInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(back, info);
     }
 }

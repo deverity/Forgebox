@@ -823,6 +823,10 @@ export type JobProgress = {
 	message?: string | null,
 	bytes_done?: number | null,
 	bytes_total?: number | null,
+	/**  Smoothed transfer speed in bytes per second (downloads). */
+	speed_bps?: number | null,
+	/**  Estimated seconds until completion (downloads with a known size). */
+	eta_secs?: number | null,
 };
 
 /**  Payload of `job.progress` (the merged progress of the job, not just the delta). */
