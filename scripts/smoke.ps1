@@ -54,7 +54,10 @@ param(
     # Use the binaries already built in target\debug (no cargo build).
     [switch]$NoBuild,
     # Laravel project skeleton for composer create-project.
-    [string]$LaravelPackage = 'laravel/laravel'
+    [string]$LaravelPackage = 'laravel/laravel',
+    # Self-test of the teardown: break forge.exe right before it (step 7 must FAIL but
+    # still kill every process of the root).
+    [switch]$BreakForgeBeforeTeardown
 )
 
 Set-StrictMode -Version Latest
@@ -180,15 +183,29 @@ function Select-Port([string]$Name, [int]$Port, [int[]]$Taken) {
 
 # ---------------------------------------------------------------- teardown
 
-function Stop-RootProcesses {
+# Processes whose executable lives under this root (and only those: Laragon and anything
+# else on the machine are never touched).
+function Get-RootProcesses {
     $prefix = $Root.TrimEnd('\') + '\'
-    $procs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) })
-    foreach ($p in $procs) {
-        Write-Log "killing leftover $($p.Name) (PID $($p.ProcessId)) of this root"
-        Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+# Kills the processes of this root (a few passes: a dying daemon may still spawn or
+# release children) and returns how many were killed.
+function Stop-RootProcesses {
+    $count = 0
+    for ($pass = 0; $pass -lt 3; $pass++) {
+        $procs = @(Get-RootProcesses)
+        if (-not $procs.Count) { break }
+        foreach ($p in $procs) {
+            Write-Log "killing leftover $($p.Name) (PID $($p.ProcessId)) of this root"
+            try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $count++ }
+            catch { Write-Log "  could not kill PID $($p.ProcessId): $($_.Exception.Message)" }
+        }
+        Start-Sleep -Milliseconds 500
     }
-    $procs.Count
+    $count
 }
 
 # ---------------------------------------------------------------- .env
@@ -433,16 +450,42 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
     }
 } finally {
     # ------------------------------------------------------------ teardown (always)
+    if ($BreakForgeBeforeTeardown -and (Test-Path -LiteralPath $Forge)) {
+        # Self-test of the teardown: forge.exe can no longer start (as when an antivirus
+        # quarantines it); the teardown must still kill everything of this root.
+        Write-Log 'SELF-TEST: replacing forge.exe with a non-executable file before teardown' 'Yellow'
+        try { Set-Content -LiteralPath $Forge -Value 'not an executable' -Encoding ascii }
+        catch { Write-Log "SELF-TEST: could not replace forge.exe: $($_.Exception.Message)" 'Yellow' }
+    }
     Invoke-Step '7. teardown' {
-        $notes = @()
-        if ($script:Daemon -and (Test-Path -LiteralPath $Forge)) {
-            if (-not $NonInteractive) { Invoke-Forge @('dns', 'disable') -AllowFail | Out-Null }
-            Invoke-Forge @('stop', 'all') -AllowFail | Out-Null
-            Invoke-Forge @('daemon', 'stop') -AllowFail | Out-Null
+        # Every action is attempted even when a previous one throws (forge.exe blocked,
+        # missing, pwsh error): the leftovers of this root are ALWAYS killed before the
+        # root is removed. Any failed action still makes the step FAIL.
+        $errors = [System.Collections.Generic.List[string]]::new()
+        $teardown = [ordered]@{}
+        if ($script:Daemon) {
+            if (-not $NonInteractive) { $teardown['dns disable'] = { Invoke-Forge @('dns', 'disable') | Out-Null } }
+            $teardown['stop all'] = { Invoke-Forge @('stop', 'all') | Out-Null }
+            $teardown['daemon stop'] = { Invoke-Forge @('daemon', 'stop') | Out-Null }
         }
-        $killed = Stop-RootProcesses
-        $notes += "leftovers killed: $killed"
-        $notes -join '; '
+        foreach ($action in $teardown.Keys) {
+            try { & $teardown[$action] }
+            catch {
+                $errors.Add("${action}: $($_.Exception.Message)")
+                Write-Log "WARNING: teardown action '$action' failed: $($_.Exception.Message)" 'Yellow'
+            }
+        }
+        $killed = 0
+        try { $killed = Stop-RootProcesses }
+        catch {
+            $errors.Add("kill leftovers: $($_.Exception.Message)")
+            Write-Log "WARNING: killing the leftovers failed: $($_.Exception.Message)" 'Yellow'
+        }
+        $alive = @(try { Get-RootProcesses } catch { $errors.Add("listing processes: $($_.Exception.Message)") })
+        if ($alive.Count) { $errors.Add("still alive: $(($alive | ForEach-Object { "$($_.Name)#$($_.ProcessId)" }) -join ', ')") }
+        $detail = "leftovers killed: $killed"
+        if ($errors.Count) { throw "$detail; $($errors -join '; ')" }
+        $detail
     } -Always
 
     $Total.Stop()
