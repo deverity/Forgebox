@@ -143,12 +143,20 @@ pub trait TrustStore: Send + Sync + fmt::Debug {
 
     /// Checks with the OS TLS verifier that `chain` (DER, leaf first, then intermediates)
     /// is a valid server chain for `host` when `anchor_der` is the **only** trusted root.
-    /// Name constraints, validity, key usages and signatures are checked; revocation and
-    /// network fetches are not. No store is read or written.
+    /// Name constraints, validity, key usages and signatures are checked. With
+    /// `check_revocation` the leaf's revocation is checked too, fetching its CRL
+    /// distribution point (what Windows `curl.exe` does by default); otherwise nothing is
+    /// fetched. No store is read or written.
     ///
     /// Errors: `verification_failed` with the OS reason (name constraint violation, name
-    /// mismatch, untrusted root, expired...).
-    fn verify_server(&self, chain: &[Vec<u8>], anchor_der: &[u8], host: &str) -> Result<()>;
+    /// mismatch, untrusted root, expired, revocation status unknown...).
+    fn verify_server(
+        &self,
+        chain: &[Vec<u8>],
+        anchor_der: &[u8],
+        host: &str,
+        check_revocation: bool,
+    ) -> Result<()>;
 }
 
 /// The trust store of the running OS. `helper` runs the `LocalMachine` changes; without
@@ -190,7 +198,7 @@ impl TrustStore for Unsupported {
     fn remove_root(&self, _: &CertThumbprint, _: TrustScope) -> Result<bool> {
         Self::err()
     }
-    fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str) -> Result<()> {
+    fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str, _: bool) -> Result<()> {
         Self::err()
     }
 }

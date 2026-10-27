@@ -132,6 +132,8 @@ pub struct LeafInfo {
     pub not_before: Timestamp,
     pub not_after: Timestamp,
     pub thumbprint_sha256: String,
+    /// CRL distribution point (`http://127.0.0.1:<port>/forgebox/<CA SHA-1>.crl`).
+    pub crl_url: Option<String>,
     pub cert_path: PathBuf,
     pub key_path: PathBuf,
 }
@@ -205,6 +207,7 @@ pub fn issue_leaf(
     sans: &[String],
     validity: SignedDuration,
     now: Timestamp,
+    crl_url: Option<&str>,
 ) -> Result<SiteCert> {
     check_against_ca(ca, host, sans)?;
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)
@@ -232,6 +235,11 @@ pub fn issue_leaf(
     params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     params.use_authority_key_identifier_extension = true;
+    if let Some(url) = crl_url {
+        params.crl_distribution_points = vec![rcgen::CrlDistributionPoint {
+            uris: vec![url.to_owned()],
+        }];
+    }
     let issuer = ca.issuer()?;
     let leaf = params
         .signed_by(&key, &issuer)
@@ -247,6 +255,7 @@ pub fn issue_leaf(
             not_before: summary.not_before,
             not_after: summary.not_after,
             thumbprint_sha256: summary.thumbprint_sha256,
+            crl_url: summary.crl_urls.into_iter().next(),
             cert_path,
             key_path,
         },
@@ -296,6 +305,7 @@ pub fn load_leaf(sites_dir: &Path, host: &str) -> Result<Option<StoredLeaf>> {
             not_before: summary.not_before,
             not_after: summary.not_after,
             thumbprint_sha256: summary.thumbprint_sha256,
+            crl_url: summary.crl_urls.into_iter().next(),
             cert_path,
             key_path,
         },
@@ -391,6 +401,7 @@ mod tests {
             &["loja.test".into(), "*.loja.test".into()],
             LEAF_VALIDITY,
             now(),
+            None,
         )
         .unwrap();
         assert_eq!(leaf.info().sans, ["loja.test", "*.loja.test"]);
@@ -409,7 +420,7 @@ mod tests {
                 vec!["loja.test".to_owned(), "evil.example.com".to_owned()],
             ),
         ] {
-            let err = issue_leaf(&ca, dir, host, &sans, LEAF_VALIDITY, now()).unwrap_err();
+            let err = issue_leaf(&ca, dir, host, &sans, LEAF_VALIDITY, now(), None).unwrap_err();
             assert_eq!(err.code(), "invalid_input", "{host} {sans:?}: {err}");
         }
     }
@@ -424,6 +435,7 @@ mod tests {
             &["a.test".into()],
             SignedDuration::from_hours(24 * 10),
             now(),
+            None,
         )
         .unwrap();
         assert!(leaf.info().expires_within(now(), RENEW_BEFORE));
@@ -434,6 +446,7 @@ mod tests {
             &["a.test".into()],
             LEAF_VALIDITY,
             now(),
+            None,
         )
         .unwrap();
         assert!(!leaf.info().expires_within(now(), RENEW_BEFORE));

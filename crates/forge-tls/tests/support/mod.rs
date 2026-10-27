@@ -127,7 +127,7 @@ impl TrustStore for FakeTrust {
         Ok(self.trusted.lock().unwrap().remove(&(*thumbprint, scope)))
     }
 
-    fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str) -> Result<()> {
+    fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str, _: bool) -> Result<()> {
         Ok(())
     }
 }

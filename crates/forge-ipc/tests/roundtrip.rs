@@ -210,6 +210,7 @@ fn fakes() -> Fakes {
             exists: true,
             subject: Some("CN=Forgebox Local CA".into()),
             thumbprint_sha256: Some("ab".repeat(32)),
+            thumbprint_sha1: Some("CD".repeat(20)),
             not_after: Some(ts()),
             trusted_current_user: true,
             trusted_local_machine: false,

@@ -12,7 +12,7 @@ use forge_core::platform::{CertThumbprint, FileAcl};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use x509_parser::certificate::X509Certificate;
-use x509_parser::extensions::GeneralName;
+use x509_parser::extensions::{DistributionPointName, GeneralName, ParsedExtension};
 use x509_parser::prelude::FromDer;
 
 /// A permitted subtree of the CA name constraints (RFC 5280 §4.2.1.10).
@@ -85,6 +85,8 @@ pub(crate) struct CertSummary {
     /// Permitted subtrees of the name constraints (empty without the extension).
     pub permitted: Vec<PermittedSubtree>,
     pub name_constraints_critical: bool,
+    /// URIs of the CRL distribution points.
+    pub crl_urls: Vec<String>,
     pub thumbprint_sha1: CertThumbprint,
     pub thumbprint_sha256: String,
     /// Raw subject public key (uncompressed EC point for P-256).
@@ -148,6 +150,20 @@ pub(crate) fn summarize(der: &[u8]) -> Result<CertSummary> {
             }
         }
     }
+    let mut crl_urls = Vec::new();
+    for ext in cert.iter_extensions() {
+        if let ParsedExtension::CRLDistributionPoints(points) = ext.parsed_extension() {
+            for point in points.iter() {
+                if let Some(DistributionPointName::FullName(names)) = &point.distribution_point {
+                    for name in names {
+                        if let GeneralName::URI(uri) = name {
+                            crl_urls.push((*uri).to_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
     let common_name = cert
         .subject()
         .iter_common_name()
@@ -165,6 +181,7 @@ pub(crate) fn summarize(der: &[u8]) -> Result<CertSummary> {
         ip_addresses,
         permitted,
         name_constraints_critical,
+        crl_urls,
         thumbprint_sha1: CertThumbprint::of_der(der),
         thumbprint_sha256: sha256_hex(der),
         public_key: cert.public_key().subject_public_key.data.to_vec(),

@@ -88,7 +88,16 @@ fn leaf_covers_host_wildcard_and_aliases_and_is_signed_by_the_ca() {
         .sans()
         .unwrap();
     let dir = std::path::Path::new("certs/sites");
-    let leaf = issue_leaf(&ca, dir, &host, &sans, LEAF_VALIDITY, Timestamp::now()).unwrap();
+    let leaf = issue_leaf(
+        &ca,
+        dir,
+        &host,
+        &sans,
+        LEAF_VALIDITY,
+        Timestamp::now(),
+        None,
+    )
+    .unwrap();
     let (_, cert) = X509Certificate::from_der(leaf.cert_der()).unwrap();
     let (_, ca_cert) = X509Certificate::from_der(ca.cert_der()).unwrap();
 
@@ -127,8 +136,40 @@ fn leaf_covers_host_wildcard_and_aliases_and_is_signed_by_the_ca() {
     assert!(leaf.key_pem().starts_with("-----BEGIN PRIVATE KEY-----\n"));
     assert!(!leaf.cert_pem().contains('\r') && !leaf.key_pem().contains('\r'));
 
+    assert_eq!(leaf.info().crl_url, None);
+    let url = format!(
+        "http://127.0.0.1:47480/forgebox/{}.crl",
+        ca.info().thumbprint_sha1
+    );
+    let with_crl = issue_leaf(
+        &ca,
+        dir,
+        &host,
+        &sans,
+        LEAF_VALIDITY,
+        Timestamp::now(),
+        Some(&url),
+    )
+    .unwrap();
+    assert_eq!(with_crl.info().crl_url.as_deref(), Some(url.as_str()));
+    let (_, parsed) = X509Certificate::from_der(with_crl.cert_der()).unwrap();
+    let cdp = parsed
+        .iter_extensions()
+        .find(|e| e.oid.to_id_string() == "2.5.29.31")
+        .expect("cRLDistributionPoints");
+    assert!(!cdp.critical);
+
     // Two leaves never share a serial (Firefox refuses reused issuer+serial pairs).
-    let again = issue_leaf(&ca, dir, &host, &sans, LEAF_VALIDITY, Timestamp::now()).unwrap();
+    let again = issue_leaf(
+        &ca,
+        dir,
+        &host,
+        &sans,
+        LEAF_VALIDITY,
+        Timestamp::now(),
+        None,
+    )
+    .unwrap();
     assert_ne!(again.info().serial, leaf.info().serial);
 }
 
@@ -138,13 +179,31 @@ fn leaves_outside_the_constraints_are_refused() {
     let dir = std::path::Path::new("x");
     for host in ["google.com", "evil.example.com", "loja.dev"] {
         let (host, sans) = LeafRequest::new(host).sans().unwrap();
-        let err = issue_leaf(&ca, dir, &host, &sans, LEAF_VALIDITY, Timestamp::now()).unwrap_err();
+        let err = issue_leaf(
+            &ca,
+            dir,
+            &host,
+            &sans,
+            LEAF_VALIDITY,
+            Timestamp::now(),
+            None,
+        )
+        .unwrap_err();
         assert_eq!(err.code(), "invalid_input", "{host}: {err}");
     }
     let (host, sans) = LeafRequest::new("loja.test")
         .with_aliases(["www.google.com"])
         .sans()
         .unwrap();
-    let err = issue_leaf(&ca, dir, &host, &sans, LEAF_VALIDITY, Timestamp::now()).unwrap_err();
+    let err = issue_leaf(
+        &ca,
+        dir,
+        &host,
+        &sans,
+        LEAF_VALIDITY,
+        Timestamp::now(),
+        None,
+    )
+    .unwrap_err();
     assert!(err.to_string().contains("www.google.com"), "{err}");
 }

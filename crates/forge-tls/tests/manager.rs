@@ -203,6 +203,7 @@ fn short_leaf(root: &TempRoot, acl: &dyn FileAcl, host: &str, days: i64) {
         &sans,
         SignedDuration::from_hours(days * 24),
         Timestamp::now(),
+        None,
     )
     .unwrap();
     leaf.save(acl).unwrap();
@@ -460,6 +461,102 @@ async fn unusable_ca_files_are_replaced_by_a_rotation() {
     assert!(report.previous.is_none());
     assert!(f.tls.status().await.unwrap().ca_error.is_none());
     f.tls.issue(LeafRequest::new("loja.test")).await.unwrap();
+    f.tls.shutdown().await;
+}
+
+async fn http_get(addr: std::net::SocketAddr, path: &str) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut conn = tokio::net::TcpStream::connect(addr).await.unwrap();
+    conn.write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let mut out = Vec::new();
+    conn.read_to_end(&mut out).await.unwrap();
+    out
+}
+
+fn free_port() -> std::net::SocketAddr {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+}
+
+#[tokio::test]
+async fn the_crl_responder_serves_the_ca_crl_and_leaves_follow_its_address() {
+    let first = free_port();
+    let mut config = config();
+    config.crl_listen = Some(first);
+    let mut f = spawn_on(temp_root(), config);
+    let leaf = f.tls.issue(LeafRequest::new("loja.test")).await.unwrap();
+    let status = f.tls.status().await.unwrap();
+    let ca = status.ca.unwrap();
+    let path = format!("/forgebox/{}.crl", ca.thumbprint_sha1);
+    assert_eq!(leaf.crl_url, Some(format!("http://{first}{path}")));
+    assert!(
+        status.crl.serving && status.crl.error.is_none(),
+        "{:?}",
+        status.crl
+    );
+    assert!(status.crl.next_update.unwrap() > Timestamp::now());
+    let file = std::fs::read(f.root.root.certs_ca().join(forge_tls::crl::CA_CRL_FILE)).unwrap();
+    let answer = http_get(first, &path).await;
+    assert!(
+        answer.starts_with(b"HTTP/1.1 200 OK"),
+        "{}",
+        String::from_utf8_lossy(&answer[..answer.len().min(200)])
+    );
+    assert!(answer.ends_with(&file), "serves the CRL file");
+    assert!(
+        http_get(first, "/forgebox/other.crl")
+            .await
+            .starts_with(b"HTTP/1.1 404")
+    );
+    f.tls.shutdown().await;
+    while f.events.try_recv().is_some() {}
+
+    // The responder moved (another port): the leaves are due and re-issued with the new
+    // distribution point.
+    let second = free_port();
+    let mut moved = self::config();
+    moved.crl_listen = Some(second);
+    let g = spawn_on(f.root, moved);
+    let status = g.tls.status().await.unwrap();
+    assert!(status.leaves[0].due, "distribution point changed");
+    let renewed = g.tls.renew(RenewScope::Due).await.unwrap();
+    assert_eq!(renewed[0].crl_url, Some(format!("http://{second}{path}")));
+    assert!(
+        http_get(second, &path)
+            .await
+            .starts_with(b"HTTP/1.1 200 OK")
+    );
+
+    // A rotation serves the new CA's CRL at its own path.
+    let report = g.tls.rotate_ca().await.unwrap();
+    let new_path = format!("/forgebox/{}.crl", report.ca.thumbprint_sha1);
+    assert_eq!(
+        report.leaves[0].crl_url,
+        Some(format!("http://{second}{new_path}"))
+    );
+    assert!(
+        http_get(second, &new_path)
+            .await
+            .starts_with(b"HTTP/1.1 200 OK")
+    );
+    assert!(http_get(second, &path).await.starts_with(b"HTTP/1.1 404"));
+    g.tls.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_taken_crl_port_is_reported() {
+    let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut config = config();
+    config.crl_listen = Some(taken.local_addr().unwrap());
+    let f = spawn_on(temp_root(), config);
+    f.tls.ensure_ca().await.unwrap();
+    let status = f.tls.status().await.unwrap();
+    assert!(!status.crl.serving);
+    assert!(status.crl.error.is_some(), "{:?}", status.crl);
     f.tls.shutdown().await;
 }
 

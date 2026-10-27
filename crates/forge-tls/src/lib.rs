@@ -16,6 +16,7 @@
 
 pub mod ca;
 mod cert;
+pub mod crl;
 pub mod leaf;
 pub mod manager;
 pub mod messages;
@@ -25,8 +26,8 @@ pub use ca::{CaInfo, CaOptions, LocalCa};
 pub use cert::{PermittedSubtree, sha256_hex};
 pub use leaf::{LeafInfo, LeafRequest, SiteCert, StoredLeaf, issue_leaf, load_leaf, scan_leaves};
 pub use manager::{
-    InstallReport, LeafExport, LeafStatus, RenewScope, RotationReport, TLS_EVENT_VERSION,
-    TlsConfig, TlsEventPayload, TlsManager, TlsStatus,
+    CRL_PORT_RANGE, CrlStatus, InstallReport, LeafExport, LeafStatus, RenewScope, RotationReport,
+    TLS_EVENT_VERSION, TlsConfig, TlsEventPayload, TlsManager, TlsStatus,
 };
 pub use trust::{TrustEntry, TrustInstruction, TrustLedger};
 

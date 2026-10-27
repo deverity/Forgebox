@@ -26,6 +26,7 @@
 //! daemon's reaction to `tls.renewed`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -41,11 +42,13 @@ use forge_core::platform::{CertThumbprint, FileAcl, TrustScope, TrustStore};
 use forge_core::runtime::spawn_blocking_timeout;
 use jiff::SignedDuration;
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::ca::{
     BACKDATE, CA_VALIDITY, CaInfo, CaOptions, LocalCa, default_common_name, machine_name,
 };
+use crate::crl::{CA_CRL_FILE, CRL_VALIDITY, CrlDocument, build_crl, crl_url};
 use crate::leaf::{
     LEAF_VALIDITY, LeafInfo, LeafRequest, RENEW_BEFORE, StoredLeaf, check_against_ca, issue_leaf,
     scan_leaves,
@@ -100,7 +103,18 @@ pub struct TlsConfig {
     pub trust_timeout: Duration,
     /// Whether the OS trust store may be changed (`false` in portable mode, docs/08 §2.2).
     pub os_trust: bool,
+    /// Loopback address of the CRL responder (`crate::crl`). Leaves carry
+    /// `http://<it>/forgebox/<CA SHA-1>.crl` as distribution point; `None`: no distribution
+    /// point and no responder (Windows `curl.exe` then refuses the certificates unless
+    /// told not to check revocation).
+    pub crl_listen: Option<SocketAddr>,
+    /// `nextUpdate` of the served CRL.
+    pub crl_validity: SignedDuration,
 }
+
+/// Named port range (`forgebox.toml` `[ports.ranges]`) whose first port the CRL responder
+/// uses.
+pub const CRL_PORT_RANGE: &str = "tls-crl";
 
 impl TlsConfig {
     /// Defaults of docs/06 §6 for `tlds`.
@@ -117,13 +131,21 @@ impl TlsConfig {
             bulk_timeout: Duration::from_secs(120),
             trust_timeout: Duration::from_secs(15 * 60),
             os_trust: true,
+            crl_listen: None,
+            crl_validity: CRL_VALIDITY,
         }
     }
 
-    /// Defaults for `root` (portable mode: no OS trust store) and its `forgebox.toml`.
+    /// Defaults for `root` (portable mode: no OS trust store) and its `forgebox.toml`: the
+    /// CRL responder on `127.0.0.1:<first port of [ports.ranges] tls-crl>`.
     pub fn for_root(root: &ForgeRoot, config: &forge_core::config::ForgeConfig) -> Self {
         let mut out = Self::new(config.tlds());
         out.os_trust = !root.is_portable();
+        out.crl_listen = config
+            .ports
+            .range(CRL_PORT_RANGE)
+            .and_then(|range| range.ports().next())
+            .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
         out
     }
 }
@@ -170,8 +192,21 @@ pub struct TlsStatus {
     pub leaves: Vec<LeafStatus>,
     /// Unreadable files in `certs/sites/`.
     pub problems: Vec<String>,
+    pub crl: CrlStatus,
     /// pt-BR hints for the user.
     pub warnings: Vec<String>,
+}
+
+/// The CRL responder (see [`crate::crl`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CrlStatus {
+    /// Distribution point of the current CA's leaves.
+    pub url: Option<String>,
+    /// The responder is listening.
+    pub serving: bool,
+    pub next_update: Option<Timestamp>,
+    /// Why it does not listen (port taken...).
+    pub error: Option<String>,
 }
 
 /// Answer of [`TlsManager::install_ca`].
@@ -216,6 +251,7 @@ struct Snapshot {
     leaves: Vec<LeafStatus>,
     problems: Vec<String>,
     ledger: TrustLedger,
+    crl: CrlStatus,
 }
 
 /// A CA prepared by phase one of a rotation.
@@ -299,6 +335,8 @@ struct Shared {
     config: TlsConfig,
     acl: Arc<dyn FileAcl>,
     rotations: AtomicU64,
+    /// The CRL being served (survives actor restarts).
+    crl: watch::Sender<Option<CrlDocument>>,
 }
 
 /// A leaf known to the actor.
@@ -309,9 +347,16 @@ struct LeafEntry {
 }
 
 impl LeafEntry {
-    fn status(&self, now: Timestamp, renew_before: SignedDuration) -> LeafStatus {
+    /// `crl_url`: the distribution point leaves of the current CA must carry.
+    fn status(
+        &self,
+        now: Timestamp,
+        renew_before: SignedDuration,
+        crl_url: Option<&str>,
+    ) -> LeafStatus {
         let due = !self.signed_by_ca
             || !self.stored.key_ok
+            || self.stored.info.crl_url.as_deref() != crl_url
             || self.stored.info.expires_within(now, renew_before);
         LeafStatus {
             info: self.stored.info.clone(),
@@ -322,10 +367,11 @@ impl LeafEntry {
     }
 }
 
-/// Aborts the scheduler task when the actor instance goes away (stop or panic).
-struct SchedulerTask(JoinHandle<()>);
+/// Aborts a task of the actor (scheduler, CRL responder) when the instance goes away (stop
+/// or panic).
+struct OwnedTask(JoinHandle<()>);
 
-impl Drop for SchedulerTask {
+impl Drop for OwnedTask {
     fn drop(&mut self) {
         self.0.abort();
     }
@@ -340,7 +386,9 @@ struct TlsActor {
     ledger: TrustLedger,
     pending: Option<(u64, Arc<LocalCa>)>,
     site_ids: HashMap<String, SiteId>,
-    scheduler: Option<SchedulerTask>,
+    scheduler: Option<OwnedTask>,
+    crl_server: Option<OwnedTask>,
+    crl_error: Option<String>,
 }
 
 /// `d` ± 10 %.
@@ -365,6 +413,8 @@ impl TlsActor {
             pending: None,
             site_ids: HashMap::new(),
             scheduler: None,
+            crl_server: None,
+            crl_error: None,
         }
     }
 
@@ -504,6 +554,7 @@ impl TlsActor {
         for entry in self.leaves.values_mut() {
             entry.signed_by_ca = false;
         }
+        self.refresh_crl(true).await;
         Ok(ca)
     }
 
@@ -518,6 +569,86 @@ impl TlsActor {
         Ok(self.shared.config.leaf_validity.min(left))
     }
 
+    /// Distribution point of the leaves of `ca` (`None` without a CRL responder).
+    fn crl_url_for(&self, ca: &CaInfo) -> Option<String> {
+        self.shared
+            .config
+            .crl_listen
+            .map(|listen| crl_url(listen, &ca.thumbprint_sha1))
+    }
+
+    /// Distribution point the leaves of the current CA must carry.
+    fn expected_crl_url(&self) -> Option<String> {
+        self.ca.as_ref().and_then(|ca| self.crl_url_for(ca.info()))
+    }
+
+    /// Signs a new CRL for the current CA when `force`, when the served one belongs to
+    /// another CA or when half of its validity is gone; writes `certs/ca/forgebox-ca.crl`
+    /// and hands it to the responder. Without a CA nothing is served.
+    async fn refresh_crl(&mut self, force: bool) {
+        let Some(ca) = self.ca.clone() else {
+            self.shared.crl.send_replace(None);
+            return;
+        };
+        let now = Timestamp::now();
+        let fresh = self.shared.crl.borrow().as_ref().is_some_and(|doc| {
+            doc.path == crate::crl::crl_path(&ca.info().thumbprint_sha1) && !doc.needs_refresh(now)
+        });
+        if fresh && !force {
+            return;
+        }
+        let validity = self.shared.config.crl_validity;
+        let built = self
+            .blocking(
+                "tls: signing the CRL",
+                self.shared.config.io_timeout,
+                move |shared| {
+                    let doc = build_crl(&ca, now, validity)?;
+                    forge_core::paths::write_atomic(&shared.certs_ca.join(CA_CRL_FILE), &doc.der)?;
+                    Ok(doc)
+                },
+            )
+            .await;
+        match built {
+            Ok(doc) => {
+                tracing::info!(path = %doc.path, next_update = %doc.next_update, "tls: CRL signed");
+                self.shared.crl.send_replace(Some(doc));
+            }
+            Err(err) => tracing::error!(%err, "tls: could not sign the CRL"),
+        }
+    }
+
+    /// Starts the CRL responder on `crl_listen` if it is not running.
+    async fn start_crl_server(&mut self) {
+        let Some(addr) = self.shared.config.crl_listen else {
+            return;
+        };
+        if self.crl_server.is_some() {
+            return;
+        }
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                tracing::info!(%addr, "tls: CRL responder listening");
+                let task = tokio::spawn(crate::crl::serve(listener, self.shared.crl.subscribe()));
+                self.crl_server = Some(OwnedTask(task));
+                self.crl_error = None;
+            }
+            Err(err) => {
+                tracing::warn!(%addr, %err, "tls: CRL responder cannot listen");
+                self.crl_error = Some(format!("{addr}: {err}"));
+            }
+        }
+    }
+
+    fn crl_status(&self) -> CrlStatus {
+        CrlStatus {
+            url: self.expected_crl_url(),
+            serving: self.crl_server.is_some(),
+            next_update: self.shared.crl.borrow().as_ref().map(|d| d.next_update),
+            error: self.crl_error.clone(),
+        }
+    }
+
     /// Issues and stores leaves for `(host, sans)` in one blocking step. Returns the new
     /// entries and the hosts that failed.
     async fn write_leaves(
@@ -528,15 +659,24 @@ impl TlsActor {
     ) -> Result<(Vec<LeafEntry>, Vec<String>)> {
         let now = Timestamp::now();
         let validity = self.leaf_validity(&ca, now)?;
+        let distribution = self.crl_url_for(ca.info());
         self.blocking("tls: issuing site certificates", timeout, move |shared| {
             let mut done = Vec::new();
             let mut failed = Vec::new();
             for (host, sans) in targets {
-                let result = issue_leaf(&ca, &shared.certs_sites, &host, &sans, validity, now)
-                    .and_then(|leaf| {
-                        leaf.save(shared.acl.as_ref())?;
-                        Ok(leaf)
-                    });
+                let result = issue_leaf(
+                    &ca,
+                    &shared.certs_sites,
+                    &host,
+                    &sans,
+                    validity,
+                    now,
+                    distribution.as_deref(),
+                )
+                .and_then(|leaf| {
+                    leaf.save(shared.acl.as_ref())?;
+                    Ok(leaf)
+                });
                 match result {
                     Ok(leaf) => done.push(LeafEntry {
                         stored: StoredLeaf {
@@ -566,7 +706,12 @@ impl TlsActor {
             Some(existing) => {
                 let same_names =
                     existing.stored.info.sans.iter().collect::<BTreeSet<_>>() == wanted;
-                let status = existing.status(Timestamp::now(), self.shared.config.renew_before);
+                let expected = self.expected_crl_url();
+                let status = existing.status(
+                    Timestamp::now(),
+                    self.shared.config.renew_before,
+                    expected.as_deref(),
+                );
                 if same_names && !status.due {
                     return Ok(existing.stored.info.clone());
                 }
@@ -607,11 +752,12 @@ impl TlsActor {
     async fn renew(&mut self, ctx: &Context<Self>, scope: RenewScope) -> Result<Vec<LeafInfo>> {
         let now = Timestamp::now();
         let renew_before = self.shared.config.renew_before;
+        let expected = self.expected_crl_url();
         let hosts: Vec<String> = match &scope {
             RenewScope::Due => self
                 .leaves
                 .iter()
-                .filter(|(_, e)| e.status(now, renew_before).due)
+                .filter(|(_, e)| e.status(now, renew_before, expected.as_deref()).due)
                 .map(|(h, _)| h.clone())
                 .collect(),
             RenewScope::Host(host) => {
@@ -705,6 +851,7 @@ impl TlsActor {
         );
         self.ca = Some(Arc::clone(&ca));
         self.ca_error = None;
+        self.refresh_crl(true).await;
         let targets: Vec<(String, Vec<String>)> = self
             .leaves
             .iter()
@@ -762,6 +909,7 @@ impl TlsActor {
 
     fn snapshot(&self) -> Snapshot {
         let now = Timestamp::now();
+        let expected = self.expected_crl_url();
         Snapshot {
             ca: self.ca.as_ref().map(|c| c.info().clone()),
             ca_pem: self.ca.as_ref().map(|c| c.cert_pem().to_owned()),
@@ -769,10 +917,11 @@ impl TlsActor {
             leaves: self
                 .leaves
                 .values()
-                .map(|e| e.status(now, self.shared.config.renew_before))
+                .map(|e| e.status(now, self.shared.config.renew_before, expected.as_deref()))
                 .collect(),
             problems: self.problems.clone(),
             ledger: self.ledger.clone(),
+            crl: self.crl_status(),
         }
     }
 
@@ -794,7 +943,7 @@ impl TlsActor {
                 tokio::time::sleep(jittered(every)).await;
             }
         });
-        self.scheduler = Some(SchedulerTask(task));
+        self.scheduler = Some(OwnedTask(task));
     }
 }
 
@@ -803,6 +952,8 @@ impl Actor for TlsActor {
 
     async fn on_start(&mut self, ctx: &mut Context<Self>) {
         self.reload().await;
+        self.refresh_crl(false).await;
+        self.start_crl_server().await;
         self.start_scheduler(ctx);
     }
 
@@ -823,6 +974,11 @@ impl Actor for TlsActor {
                 let _ = reply.send(result);
             }
             Msg::Renew { scope, reply } => {
+                if scope == RenewScope::Due {
+                    // The daily check also keeps the CRL fresh and retries the responder.
+                    self.refresh_crl(false).await;
+                    self.start_crl_server().await;
+                }
                 let result = self.renew(ctx, scope).await;
                 match reply {
                     Some(reply) => {
@@ -887,6 +1043,8 @@ impl Actor for TlsActor {
             }
             Msg::Reload { reply } => {
                 self.reload().await;
+                self.refresh_crl(false).await;
+                self.start_crl_server().await;
                 let _ = reply.send(());
             }
             #[cfg(test)]
@@ -934,6 +1092,7 @@ impl TlsManager {
             config,
             acl,
             rotations: AtomicU64::new(0),
+            crl: watch::channel(None).0,
         });
         let factory_shared = Arc::clone(&shared);
         let handle = supervisor.spawn(
@@ -1033,6 +1192,7 @@ impl TlsManager {
             stale_roots,
             leaves: snap.leaves,
             problems: snap.problems,
+            crl: snap.crl,
             warnings,
         })
     }
@@ -1096,10 +1256,13 @@ impl TlsManager {
     }
 
     /// Asks the OS TLS verifier whether the certificate of `host` validates for `host`
-    /// with the local CA as the only root (name constraints included). Diagnostics.
+    /// with the local CA as the only root (name constraints included; revocation through
+    /// the CRL responder when it is configured). Diagnostics.
     pub async fn verify_with_os(&self, host: &str) -> Result<()> {
         let host = host.to_ascii_lowercase();
         let probe = host.clone();
+        // With the CRL responder, check revocation like Windows `curl.exe` does.
+        let revocation = self.config().crl_listen.is_some();
         let (leaf, ca) = self
             .ask(
                 |reply| Msg::LeafChain { host, reply },
@@ -1110,7 +1273,7 @@ impl TlsManager {
         spawn_blocking_timeout(
             "tls: OS chain verification",
             self.config().io_timeout,
-            move || trust.verify_server(&[leaf], &ca, &probe),
+            move || trust.verify_server(&[leaf], &ca, &probe, revocation),
         )
         .await
     }
@@ -1387,9 +1550,26 @@ mod tests {
         fn remove_root(&self, _: &CertThumbprint, _: TrustScope) -> Result<bool> {
             Ok(false)
         }
-        fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str) -> Result<()> {
+        fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str, _: bool) -> Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn for_root_uses_the_tls_crl_range_and_portable_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = ForgeRoot::new(dir.path()).unwrap();
+        let config = forge_core::config::ForgeConfig::default();
+        let tls = TlsConfig::for_root(&root, &config);
+        assert_eq!(tls.tlds, [".test"]);
+        assert_eq!(
+            tls.crl_listen,
+            Some(SocketAddr::from((Ipv4Addr::LOCALHOST, 47480)))
+        );
+        assert!(tls.os_trust);
+        std::fs::write(root.portable_flag(), b"").unwrap();
+        assert!(!TlsConfig::for_root(&root, &config).os_trust);
+        assert_eq!(TlsConfig::new(vec![]).crl_listen, None);
     }
 
     #[test]

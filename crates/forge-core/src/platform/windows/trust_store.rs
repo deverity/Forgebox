@@ -17,8 +17,10 @@
 //!   **exclusive** root store holds only the given anchor (`hExclusiveRoot`, Windows 7+),
 //!   then applies the SSL policy (`CERT_CHAIN_POLICY_SSL`) with the server name: the same
 //!   checks Schannel makes for `curl` or Chrome, name constraints included, without
-//!   touching any store. No revocation check, no network (`CERT_CHAIN_DISABLE_AIA`,
-//!   cache-only URL retrieval).
+//!   touching any store. Issuer certificates are never fetched (`CERT_CHAIN_DISABLE_AIA`);
+//!   without `check_revocation` nothing is fetched at all (cache-only URL retrieval), with
+//!   it the leaf's CRL is (`CERT_CHAIN_REVOCATION_CHECK_END_CERT`, what Schannel does for
+//!   `curl.exe`).
 //!
 //! Everything here is blocking (and `add_root`/`remove_root` on `CurrentUser\Root` wait
 //! for a human): callers use `spawn_blocking` with a timeout.
@@ -29,17 +31,17 @@ use ::windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_CANCELLED, ERROR_F
 use ::windows::Win32::Security::Cryptography::{
     AUTHTYPE_SERVER, CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL, CERT_CHAIN_CONTEXT,
     CERT_CHAIN_DISABLE_AIA, CERT_CHAIN_ENGINE_CONFIG, CERT_CHAIN_PARA, CERT_CHAIN_POLICY_PARA,
-    CERT_CHAIN_POLICY_SSL, CERT_CHAIN_POLICY_STATUS, CERT_CONTEXT, CERT_FIND_SHA1_HASH,
-    CERT_OPEN_STORE_FLAGS, CERT_STORE_ADD_USE_EXISTING, CERT_STORE_DELETE_FLAG,
-    CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_MEMORY, CERT_STORE_PROV_SYSTEM_REGISTRY_W,
-    CERT_STORE_READONLY_FLAG, CERT_SYSTEM_STORE_CURRENT_USER, CERT_SYSTEM_STORE_LOCAL_MACHINE,
-    CERT_USAGE_MATCH, CRYPT_INTEGER_BLOB, CTL_USAGE, CertAddEncodedCertificateToStore,
-    CertCloseStore, CertCreateCertificateChainEngine, CertCreateCertificateContext,
-    CertDeleteCertificateFromStore, CertFindCertificateInStore, CertFreeCertificateChain,
-    CertFreeCertificateChainEngine, CertFreeCertificateContext, CertGetCertificateChain,
-    CertOpenStore, CertVerifyCertificateChainPolicy, HCERTCHAINENGINE, HCERTSTORE,
-    HTTPSPolicyCallbackData, HTTPSPolicyCallbackData_0, PKCS_7_ASN_ENCODING, USAGE_MATCH_TYPE_AND,
-    X509_ASN_ENCODING, szOID_PKIX_KP_SERVER_AUTH,
+    CERT_CHAIN_POLICY_SSL, CERT_CHAIN_POLICY_STATUS, CERT_CHAIN_REVOCATION_CHECK_END_CERT,
+    CERT_CONTEXT, CERT_FIND_SHA1_HASH, CERT_OPEN_STORE_FLAGS, CERT_STORE_ADD_USE_EXISTING,
+    CERT_STORE_DELETE_FLAG, CERT_STORE_OPEN_EXISTING_FLAG, CERT_STORE_PROV_MEMORY,
+    CERT_STORE_PROV_SYSTEM_REGISTRY_W, CERT_STORE_READONLY_FLAG, CERT_SYSTEM_STORE_CURRENT_USER,
+    CERT_SYSTEM_STORE_LOCAL_MACHINE, CERT_USAGE_MATCH, CRYPT_INTEGER_BLOB, CTL_USAGE,
+    CertAddEncodedCertificateToStore, CertCloseStore, CertCreateCertificateChainEngine,
+    CertCreateCertificateContext, CertDeleteCertificateFromStore, CertFindCertificateInStore,
+    CertFreeCertificateChain, CertFreeCertificateChainEngine, CertFreeCertificateContext,
+    CertGetCertificateChain, CertOpenStore, CertVerifyCertificateChainPolicy, HCERTCHAINENGINE,
+    HCERTSTORE, HTTPSPolicyCallbackData, HTTPSPolicyCallbackData_0, PKCS_7_ASN_ENCODING,
+    USAGE_MATCH_TYPE_AND, X509_ASN_ENCODING, szOID_PKIX_KP_SERVER_AUTH,
 };
 use ::windows::core::{HSTRING, PSTR, PWSTR};
 
@@ -50,6 +52,8 @@ use crate::platform::{CertThumbprint, TrustScope, TrustStore};
 
 /// Name of the root system store.
 const ROOT_STORE: &str = "Root";
+/// Budget of one CRL fetch when revocation is checked.
+const URL_TIMEOUT_MS: u32 = 5_000;
 
 /// How `LocalMachine` changes are made.
 #[derive(Debug, Clone)]
@@ -229,7 +233,13 @@ impl TrustStore for WindowsTrustStore {
         }
     }
 
-    fn verify_server(&self, chain: &[Vec<u8>], anchor_der: &[u8], host: &str) -> Result<()> {
+    fn verify_server(
+        &self,
+        chain: &[Vec<u8>],
+        anchor_der: &[u8],
+        host: &str,
+        check_revocation: bool,
+    ) -> Result<()> {
         let Some((leaf, intermediates)) = chain.split_first() else {
             return Err(ForgeError::InvalidInput(
                 "empty certificate chain".to_owned(),
@@ -241,7 +251,14 @@ impl TrustStore for WindowsTrustStore {
         for der in intermediates {
             extra.add(der, "an intermediate certificate")?;
         }
-        let engine = ChainEngine::exclusive(&roots)?;
+        // Without revocation nothing may be fetched; with it, only the CRL of the leaf
+        // (what Schannel checks for `curl.exe`), never issuer certificates (AIA).
+        let fetch = if check_revocation {
+            CERT_CHAIN_REVOCATION_CHECK_END_CERT
+        } else {
+            CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL
+        };
+        let engine = ChainEngine::exclusive(&roots, fetch & CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL)?;
         let leaf = CertContext::from_der(leaf)?;
 
         let mut usage = [PSTR(szOID_PKIX_KP_SERVER_AUTH.0.cast_mut())];
@@ -254,6 +271,7 @@ impl TrustStore for WindowsTrustStore {
                     rgpszUsageIdentifier: usage.as_mut_ptr(),
                 },
             },
+            dwUrlRetrievalTimeout: URL_TIMEOUT_MS,
             ..Default::default()
         };
         let mut chain_ctx: *mut CERT_CHAIN_CONTEXT = std::ptr::null_mut();
@@ -266,7 +284,7 @@ impl TrustStore for WindowsTrustStore {
                 None,
                 Some(extra.0),
                 &para,
-                CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL | CERT_CHAIN_DISABLE_AIA,
+                fetch | CERT_CHAIN_DISABLE_AIA,
                 None,
                 &mut chain_ctx,
             )
@@ -461,10 +479,12 @@ impl Drop for CertContext {
 struct ChainEngine(HCERTCHAINENGINE);
 
 impl ChainEngine {
-    fn exclusive(roots: &Store) -> Result<Self> {
+    /// `flags`: extra engine flags (`CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL` or none).
+    fn exclusive(roots: &Store, flags: u32) -> Result<Self> {
         let config = CERT_CHAIN_ENGINE_CONFIG {
             cbSize: size_of::<CERT_CHAIN_ENGINE_CONFIG>() as u32,
-            dwFlags: CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL | CERT_CHAIN_DISABLE_AIA,
+            dwFlags: flags | CERT_CHAIN_DISABLE_AIA,
+            dwUrlRetrievalTimeout: URL_TIMEOUT_MS,
             hExclusiveRoot: roots.0,
             ..Default::default()
         };
@@ -525,6 +545,9 @@ fn policy_error_name(code: u32) -> &'static str {
         0x8009_6004 => "TRUST_E_CERT_SIGNATURE",
         0x8009_6010 => "TRUST_E_BAD_DIGEST",
         0x800B_0100 => "TRUST_E_NOSIGNATURE",
+        0x8009_2012 => "CRYPT_E_NO_REVOCATION_CHECK",
+        0x8009_2013 => "CRYPT_E_REVOCATION_OFFLINE",
+        0x8009_2010 => "CRYPT_E_REVOKED",
         _ => "certificate chain policy error",
     }
 }
@@ -613,10 +636,17 @@ mod tests {
     #[test]
     fn verify_server_rejects_garbage() {
         let store = WindowsTrustStore::new(None);
-        let err = store.verify_server(&[], b"x", "loja.test").unwrap_err();
+        let err = store
+            .verify_server(&[], b"x", "loja.test", false)
+            .unwrap_err();
         assert_eq!(err.code(), "invalid_input");
         let err = store
-            .verify_server(&[b"not der".to_vec()], b"not der either", "loja.test")
+            .verify_server(
+                &[b"not der".to_vec()],
+                b"not der either",
+                "loja.test",
+                false,
+            )
             .unwrap_err();
         assert!(matches!(err.code(), "io" | "invalid_input"), "{err}");
     }
