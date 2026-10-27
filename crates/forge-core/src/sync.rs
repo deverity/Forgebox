@@ -52,6 +52,10 @@ impl LockLevel {
     /// Per-tool turn semaphores of the layout engine (`forge_provider::layout`). Leaf lock:
     /// held only to look up or insert a semaphore, never while acquiring it.
     pub const LAYOUT_TOOLS: LockLevel = LockLevel::new(10, "layout.tools");
+    /// Tables of the daemon (`forge-daemon`: service instances, PHP pools, log targets).
+    /// Leaf lock: held only to look up, insert or remove a handle; never while awaiting,
+    /// starting a job or publishing.
+    pub const DAEMON_TABLES: LockLevel = LockLevel::new(10, "daemon.tables");
     /// Sequence counter of the [`crate::event::EventBus`]. Innermost lock: nothing may be
     /// acquired while it is held.
     pub const EVENT_BUS_SEQ: LockLevel = LockLevel::new(200, "event_bus.seq");

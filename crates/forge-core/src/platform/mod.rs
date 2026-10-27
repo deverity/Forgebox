@@ -40,6 +40,7 @@ use crate::error::Result;
 
 pub mod dns_policy;
 pub mod elevation;
+pub mod host;
 pub mod net_adapters;
 pub mod net_table;
 pub mod privileged;
@@ -58,6 +59,10 @@ pub use dns_policy::{
     effective_nrpt_rules,
 };
 pub use elevation::{Elevation, elevation};
+pub use host::{
+    DAEMON_MUTEX_PREFIX, InstanceMutex, NetworkCost, NeverMetered, acquire_instance_mutex,
+    daemon_mutex_name, network_cost, spawn_detached,
+};
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
 pub use privileged::{

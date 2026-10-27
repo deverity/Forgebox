@@ -61,7 +61,9 @@ ulid = { workspace = true }
 # the registry, DnsFlushResolverCache (dnsapi.dll, loaded at run time) and the elevated helper
 # launch (ShellExecuteExW "runas", COM initialization); the helper's privileged operations
 # (M1-E5-T4, ADR-0024): WMI static methods (Wmi, Variant, Ole SAFEARRAYs), the firewall COM
-# API (WindowsFirewall), LocalMachine\Root, ReplaceFileW and the embedded manifest reader.
+# API (WindowsFirewall), LocalMachine\Root, ReplaceFileW and the embedded manifest reader;
+# the daemon host (M1-E5-T2): single-instance mutex (CreateMutexW), connection cost
+# (INetworkCostManager) and detached start of a new daemon (daemon.restart).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
@@ -70,6 +72,7 @@ windows = { workspace = true, features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
     "Win32_NetworkManagement_WindowsFirewall",
+    "Win32_Networking_NetworkListManager",
     "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Security_Authorization",

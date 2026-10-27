@@ -266,10 +266,14 @@ impl<'de> Deserialize<'de> for PortSet {
     }
 }
 
-/// `[dns]` (docs/06 §5, docs/13 §5): what the local resolver answers besides `tld`.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// `[dns]` (docs/06 §5, docs/13 §5): whether the daemon runs the local resolver and what
+/// it answers besides `tld`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DnsConfig {
+    /// The daemon starts the resolver at boot (docs/01 §5.1 step 5). Default `true`;
+    /// `false` leaves name resolution to the `hosts` file or the user.
+    pub enabled: bool,
     /// More suffixes answered with `127.0.0.1`/`::1` and routed to the resolver
     /// (`[".localhost"]`), same syntax as `tld`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -278,6 +282,16 @@ pub struct DnsConfig {
     /// of the TLDs) resolves to `address` (`10.0.0.5`).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub remote_zones: Vec<RemoteZoneConfig>,
+}
+
+impl Default for DnsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            extra_tlds: Vec::new(),
+            remote_zones: Vec::new(),
+        }
+    }
 }
 
 /// One entry of `[[dns.remote_zones]]`.
