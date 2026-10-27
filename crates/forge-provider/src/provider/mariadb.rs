@@ -15,7 +15,6 @@
 use std::collections::BTreeMap;
 
 use forge_core::error::Result;
-use forge_manifest::version::Version;
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use serde::Deserialize;
@@ -129,21 +128,14 @@ impl Provider for Mariadb {
             let base = &self.ctx.config.endpoints.mariadb;
             let index_url = join_url(base, "");
             let index: SeriesIndex = self.ctx.get(NAME, &index_url).await?.json(&index_url)?;
-            let scheme = req.tool.spec.versioning.scheme;
 
+            // No series pre-filtering: a constraint such as `=11.8.9` or
+            // `>=11.8.5, <11.8.9` can match inside a series without matching its
+            // X.Y.0 / X.Y.9999 bounds. Series pages are cached by TTL, and
+            // `filter::finish` applies the constraint to the actual releases.
             let series: Vec<(String, Option<String>)> = index
                 .major_releases
                 .into_iter()
-                .filter(|s| {
-                    let Some(constraint) = req.constraint else {
-                        return true;
-                    };
-                    // A series is worth fetching if the constraint can match inside it.
-                    ["0", "9999"].iter().any(|patch| {
-                        Version::parse(scheme, &format!("{}.{patch}", s.release_id))
-                            .is_ok_and(|v| constraint.matches_with(&v, true))
-                    })
-                })
                 .map(|s| (s.release_id, s.release_status))
                 .collect();
 

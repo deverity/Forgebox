@@ -535,7 +535,7 @@ const MARIADB_V: &str = "  versioning:\n    scheme: semver\n    channels:\n     
 const MARIADB_SRC: &str = "    providers:\n      - type: mariadb";
 
 #[tokio::test]
-async fn mariadb_reads_only_the_series_the_constraint_can_match() {
+async fn mariadb_resolves_a_series_range() {
     let env = Env::new().await;
     env.upstream
         .serve_fixture("/rest-api/mariadb/", "mariadb/all.json");
@@ -567,8 +567,44 @@ async fn mariadb_reads_only_the_series_the_constraint_can_match() {
         "2026-08-22T00:00:00Z"
     );
     assert_eq!(r[0].signature.as_ref().unwrap().kind, SigKind::Pgp);
-    // Only the index and the 11.8 series were requested.
-    assert_eq!(env.upstream.total_hits(), 2);
+}
+
+#[tokio::test]
+async fn mariadb_resolves_an_exact_pin_inside_a_series() {
+    for pin in ["11.8.9", "=11.8.9"] {
+        let env = Env::new().await;
+        env.upstream
+            .serve_fixture("/rest-api/mariadb/", "mariadb/all.json");
+        env.upstream
+            .serve_fixture("/rest-api/mariadb/11.8/", "mariadb/series.json");
+        let tool = tool("mariadb", MARIADB_V, MARIADB_SRC);
+        let c = constraint(pin);
+        let r = resolve(&env, &tool, Some(&c), &no_variants(), Some("stable"))
+            .await
+            .unwrap();
+        assert_eq!(r.len(), 1, "pin {pin}");
+        assert_eq!(r[0].version, "11.8.9");
+    }
+}
+
+#[tokio::test]
+async fn mariadb_resolves_a_range_strictly_inside_a_series() {
+    let env = Env::new().await;
+    env.upstream
+        .serve_fixture("/rest-api/mariadb/", "mariadb/all.json");
+    env.upstream
+        .serve_fixture("/rest-api/mariadb/11.8/", "mariadb/series.json");
+    let tool = tool("mariadb", MARIADB_V, MARIADB_SRC);
+    let c = constraint(">=11.8.5, <11.8.9");
+    let r = resolve(&env, &tool, Some(&c), &no_variants(), Some("stable"))
+        .await
+        .unwrap();
+    assert!(!r.is_empty());
+    assert!(
+        r.iter()
+            .all(|x| x.version.as_str() >= "11.8.5" && x.version.as_str() < "11.8.9")
+    );
+    assert!(r.iter().all(|x| x.version != "11.8.9"));
 }
 
 #[tokio::test]
