@@ -190,8 +190,10 @@ pub fn git_sync(url: &Url, dir: &Path, timeout: Duration) -> Result<String> {
         return Err(ForgeError::InvalidInput(reason));
     }
     if dir.join(".git").is_dir() {
+        // Always the configured URL, never the remote recorded by the original clone: the
+        // user may have pointed the registry at another repository (`Registry::add`).
         run_git(
-            &["fetch", "--depth", "1", "origin", "HEAD"],
+            &["fetch", "--depth", "1", "--", url.as_str(), "HEAD"],
             Some(dir),
             timeout,
         )?;

@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use forge_core::error::{ForgeError, IoResultExt, Result};
 
-use crate::index::{INDEX_FILE, LoadedRegistry};
+use crate::index::{INDEX_FILE, LoadedRegistry, SIGNATURE_FILE};
 
 /// Folder of the cache of registry `name` under `base` (`state/registry/`).
 pub fn cache_dir(base: &Path, name: &str) -> PathBuf {
@@ -66,6 +66,10 @@ fn write_stage(stage: &Path, loaded: &LoadedRegistry) -> Result<()> {
     std::fs::create_dir_all(stage).at("creating", stage)?;
     let index = stage.join(INDEX_FILE);
     std::fs::write(&index, &loaded.index_bytes).at("writing", &index)?;
+    if let Some(signature) = &loaded.signature_bytes {
+        let path = stage.join(SIGNATURE_FILE);
+        std::fs::write(&path, signature).at("writing", &path)?;
+    }
     for (path, bytes) in &loaded.files {
         // Paths come from `validate_entry_path`: relative, no `..`, `/` separators.
         let target = stage.join(path);
@@ -154,6 +158,7 @@ mod tests {
         };
         let verified = VerifiedIndex {
             bytes: text.as_bytes().to_vec(),
+            signature: Some(b"sig".to_vec()),
             index,
             verification: Verification::Unverified,
         };
@@ -161,6 +166,7 @@ mod tests {
             index: verified.index,
             index_sha256: forge_manifest::index::sha256_hex(&verified.bytes),
             index_bytes: verified.bytes,
+            signature_bytes: verified.signature,
             verification: Verification::Unverified,
             files,
             manifests: Vec::new(),

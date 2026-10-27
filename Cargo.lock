@@ -1344,7 +1344,6 @@ dependencies = [
  "futures",
  "minisign",
  "minisign-verify",
- "parking_lot 0.13.0",
  "pretty_assertions",
  "reqwest",
  "rusqlite",

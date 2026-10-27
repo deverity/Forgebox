@@ -2,11 +2,30 @@
 //!
 //! Concurrency (docs/03 §7, ADR-0011): [`Registry`] is a cheap-to-clone handle over shared
 //! state that is a *snapshot swap*, not a mailbox actor: readers (`find`, `search`, `list`)
-//! clone an `Arc<Snapshot>` under a `parking_lot` lock that is never held across an `.await`,
+//! clone an `Arc<Snapshot>` under the `registry.state` [`OrderedMutex`] (a leaf lock of
+//! `forge_core::sync`, never held across an `.await`, while starting a job or publishing),
 //! and all slow work (network, `git`, file I/O, hashing, parsing) runs in a job of the
 //! `JobRegistry` or in `spawn_blocking`. [`Registry::refresh`] returns a `JobId` at once and
-//! progress/outcome arrive as `job.*` events. At most one refresh runs per registry: asking
-//! again returns the running job. Every network call and every `git` run has a timeout.
+//! progress/outcome arrive as `job.*` events. Every network call and every `git` run has a
+//! timeout.
+//!
+//! Operations on one registry are **serialized**: `load`, `refresh` jobs and `remove` take
+//! that registry's gate (a one-permit `tokio` semaphore: a FIFO queue, acquired with a
+//! timeout; it is a ticket, not shared data) before touching the source or the cache, so
+//! there is never more than one writer of `state/registry/<name>/` (`cache::write`
+//! requires it). `add` and `remove` are serialized with each other by a service-wide gate.
+//! At most one refresh job exists per registry: asking again returns the running job (the
+//! slot is reserved under the lock with a pre-allocated `JobId`, and the job is started
+//! after the lock is released).
+//!
+//! `add` does not wait for a slow operation: it swaps the configuration and bumps the
+//! slot's *generation*. An operation remembers the generation it started with and checks it
+//! before writing the cache, installing a catalog and recording success; a result of an old
+//! generation is dropped and the operation restarts under the new configuration. That closes
+//! the window where a registry demoted from official to third-party would still be served
+//! with `post_install.run` manifests. `remove` cancels the running refresh job, waits for the
+//! gate and only then deletes the row, the slot and the cache folder, so nothing recreates
+//! the cache afterwards.
 //!
 //! Loading never leaves a registry half-updated: the new catalog replaces the old one only
 //! after the signature, every hash and the cache write succeeded; on any failure the previous
@@ -20,24 +39,26 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use forge_core::Timestamp;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::{JobId, ToolId};
-use forge_core::jobs::{JobContext, JobProgress, JobRegistry};
+use forge_core::jobs::{JobContext, JobProgress, JobRegistry, JobSpec};
 use forge_core::paths::ForgeRoot;
 use forge_core::store::{Store, StoreReader, StoreWriter};
+use forge_core::sync::{LockLevel, OrderedMutex, OrderedMutexGuard};
 use forge_manifest::schema::Category;
-use parking_lot::RwLock;
 use rusqlite::params;
 use serde::Serialize;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use url::Url;
 
 use crate::cache;
 use crate::index::{
-    self, INDEX_FILE, LoadOptions, LoadedRegistry, MAX_INDEX_BYTES, MAX_MANIFEST_BYTES, Section,
-    SkippedEntry, Verification, VerifiedIndex, VerifyOptions,
+    self, INDEX_FILE, LoadOptions, LoadedRegistry, MAX_INDEX_BYTES, MAX_MANIFEST_BYTES,
+    MAX_SIGNATURE_BYTES, Section, SkippedEntry, Verification, VerifiedIndex, VerifyOptions,
 };
 use crate::search::{self, CatalogEntry, SearchHit};
 use crate::source::{GIT_TIMEOUT, RegistrySource, git_sync};
@@ -120,6 +141,9 @@ pub struct ServiceOptions {
     /// Manifests downloaded at the same time.
     pub concurrency: usize,
     pub user_agent: String,
+    /// How long an operation waits for its turn on a registry (another load/refresh/remove
+    /// of the same registry is running).
+    pub gate_timeout: Duration,
 }
 
 impl Default for ServiceOptions {
@@ -130,6 +154,7 @@ impl Default for ServiceOptions {
             git_timeout: GIT_TIMEOUT,
             concurrency: 8,
             user_agent: format!("forgebox-registry/{}", env!("CARGO_PKG_VERSION")),
+            gate_timeout: Duration::from_secs(180),
         }
     }
 }
@@ -197,6 +222,9 @@ struct Snapshot {
 #[derive(Debug)]
 struct Slot {
     config: RegistryConfig,
+    /// Changes whenever the slot is created or its trust-relevant configuration changes;
+    /// operations started under another generation must not install or record anything.
+    generation: u64,
     snapshot: Option<Arc<Snapshot>>,
     etag: Option<String>,
     last_refresh_at: Option<Timestamp>,
@@ -207,7 +235,20 @@ struct Slot {
 #[derive(Default)]
 struct State {
     slots: BTreeMap<String, Slot>,
+    /// Refresh job of each registry; reserved (with a pre-allocated id) before the job
+    /// starts and removed by [`RefreshGuard`] when it ends.
     refreshing: HashMap<String, JobId>,
+    /// Per-name turn queue (see the module docs). Kept after a removal so a registry that is
+    /// added again under the same name shares the queue of operations still running.
+    gates: HashMap<String, Arc<Semaphore>>,
+    next_generation: u64,
+}
+
+impl State {
+    fn new_generation(&mut self) -> u64 {
+        self.next_generation += 1;
+        self.next_generation
+    }
 }
 
 struct Inner {
@@ -217,8 +258,13 @@ struct Inner {
     jobs: JobRegistry,
     http: reqwest::Client,
     options: ServiceOptions,
-    // Never held across `.await` (clippy::await_holding_lock = deny).
-    state: RwLock<State>,
+    /// Leaf lock `registry.state` (docs/03 §7.2): never held across `.await`, while
+    /// starting a job, or while another lock is held.
+    state: OrderedMutex<State>,
+    /// Serializes `add` and `remove`.
+    config_gate: Arc<Semaphore>,
+    /// Times a verified catalog was written to `state/registry/` (diagnostics, tests).
+    cache_writes: AtomicU64,
 }
 
 /// Handle of the registry service. Cloning is cheap.
@@ -230,28 +276,42 @@ pub struct Registry {
 impl std::fmt::Debug for Registry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Registry")
-            .field("registries", &self.inner.state.read().slots.len())
+            .field("registries", &self.inner.state.lock().slots.len())
             .finish()
     }
 }
 
 /// Removes the "refresh running" mark when the job ends, however it ends (done, failed,
-/// cancelled, dropped before it started).
+/// cancelled, dropped before it started). Created *outside* the state lock, so its `Drop`
+/// (which takes the lock) can never run under it, even while unwinding.
 struct RefreshGuard {
     registry: Registry,
     name: String,
+    id: JobId,
 }
 
 impl Drop for RefreshGuard {
     fn drop(&mut self) {
-        self.registry
-            .inner
-            .state
-            .write()
-            .refreshing
-            .remove(&self.name);
+        let mut state = self.registry.state();
+        if state.refreshing.get(&self.name) == Some(&self.id) {
+            state.refreshing.remove(&self.name);
+        }
     }
 }
+
+/// Marker error: the registry was reconfigured or removed while an operation ran.
+const STALE: &str = "the registry configuration changed during the operation";
+
+fn stale() -> ForgeError {
+    ForgeError::Conflict(STALE.to_owned())
+}
+
+fn is_stale(error: &ForgeError) -> bool {
+    matches!(error, ForgeError::Conflict(m) if m == STALE)
+}
+
+/// Times an operation is restarted after the configuration changed under it.
+const MAX_ATTEMPTS: usize = 3;
 
 #[allow(clippy::large_enum_variant)] // short-lived, moved once into `finish`
 enum Fetched {
@@ -290,21 +350,85 @@ impl Registry {
                 jobs,
                 http,
                 options,
-                state: RwLock::new(State::default()),
+                state: OrderedMutex::new(LockLevel::REGISTRY_STATE, State::default()),
+                config_gate: Arc::new(Semaphore::new(1)),
+                cache_writes: AtomicU64::new(0),
             }),
         })
+    }
+
+    fn state(&self) -> OrderedMutexGuard<'_, State> {
+        self.inner.state.lock()
+    }
+
+    /// Number of times a catalog was written to the cache folder since the service started.
+    pub fn cache_writes(&self) -> u64 {
+        self.inner.cache_writes.load(Ordering::SeqCst)
+    }
+
+    /// Waits (at most `gate_timeout`) for a turn on `gate`.
+    async fn turn(&self, gate: Arc<Semaphore>, what: &str) -> Result<OwnedSemaphorePermit> {
+        let timeout = self.inner.options.gate_timeout;
+        match tokio::time::timeout(timeout, gate.acquire_owned()).await {
+            Ok(Ok(permit)) => Ok(permit),
+            Ok(Err(_)) => Err(ForgeError::Internal("registry gate closed".to_owned())),
+            Err(_) => Err(ForgeError::Timeout {
+                operation: format!("waiting for {what}"),
+                after: timeout,
+            }),
+        }
+    }
+
+    /// The turn queue of registry `name`, which must exist.
+    fn gate(&self, name: &str) -> Result<Arc<Semaphore>> {
+        let mut state = self.state();
+        if !state.slots.contains_key(name) {
+            return Err(ForgeError::NotFound(format!("registry {name}")));
+        }
+        Ok(Arc::clone(
+            state
+                .gates
+                .entry(name.to_owned())
+                .or_insert_with(|| Arc::new(Semaphore::new(1))),
+        ))
+    }
+
+    /// Waits for the turn of registry `name`.
+    async fn registry_turn(&self, name: &str) -> Result<OwnedSemaphorePermit> {
+        let gate = self.gate(name)?;
+        self.turn(gate, &format!("registry {name}")).await
+    }
+
+    /// `Err(stale)` unless the slot still has this generation.
+    fn ensure_current(&self, name: &str, generation: u64) -> Result<()> {
+        match self.state().slots.get(name) {
+            Some(slot) if slot.generation == generation => Ok(()),
+            _ => Err(stale()),
+        }
     }
 
     // ---- configuration -------------------------------------------------------------
 
     /// Adds a registry or updates the configuration of an existing one (same name),
     /// persisting it in the `registries` table. A changed source, key or origin drops the
-    /// in-memory catalog so it is verified again under the new configuration.
+    /// in-memory catalog and starts a new generation, so work in flight under the old
+    /// configuration is discarded and everything is verified again under the new one.
+    ///
+    /// Serialized with other `add`/`remove` calls; it does not wait for a running load or
+    /// refresh of this registry.
     pub async fn add(&self, config: RegistryConfig) -> Result<()> {
         config.validate()?;
+        let _turn = self
+            .turn(
+                Arc::clone(&self.inner.config_gate),
+                "registry configuration",
+            )
+            .await?;
         let row = config.clone();
         let now = Timestamp::now().to_string();
         let new_id = ulid::Ulid::generate().to_string();
+        // A new source invalidates the stored ETag/commit and the TTL: they describe the
+        // old source.
         self.inner
             .writer
             .execute(move |conn| {
@@ -312,7 +436,12 @@ impl Registry {
                     "INSERT INTO registries (id, name, url, kind, official, enabled, priority, \
                      trusted_unsigned, public_key, ttl_secs, created_at, updated_at) \
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11) \
-                     ON CONFLICT(name) DO UPDATE SET url = excluded.url, kind = excluded.kind, \
+                     ON CONFLICT(name) DO UPDATE SET \
+                     etag = CASE WHEN registries.url = excluded.url \
+                         AND registries.kind = excluded.kind THEN registries.etag END, \
+                     last_refresh_at = CASE WHEN registries.url = excluded.url \
+                         AND registries.kind = excluded.kind THEN registries.last_refresh_at END, \
+                     url = excluded.url, kind = excluded.kind, \
                      official = excluded.official, enabled = excluded.enabled, \
                      priority = excluded.priority, trusted_unsigned = excluded.trusted_unsigned, \
                      public_key = excluded.public_key, ttl_secs = excluded.ttl_secs, \
@@ -334,17 +463,23 @@ impl Registry {
                 Ok(())
             })
             .await?;
-        let mut state = self.inner.state.write();
+        let mut state = self.state();
+        let fresh = state.new_generation();
         match state.slots.get_mut(&config.name) {
             Some(slot) => {
-                let same_trust = slot.config.source == config.source
+                let same_source = slot.config.source == config.source;
+                let same_trust = same_source
                     && slot.config.public_key == config.public_key
                     && slot.config.official == config.official
                     && slot.config.trusted_unsigned == config.trusted_unsigned;
                 if !same_trust {
+                    slot.generation = fresh;
                     slot.snapshot = None;
                     slot.etag = None;
                     slot.verification = None;
+                }
+                if !same_source {
+                    slot.last_refresh_at = None;
                 }
                 slot.config = config;
             }
@@ -353,6 +488,7 @@ impl Registry {
                     config.name.clone(),
                     Slot {
                         config,
+                        generation: fresh,
                         snapshot: None,
                         etag: None,
                         last_refresh_at: None,
@@ -365,11 +501,23 @@ impl Registry {
         Ok(())
     }
 
-    /// Forgets a registry: row, in-memory catalog and cache folder.
+    /// Forgets a registry: row, in-memory catalog and cache folder. Cancels a running
+    /// refresh and waits for the registry's turn first, so no operation can recreate the
+    /// cache folder afterwards.
     pub async fn remove(&self, name: &str) -> Result<()> {
-        if !self.inner.state.read().slots.contains_key(name) {
-            return Err(ForgeError::NotFound(format!("registry {name}")));
+        let _config_turn = self
+            .turn(
+                Arc::clone(&self.inner.config_gate),
+                "registry configuration",
+            )
+            .await?;
+        let gate = self.gate(name)?;
+        let running = self.state().refreshing.get(name).copied();
+        if let Some(job) = running {
+            // The lock is released: `cancel` takes `jobs.table`.
+            let _ = self.inner.jobs.cancel(job);
         }
+        let _turn = self.turn(gate, &format!("registry {name}")).await?;
         let owned = name.to_owned();
         self.inner
             .writer
@@ -378,7 +526,7 @@ impl Registry {
                 Ok(())
             })
             .await?;
-        self.inner.state.write().slots.remove(name);
+        self.state().slots.remove(name);
         let base = self.inner.root.state_registry();
         let owned = name.to_owned();
         tokio::task::spawn_blocking(move || cache::remove(&base, &owned))
@@ -420,7 +568,7 @@ impl Registry {
             })
             .await?;
         let mut restored = 0;
-        let mut state = self.inner.state.write();
+        let mut state = self.state();
         for (
             name,
             url,
@@ -454,8 +602,10 @@ impl Registry {
                 public_key,
                 ttl: Duration::from_secs(u64::try_from(ttl_secs).unwrap_or(0)),
             };
+            let generation = state.new_generation();
             state.slots.entry(name).or_insert(Slot {
                 config,
+                generation,
                 snapshot: None,
                 etag,
                 last_refresh_at: last_refresh_at.and_then(|t| t.parse().ok()),
@@ -477,52 +627,66 @@ impl Registry {
 
     // ---- loading -------------------------------------------------------------------
 
-    /// Starts a refresh of `name` and returns its job at once. The job always asks the source
+    /// Starts a refresh of `name` and returns its job at once. The job waits for its turn on
+    /// the registry (a load in progress finishes first), always asks the source
     /// (conditionally) and rewrites the cache when something changed. If a refresh of this
     /// registry is already running, that job's id is returned.
     ///
     /// Must be called inside a tokio runtime.
     pub fn refresh(&self, name: &str) -> Result<JobId> {
-        let mut state = self.inner.state.write();
-        let Some(slot) = state.slots.get(name) else {
-            return Err(ForgeError::NotFound(format!("registry {name}")));
+        // Reserve the refresh mark under the lock with a pre-allocated id, release the lock,
+        // then start the job: `jobs.start` takes `jobs.table` and publishes an event, which
+        // must never happen under `registry.state`.
+        let id = {
+            let mut state = self.state();
+            let Some(slot) = state.slots.get(name) else {
+                return Err(ForgeError::NotFound(format!("registry {name}")));
+            };
+            if !slot.config.enabled {
+                return Err(ForgeError::Conflict(format!("registry {name} is disabled")));
+            }
+            if let Some(running) = state.refreshing.get(name) {
+                return Ok(*running);
+            }
+            let id = JobId::new();
+            state.refreshing.insert(name.to_owned(), id);
+            id
         };
-        if !slot.config.enabled {
-            return Err(ForgeError::Conflict(format!("registry {name} is disabled")));
-        }
-        if let Some(running) = state.refreshing.get(name) {
-            return Ok(*running);
-        }
+        // Built after the lock is gone: if starting the job panics (no runtime) the unwind
+        // drops the guard, which takes the lock again, and nothing is held.
         let guard = RefreshGuard {
             registry: self.clone(),
             name: name.to_owned(),
+            id,
         };
         let this = self.clone();
         let owned = name.to_owned();
-        let id = self
-            .inner
-            .jobs
-            .start(format!("registry.refresh:{name}"), move |ctx| async move {
+        self.inner.jobs.spawn(
+            JobSpec::new(format!("registry.refresh:{name}")).job_id(id),
+            move |ctx| async move {
                 let _guard = guard;
+                let _turn = this.registry_turn(&owned).await?;
+                ctx.check_cancelled()?;
                 this.run(&owned, true, Some(&ctx)).await
-            });
-        state.refreshing.insert(name.to_owned(), id);
+            },
+        );
         Ok(id)
     }
 
     /// Makes the catalog of `name` available, using the cache while it is within its TTL and
     /// falling back to the last verified catalog if the source is unreachable. Awaits the work
-    /// (unlike [`Registry::refresh`]); use it at daemon start.
+    /// (unlike [`Registry::refresh`]); use it at daemon start. Waits for its turn when another
+    /// load or refresh of the same registry is running, so concurrent calls never write the
+    /// cache at the same time.
     pub async fn load(&self, name: &str) -> Result<LoadReport> {
+        let _turn = self.registry_turn(name).await?;
         self.run(name, false, None).await
     }
 
     /// [`Registry::load`] for every enabled registry; one failure does not stop the others.
     pub async fn load_all(&self) -> Vec<(String, Result<LoadReport>)> {
         let names: Vec<String> = self
-            .inner
-            .state
-            .read()
+            .state()
             .slots
             .values()
             .filter(|s| s.config.enabled)
@@ -565,15 +729,34 @@ impl Registry {
         }
     }
 
+    /// Runs the operation for `name`; the caller holds the registry's turn. Restarts it when
+    /// the configuration changed underneath.
     async fn run(&self, name: &str, force: bool, ctx: Option<&JobContext>) -> Result<LoadReport> {
-        let (config, snapshot, etag, last_refresh_at) = {
-            let state = self.inner.state.read();
+        let mut last = stale();
+        for _ in 0..MAX_ATTEMPTS {
+            match self.run_once(name, force, ctx).await {
+                Err(e) if is_stale(&e) => last = e,
+                other => return other,
+            }
+        }
+        Err(last)
+    }
+
+    async fn run_once(
+        &self,
+        name: &str,
+        force: bool,
+        ctx: Option<&JobContext>,
+    ) -> Result<LoadReport> {
+        let (config, generation, snapshot, etag, last_refresh_at) = {
+            let state = self.state();
             let slot = state
                 .slots
                 .get(name)
                 .ok_or_else(|| ForgeError::NotFound(format!("registry {name}")))?;
             (
                 slot.config.clone(),
+                slot.generation,
                 slot.snapshot.clone(),
                 slot.etag.clone(),
                 slot.last_refresh_at,
@@ -602,7 +785,7 @@ impl Registry {
             if cached {
                 match self.read_cache(&config).await {
                     Ok(loaded) => {
-                        let snapshot = self.install(&config, loaded);
+                        let snapshot = self.install(&config, generation, loaded)?;
                         return Ok(Self::report(name, LoadSource::Cache, &snapshot, etag, None));
                     }
                     Err(e) => {
@@ -620,8 +803,8 @@ impl Registry {
                 let loaded = self.read_cache(&config).await;
                 match loaded {
                     Ok(loaded) => {
-                        let snapshot = self.install(&config, loaded);
-                        self.record_success(&config, etag.clone(), &snapshot, None)
+                        let snapshot = self.install(&config, generation, loaded)?;
+                        self.record_success(&config, generation, etag.clone(), &snapshot, None)
                             .await?;
                         Ok(Self::report(
                             name,
@@ -634,7 +817,7 @@ impl Registry {
                     Err(e) => {
                         // The cache vanished or was tampered with: start over unconditionally.
                         tracing::warn!(registry = %name, "cache is unusable after 304: {e}");
-                        self.fetch_and_install(&config, None, ctx).await
+                        self.fetch_and_install(&config, generation, None, ctx).await
                     }
                 }
             }
@@ -642,17 +825,21 @@ impl Registry {
                 verified,
                 files,
                 etag,
-            }) => match self.finish(&config, verified, files, etag, ctx).await {
+            }) => match self
+                .finish(&config, generation, verified, files, etag, ctx)
+                .await
+            {
                 Ok(report) => Ok(report),
-                Err(e) => self.failed(&config, snapshot, e, force).await,
+                Err(e) => self.failed(&config, generation, snapshot, e, force).await,
             },
-            Err(e) => self.failed(&config, snapshot, e, force).await,
+            Err(e) => self.failed(&config, generation, snapshot, e, force).await,
         }
     }
 
     async fn fetch_and_install(
         &self,
         config: &RegistryConfig,
+        generation: u64,
         etag: Option<&str>,
         ctx: Option<&JobContext>,
     ) -> Result<LoadReport> {
@@ -661,7 +848,10 @@ impl Registry {
                 verified,
                 files,
                 etag,
-            } => self.finish(config, verified, files, etag, ctx).await,
+            } => {
+                self.finish(config, generation, verified, files, etag, ctx)
+                    .await
+            }
             Fetched::NotModified => Err(ForgeError::Internal(
                 "unconditional fetch answered not modified".to_owned(),
             )),
@@ -671,6 +861,7 @@ impl Registry {
     async fn finish(
         &self,
         config: &RegistryConfig,
+        generation: u64,
         verified: VerifiedIndex,
         files: BTreeMap<String, Vec<u8>>,
         etag: Option<String>,
@@ -682,6 +873,8 @@ impl Registry {
             tokio::task::spawn_blocking(move || index::build_loaded(verified, files, &options))
                 .await
                 .map_err(blocking_failed)??;
+        // Reconfigured or removed while we were downloading: write nothing.
+        self.ensure_current(&config.name, generation)?;
         Self::progress(ctx, "caching", 85.0);
         let base = self.inner.root.state_registry();
         let name = config.name.clone();
@@ -690,9 +883,10 @@ impl Registry {
         })
         .await
         .map_err(blocking_failed)??;
+        self.inner.cache_writes.fetch_add(1, Ordering::SeqCst);
         let index_sha = loaded.index_sha256.clone();
-        let snapshot = self.install(config, loaded);
-        self.record_success(config, etag.clone(), &snapshot, Some(index_sha))
+        let snapshot = self.install(config, generation, loaded)?;
+        self.record_success(config, generation, etag.clone(), &snapshot, Some(index_sha))
             .await?;
         Self::progress(ctx, "done", 100.0);
         Ok(Self::report(
@@ -708,12 +902,18 @@ impl Registry {
     async fn failed(
         &self,
         config: &RegistryConfig,
+        generation: u64,
         snapshot: Option<Arc<Snapshot>>,
         error: ForgeError,
         force: bool,
     ) -> Result<LoadReport> {
+        if is_stale(&error) || matches!(error, ForgeError::Cancelled(_)) {
+            // Not a failure of the source: the caller restarts or gives up.
+            return Err(error);
+        }
         tracing::warn!(registry = %config.name, "refresh failed: {error}");
-        self.record_error(config, &error.to_string()).await;
+        self.record_error(config, generation, &error.to_string())
+            .await;
         let security = matches!(error, ForgeError::VerificationFailed(_));
         if force || security {
             return Err(error);
@@ -721,7 +921,7 @@ impl Registry {
         let stale = match snapshot {
             Some(snapshot) => Some(snapshot),
             None => match self.read_cache(config).await {
-                Ok(loaded) => Some(self.install(config, loaded)),
+                Ok(loaded) => Some(self.install(config, generation, loaded)?),
                 Err(_) => None,
             },
         };
@@ -745,8 +945,14 @@ impl Registry {
             .map_err(blocking_failed)?
     }
 
-    /// Replaces the in-memory catalog of the registry.
-    fn install(&self, config: &RegistryConfig, loaded: LoadedRegistry) -> Arc<Snapshot> {
+    /// Replaces the in-memory catalog of the registry, unless it was reconfigured or removed
+    /// since `generation` (then the catalog is dropped: it was built under another policy).
+    fn install(
+        &self,
+        config: &RegistryConfig,
+        generation: u64,
+        loaded: LoadedRegistry,
+    ) -> Result<Arc<Snapshot>> {
         let entries: Vec<CatalogEntry> = loaded
             .manifests
             .iter()
@@ -774,25 +980,32 @@ impl Registry {
             tools,
             stacks,
         });
-        if let Some(slot) = self.inner.state.write().slots.get_mut(&config.name) {
-            slot.snapshot = Some(Arc::clone(&snapshot));
-            slot.verification = Some(snapshot.verification.clone());
+        match self.state().slots.get_mut(&config.name) {
+            Some(slot) if slot.generation == generation => {
+                slot.snapshot = Some(Arc::clone(&snapshot));
+                slot.verification = Some(snapshot.verification.clone());
+                Ok(snapshot)
+            }
+            _ => Err(stale()),
         }
-        snapshot
     }
 
     async fn record_success(
         &self,
         config: &RegistryConfig,
+        generation: u64,
         etag: Option<String>,
         snapshot: &Snapshot,
         index_sha256: Option<String>,
     ) -> Result<()> {
         let now = Timestamp::now();
-        if let Some(slot) = self.inner.state.write().slots.get_mut(&config.name) {
-            slot.etag = etag.clone();
-            slot.last_refresh_at = Some(now);
-            slot.last_error = None;
+        match self.state().slots.get_mut(&config.name) {
+            Some(slot) if slot.generation == generation => {
+                slot.etag = etag.clone();
+                slot.last_refresh_at = Some(now);
+                slot.last_error = None;
+            }
+            _ => return Err(stale()),
         }
         let name = config.name.clone();
         let verification = if snapshot.verification.is_verified() {
@@ -814,9 +1027,13 @@ impl Registry {
             .await
     }
 
-    async fn record_error(&self, config: &RegistryConfig, message: &str) {
-        if let Some(slot) = self.inner.state.write().slots.get_mut(&config.name) {
-            slot.last_error = Some(message.to_owned());
+    async fn record_error(&self, config: &RegistryConfig, generation: u64, message: &str) {
+        match self.state().slots.get_mut(&config.name) {
+            Some(slot) if slot.generation == generation => {
+                slot.last_error = Some(message.to_owned());
+            }
+            // Removed or reconfigured: the error belongs to a registry that no longer exists.
+            _ => return,
         }
         let name = config.name.clone();
         let message = message.to_owned();
@@ -860,7 +1077,20 @@ impl Registry {
                 })
             }
             RegistrySource::Git(_) => self.fetch_git(config, etag).await,
-            RegistrySource::Http(url) => self.fetch_http(config, url, etag, ctx).await,
+            RegistrySource::Http(url) => {
+                let work = self.fetch_http(config, url, etag, ctx);
+                // Network futures can be dropped at any point; `git` and file work run in
+                // `spawn_blocking` and are not abandoned halfway.
+                match ctx {
+                    Some(ctx) => tokio::select! {
+                        result = work => result,
+                        () = ctx.cancelled() => Err(ForgeError::Cancelled(format!(
+                            "refresh of registry {}", config.name
+                        ))),
+                    },
+                    None => work.await,
+                }
+            }
         }
     }
 
@@ -906,13 +1136,26 @@ impl Registry {
             HttpBody::NotModified => return Ok(Fetched::NotModified),
             HttpBody::Body { bytes, etag } => (bytes, etag),
         };
+        // The detached signature sits next to the index: `<index URL>.minisig`.
+        let mut signature_url = index_url.clone();
+        signature_url.set_path(&format!("{}.minisig", index_url.path()));
+        let signature = match self
+            .http_get(&signature_url, MAX_SIGNATURE_BYTES, None)
+            .await
+        {
+            Ok(HttpBody::Body { bytes, .. }) => Some(bytes),
+            Ok(HttpBody::NotModified) | Err(ForgeError::NotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
         // The signature is checked before any manifest is requested.
         let options = config.load_options();
         let verified = {
             let verify = options.verify.clone();
-            tokio::task::spawn_blocking(move || index::verify_index(index_bytes, &verify))
-                .await
-                .map_err(blocking_failed)??
+            tokio::task::spawn_blocking(move || {
+                index::verify_index(index_bytes, signature, &verify)
+            })
+            .await
+            .map_err(blocking_failed)??
         };
         Self::progress(ctx, "downloading manifests", 30.0);
         let wanted: Vec<String> = index::entries(&verified.index)?
@@ -1018,7 +1261,7 @@ impl Registry {
 
     /// The registries, ordered by priority then name.
     pub fn list(&self) -> Vec<RegistryInfo> {
-        let state = self.inner.state.read();
+        let state = self.state();
         let mut slots: Vec<&Slot> = state.slots.values().collect();
         slots.sort_by(|a, b| {
             (a.config.priority, &a.config.name).cmp(&(b.config.priority, &b.config.name))
@@ -1055,7 +1298,7 @@ impl Registry {
     /// Every entry of every enabled, loaded registry, ordered by registry priority then
     /// section then id.
     pub fn entries(&self) -> Vec<CatalogEntry> {
-        let state = self.inner.state.read();
+        let state = self.state();
         let mut slots: Vec<&Slot> = state
             .slots
             .values()

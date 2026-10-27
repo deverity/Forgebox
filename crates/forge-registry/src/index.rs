@@ -12,10 +12,11 @@
 //!    breaks the policy of a third-party registry (`post_install.run`) is *skipped* and
 //!    reported, not fatal.
 //!
-//! What is signed: the canonical YAML of the parsed index with `spec.signature` removed
-//! ([`signing_payload`]), so comments, line endings and key order in the file on disk do not
-//! matter. `signature.sig` is the base64 of the `.minisig` file (a raw `.minisig` text is
-//! also accepted); `signature.key_id` is the 16 hex digits minisign prints for the key.
+//! What is signed (ADR-0018): the **raw bytes of `index.yaml`**, with a detached minisign
+//! signature in `index.yaml.minisig` next to it (`minisign -S -m index.yaml`, or
+//! `cargo xtask registry-sign`). No canonicalization and no dependency on a YAML emitter:
+//! any minisign implementation can sign and verify. The bytes are never re-serialized, so
+//! every source must deliver them untouched (git checkouts disable newline conversion).
 //!
 //! Blocking file I/O in [`read_tree`] and CPU work in [`build_loaded`]: call from
 //! `spawn_blocking`.
@@ -29,7 +30,6 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::ToolId;
 use forge_manifest::index::sha256_hex;
-use forge_manifest::schema::registry::Signature;
 use forge_manifest::schema::{Kind, Manifest, RegistryManifest};
 use forge_manifest::{ValidateOptions, validate_with};
 use serde::Serialize;
@@ -42,6 +42,10 @@ pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 pub const MAX_ENTRIES: usize = 4096;
 /// Name of the index file in a registry folder and in the cache.
 pub const INDEX_FILE: &str = "index.yaml";
+/// Name of the detached minisign signature of [`INDEX_FILE`].
+pub const SIGNATURE_FILE: &str = "index.yaml.minisig";
+/// Largest signature file accepted.
+pub const MAX_SIGNATURE_BYTES: u64 = 8 * 1024;
 
 /// The development public key (`registry/keys/dev.pub`), committed with the repository.
 /// Release builds embed the production key instead (docs/11 §7).
@@ -117,6 +121,8 @@ pub struct LoadedManifest {
 pub struct LoadedRegistry {
     pub index: RegistryManifest,
     pub index_bytes: Vec<u8>,
+    /// The detached signature as delivered (`None` for an unsigned, trusted index).
+    pub signature_bytes: Option<Vec<u8>>,
     pub index_sha256: String,
     pub verification: Verification,
     /// Bytes of every file whose sha256 matched, by index path (what the cache stores).
@@ -129,6 +135,8 @@ pub struct LoadedRegistry {
 #[derive(Debug, Clone)]
 pub struct VerifiedIndex {
     pub bytes: Vec<u8>,
+    /// Contents of `index.yaml.minisig`, if the source had one.
+    pub signature: Option<Vec<u8>>,
     pub index: RegistryManifest,
     pub verification: Verification,
 }
@@ -139,31 +147,6 @@ fn invalid(context: &str, detail: impl std::fmt::Display) -> ForgeError {
 
 fn verification_failed(detail: impl std::fmt::Display) -> ForgeError {
     ForgeError::VerificationFailed(detail.to_string())
-}
-
-/// The bytes that are signed: canonical YAML of the index without `spec.signature`.
-pub fn signing_payload(index: &RegistryManifest) -> Result<Vec<u8>> {
-    let mut unsigned = index.clone();
-    unsigned.spec.signature = None;
-    let text = forge_manifest::parse::to_yaml(&Manifest::Registry(unsigned))
-        .map_err(|e| ForgeError::Internal(format!("serializing the index: {e}")))?;
-    Ok(text.into_bytes())
-}
-
-/// The text to store in `signature.sig` for a `.minisig` file.
-pub fn encode_signature(minisig: &str) -> String {
-    BASE64.encode(minisig.as_bytes())
-}
-
-fn decode_signature(sig: &str) -> std::result::Result<String, String> {
-    let sig = sig.trim();
-    if sig.starts_with("untrusted comment:") {
-        return Ok(sig.to_owned());
-    }
-    let bytes = BASE64
-        .decode(sig.as_bytes())
-        .map_err(|e| format!("signature is not base64: {e}"))?;
-    String::from_utf8(bytes).map_err(|_| "signature is not UTF-8 text".to_owned())
 }
 
 /// The base64 line of a minisign public key given as base64 or as a `.pub` file.
@@ -190,7 +173,7 @@ pub fn key_id_of_public_key(public_key: &str) -> Result<String> {
 }
 
 enum SignatureState {
-    /// No signature, or the `dev` placeholder with an empty `sig`.
+    /// There is no `index.yaml.minisig`.
     Absent,
     /// A signature exists but there is no key to check it with.
     NoKey,
@@ -198,15 +181,15 @@ enum SignatureState {
     Invalid(String),
 }
 
-fn check_signature(index: &RegistryManifest, public_key: Option<&str>) -> SignatureState {
-    let Some(Signature { key_id, sig, .. }) = index.spec.signature.as_ref() else {
+/// Checks the detached `signature` over the raw index `bytes`.
+fn check_signature(
+    bytes: &[u8],
+    signature: Option<&[u8]>,
+    public_key: Option<&str>,
+) -> SignatureState {
+    let Some(signature) = signature else {
         return SignatureState::Absent;
     };
-    if sig.trim().is_empty() {
-        // Empty `sig` is only a placeholder for `key_id: dev`; for anything else the
-        // schema validation already complained, treat it as absent either way.
-        return SignatureState::Absent;
-    }
     let Some(public_key) = public_key else {
         return SignatureState::NoKey;
     };
@@ -218,35 +201,30 @@ fn check_signature(index: &RegistryManifest, public_key: Option<&str>) -> Signat
         Ok(id) => id,
         Err(e) => return SignatureState::Invalid(e.to_string()),
     };
-    if !key_id.eq_ignore_ascii_case(&expected_id) {
-        return SignatureState::Invalid(format!(
-            "signed with key {key_id}, expected {expected_id}"
-        ));
-    }
-    let text = match decode_signature(sig) {
-        Ok(text) => text,
-        Err(e) => return SignatureState::Invalid(e),
+    let Ok(text) = std::str::from_utf8(signature) else {
+        return SignatureState::Invalid("signature is not UTF-8 text".to_owned());
     };
-    let signature = match minisign_verify::Signature::decode(&text) {
+    let signature = match minisign_verify::Signature::decode(text) {
         Ok(signature) => signature,
         Err(e) => return SignatureState::Invalid(format!("unreadable signature: {e}")),
     };
-    let payload = match signing_payload(index) {
-        Ok(payload) => payload,
-        Err(e) => return SignatureState::Invalid(e.to_string()),
-    };
-    match key.verify(&payload, &signature, false) {
+    // `verify` also refuses a signature made by another key id.
+    match key.verify(bytes, &signature, false) {
         Ok(()) => SignatureState::Valid(expected_id),
         Err(e) => SignatureState::Invalid(e.to_string()),
     }
 }
 
-/// Checks the signature of an already parsed index against `options`.
+/// Checks the signature of the raw index `bytes` against `options`.
 ///
-/// `Err(VerificationFailed)` unless the signature is valid, or it is absent/unusable and the
-/// registry is `trusted_unsigned`. A wrong signature is never accepted.
-pub fn verify_parsed(index: &RegistryManifest, options: &VerifyOptions) -> Result<Verification> {
-    match check_signature(index, options.public_key.as_deref()) {
+/// `Err(VerificationFailed)` unless the signature is valid, or it is absent and the registry
+/// is `trusted_unsigned`. A wrong signature is never accepted.
+pub fn verify_bytes(
+    bytes: &[u8],
+    signature: Option<&[u8]>,
+    options: &VerifyOptions,
+) -> Result<Verification> {
+    match check_signature(bytes, signature, options.public_key.as_deref()) {
         SignatureState::Valid(key_id) => Ok(Verification::Verified { key_id }),
         SignatureState::Invalid(reason) => Err(verification_failed(format!(
             "invalid index signature: {reason}"
@@ -254,7 +232,7 @@ pub fn verify_parsed(index: &RegistryManifest, options: &VerifyOptions) -> Resul
         SignatureState::Absent if options.trusted_unsigned => Ok(Verification::Unverified),
         SignatureState::NoKey if options.trusted_unsigned => Ok(Verification::Unverified),
         SignatureState::Absent => Err(verification_failed(
-            "the index is not signed and the registry is not marked trusted_unsigned",
+            "the index is not signed (no index.yaml.minisig) and the registry is not marked              trusted_unsigned",
         )),
         SignatureState::NoKey => Err(verification_failed(
             "the index is signed but no public key is configured for this registry",
@@ -262,11 +240,17 @@ pub fn verify_parsed(index: &RegistryManifest, options: &VerifyOptions) -> Resul
     }
 }
 
-/// Parses `bytes` as an index and verifies its signature (step 1 of the pipeline).
-pub fn verify_index(bytes: Vec<u8>, options: &VerifyOptions) -> Result<VerifiedIndex> {
+/// Verifies the signature of `bytes` (the raw `index.yaml`) and then parses it (step 1 of
+/// the pipeline). The signature is checked before the content is interpreted.
+pub fn verify_index(
+    bytes: Vec<u8>,
+    signature: Option<Vec<u8>>,
+    options: &VerifyOptions,
+) -> Result<VerifiedIndex> {
     if bytes.len() as u64 > MAX_INDEX_BYTES {
         return Err(invalid("index.yaml", "file is too large"));
     }
+    let verification = verify_bytes(&bytes, signature.as_deref(), options)?;
     let text = std::str::from_utf8(&bytes).map_err(|_| invalid("index.yaml", "not UTF-8"))?;
     let manifest =
         forge_manifest::load_str(text).map_err(|e| invalid("index.yaml", e.to_string()))?;
@@ -283,9 +267,9 @@ pub fn verify_index(bytes: Vec<u8>, options: &VerifyOptions) -> Result<VerifiedI
     if index.spec.tools.len() + index.spec.stacks.len() > MAX_ENTRIES {
         return Err(invalid("index.yaml", "too many entries"));
     }
-    let verification = verify_parsed(&index, options)?;
     Ok(VerifiedIndex {
         bytes,
+        signature,
         index,
         verification,
     })
@@ -361,7 +345,12 @@ pub fn read_tree(
     options: &LoadOptions,
 ) -> Result<(VerifiedIndex, BTreeMap<String, Vec<u8>>)> {
     let bytes = read_limited(&root.join(INDEX_FILE), MAX_INDEX_BYTES)?;
-    let verified = verify_index(bytes, &options.verify)?;
+    let signature = match read_limited(&root.join(SIGNATURE_FILE), MAX_SIGNATURE_BYTES) {
+        Ok(signature) => Some(signature),
+        Err(ForgeError::NotFound(_)) => None,
+        Err(e) => return Err(e),
+    };
+    let verified = verify_index(bytes, signature, &options.verify)?;
     let mut files = BTreeMap::new();
     for (_, entry) in entries(&verified.index)? {
         let bytes = read_limited(&root.join(&entry.path), MAX_MANIFEST_BYTES)?;
@@ -382,6 +371,7 @@ pub fn build_loaded(
 ) -> Result<LoadedRegistry> {
     let VerifiedIndex {
         bytes: index_bytes,
+        signature: signature_bytes,
         index,
         verification,
     } = verified;
@@ -459,6 +449,7 @@ pub fn build_loaded(
     Ok(LoadedRegistry {
         index,
         index_bytes,
+        signature_bytes,
         index_sha256,
         verification,
         files: verified_files,
@@ -483,6 +474,69 @@ mod tests {
         assert_eq!(id.len(), 16);
         assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(DEV_PUBLIC_KEY.contains("untrusted comment"));
+    }
+
+    /// Golden test (ADR-0018): the signed bytes are exactly the bytes of the committed
+    /// fixture, and the committed detached signature verifies over them with the committed
+    /// development key. It fails if a dependency update changes what verification means,
+    /// or if the fixture is regenerated without re-signing.
+    #[test]
+    fn golden_fixture_signature_verifies_over_the_raw_bytes() {
+        const GOLDEN_SHA256: &str =
+            "66a096e1852e9271dc4b9308a8382612147d070e3929ba8731bc08e682895137";
+        let dir =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/registry");
+        let bytes = std::fs::read(dir.join(INDEX_FILE)).unwrap();
+        let signature = std::fs::read(dir.join(SIGNATURE_FILE)).unwrap();
+        assert_eq!(
+            sha256_hex(&bytes),
+            GOLDEN_SHA256,
+            "index.yaml of the fixture changed: re-sign it and update the golden hash"
+        );
+        let options = VerifyOptions {
+            public_key: Some(DEV_PUBLIC_KEY.to_owned()),
+            trusted_unsigned: false,
+        };
+        let verified = verify_bytes(&bytes, Some(&signature), &options).unwrap();
+        assert_eq!(
+            verified,
+            Verification::Verified {
+                key_id: "6F03D19A26B6D573".to_owned()
+            }
+        );
+
+        // There is no canonical form: any change to the bytes breaks the signature, even one
+        // that keeps the YAML meaning (here: CRLF line endings, a re-emitter's typical edit).
+        let crlf = String::from_utf8(bytes.clone())
+            .unwrap()
+            .replace("\n", "\r\n");
+        assert!(verify_bytes(crlf.as_bytes(), Some(&signature), &options).is_err());
+        let mut flipped = bytes;
+        let last = flipped.len() - 1;
+        flipped[last] ^= 1;
+        assert!(verify_bytes(&flipped, Some(&signature), &options).is_err());
+    }
+
+    #[test]
+    fn a_detached_signature_needs_a_key_and_an_absent_one_needs_trust() {
+        let bytes = b"anything";
+        let strict = VerifyOptions::default();
+        assert!(verify_bytes(bytes, None, &strict).is_err());
+        assert!(verify_bytes(bytes, Some(b"x"), &strict).is_err());
+        let trusted = VerifyOptions {
+            public_key: None,
+            trusted_unsigned: true,
+        };
+        assert_eq!(
+            verify_bytes(bytes, None, &trusted).unwrap(),
+            Verification::Unverified
+        );
+        // A present but unreadable signature is refused even for a trusted registry.
+        let keyed = VerifyOptions {
+            public_key: Some(DEV_PUBLIC_KEY.to_owned()),
+            trusted_unsigned: true,
+        };
+        assert!(verify_bytes(bytes, Some(b"garbage"), &keyed).is_err());
     }
 
     #[test]
