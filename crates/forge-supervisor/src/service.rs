@@ -22,6 +22,12 @@
 //! and the job's `KILL_ON_JOB_CLOSE` covers everything else. After a panic the actor is
 //! restarted by the [`ActorSupervisor`]; the new incarnation terminates whatever ran in
 //! the job (its state was lost) and reports `Failed`.
+//!
+//! A run is reported finished (`service.crashed`, `service.stopped`) only once the job is
+//! empty: job termination is asynchronous in the OS and a job still terminating refuses
+//! new processes (docs/03 §1.1). Every termination of the job waits for it
+//! ([`ProcessGroup::terminate_all`]); the ones started outside a run (a process of a run
+//! this incarnation does not track) are awaited by the next run before it spawns.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -35,10 +41,11 @@ use forge_core::actor::{
 use forge_core::event::{EventBus, EventKind};
 use forge_core::ids::{InstanceId, ToolId};
 use forge_core::paths::ForgeRoot;
-use forge_core::platform::{ProcessControl, ProcessGroup, SpawnedProcess};
+use forge_core::platform::{ProcessControl, ProcessGroup, SpawnedProcess, TERMINATE_TIMEOUT};
 use forge_core::{ForgeError, Result, Timestamp};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
+use tokio::task::JoinHandle;
 
 use crate::events::{
     SERVICE_EVENT_VERSION, ServiceCrashedPayload, ServiceFailedPayload, ServiceRef,
@@ -216,6 +223,9 @@ pub struct InstanceActor {
     pending_stop: Vec<Reply<Result<StopReport>>>,
     stop_after_start: bool,
     start_after_stop: bool,
+    /// Terminations of the job started outside a run; the next run waits for them
+    /// before spawning into the job.
+    job_cleanups: Vec<JoinHandle<()>>,
 }
 
 fn publish<T: Serialize>(events: &EventBus, kind: EventKind, payload: &T) {
@@ -290,24 +300,35 @@ async fn deliver(me: &WeakActorRef<InstanceMsg>, notice: Notice) {
 /// a leftover when other processes keep the console alive.
 const LEFTOVER_GRACE: Duration = Duration::from_millis(300);
 
-/// Terminates what is left in `job` after the main process exited; returns how many
-/// processes were still there (descendants, and their console host).
+/// Longest wait of a new run for a termination of the job started outside a run.
+const CLEANUP_WAIT: Duration = TERMINATE_TIMEOUT.saturating_add(Duration::from_secs(1));
+
+/// Terminates what is left in `job` after the main process exited and waits until the
+/// job is empty; returns how many processes were still there (descendants, and their
+/// console host).
 async fn kill_leftovers(job: Arc<dyn ProcessGroup>) -> u32 {
     let deadline = tokio::time::Instant::now() + LEFTOVER_GRACE;
     loop {
         let expired = tokio::time::Instant::now() >= deadline;
         let job = Arc::clone(&job);
-        let result = tokio::task::spawn_blocking(move || -> Result<usize> {
+        let result = tokio::task::spawn_blocking(move || -> Result<(usize, Result<()>)> {
             let pids = job.pids()?;
-            if expired && !pids.is_empty() {
-                job.terminate_all(TERMINATED_EXIT_CODE)?;
-            }
-            Ok(pids.len())
+            let killed = if expired && !pids.is_empty() {
+                job.terminate_all(TERMINATED_EXIT_CODE)
+            } else {
+                Ok(())
+            };
+            Ok((pids.len(), killed))
         })
         .await;
         match result {
-            Ok(Ok(0)) => return 0,
-            Ok(Ok(count)) if expired => return u32::try_from(count).unwrap_or(u32::MAX),
+            Ok(Ok((0, _))) => return 0,
+            Ok(Ok((count, killed))) if expired => {
+                if let Err(err) = killed {
+                    tracing::warn!(%err, "leftovers of an instance job did not go away");
+                }
+                return u32::try_from(count).unwrap_or(u32::MAX);
+            }
             Ok(Ok(_)) => tokio::time::sleep(Duration::from_millis(25)).await,
             Ok(Err(err)) => {
                 tracing::warn!(%err, "could not clean up an instance job");
@@ -321,9 +342,28 @@ async fn kill_leftovers(job: Arc<dyn ProcessGroup>) -> u32 {
     }
 }
 
-/// One run: create the process, start the log pumps, report, wait for the exit, clean up
-/// the job, report again.
-async fn run_process(shared: Arc<Shared>, me: WeakActorRef<InstanceMsg>, run: u64) {
+/// Terminates everything in `job` and waits until it is empty.
+async fn terminate_job(job: Arc<dyn ProcessGroup>) {
+    match tokio::task::spawn_blocking(move || job.terminate_all(TERMINATED_EXIT_CODE)).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => tracing::warn!(%err, "could not empty an instance job"),
+        Err(err) => tracing::warn!(%err, "instance job termination task failed"),
+    }
+}
+
+/// One run: wait for pending terminations of the job, create the process, start the log
+/// pumps, report, wait for the exit, empty the job, report again.
+async fn run_process(
+    shared: Arc<Shared>,
+    me: WeakActorRef<InstanceMsg>,
+    run: u64,
+    cleanups: Vec<JoinHandle<()>>,
+) {
+    for cleanup in cleanups {
+        if tokio::time::timeout(CLEANUP_WAIT, cleanup).await.is_err() {
+            tracing::warn!(run, "a termination of the instance job is still running");
+        }
+    }
     let job = Arc::clone(&shared.job);
     let spawned = match shared.spec.spawn.to_command(shared.processes.as_ref()) {
         Err(err) => Err(err),
@@ -404,6 +444,7 @@ impl InstanceActor {
             pending_stop: Vec::new(),
             stop_after_start: false,
             start_after_stop: false,
+            job_cleanups: Vec::new(),
         }
     }
 
@@ -455,6 +496,7 @@ impl InstanceActor {
             Arc::clone(&self.shared),
             ctx.myself_weak(),
             run,
+            std::mem::take(&mut self.job_cleanups),
         ));
     }
 
@@ -504,7 +546,8 @@ impl InstanceActor {
     fn finish_stop(&mut self, report: StopReport, ctx: &mut Context<Self>) {
         self.pid = None;
         self.stop_progress = None;
-        if report.exited() || (report.strategy.is_none() && report.attempted.is_empty()) {
+        let stopped = report.exited() || (report.strategy.is_none() && report.attempted.is_empty());
+        if stopped {
             self.set_state(InstanceState::Stopped);
             publish(
                 ctx.events(),
@@ -519,14 +562,15 @@ impl InstanceActor {
                 },
             );
         } else {
-            let reason = "the process did not exit after TerminateJobObject".to_owned();
-            self.fail(
-                ForgeError::Timeout {
-                    operation: reason,
-                    after: self.shared.spec.stop.worst_case(),
-                },
-                ctx,
-            );
+            let err = ForgeError::Timeout {
+                operation: "the process did not exit after TerminateJobObject".to_owned(),
+                after: self.shared.spec.stop.worst_case(),
+            };
+            // Nothing new goes into a job whose processes may still be dying.
+            if std::mem::take(&mut self.start_after_stop) {
+                fail_all(std::mem::take(&mut self.pending_restart), &err);
+            }
+            self.fail(err, ctx);
         }
         for reply in std::mem::take(&mut self.pending_stop) {
             let _ = reply.send(Ok(report.clone()));
@@ -700,18 +744,20 @@ impl InstanceActor {
                 ..
             } if !self.state.is_active() => {
                 // A process started for a run this incarnation does not track (the actor
-                // was restarted meanwhile): nobody could ever stop it, so it goes now.
+                // was restarted meanwhile): nobody could ever stop it, so it goes now. The
+                // next run waits for this termination before spawning.
                 tracing::warn!(pid, "terminating a process of a previous run");
-                let job = Arc::clone(&self.shared.job);
-                tokio::task::spawn_blocking(move || job.terminate_all(TERMINATED_EXIT_CODE));
+                self.job_cleanups.retain(|cleanup| !cleanup.is_finished());
+                self.job_cleanups
+                    .push(tokio::spawn(terminate_job(Arc::clone(&self.shared.job))));
             }
             _ => tracing::debug!("ignoring a report of a previous run"),
         }
     }
 
+    /// Terminates the job and waits until it is empty.
     async fn terminate_job(&self) {
-        let job = Arc::clone(&self.shared.job);
-        let _ = tokio::task::spawn_blocking(move || job.terminate_all(TERMINATED_EXIT_CODE)).await;
+        terminate_job(Arc::clone(&self.shared.job)).await;
     }
 }
 

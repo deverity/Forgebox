@@ -8,8 +8,10 @@
 //!    started in its own process group.
 //! 3. [`StopStrategy::WmClose`]: `WM_CLOSE` to the top-level windows of the instance's
 //!    processes; only when they have windows.
-//! 4. [`StopStrategy::Terminate`]: `TerminateJobObject`. Always works, never leaves an
-//!    orphan.
+//! 4. [`StopStrategy::Terminate`]: `TerminateJobObject`, then wait until the job is
+//!    empty ([`ProcessGroup::terminate_all`], at most [`TERMINATE_TIMEOUT`]): the stop is
+//!    never reported while the job is still terminating, so a restart can spawn into it
+//!    at once (docs/03 §1.1). Always works, never leaves an orphan.
 //!
 //! Waits: the **first** graceful step that runs waits [`StopPlan::timeout`] (manifest
 //! `stop.timeout`, 15 s by default); each later graceful step waits
@@ -19,8 +21,8 @@
 //! `service.stopping{strategy, step, timeout_ms}` before acting.
 //!
 //! Once the main process exited, the process watcher terminates whatever is still in
-//! the instance's job (grandchildren that ignored the signal); the count is reported in
-//! [`StopReport::leftovers_killed`].
+//! the instance's job (grandchildren that ignored the signal) and waits for the job to
+//! empty; the count is reported in [`StopReport::leftovers_killed`].
 //!
 //! The cascade runs in its own task: the instance actor keeps answering `Status` while a
 //! stuck stop waits (docs/03 §7.6). Every Win32 call goes through `spawn_blocking`.
@@ -29,7 +31,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_core::Result;
-use forge_core::platform::{GroupOptions, ProcessControl, ProcessGroup};
+use forge_core::platform::{GroupOptions, ProcessControl, ProcessGroup, TERMINATE_TIMEOUT};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -87,7 +89,8 @@ pub struct StopPlan {
     pub wm_close: bool,
     /// Wait of each later graceful step (default 5 s).
     pub followup_grace: Duration,
-    /// Wait for the exit to be observed after `TerminateJobObject` (default 5 s).
+    /// Wait for the exit to be observed once `TerminateJobObject` emptied the job
+    /// (default 5 s; emptying the job itself is bounded by [`TERMINATE_TIMEOUT`]).
     pub terminate_wait: Duration,
 }
 
@@ -105,12 +108,13 @@ impl Default for StopPlan {
 }
 
 impl StopPlan {
-    /// Upper bound of a whole cascade (every graceful step waiting its full time).
+    /// Upper bound of a whole cascade (every graceful step waiting its full time, the
+    /// job taking [`TERMINATE_TIMEOUT`] to empty).
     pub fn worst_case(&self) -> Duration {
         let graceful = usize::from(self.command.is_some())
             + usize::from(self.ctrl_break)
             + usize::from(self.wm_close);
-        let mut total = self.terminate_wait + CTRL_BREAK_DELIVERY;
+        let mut total = TERMINATE_TIMEOUT + self.terminate_wait + CTRL_BREAK_DELIVERY;
         if graceful > 0 {
             total += self.timeout
                 + self.followup_grace * u32::try_from(graceful - 1).unwrap_or(u32::MAX);
@@ -285,7 +289,7 @@ impl Cascade {
             }
         }
 
-        // Step 4: TerminateJobObject
+        // Step 4: TerminateJobObject, returning once the job is empty
         if exit.is_none() {
             (self.on_step)(StopStrategy::Terminate, self.plan.terminate_wait);
             attempted.push(StopStrategy::Terminate);
@@ -396,20 +400,25 @@ mod tests {
     #[test]
     fn worst_case_counts_first_timeout_and_followups() {
         let plan = StopPlan::default();
-        // 15 (ctrl_break) + 5 (wm_close) + 5 (terminate) + 5 (helper delivery)
-        assert_eq!(plan.worst_case(), Duration::from_secs(30));
+        // 15 (ctrl_break) + 5 (wm_close) + 5 (job emptying) + 5 (terminate wait)
+        // + 5 (helper delivery)
+        assert_eq!(TERMINATE_TIMEOUT, Duration::from_secs(5));
+        assert_eq!(plan.worst_case(), Duration::from_secs(35));
         let plan = StopPlan {
             command: Some(SpawnSpec::new("C:/x.exe", "C:/")),
             timeout: Duration::from_secs(20),
             ..StopPlan::default()
         };
-        assert_eq!(plan.worst_case(), Duration::from_secs(20 + 5 + 5 + 5 + 5));
+        assert_eq!(
+            plan.worst_case(),
+            Duration::from_secs(20 + 5 + 5 + 5 + 5 + 5)
+        );
         let plan = StopPlan {
             ctrl_break: false,
             wm_close: false,
             ..StopPlan::default()
         };
-        assert_eq!(plan.worst_case(), Duration::from_secs(10));
+        assert_eq!(plan.worst_case(), Duration::from_secs(15));
     }
 
     #[test]

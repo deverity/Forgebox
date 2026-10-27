@@ -8,8 +8,10 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio as StdStdio};
 use std::time::{Duration, Instant};
 
-use forge_core::event::EventKind;
-use forge_supervisor::{InstanceState, LogItem, QUICK_ASK_TIMEOUT, StopPlan, StopStrategy};
+use forge_core::event::{EventKind, EventStream};
+use forge_supervisor::{
+    InstanceHandle, InstanceState, LogItem, QUICK_ASK_TIMEOUT, StopPlan, StopStrategy,
+};
 use support::*;
 
 /// Timing-sensitive tests run one at a time.
@@ -599,4 +601,129 @@ async fn dropping_the_last_handle_kills_the_process() {
     drop(instance);
     let code = exit.wait_timeout(Duration::from_secs(5)).await.unwrap();
     assert_eq!(code, Some(forge_supervisor::TERMINATED_EXIT_CODE));
+}
+
+/// Regression: the leftovers of a crash used to be terminated with a fire-and-forget
+/// `TerminateJobObject`, and the crash was reported while the termination was still in
+/// flight. Windows refuses `AssignProcessToJobObject` on such a job (`Access denied`) for
+/// a few ms (longer under load), so a start issued right after `service.crashed` failed.
+/// Each round starts the instance the moment the crash is published; four instances
+/// crash-loop at the same time to load the machine like a full test run does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn start_right_after_a_crash_with_leftovers_always_succeeds() {
+    let _heavy = HEAVY.lock().await;
+    let (supervisor, bus) = supervisor();
+    let loops: Vec<_> = (1..=4)
+        .map(|n| {
+            let instance = supervisor
+                .spawn_instance(fake_spec(
+                    &format!("crashloop-{n}"),
+                    &["--spawn-child", "--crash-after-ms", "150"],
+                ))
+                .unwrap();
+            let events = bus.subscribe();
+            tokio::spawn(crash_loop(instance, events, 12))
+        })
+        .collect();
+    for task in loops {
+        task.await.unwrap();
+    }
+}
+
+async fn crash_loop(instance: InstanceHandle, mut events: EventStream, rounds: u32) {
+    let name = instance.name().to_owned();
+    let mut pid = instance.start(ASK).await.unwrap();
+    for round in 1..=rounds {
+        let crashed = wait_event(
+            &mut events,
+            &instance,
+            EventKind::ServiceCrashed,
+            Duration::from_secs(20),
+        )
+        .await;
+        assert_eq!(crashed.payload["exit_code"], 3, "{name} round {round}");
+        let leftovers = crashed.payload["leftovers_killed"].as_u64().unwrap();
+        assert!(
+            leftovers >= 1,
+            "{name} round {round}: the stubborn child was a leftover"
+        );
+        let next = instance.start(ASK).await.unwrap_or_else(|err| {
+            panic!("{name} round {round}: start right after the crash failed: {err}")
+        });
+        assert_ne!(next, pid, "{name} round {round}");
+        assert!(!alive(pid), "{name} round {round}: previous run is gone");
+        pid = next;
+    }
+    instance
+        .wait_for_state(
+            |s| matches!(s, InstanceState::Crashed { .. }),
+            Duration::from_secs(20),
+        )
+        .await
+        .unwrap();
+}
+
+/// Regression: a restart of a service that ignores `CTRL_BREAK` goes through the
+/// `Terminate` step, and the new run is spawned into the same instance job right after
+/// it. It must never see the job still terminating.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stubborn_restart_through_terminate_always_succeeds() {
+    let (supervisor, bus) = supervisor();
+    let mut spec = fake_spec("stubborn-restart", &["--stubborn", "--spawn-child"]);
+    spec.stop.timeout = Duration::from_millis(300);
+    let instance = supervisor.spawn_instance(spec).unwrap();
+    let mut events = bus.subscribe();
+    let mut logs = instance.subscribe_logs(ASK).await.unwrap();
+    let mut pid = instance.start(ASK).await.unwrap();
+    for round in 1..=5 {
+        // `child <pid>` comes after the console handler is installed.
+        let child: u32 = wait_line(&mut logs, "child ", Duration::from_secs(10))
+            .await
+            .trim_start_matches("child ")
+            .parse()
+            .unwrap();
+        let next = instance
+            .restart(Duration::from_secs(30))
+            .await
+            .unwrap_or_else(|err| panic!("round {round}: restart failed: {err}"));
+        let stopped = wait_event(
+            &mut events,
+            &instance,
+            EventKind::ServiceStopped,
+            Duration::from_secs(10),
+        )
+        .await;
+        assert_eq!(stopped.payload["strategy"], "terminate", "round {round}");
+        assert_ne!(next, pid, "round {round}");
+        assert!(!alive(pid), "round {round}: old service is gone");
+        assert!(!alive(child), "round {round}: old grandchild is gone");
+        assert!(alive(next), "round {round}: new service runs");
+        pid = next;
+    }
+    let report = instance.stop(Duration::from_secs(30)).await.unwrap();
+    assert_eq!(report.strategy, Some(StopStrategy::Terminate));
+}
+
+/// A stop that ends with `TerminateJobObject` followed at once by a start.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn start_right_after_a_terminated_stop_always_succeeds() {
+    let (supervisor, _bus) = supervisor();
+    let mut spec = fake_spec("terminated", &["--stubborn", "--spawn-child"]);
+    spec.stop.timeout = Duration::from_millis(200);
+    let instance = supervisor.spawn_instance(spec).unwrap();
+    let mut logs = instance.subscribe_logs(ASK).await.unwrap();
+    for round in 1..=5 {
+        let pid = instance
+            .start(ASK)
+            .await
+            .unwrap_or_else(|err| panic!("round {round}: start failed: {err}"));
+        wait_line(&mut logs, "child ", Duration::from_secs(10)).await;
+        let report = instance.stop(Duration::from_secs(30)).await.unwrap();
+        assert_eq!(
+            report.strategy,
+            Some(StopStrategy::Terminate),
+            "round {round}"
+        );
+        assert!(!alive(pid), "round {round}");
+    }
 }

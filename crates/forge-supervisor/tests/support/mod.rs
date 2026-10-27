@@ -166,3 +166,24 @@ pub async fn wait_dead(pid: u32, timeout: Duration) -> Option<Duration> {
         _ => None,
     }
 }
+
+/// Waits for the next event of `kind` published for `instance`.
+pub async fn wait_event(
+    stream: &mut EventStream,
+    instance: &InstanceHandle,
+    kind: EventKind,
+    timeout: Duration,
+) -> Event {
+    let id = instance.id().to_string();
+    let wait = async {
+        loop {
+            let event = stream.recv().await.expect("event stream closed");
+            if event.kind == kind && event.payload["instance_id"] == id.as_str() {
+                return event;
+            }
+        }
+    };
+    tokio::time::timeout(timeout, wait)
+        .await
+        .unwrap_or_else(|_| panic!("no {kind} event within {timeout:?}"))
+}

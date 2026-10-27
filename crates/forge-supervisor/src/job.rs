@@ -58,7 +58,8 @@ impl JobTree {
         self.root.pids()
     }
 
-    /// Kills every supervised process (last resort of a daemon shutdown). Blocking.
+    /// Kills every supervised process and waits until they are gone (last resort of a
+    /// daemon shutdown; bounded by `TERMINATE_TIMEOUT`). Blocking.
     pub fn terminate_all(&self) -> Result<()> {
         self.root.terminate_all(crate::stop::TERMINATED_EXIT_CODE)
     }
