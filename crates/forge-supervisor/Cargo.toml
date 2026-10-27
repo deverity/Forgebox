@@ -26,6 +26,9 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# Contract test of the service.* payloads (tests/service_payload_contract.rs); forge-ipc
+# does not depend on forge-supervisor, so there is no cycle.
+forge-ipc = { path = "../forge-ipc" }
 pretty_assertions = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

@@ -1365,7 +1365,13 @@ export type ServiceCreateParams = {
 	autostart?: boolean,
 };
 
-/**  `service.starting|running|stopping|stopped|crashed|failed`. */
+/**
+ *  `service.starting|running|stopping|stopped|crashed|failed`.
+ * 
+ *  Published by `forge_supervisor::events::ServiceEventPayload`, which serializes the
+ *  same fields (docs/03 §8). The fields after `error` were added without bumping `v`:
+ *  they may be missing, and older daemons never send them.
+ */
 export type ServicePayload = {
 	v: number,
 	instance_id: InstanceId,
@@ -1376,11 +1382,29 @@ export type ServicePayload = {
 	pid: number | null,
 	/**
 	 *  `service.stopping`: strategy being tried (`command`, `ctrl_break`, `wm_close`,
-	 *  `terminate`).
+	 *  `terminate`). `service.stopped`: step after which the process exited.
 	 */
 	strategy: string | null,
+	/**  Process exit code (Windows `DWORD` bits as `i32`: `0xC000013A` is negative). */
 	exit_code: number | null,
+	/**  `service.failed`: why the instance could not be started or stopped. */
 	error: JobErrorInfo | null,
+	/**  Number of this start for the instance (1, 2, ...); `service.starting|running`. */
+	run?: number | null,
+	/**
+	 *  `service.stopping`: position of `strategy` in the stop cascade (1 = command,
+	 *  2 = CTRL_BREAK, 3 = WM_CLOSE, 4 = TerminateJobObject; docs/03 §1.3).
+	 */
+	step?: number | null,
+	/**  `service.stopping`: how long this step waits for the process to exit. */
+	timeout_ms?: number | null,
+	/**  `service.stopped`: duration of the stop. */
+	elapsed_ms?: number | null,
+	/**
+	 *  `service.stopped|crashed`: processes left in the instance's job after the main
+	 *  process exited, then terminated.
+	 */
+	leftovers_killed?: number | null,
 };
 
 /**  Params of `services.remove`. */

@@ -77,7 +77,7 @@ Forgebox/
 │   │   │   ├── process.rs        # SpawnSpec: env mínimo + PATH determinístico, stdio Capture|Discard|File, console oculto
 │   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
 │   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
-│   │   │   ├── events.rs         # payloads service.* (v1)
+│   │   │   ├── events.rs         # ServiceEventPayload: payloads service.* (v1), mesma forma de forge_ipc ServicePayload
 │   │   │   ├── health.rs         # probes tcp/http/command/pid com backoff (M1-E3-T2)
 │   │   │   ├── policy.rs         # restart: never|on-failure|always; limites; cooldown (M1-E3-T2)
 │   │   │   ├── metrics.rs        # cpu/rss/handles por pid (M1-E3-T2)

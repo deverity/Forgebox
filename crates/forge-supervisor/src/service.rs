@@ -38,7 +38,7 @@ use forge_core::actor::{
     Actor, ActorHandle, ActorRef, ActorSpec, ActorSupervisor, Context, Reply, RestartInfo,
     StopOutcome, TellError, WeakActorRef,
 };
-use forge_core::event::{EventBus, EventKind};
+use forge_core::event::EventBus;
 use forge_core::ids::{InstanceId, ToolId};
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::{ProcessControl, ProcessGroup, SpawnedProcess, TERMINATE_TIMEOUT};
@@ -47,10 +47,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::events::{
-    SERVICE_EVENT_VERSION, ServiceCrashedPayload, ServiceFailedPayload, ServiceRef,
-    ServiceRunningPayload, ServiceStartingPayload, ServiceStoppedPayload, ServiceStoppingPayload,
-};
+use crate::events::{ServiceEventPayload, ServiceRef};
 use crate::job::JobTree;
 use crate::logs::{LogHub, LogOptions, LogSubscription};
 use crate::process::SpawnSpec;
@@ -228,7 +225,9 @@ pub struct InstanceActor {
     job_cleanups: Vec<JoinHandle<()>>,
 }
 
-fn publish<T: Serialize>(events: &EventBus, kind: EventKind, payload: &T) {
+/// Publishes `payload` under its kind (`service.<state>`).
+fn publish(events: &EventBus, payload: &ServiceEventPayload) {
+    let kind = payload.kind();
     match serde_json::to_value(payload) {
         Ok(value) => {
             events.publish(kind, value);
@@ -453,10 +452,6 @@ impl InstanceActor {
         self.since = Timestamp::now();
     }
 
-    fn service(&self) -> ServiceRef {
-        self.shared.service.clone()
-    }
-
     fn status(&self) -> InstanceStatus {
         let state = match &self.state {
             InstanceState::Stopping { .. } => InstanceState::Stopping {
@@ -485,12 +480,7 @@ impl InstanceActor {
         self.set_state(InstanceState::Starting);
         publish(
             ctx.events(),
-            EventKind::ServiceStarting,
-            &ServiceStartingPayload {
-                v: SERVICE_EVENT_VERSION,
-                service: self.service(),
-                run,
-            },
+            &ServiceEventPayload::starting(&self.shared.service, run),
         );
         tokio::spawn(run_process(
             Arc::clone(&self.shared),
@@ -510,19 +500,12 @@ impl InstanceActor {
         let (progress_tx, progress_rx) = watch::channel(None);
         self.stop_progress = Some(progress_rx);
         let events = ctx.events().clone();
-        let service = self.service();
+        let service = self.shared.service.clone();
         let on_step: StepObserver = Box::new(move |strategy: StopStrategy, wait: Duration| {
             progress_tx.send_replace(Some(strategy));
             publish(
                 &events,
-                EventKind::ServiceStopping,
-                &ServiceStoppingPayload {
-                    v: SERVICE_EVENT_VERSION,
-                    service: service.clone(),
-                    strategy,
-                    step: strategy.step(),
-                    timeout_ms: u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
-                },
+                &ServiceEventPayload::stopping(&service, pid, strategy, wait),
             );
         });
         let cascade = Cascade {
@@ -544,22 +527,14 @@ impl InstanceActor {
     }
 
     fn finish_stop(&mut self, report: StopReport, ctx: &mut Context<Self>) {
-        self.pid = None;
+        let pid = self.pid.take();
         self.stop_progress = None;
         let stopped = report.exited() || (report.strategy.is_none() && report.attempted.is_empty());
         if stopped {
             self.set_state(InstanceState::Stopped);
             publish(
                 ctx.events(),
-                EventKind::ServiceStopped,
-                &ServiceStoppedPayload {
-                    v: SERVICE_EVENT_VERSION,
-                    service: self.service(),
-                    strategy: report.strategy,
-                    exit_code: report.exit_code,
-                    elapsed_ms: report.elapsed_ms,
-                    leftovers_killed: report.leftovers_killed,
-                },
+                &ServiceEventPayload::stopped(&self.shared.service, pid, &report),
             );
         } else {
             let err = ForgeError::Timeout {
@@ -570,7 +545,7 @@ impl InstanceActor {
             if std::mem::take(&mut self.start_after_stop) {
                 fail_all(std::mem::take(&mut self.pending_restart), &err);
             }
-            self.fail(err, ctx);
+            self.fail(err, pid, ctx);
         }
         for reply in std::mem::take(&mut self.pending_stop) {
             let _ = reply.send(Ok(report.clone()));
@@ -581,21 +556,16 @@ impl InstanceActor {
         }
     }
 
-    /// Enters `Failed` and publishes `service.failed`.
-    fn fail(&mut self, err: ForgeError, ctx: &mut Context<Self>) {
-        let code = err.code().to_owned();
-        let reason = err.to_string();
+    /// Enters `Failed` and publishes `service.failed` (`pid`: a process left behind).
+    fn fail(&mut self, err: ForgeError, pid: Option<u32>, ctx: &mut Context<Self>) {
         publish(
             ctx.events(),
-            EventKind::ServiceFailed,
-            &ServiceFailedPayload {
-                v: SERVICE_EVENT_VERSION,
-                service: self.service(),
-                code: code.clone(),
-                reason: reason.clone(),
-            },
+            &ServiceEventPayload::failed(&self.shared.service, pid, &err),
         );
-        self.set_state(InstanceState::Failed { code, reason });
+        self.set_state(InstanceState::Failed {
+            code: err.code().to_owned(),
+            reason: err.to_string(),
+        });
     }
 
     /// A pending start/restart is superseded by a stop request.
@@ -689,13 +659,7 @@ impl InstanceActor {
                     self.set_state(InstanceState::Running);
                     publish(
                         ctx.events(),
-                        EventKind::ServiceRunning,
-                        &ServiceRunningPayload {
-                            v: SERVICE_EVENT_VERSION,
-                            service: self.service(),
-                            run,
-                            pid,
-                        },
+                        &ServiceEventPayload::running(&self.shared.service, run, pid),
                     );
                     for reply in std::mem::take(&mut self.pending_start) {
                         let _ = reply.send(Ok(pid));
@@ -713,25 +677,24 @@ impl InstanceActor {
                     }
                     self.stop_after_start = false;
                     self.start_after_stop = false;
-                    self.fail(err, ctx);
+                    self.fail(err, None, ctx);
                 }
             },
             Notice::Exited { run, info } if run == self.run => {
                 if self.state == InstanceState::Running {
-                    self.pid = None;
+                    let pid = self.pid.take();
                     tracing::warn!(instance = %self.shared.service.instance, tool = %self.shared.service.tool, code = info.code, "instance exited unexpectedly");
                     self.set_state(InstanceState::Crashed {
                         exit_code: info.code,
                     });
                     publish(
                         ctx.events(),
-                        EventKind::ServiceCrashed,
-                        &ServiceCrashedPayload {
-                            v: SERVICE_EVENT_VERSION,
-                            service: self.service(),
-                            exit_code: info.code,
-                            leftovers_killed: info.leftovers_killed,
-                        },
+                        &ServiceEventPayload::crashed(
+                            &self.shared.service,
+                            pid,
+                            info.code,
+                            info.leftovers_killed,
+                        ),
                     );
                 }
                 // Stopping: the cascade observes the same exit and reports.
@@ -794,6 +757,7 @@ impl Actor for InstanceActor {
                 "instance supervisor restarted after an internal error: {}",
                 info.reason
             )),
+            None,
             ctx,
         );
     }

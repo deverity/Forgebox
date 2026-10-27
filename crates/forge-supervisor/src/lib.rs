@@ -13,6 +13,8 @@
 //! * [`service`]: [`InstanceActor`] (Start/Stop/Restart/Status/SubscribeLogs) behind
 //!   [`InstanceHandle`], created by [`Supervisor::spawn_instance`]. Health probes and
 //!   restart policies come with M1-E3-T2.
+//! * [`events::ServiceEventPayload`]: the payload of the six `service.*` events, shaped
+//!   as the API contract `forge_ipc::api::events::ServicePayload` (docs/03 §8).
 //!
 //! No Win32 here: everything OS-specific goes through
 //! [`forge_core::platform::ProcessControl`] / [`forge_core::platform::ProcessGroup`].
