@@ -231,7 +231,7 @@ service:
       timeout: 20s
       then: ctrl-break               # ctrl-c | ctrl-break | close | kill: próximo passo se o comando não parar
     reload: null                     # ou { command: "..." } ou { signal: ctrl-c | ctrl-break }
-    restart_policy: { on: failure, max: 3, window: 60s }   # on: never | failure | always
+    restart_policy: { on: failure, max: 3, window: 60s }   # on: never | failure | always; max/window limitam `failure` (`always` não tem limite); espera exponencial 1s..30s entre reinícios (docs/03 §1.4)
     logs:
       - { label: Error log, path: "{{ paths.logs }}/mysql/{{ instance.name }}/error.log", format: mysql }
     data:

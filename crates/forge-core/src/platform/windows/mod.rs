@@ -7,6 +7,7 @@ mod file_acl;
 mod link_fs;
 pub mod pipe_security;
 mod process;
+mod process_stats;
 mod security;
 mod window_close;
 
@@ -15,4 +16,5 @@ pub use case_sensitive_fs::WindowsCaseSensitiveFs;
 pub use file_acl::WindowsFileAcl;
 pub use link_fs::WindowsLinkFs;
 pub use process::WindowsProcessControl;
+pub use process_stats::WindowsProcessStats;
 pub use security::{current_user_sid, dacl_grants_only};

@@ -9,7 +9,9 @@
 //! M1-E2-T2), [`FileAcl`] (owner-only secret files) and [`windows::pipe_security`]
 //! (DACL and owner check of the local API pipe; M1-E5-T1) and the process primitives of
 //! [`process`] ([`ProcessGroup`], [`ProcessControl`]: Job Objects, spawn, `CTRL_BREAK`,
-//! `WM_CLOSE`; M1-E3-T1) are implemented for Windows. [`TrustStore`] (M1-E4-T4) and
+//! `WM_CLOSE`; M1-E3-T1) and the per-process counters of [`process_stats`]
+//! ([`ProcessStats`]: CPU time, working set, handles; M1-E3-T2) are implemented for
+//! Windows. [`TrustStore`] (M1-E4-T4) and
 //! [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still grow in those
 //! tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
@@ -27,6 +29,7 @@ use crate::error::ForgeError;
 use crate::error::Result;
 
 pub mod process;
+pub mod process_stats;
 #[cfg(windows)]
 pub mod windows;
 
@@ -35,6 +38,7 @@ pub use process::{
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
     SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
 };
+pub use process_stats::{ProcStats, ProcessStats, process_stats};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.
@@ -183,6 +187,7 @@ pub struct Platform {
     link_fs: Arc<dyn LinkFs>,
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
     processes: Arc<dyn ProcessControl>,
+    process_stats: Arc<dyn ProcessStats>,
     code_sign: Arc<dyn CodeSign>,
     file_acl: Arc<dyn FileAcl>,
 }
@@ -197,9 +202,10 @@ impl fmt::Debug for Platform {
 
 impl Platform {
     /// Assembles a platform from parts (tests use fakes). Process operations default to
-    /// [`process_control`] with default options; code signing and file ACLs to the
-    /// implementations of the running OS. See [`Platform::with_processes`],
-    /// [`Platform::with_code_sign`] and [`Platform::with_file_acl`].
+    /// [`process_control`] with default options; process counters, code signing and file
+    /// ACLs to the implementations of the running OS. See [`Platform::with_processes`],
+    /// [`Platform::with_process_stats`], [`Platform::with_code_sign`] and
+    /// [`Platform::with_file_acl`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -210,6 +216,7 @@ impl Platform {
             link_fs,
             case_sensitive_fs,
             processes: process_control(ProcessControlOptions::default()),
+            process_stats: process_stats(),
             code_sign: default_code_sign(),
             file_acl: default_file_acl(),
         }
@@ -218,6 +225,12 @@ impl Platform {
     /// Replaces the process operations (custom `forgebox-ctrl` location, fakes).
     pub fn with_processes(mut self, processes: Arc<dyn ProcessControl>) -> Self {
         self.processes = processes;
+        self
+    }
+
+    /// Replaces the per-process counters (fakes in tests).
+    pub fn with_process_stats(mut self, process_stats: Arc<dyn ProcessStats>) -> Self {
+        self.process_stats = process_stats;
         self
     }
 
@@ -249,6 +262,12 @@ impl Platform {
     /// Job Objects, spawn, console control events, window close requests.
     pub fn processes(&self) -> &Arc<dyn ProcessControl> {
         &self.processes
+    }
+
+    /// CPU time, memory and handles of single processes (shared, so it can move into
+    /// `spawn_blocking`).
+    pub fn process_stats(&self) -> &Arc<dyn ProcessStats> {
+        &self.process_stats
     }
 
     /// Authenticode verification (shared, so it can move into `spawn_blocking`).
