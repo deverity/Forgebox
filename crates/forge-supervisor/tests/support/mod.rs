@@ -18,7 +18,7 @@ use forge_core::event::{Event, EventBus, EventKind, EventStream};
 use forge_core::ids::{InstanceId, ToolId};
 use forge_core::platform::{ProcessControl, ProcessControlOptions, process_control};
 use forge_supervisor::{
-    InstanceHandle, InstanceSpec, JobTree, LogSubscription, SpawnSpec, Supervisor,
+    InstanceHandle, InstanceSpec, JobTree, LogSubscription, RestartPolicy, SpawnSpec, Supervisor,
 };
 
 /// Path of the fake service executable (built on first use).
@@ -81,6 +81,7 @@ pub fn supervisor() -> (Supervisor, EventBus) {
 }
 
 /// Spec running the fake service with `args` (cwd = its folder, PATH = its folder).
+/// Restart policy `never`, so a crash stays `Crashed`; tests of the policies set theirs.
 pub fn fake_spec(name: &str, args: &[&str]) -> InstanceSpec {
     let exe = fake_service();
     let dir = exe.parent().unwrap().to_path_buf();
@@ -93,6 +94,16 @@ pub fn fake_spec(name: &str, args: &[&str]) -> InstanceSpec {
         name.to_owned(),
         spawn,
     )
+    .with_restart(RestartPolicy::Never)
+}
+
+/// A free TCP port on 127.0.0.1 (bound then released).
+pub fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// Stop command running the fake service in one-shot mode.

@@ -1,9 +1,12 @@
 //! The `service.*` payloads published by the supervisor decode as the API contract
-//! `forge_ipc::api::events::ServicePayload` (docs/03 §8): one shape for the six kinds,
-//! same field names, types and enum values, and no field the contract would drop.
+//! `forge_ipc::api::events::ServicePayload` (docs/03 §8): one shape for the seven state
+//! kinds, same field names, types and enum values, and no field the contract would drop.
+//! `service.metrics` decodes as `ServiceMetricsPayload`, and every `FailureReason`
+//! variant as `FailureReasonDto`.
 //!
 //! The constructors are checked on every OS; on Windows the events published by real
-//! instances (start, stop through the cascade, crash, failed start) are decoded too.
+//! instances (start, stop through the cascade, crash, failed start, maintenance, metrics)
+//! are decoded too.
 
 #[cfg(windows)]
 mod support;
@@ -13,10 +16,10 @@ use std::time::Duration;
 use forge_core::ForgeError;
 use forge_core::event::EventKind;
 use forge_core::ids::{InstanceId, ToolId};
-use forge_ipc::api::events::ServicePayload;
-use forge_ipc::api::services::ServiceState;
+use forge_ipc::api::events::{ServiceMetricsPayload as ApiMetricsPayload, ServicePayload};
+use forge_ipc::api::services::{FailureReasonDto, ServiceState};
 use forge_supervisor::events::{ServiceEventPayload, ServiceEventState, ServiceRef};
-use forge_supervisor::{StopReport, StopStrategy};
+use forge_supervisor::{FailureReason, StopCause, StopReport, StopStrategy};
 use serde_json::Value;
 
 /// Fields every `service.*` payload carries, `null` when they do not apply.
@@ -40,7 +43,8 @@ fn expected_state(kind: EventKind) -> ServiceState {
         EventKind::ServiceStopped => ServiceState::Stopped,
         EventKind::ServiceCrashed => ServiceState::Crashed,
         EventKind::ServiceFailed => ServiceState::Failed,
-        other => panic!("{other} is not a service event"),
+        EventKind::ServiceMaintenance => ServiceState::Maintenance,
+        other => panic!("{other} is not a service state event"),
     }
 }
 
@@ -100,10 +104,19 @@ fn every_constructor_decodes_as_service_payload() {
     let payloads = [
         ServiceEventPayload::starting(&service, 3),
         ServiceEventPayload::running(&service, 3, 77),
-        ServiceEventPayload::stopping(&service, 77, StopStrategy::WmClose, Duration::from_secs(5)),
+        ServiceEventPayload::stopping(
+            &service,
+            77,
+            StopStrategy::WmClose,
+            Duration::from_secs(5),
+            StopCause::Unhealthy,
+        ),
         ServiceEventPayload::stopped(&service, Some(77), &report),
-        ServiceEventPayload::crashed(&service, Some(77), 3, 1),
+        ServiceEventPayload::crashed(&service, Some(77), 3, 1)
+            .with_cause(StopCause::Unhealthy)
+            .with_restart_in(Duration::from_millis(2_000)),
         ServiceEventPayload::failed(&service, None, &err),
+        ServiceEventPayload::maintenance(&service),
     ];
     let kinds: Vec<EventKind> = payloads.iter().map(ServiceEventPayload::kind).collect();
     let all: Vec<EventKind> = ServiceEventState::ALL.iter().map(|s| s.kind()).collect();
@@ -126,6 +139,7 @@ fn every_constructor_decodes_as_service_payload() {
                 assert_eq!(api.pid, Some(77));
                 assert_eq!(api.strategy.as_deref(), Some("wm_close"));
                 assert_eq!((api.step, api.timeout_ms), (Some(3), Some(5_000)));
+                assert_eq!(api.cause.as_deref(), Some("unhealthy"));
             }
             EventKind::ServiceStopped => {
                 assert_eq!(api.strategy.as_deref(), Some("ctrl_break"));
@@ -138,18 +152,102 @@ fn every_constructor_decodes_as_service_payload() {
             }
             EventKind::ServiceCrashed => {
                 assert_eq!((api.exit_code, api.leftovers_killed), (Some(3), Some(1)));
+                assert_eq!(api.cause.as_deref(), Some("unhealthy"));
+                assert_eq!(api.restart_in_ms, Some(2_000));
             }
             EventKind::ServiceFailed => {
                 let error = api.error.expect("service.failed carries the error");
                 assert_eq!(error.code, "port_in_use");
-                assert_eq!(error.message, err.to_string());
+                assert_eq!(
+                    error.message,
+                    "port 3306 is already in use by mysqld.exe (pid 99)"
+                );
+                assert_eq!(
+                    api.reason,
+                    Some(FailureReasonDto::PortInUse {
+                        port: 3306,
+                        pid: None,
+                        exe: Some("mysqld.exe (pid 99)".into()),
+                    })
+                );
+            }
+            EventKind::ServiceMaintenance => {
+                assert_eq!((api.pid, api.error), (None, None));
             }
             _ => unreachable!(),
         }
     }
 }
 
-/// Real instances publish the six kinds; each payload decodes as `ServicePayload`.
+/// Every `FailureReason` decodes as `FailureReasonDto` and back to the same JSON.
+#[test]
+fn every_failure_reason_decodes_as_dto() {
+    let reasons = [
+        FailureReason::PortInUse {
+            port: 80,
+            pid: Some(4),
+            exe: Some("System".into()),
+        },
+        FailureReason::MissingDll {
+            exit_code: -1_073_741_515,
+        },
+        FailureReason::ConfigInvalid {
+            stderr: "AH00526: Syntax error on line 3".into(),
+        },
+        FailureReason::Permission {
+            message: "access denied".into(),
+        },
+        FailureReason::HealthTimeout {
+            timeout_ms: 30_000,
+            last_error: Some("connect 127.0.0.1:3306: refused".into()),
+        },
+        FailureReason::ExitedDuringStart { exit_code: 1 },
+        FailureReason::CrashLoop {
+            restarts: 3,
+            window_ms: 60_000,
+            exit_code: Some(3),
+        },
+        FailureReason::Other {
+            code: "not_found".into(),
+            message: "not found: executable".into(),
+        },
+    ];
+    let mut kinds = std::collections::BTreeSet::new();
+    for reason in reasons {
+        let json = serde_json::to_value(&reason).unwrap();
+        let dto: FailureReasonDto = serde_json::from_value(json.clone())
+            .unwrap_or_else(|err| panic!("{json} is not a FailureReasonDto: {err}"));
+        assert_eq!(serde_json::to_value(&dto).unwrap(), json);
+        kinds.insert(reason.kind());
+    }
+    assert_eq!(kinds.len(), 8, "one sample per variant");
+}
+
+/// `service.metrics` decodes as the API payload, nothing lost.
+#[test]
+fn metrics_payload_decodes_as_api_payload() {
+    let json = serde_json::json!({
+        "v": 1,
+        "instance_id": InstanceId::new().to_string(),
+        "name": "mysql/default",
+        "tool": "mysql",
+        "pid": 77,
+        "cpu_pct": 6.25,
+        "rss_bytes": 209_715_200_u64,
+        "private_bytes": 210_000_000_u64,
+        "handles": 120,
+        "processes": 2,
+        "uptime_ms": 10_000,
+        "window_ms": 2_000,
+    });
+    let ours: forge_supervisor::ServiceMetricsPayload =
+        serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&ours).unwrap(), json);
+    let api: ApiMetricsPayload = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&api).unwrap(), json);
+}
+
+/// Real instances publish the seven kinds; each payload decodes as `ServicePayload`.
 #[cfg(windows)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn published_service_events_decode_as_service_payload() {
@@ -184,18 +282,45 @@ async fn published_service_events_decode_as_service_payload() {
         .await
         .unwrap();
 
-    // failed: the executable does not exist.
+    // failed: the executable does not exist; then maintenance in and out.
     let mut spec = fake_spec("missing", &[]);
     spec.spawn.exe = spec.spawn.cwd.join("no-such-service.exe");
     let missing = supervisor.spawn_instance(spec).unwrap();
     missing.start(ASK).await.unwrap_err();
-    // Answered after the handler that published `service.failed`.
+    missing.enter_maintenance(ASK).await.unwrap();
+    missing.exit_maintenance(ASK).await.unwrap();
+    // Answered after the handler that published the last event.
     missing.status(QUICK_ASK_TIMEOUT).await.unwrap();
 
-    let ids = [polite.id(), crashy.id(), missing.id()];
+    // service.metrics: opt-in sampling every 200 ms.
+    let mut spec = fake_spec("sampled", &[]);
+    spec.metrics.interval = Duration::from_millis(200);
+    spec.metrics.publish_events = true;
+    let sampled = supervisor.spawn_instance(spec).unwrap();
+    let sampled_pid = sampled.start(ASK).await.unwrap();
+    let mut metrics = sampled.subscribe_metrics(ASK).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(10), metrics.wait_for(|m| m.is_some()))
+        .await
+        .expect("a metrics sample within 10 s")
+        .unwrap();
+    sampled.stop(Duration::from_secs(30)).await.unwrap();
+
+    let ids = [polite.id(), crashy.id(), missing.id(), sampled.id()];
+    let mut metrics_events = 0;
     let mut seen = BTreeSet::new();
     while let Some(event) = stream.try_recv() {
         if !event.kind.as_str().starts_with("service.") {
+            continue;
+        }
+        if event.kind == EventKind::ServiceMetrics {
+            let api: ApiMetricsPayload = serde_json::from_value(event.payload.clone())
+                .unwrap_or_else(|err| panic!("not a ServiceMetricsPayload: {err}"));
+            assert_eq!(api.instance_id, sampled.id());
+            assert_eq!(api.name, "fake/sampled");
+            assert_eq!(api.pid, Some(sampled_pid));
+            assert!(api.rss_bytes > 0 && api.processes >= 1, "{api:?}");
+            assert_eq!(serde_json::to_value(&api).unwrap(), event.payload);
+            metrics_events += 1;
             continue;
         }
         let api = decode(event.kind, &event.payload);
@@ -228,18 +353,24 @@ async fn published_service_events_decode_as_service_payload() {
                 assert_eq!((api.pid, api.exit_code), (Some(crashy_pid), Some(3)));
                 assert!(api.leftovers_killed.is_some());
             }
-        } else {
+        } else if api.instance_id == missing.id() {
             assert_eq!(api.name, "fake/missing");
             if event.kind == EventKind::ServiceFailed {
                 let error = api.error.expect("service.failed carries the error");
                 assert_eq!(error.code, "not_found");
                 assert_eq!(api.pid, None);
+                assert!(
+                    matches!(&api.reason, Some(FailureReasonDto::Other { code, .. }) if code == "not_found"),
+                    "{:?}",
+                    api.reason
+                );
             }
         }
     }
+    assert!(metrics_events >= 1, "service.metrics was published");
     let all: BTreeSet<&str> = ServiceEventState::ALL
         .iter()
         .map(|s| s.kind().as_str())
         .collect();
-    assert_eq!(seen, all, "every service.* kind was published");
+    assert_eq!(seen, all, "every service.* state kind was published");
 }
