@@ -3,7 +3,7 @@
 //! [`build_index`] reads `tools/*.yaml` and `stacks/*.yaml`, hashes each file
 //! ([`sha256_hex`], over the exact bytes on disk, LF by `.gitattributes`) and resolves the
 //! newest stable version offline from `source.releases` ([`latest_version`]). The signature
-//! is a placeholder (`dev`, empty `sig`) until the signing task (M1-E1-T3).
+//! is a placeholder (`dev`, empty `sig`); `cargo xtask registry-sign` replaces it.
 //! Used by `cargo xtask registry-index`; `lint_registry` checks the same hashes.
 //!
 //! Blocking file I/O: call from `spawn_blocking` in async code.

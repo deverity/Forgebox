@@ -63,8 +63,9 @@ pub struct RegistryEntry {
     pub latest: Option<String>,
 }
 
-/// `key_id` of the placeholder signature of unsigned development indexes (`sig` may be empty).
-/// Real signatures come with M1-E1-T3; a loader must only accept `dev` in development mode.
+/// `key_id` of the placeholder signature written by `cargo xtask registry-index` (`sig` is
+/// empty until `cargo xtask registry-sign` fills it with the minisign key id and signature).
+/// A loader accepts an unsigned index only for `trusted_unsigned` registries (docs/04 §5).
 pub const DEV_KEY_ID: &str = "dev";
 
 /// `spec.signature`.
