@@ -201,7 +201,14 @@ function Stop-RootProcesses {
         foreach ($p in $procs) {
             Write-Log "killing leftover $($p.Name) (PID $($p.ProcessId)) of this root"
             try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop; $count++ }
-            catch { Write-Log "  could not kill PID $($p.ProcessId): $($_.Exception.Message)" }
+            catch {
+                # Already gone (the daemon's Job object takes its children with it).
+                if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
+                    Write-Log "  could not kill PID $($p.ProcessId): $($_.Exception.Message)"
+                } else {
+                    Write-Log "  PID $($p.ProcessId) already exited"
+                }
+            }
         }
         Start-Sleep -Milliseconds 500
     }
@@ -471,7 +478,8 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
         foreach ($action in $teardown.Keys) {
             try { & $teardown[$action] }
             catch {
-                $errors.Add("${action}: $($_.Exception.Message)")
+                $first = ("$($_.Exception.Message)" -split "`r?`n")[0]
+                $errors.Add("${action}: $first")
                 Write-Log "WARNING: teardown action '$action' failed: $($_.Exception.Message)" 'Yellow'
             }
         }
