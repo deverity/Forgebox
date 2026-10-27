@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../../../registry/schema/project.v1.json
+# docs/04 §4 (forgebox.yaml at the root of a project), complete.
+apiVersion: forgebox.dev/v1
+kind: Project
+metadata: { name: loja }
+spec:
+  site:
+    host: loja.test
+    aliases: [admin.loja.test]
+    root: public
+    driver: laravel
+    server: nginx
+    php: "8.3"
+    php_ini: { memory_limit: 1G, upload_max_filesize: 256M }
+    xdebug: trigger
+    secure: true
+  services:
+    - { tool: mysql, series: "8.4", instance: default, database: loja }
+    - { tool: memurai }
+    - { tool: mailpit }
+  runtimes:
+    - { tool: nodejs, version: "22" }
+  processes:
+    vite:   { cmd: "npm run dev -- --port $PORT", port: 5173, proxy_path: null }
+    queue:  { cmd: "php artisan queue:work", restart: always }
+    sched:  { cmd: "php artisan schedule:work" }
+    web:    { cmd: "npm run start -- --port $PORT", port: auto, proxy: true, runtime: nodejs@22, autostart: on-visit }
+  proxies:
+    - { host: app.loja.test, upstream: "http://127.0.0.1:3000", websocket: true, secure: true }
+  share: { provider: cloudflared }

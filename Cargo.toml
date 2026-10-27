@@ -8,7 +8,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/deverity/Forgebox"
-rust-version = "1.85"
+# 1.88: required by zip >= 9 and pgp >= 0.18 (ADR-0017).
+rust-version = "1.88"
 authors = ["Forgebox Team"]
 
 [workspace.dependencies]
@@ -31,6 +32,11 @@ ulid = { version = "3.0.0", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }
 rusqlite = { version = "0.41.0", features = ["bundled"] }
 schemars = { version = "1.2.3", features = ["derive"] }
+# Manifest durations ("15s", "1h") and version constraints (docs/04, forge-manifest).
+humantime = "2.4.0"
+semver = "1.0.28"
+# Regexes declared in manifests (verify, discover, assets) are compiled by the validator.
+regex = "1.12.3"
 # specta ainda está em release candidate: versão exata para evitar quebra silenciosa.
 specta = "=2.0.0-rc.27"
 specta-typescript = "=0.0.14"
@@ -45,6 +51,27 @@ junction = { version = "2.1.0", default-features = false }
 parking_lot = "0.13.0"
 futures = "0.3.34"
 bytes = "1.12.1"
+# HTTP client for downloads: rustls only (no native-tls/OpenSSL), system proxy by default.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "system-proxy"] }
+sha2 = "0.11.1"
+# Config rendering (forge-render): embedded templates and fake certs for e2e tests.
+include_dir = "0.7.4"
+rcgen = "0.14"
+url = "2.5.8"
+# Verification and extraction (forge-provider verify/extract, ADR-0017). Pure Rust only:
+# no C toolchain (sequoia/nettle, liblzma-sys, zstd-sys, bzip2) and no non-allowed licenses.
+pgp = { version = "0.21.0", default-features = false }
+minisign-verify = "0.3.0"
+zip = { version = "9.1.2", default-features = false, features = ["deflate-flate2", "deflate64", "jiff-02"] }
+sevenz-rust2 = { version = "0.20.2", default-features = false }
+tar = "0.4.46"
+flate2 = "1.1.10"
+# Same version as sevenz-rust2 uses: one LZMA implementation for 7z and tar.xz.
+lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz"] }
+# Test only: signs minisign fixtures; RNG of the same major as pgp (key generation in tests).
+minisign = "0.10.0"
+rand = "0.8.6"
+axum = "0.8.9"
 camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"
@@ -63,6 +90,9 @@ await_holding_invalid_type = "deny"
 dbg_macro = "warn"
 todo = "warn"
 unwrap_used = "allow"
+# With MSRV 1.88 (ADR-0017) clippy suggests let-chains for nested `if let`. The migration is
+# deferred so branches written for 1.85 stay green; remove this with the let-chains cleanup.
+collapsible_if = "allow"
 
 [profile.release]
 lto = "thin"

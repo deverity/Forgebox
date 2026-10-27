@@ -27,6 +27,12 @@ pub struct JobProgress {
     pub bytes_done: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes_total: Option<u64>,
+    /// Smoothed transfer speed in bytes per second (downloads).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed_bps: Option<u64>,
+    /// Estimated seconds until completion (downloads with a known size).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta_secs: Option<u64>,
 }
 
 impl JobProgress {
@@ -58,6 +64,13 @@ impl JobProgress {
         self
     }
 
+    /// Sets speed (bytes/s) and ETA (seconds).
+    pub fn rate(mut self, speed_bps: u64, eta_secs: Option<u64>) -> Self {
+        self.speed_bps = Some(speed_bps);
+        self.eta_secs = eta_secs;
+        self
+    }
+
     /// Overwrites the fields present in `update`.
     pub fn merge(&mut self, update: JobProgress) {
         if update.pct.is_some() {
@@ -71,6 +84,12 @@ impl JobProgress {
         }
         if update.bytes_total.is_some() {
             self.bytes_total = update.bytes_total;
+        }
+        if update.speed_bps.is_some() {
+            self.speed_bps = update.speed_bps;
+        }
+        if update.eta_secs.is_some() {
+            self.eta_secs = update.eta_secs;
         }
     }
 }
@@ -196,6 +215,16 @@ mod tests {
         assert_eq!(p.pct, Some(100.0), "clamped");
         assert_eq!((p.bytes_done, p.bytes_total), (Some(1024), Some(2048)));
         assert_eq!(JobProgress::new().pct(f32::NAN).pct, Some(0.0));
+    }
+
+    #[test]
+    fn rate_fields_merge_and_are_omitted_when_unset() {
+        let mut p = JobProgress::new().bytes(10, Some(100));
+        assert!(serde_json::to_value(&p).unwrap().get("speed_bps").is_none());
+        p.merge(JobProgress::new().rate(5, Some(18)));
+        p.merge(JobProgress::new().pct(10.0));
+        assert_eq!((p.speed_bps, p.eta_secs), (Some(5), Some(18)));
+        assert_eq!(p.bytes_done, Some(10));
     }
 
     #[test]

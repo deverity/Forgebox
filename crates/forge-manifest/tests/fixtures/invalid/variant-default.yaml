@@ -1,0 +1,12 @@
+# expect: invalid_variant
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: variant-default, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  versioning:
+    variants:
+      - { key: ts, values: [nts, ts], default: zts }

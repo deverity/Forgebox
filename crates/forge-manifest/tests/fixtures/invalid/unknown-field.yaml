@@ -1,0 +1,9 @@
+# expect: schema
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: unknown-field, name: Fixture, category: devtool, homepag: https://example.com }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist

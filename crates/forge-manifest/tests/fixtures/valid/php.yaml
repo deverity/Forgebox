@@ -1,0 +1,163 @@
+# yaml-language-server: $schema=../../../../../registry/schema/tool.v1.json
+# docs/04 §1, complete. Fixture only: URLs and hashes are not real downloads.
+apiVersion: forgebox.dev/v1
+kind: Tool
+
+metadata:
+  id: php
+  name: PHP
+  summary: Linguagem PHP (builds oficiais Windows)
+  description: |
+    Texto longo em Markdown exibido no catálogo.
+  category: runtime
+  tags: [php, language, fastcgi]
+  homepage: https://www.php.net
+  docs: https://www.php.net/manual
+  license: PHP-3.01
+  icon: php.svg
+  maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
+  deprecated: false
+
+spec:
+  platforms: [windows-x64]
+  runtime_deps: [vcredist-vs17]
+  depends_on: []
+  suggests: [composer, xdebug]
+
+  versioning:
+    scheme: semver
+    channels:
+      stable: { constraint: ">=7.4 <9" }
+      preview: { constraint: ">=8.6.0-0", prerelease: true }
+    series_key: "{major}.{minor}"
+    variants:
+      - key: ts
+        values: [nts, ts]
+        default: nts
+        label: { nts: Non Thread Safe, ts: Thread Safe }
+      - key: compiler
+        values: [vs17, vs16, vc15]
+        derive: from_provider
+      - key: arch
+        values: [x64]
+        default: x64
+
+  source:
+    providers:
+      - type: php-windows
+        include_archives: true
+        qa: false
+      - type: http
+        url: "https://downloads.php.net/~windows/releases/archives/php-{version}-Win32-{compiler}-x64.zip"
+        checksum: { type: sha256, url: "{url}.sha256" }
+    mirrors:
+      - "https://mirror.exemplo.com/php/{file}"
+    releases:
+      - version: "8.3.37"
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+        size: 32000000
+        variants: { ts: nts, compiler: vs16, arch: x64 }
+        published_at: 2026-10-01T12:00:00Z
+
+  install:
+    archive: zip
+    strip_root: auto
+    layout: versioned
+    current_link: true
+    path:
+      - "."
+    shims: [php, php-cgi, phpdbg, pear, pecl]
+    verify:
+      command: "php.exe -v"
+      regex: "^PHP (\\d+\\.\\d+\\.\\d+)"
+    post_install:
+      - copy: { from: "php.ini-development", to: "{{ paths.etc }}/php/{{ series }}/php.ini", if_missing: true }
+      - render: { template: "php/php.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/10-forgebox.ini" }
+      - mkdir: "{{ paths.tmp }}/php/{{ series }}/sessions"
+    uninstall:
+      keep: ["{{ paths.etc }}/php/{{ series }}"]
+    size_estimate_mb: 35
+
+  config:
+    files:
+      - id: php_ini
+        path: "{{ paths.etc }}/php/{{ series }}/php.ini"
+        format: ini
+        label: php.ini
+        editable: true
+    quick_settings:
+      - key: memory_limit
+        label: Memory limit
+        file: php_ini
+        ini: "memory_limit"
+        type: select
+        options: [128M, 256M, 512M, 1G, -1]
+        default: 512M
+        apply: reload
+      - key: upload_max_filesize
+        file: php_ini
+        ini: "upload_max_filesize"
+        type: text
+        default: 128M
+        also_set: { post_max_size: "{{ value }}" }
+      - key: max_execution_time
+        file: php_ini
+        ini: "max_execution_time"
+        type: number
+        default: 120
+      - key: display_errors
+        file: php_ini
+        ini: "display_errors"
+        type: toggle
+        on: "On"
+        off: "Off"
+        default: on
+      - key: opcache
+        label: OPcache
+        file: php_ini
+        ini: "opcache.enable"
+        type: toggle
+        on: "1"
+        off: "0"
+    extensions:
+      source: bundled
+      ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
+      pattern: "php_{name}.dll"
+      defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
+      zend_extensions: [{ name: opcache, constraint: "<8.5" }]
+    env:
+      PHPRC: "{{ paths.etc }}/php/{{ series }}"
+      PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"
+
+  service:
+    kind: pool
+    pool:
+      exe: php-cgi.exe
+      args: ["-b", "127.0.0.1:{{ port }}", "-c", "{{ paths.etc }}/php/{{ series }}/php.ini"]
+      protocol: fastcgi
+      port_range: php-pools
+      scaling: { min: 2, max: 12, idle_timeout: 120s }
+      recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
+      env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }
+      health: { fastcgi: "/_forgebox/health.php" }
+
+  discover:
+    match_files: [php.exe, php-cgi.exe]
+    version_command: "php.exe -r \"echo PHP_VERSION;\""
+    variant_detect:
+      ts: { command: "php.exe -i", regex: "Thread Safety => (enabled|disabled)", map: { enabled: ts, disabled: nts } }
+
+  update:
+    policy: auto-patch
+    retention: 1
+    check_interval: 6h
+    migrate:
+      - copy_dir: { from: "ext/", to: "ext/", only_missing: true }
+
+  ui:
+    color: "#777BB4"
+    actions:
+      - { label: "php.ini", icon: file-text, open: config:php_ini }
+      - { label: "Terminal com esta versão", icon: terminal, shell: { path_prepend: ["{{ paths.version }}"] } }
+      - { label: "Info (phpinfo)", icon: info, browse: "http://localhost/_forgebox/phpinfo?v={{ version }}" }
+    badges: ["{{ variant.ts }}", "{{ variant.compiler }}"]

@@ -1,0 +1,1274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExtensionManifest",
+  "description": "A complete `kind: Extension` manifest.",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/$defs/ApiVersion"
+    },
+    "kind": {
+      "$ref": "#/$defs/ExtensionKind"
+    },
+    "metadata": {
+      "$ref": "#/$defs/ToolMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/ExtensionSpec"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "$defs": {
+    "ApiVersion": {
+      "description": "`apiVersion` of a manifest. Anything other than `forgebox.dev/v1` is rejected.",
+      "type": "string",
+      "enum": [
+        "forgebox.dev/v1"
+      ]
+    },
+    "Apply": {
+      "description": "When a changed setting takes effect (`apply`).",
+      "oneOf": [
+        {
+          "description": "Graceful reload (recycle of the PHP pool, `nginx -s reload`...).",
+          "type": "string",
+          "const": "reload"
+        },
+        {
+          "description": "Restart of the service (always correct; default).",
+          "type": "string",
+          "const": "restart"
+        },
+        {
+          "description": "Nothing to do (read on next start or per request).",
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
+    "ArchiveFormat": {
+      "description": "Format of the downloaded file.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "zip",
+            "7z",
+            "tar.gz",
+            "tar.xz"
+          ]
+        },
+        {
+          "description": "A single file copied as is (`.exe`, `.dll`, `.phar`).",
+          "type": "string",
+          "const": "file"
+        },
+        {
+          "description": "Not supported in v1 (validation error).",
+          "type": "string",
+          "const": "msi"
+        }
+      ]
+    },
+    "AssetChecksum": {
+      "description": "Checksum published as a release asset (`checksums.txt`, `{asset}.sha256`).",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "description": "Asset name; `{asset}` is replaced by the downloaded asset name.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ChecksumType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "asset"
+      ]
+    },
+    "Category": {
+      "description": "Catalog category (`metadata.category`).",
+      "type": "string",
+      "enum": [
+        "runtime",
+        "webserver",
+        "database",
+        "cache",
+        "queue",
+        "search",
+        "storage",
+        "mail",
+        "tunnel",
+        "devtool",
+        "gui",
+        "library"
+      ]
+    },
+    "Checksum": {
+      "description": "`checksum` of an `http` provider.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ChecksumType"
+        },
+        "url": {
+          "description": "URL template of the checksum file (`{url}`, `{file}` and the provider placeholders).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ]
+    },
+    "ChecksumType": {
+      "description": "Hash algorithm. Default `sha256`.",
+      "type": "string",
+      "enum": [
+        "sha256",
+        "sha512"
+      ]
+    },
+    "Compat": {
+      "description": "`spec.compat[]`: which extension versions fit which target builds.",
+      "type": "object",
+      "properties": {
+        "tool": {
+          "description": "Constraint on the version of the extended tool (`\"~8.3\"`).",
+          "type": "string"
+        },
+        "variant": {
+          "description": "Required variant values of the target build (`{ ts: nts, compiler: vs17 }`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "description": "Constraint on the extension version (`\"3.4.*\"`).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "version"
+      ]
+    },
+    "Config": {
+      "description": "`spec.config`.",
+      "type": "object",
+      "properties": {
+        "env": {
+          "description": "Variables injected in the processes of the tool.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extensions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExtensionsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigFile"
+          }
+        },
+        "quick_settings": {
+          "description": "Native controls in the UI (docs/04 §1.3).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuickSetting"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConfigFile": {
+      "description": "`config.files[]`.",
+      "type": "object",
+      "properties": {
+        "editable": {
+          "description": "Default `true`.",
+          "type": "boolean"
+        },
+        "format": {
+          "$ref": "#/$defs/ConfigFormat"
+        },
+        "id": {
+          "description": "Referenced by `quick_settings[].file`, `ui.actions[].open: config:<id>` and\n`{{ instance.config.<id> }}`.",
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "format"
+      ]
+    },
+    "ConfigFormat": {
+      "description": "Format of a config file; decides how quick settings are written.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "ini",
+            "yaml",
+            "json"
+          ]
+        },
+        {
+          "description": "Apache/Nginx directives; edited only inside the managed block.",
+          "type": "string",
+          "const": "conf-directive"
+        },
+        {
+          "description": "Command line arguments of the service.",
+          "type": "string",
+          "const": "args"
+        },
+        {
+          "description": "Plain text: editable, no quick settings.",
+          "type": "string",
+          "const": "text"
+        }
+      ]
+    },
+    "CopyAction": {
+      "description": "`post_install[].copy`.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Relative to the version folder, or starting with `{{ paths.<dir> }}`.",
+          "type": "string"
+        },
+        "if_missing": {
+          "description": "Keep an existing destination (user edits). Default `false`.",
+          "type": "boolean"
+        },
+        "to": {
+          "description": "Must start with `{{ paths.<dir> }}` (rule 6).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "Duration": {
+      "description": "Duration with an explicit unit, e.g. \"15s\", \"2m\", \"1h\", \"1h 30m\".",
+      "type": "string",
+      "examples": [
+        "15s",
+        "2m",
+        "1h"
+      ],
+      "pattern": "^\\s*[0-9]+\\s*[a-zA-Z]+(\\s*[0-9]+\\s*[a-zA-Z]+)*\\s*$"
+    },
+    "ExtensionInstall": {
+      "description": "`spec.install` of an Extension.",
+      "type": "object",
+      "properties": {
+        "archive": {
+          "description": "Default: inferred from the file name (a `.dll` is a single `file`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArchiveFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "post_install": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PostInstallAction"
+          }
+        },
+        "size_estimate_mb": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "strip_root": {
+          "description": "Only for archives. Default `auto`.",
+          "$ref": "#/$defs/StripRoot"
+        },
+        "target": {
+          "description": "Destination inside the target version: the file itself (single file) or the folder\nwhere the archive is extracted. Must start with `{{ paths.version }}`.",
+          "type": "string"
+        },
+        "uninstall": {
+          "$ref": "#/$defs/Uninstall"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target"
+      ]
+    },
+    "ExtensionKind": {
+      "description": "`kind: Extension`.",
+      "type": "string",
+      "enum": [
+        "Extension"
+      ]
+    },
+    "ExtensionSource": {
+      "description": "Where bundled extensions come from.",
+      "oneOf": [
+        {
+          "description": "Files shipped in the tool archive (`ext/*.dll`).",
+          "type": "string",
+          "const": "bundled"
+        }
+      ]
+    },
+    "ExtensionSpec": {
+      "description": "`spec` of an Extension.",
+      "type": "object",
+      "properties": {
+        "compat": {
+          "description": "Resolved against the target tool version; the first matching entry wins.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Compat"
+          }
+        },
+        "config": {
+          "$ref": "#/$defs/Config"
+        },
+        "extends": {
+          "description": "The tool this extension goes into (`php`).",
+          "$ref": "#/$defs/ToolId"
+        },
+        "install": {
+          "$ref": "#/$defs/ExtensionInstall"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "toggle": {
+          "description": "Lines written to enable/disable the extension in the target's config.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Toggle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "extends",
+        "source",
+        "install"
+      ]
+    },
+    "ExtensionsConfig": {
+      "description": "`config.extensions`: bundled extensions shown as toggles.",
+      "type": "object",
+      "properties": {
+        "defaults_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ini_dir": {
+          "description": "Where the generated `.ini` files go.",
+          "type": "string"
+        },
+        "pattern": {
+          "description": "File name of an extension with `{name}` (`php_{name}.dll`).",
+          "type": "string"
+        },
+        "source": {
+          "description": "Default `bundled`.",
+          "$ref": "#/$defs/ExtensionSource"
+        },
+        "zend_extensions": {
+          "description": "`zend_extension=` lines of the overlay (`opcache`), optionally gated by a version\nconstraint (same syntax as `versioning.channels.*.constraint`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ZendExtension"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ini_dir",
+        "pattern"
+      ]
+    },
+    "GatedZendExtension": {
+      "description": "Object form of [`ZendExtension`].",
+      "type": "object",
+      "properties": {
+        "constraint": {
+          "description": "Version constraint in the tool scheme (`\"<8.5\"`); absent = always.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "Maintainer": {
+      "description": "`metadata.maintainers[]`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "PostInstallAction": {
+      "description": "`install.post_install[]`: one action, written as a single-key map (`- copy: {...}`).",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "copy": {
+              "$ref": "#/$defs/CopyAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "copy"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "render": {
+              "$ref": "#/$defs/RenderAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "render"
+          ]
+        },
+        {
+          "description": "Folder to create (inside the root: starts with `{{ paths.<dir> }}`).",
+          "type": "object",
+          "properties": {
+            "mkdir": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mkdir"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/RunAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "run"
+          ]
+        }
+      ]
+    },
+    "Provider": {
+      "description": "`source.providers[]`, selected by `type` (docs/05 §1).",
+      "oneOf": [
+        {
+          "description": "`type: php-windows`: `releases.json` of windows.php.net.",
+          "type": "object",
+          "properties": {
+            "include_archives": {
+              "description": "Also list old versions from `releases/archives/`. Default `true`.",
+              "type": "boolean"
+            },
+            "qa": {
+              "description": "QA/RC builds (`qa/`), only for channels with `prerelease`. Default `false`.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "php-windows"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: apache-lounge`: download pages of apachelounge.com.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "description": "Regex for the file name; default: the `httpd-<version>-<date>-win64-VS<nn>.zip` archive.\nModules on the same page (mod_fcgid) set their own.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "builds": {
+              "description": "Pages to parse (`download/VS17/`, `download/VS18/`). Default `[vs17, vs18]`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "apache-lounge"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: nginx-org`: `nginx.org/en/download.html` (mainline and stable). Upstream has no\nhash (PGP only), so `releases[].sha256` is curated (rule 2).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "nginx-org"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: github-release`.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "description": "Regex matched against asset names (`^mailpit-windows-amd64\\.zip$`).",
+              "type": "string"
+            },
+            "checksum": {
+              "description": "Checksum asset; without it, `releases[].sha256` is required (rule 2).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AssetChecksum"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prerelease": {
+              "description": "Include GitHub pre-releases. Default `false`.",
+              "type": "boolean"
+            },
+            "repo": {
+              "description": "`owner/name`.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "github-release"
+            },
+            "version_regex": {
+              "description": "Regex with one group extracting the version from the tag. Default: tag without a leading `v`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "repo",
+            "asset"
+          ]
+        },
+        {
+          "description": "`type: mysql`: curated `releases:` (upstream publishes md5 only).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mysql"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: mariadb`: official REST API (`downloads.mariadb.org/rest-api`).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mariadb"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: postgresql-edb`: curated `releases:` (EDB has no index).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "postgresql-edb"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: nodejs-dist`: `nodejs.org/dist/index.json` + `SHASUMS256.txt`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "nodejs-dist"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: python-embed`: python.org packages; hashes are curated (rule 2).",
+          "type": "object",
+          "properties": {
+            "package": {
+              "description": "Default `embed`.",
+              "$ref": "#/$defs/PythonPackage"
+            },
+            "type": {
+              "type": "string",
+              "const": "python-embed"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: http`: generic URL template.",
+          "type": "object",
+          "properties": {
+            "checksum": {
+              "description": "Without it, `releases[].sha256` is required (rule 2).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Checksum"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "http"
+            },
+            "url": {
+              "description": "Placeholders: `{version}`, `{series}`, `{major}`, `{minor}`, `{patch}`, variant keys, `vars`.",
+              "type": "string"
+            },
+            "vars": {
+              "description": "Extra placeholders mapped from a variant value: `{ ts_flag: { nts: \"nts\", ts: \"\" } }`.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "version_source": {
+              "description": "Where to list versions when `releases:` is empty.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/VersionSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "url"
+          ]
+        },
+        {
+          "description": "`type: local`: archive given by the user (`forge tool add-local <zip>`).",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "local"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "PythonPackage": {
+      "description": "Which python.org package `python-embed` downloads.",
+      "oneOf": [
+        {
+          "description": "`python-3.X.Y-embed-amd64.zip`.",
+          "type": "string",
+          "const": "embed"
+        },
+        {
+          "description": "`python.3.X.Y.nupkg` (includes pip).",
+          "type": "string",
+          "const": "nuget"
+        }
+      ]
+    },
+    "QuickSetting": {
+      "description": "`config.quick_settings[]`.",
+      "type": "object",
+      "properties": {
+        "also_set": {
+          "description": "Other keys written with the same value (`{ post_max_size: \"{{ value }}\" }`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "apply": {
+          "description": "Default `restart`.",
+          "$ref": "#/$defs/Apply"
+        },
+        "arg": {
+          "description": "Target in an `args` file (`--smtp`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default": true,
+        "directive": {
+          "description": "Target in a `conf-directive` file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file": {
+          "description": "`config.files[].id` written by this setting.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ini": {
+          "description": "Target in an `ini` file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min": {
+          "description": "Bounds of `number`/`slider`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "off": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "Value written by a `toggle` when on/off. Default: the native boolean of the format.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "description": "Choices of `select` and `multi`.",
+          "type": "array",
+          "items": true
+        },
+        "pointer": {
+          "description": "Target in a `yaml`/`json` file (dotted path).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reserve": {
+          "description": "`port`: reserve the port in the allocator (Xdebug 9003). Default `false`.",
+          "type": "boolean"
+        },
+        "step": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "type": {
+          "$ref": "#/$defs/QuickSettingType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "type"
+      ]
+    },
+    "QuickSettingType": {
+      "description": "`quick_settings[].type` (docs/04 §1.3).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "toggle",
+            "select",
+            "number",
+            "text",
+            "path",
+            "port"
+          ]
+        },
+        {
+          "description": "Needs `min` and `max`; `step` optional.",
+          "type": "string",
+          "const": "slider"
+        },
+        {
+          "description": "List of checkboxes over `options`.",
+          "type": "string",
+          "const": "multi"
+        }
+      ]
+    },
+    "RenderAction": {
+      "description": "`post_install[].render`: template from `forge-render/templates/` or `<registry>/templates/`.",
+      "type": "object",
+      "properties": {
+        "template": {
+          "description": "Relative path with `/` (`php/php.ini.j2`); must exist (rule 4).",
+          "type": "string"
+        },
+        "to": {
+          "description": "Must start with `{{ paths.<dir> }}` (rule 6).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "template",
+        "to"
+      ]
+    },
+    "RunAction": {
+      "description": "A command run by the engine (`post_install[].run`, `post_create[].run`).\n\nIn `post_install`, the executable (first token of `command`) is resolved inside\n`{{ paths.version }}` and never through `PATH` (docs/04 §6 rule 6, docs/11 §2).",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Default: no limit other than the job's.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ]
+    },
+    "Sha256": {
+      "description": "SHA-256 digest (64 hexadecimal digits).",
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "Source": {
+      "description": "`spec.source`.",
+      "type": "object",
+      "properties": {
+        "mirrors": {
+          "description": "URL templates with `{file}` tried in order after the original URL.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providers": {
+          "description": "Tried in order; the first that resolves the version wins.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Provider"
+          }
+        },
+        "releases": {
+          "description": "Static list of releases (curated by the registry bot when upstream has no API/hash).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StaticRelease"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "providers"
+      ]
+    },
+    "StaticRelease": {
+      "description": "`source.releases[]`.",
+      "type": "object",
+      "properties": {
+        "published_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "description": "Bytes.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "url": {
+          "description": "Omitted when the provider builds the URL (`http` with `url`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variants": {
+          "description": "Variant values of this build (`{ ts: nts, compiler: vs17, arch: x64 }`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ]
+    },
+    "StripRoot": {
+      "description": "true, false or auto (remove a single top-level folder if present).",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "const": "auto"
+        }
+      ]
+    },
+    "Toggle": {
+      "description": "`spec.toggle`.",
+      "type": "object",
+      "properties": {
+        "apply": {
+          "description": "Default `restart`.",
+          "$ref": "#/$defs/Apply"
+        },
+        "disable": {
+          "type": "string"
+        },
+        "enable": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "enable",
+        "disable"
+      ]
+    },
+    "ToolId": {
+      "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",
+      "type": "string",
+      "not": {
+        "enum": [
+          "shims",
+          "current"
+        ]
+      },
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "ToolMetadata": {
+      "description": "`metadata` of a Tool or Extension.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/Category"
+        },
+        "deprecated": {
+          "description": "Hidden from the catalog (installed versions are kept).",
+          "type": "boolean"
+        },
+        "description": {
+          "description": "Long Markdown text shown in the catalog.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "docs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "homepage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "description": "SVG file in `registry/icons/` or an `https://` URL (rule 7).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique slug in the registry (`[a-z0-9-]`).",
+          "$ref": "#/$defs/ToolId"
+        },
+        "license": {
+          "description": "SPDX expression.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maintainers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Maintainer"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "replaced_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "category"
+      ]
+    },
+    "Uninstall": {
+      "description": "`install.uninstall`.",
+      "type": "object",
+      "properties": {
+        "keep": {
+          "description": "Paths preserved when the version is removed.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "VersionSource": {
+      "description": "`version_source` of an `http` provider: one of `regex` or `json_path`.",
+      "type": "object",
+      "properties": {
+        "json_path": {
+          "description": "JSONPath to the list of versions.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "regex": {
+          "description": "Regex with one capture group per version, applied to the body.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ]
+    },
+    "ZendExtension": {
+      "description": "An item of `config.extensions.zend_extensions`: `opcache` or `{ name, constraint }`.",
+      "anyOf": [
+        {
+          "description": "Always emitted.",
+          "type": "string"
+        },
+        {
+          "description": "Emitted only when `constraint` matches the installed version.",
+          "$ref": "#/$defs/GatedZendExtension"
+        }
+      ]
+    }
+  }
+}

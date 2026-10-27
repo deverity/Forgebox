@@ -1,18 +1,315 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "StackManifestV1",
-  "description": "Manifest of a stack (`kind: Stack`).",
+  "title": "StackManifest",
+  "description": "A complete `kind: Stack` manifest.",
   "type": "object",
   "properties": {
     "apiVersion": {
-      "type": "string"
+      "$ref": "#/$defs/ApiVersion"
     },
     "kind": {
-      "type": "string"
+      "$ref": "#/$defs/StackKind"
+    },
+    "metadata": {
+      "$ref": "#/$defs/StackMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/StackSpec"
     }
   },
+  "additionalProperties": false,
   "required": [
     "apiVersion",
-    "kind"
-  ]
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "$defs": {
+    "ApiVersion": {
+      "description": "`apiVersion` of a manifest. Anything other than `forgebox.dev/v1` is rejected.",
+      "type": "string",
+      "enum": [
+        "forgebox.dev/v1"
+      ]
+    },
+    "CreateDatabaseAction": {
+      "description": "`post_create[].create_database`.",
+      "type": "object",
+      "properties": {
+        "instance": {
+          "description": "`<tool>/<instance>` (`mysql/default`).",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "instance",
+        "name"
+      ]
+    },
+    "Duration": {
+      "description": "Duration with an explicit unit, e.g. \"15s\", \"2m\", \"1h\", \"1h 30m\".",
+      "type": "string",
+      "examples": [
+        "15s",
+        "2m",
+        "1h"
+      ],
+      "pattern": "^\\s*[0-9]+\\s*[a-zA-Z]+(\\s*[0-9]+\\s*[a-zA-Z]+)*\\s*$"
+    },
+    "PostCreateAction": {
+      "description": "`site.post_create[]`: single-key map.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "create_database": {
+              "$ref": "#/$defs/CreateDatabaseAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "create_database"
+          ]
+        },
+        {
+          "description": "Project command (`php artisan key:generate`), usually with `cwd: \"{{ dir }}\"`.",
+          "type": "object",
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/RunAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "run"
+          ]
+        }
+      ]
+    },
+    "RunAction": {
+      "description": "A command run by the engine (`post_install[].run`, `post_create[].run`).\n\nIn `post_install`, the executable (first token of `command`) is resolved inside\n`{{ paths.version }}` and never through `PATH` (docs/04 §6 rule 6, docs/11 §2).",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Default: no limit other than the job's.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ]
+    },
+    "StackKind": {
+      "description": "`kind: Stack`.",
+      "type": "string",
+      "enum": [
+        "Stack"
+      ]
+    },
+    "StackMetadata": {
+      "description": "`metadata` of a Stack.",
+      "type": "object",
+      "properties": {
+        "deprecated": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "homepage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "description": "SVG file in `registry/icons/` or an `https://` URL (rule 7).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique among stacks (`[a-z0-9-]`).",
+          "$ref": "#/$defs/ToolId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "StackSite": {
+      "description": "`spec.site`: how `forge new` creates the site.",
+      "type": "object",
+      "properties": {
+        "create_with": {
+          "description": "Command that creates the project in `{{ dir }}`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "driver": {
+          "description": "Site driver (`laravel`, `wordpress`...), see docs/06 §1.2.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env_patch": {
+          "description": "Merged into `.env` after creation.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "php": {
+          "description": "PHP series of the site.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "post_create": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PostCreateAction"
+          }
+        },
+        "secure": {
+          "description": "HTTPS with the local CA. Default: global preference.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "StackSpec": {
+      "description": "`spec` of a Stack.",
+      "type": "object",
+      "properties": {
+        "site": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StackSite"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StackTool"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tools"
+      ]
+    },
+    "StackTool": {
+      "description": "`spec.tools[]`.",
+      "type": "object",
+      "properties": {
+        "extensions": {
+          "description": "Extensions installed into this tool (`[xdebug]`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolId"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/ToolId"
+        },
+        "instance": {
+          "description": "Instance name for services (default `default`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "series": {
+          "description": "Series (`\"8.4\"`); default: latest stable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "Exact version, when a series is not precise enough.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ]
+    },
+    "ToolId": {
+      "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",
+      "type": "string",
+      "not": {
+        "enum": [
+          "shims",
+          "current"
+        ]
+      },
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    }
+  }
 }

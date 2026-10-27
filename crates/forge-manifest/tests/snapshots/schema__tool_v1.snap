@@ -1,0 +1,2341 @@
+---
+source: crates/forge-manifest/tests/schema.rs
+expression: text
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolManifest",
+  "description": "A complete `kind: Tool` manifest.",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "$ref": "#/$defs/ApiVersion"
+    },
+    "kind": {
+      "$ref": "#/$defs/ToolKind"
+    },
+    "metadata": {
+      "$ref": "#/$defs/ToolMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/ToolSpec"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "$defs": {
+    "ApiVersion": {
+      "description": "`apiVersion` of a manifest. Anything other than `forgebox.dev/v1` is rejected.",
+      "type": "string",
+      "enum": [
+        "forgebox.dev/v1"
+      ]
+    },
+    "Apply": {
+      "description": "When a changed setting takes effect (`apply`).",
+      "oneOf": [
+        {
+          "description": "Graceful reload (recycle of the PHP pool, `nginx -s reload`...).",
+          "type": "string",
+          "const": "reload"
+        },
+        {
+          "description": "Restart of the service (always correct; default).",
+          "type": "string",
+          "const": "restart"
+        },
+        {
+          "description": "Nothing to do (read on next start or per request).",
+          "type": "string",
+          "const": "none"
+        }
+      ]
+    },
+    "ArchiveFormat": {
+      "description": "Format of the downloaded file.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "zip",
+            "7z",
+            "tar.gz",
+            "tar.xz"
+          ]
+        },
+        {
+          "description": "A single file copied as is (`.exe`, `.dll`, `.phar`).",
+          "type": "string",
+          "const": "file"
+        },
+        {
+          "description": "Not supported in v1 (validation error).",
+          "type": "string",
+          "const": "msi"
+        }
+      ]
+    },
+    "AssetChecksum": {
+      "description": "Checksum published as a release asset (`checksums.txt`, `{asset}.sha256`).",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "description": "Asset name; `{asset}` is replaced by the downloaded asset name.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/ChecksumType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "asset"
+      ]
+    },
+    "Category": {
+      "description": "Catalog category (`metadata.category`).",
+      "type": "string",
+      "enum": [
+        "runtime",
+        "webserver",
+        "database",
+        "cache",
+        "queue",
+        "search",
+        "storage",
+        "mail",
+        "tunnel",
+        "devtool",
+        "gui",
+        "library"
+      ]
+    },
+    "Channel": {
+      "description": "`versioning.channels.<name>`.",
+      "type": "object",
+      "properties": {
+        "constraint": {
+          "description": "Version constraint (`\">=7.4 <9\"`, `\"~8.3\"`), see `version::Constraint`.",
+          "type": "string"
+        },
+        "prerelease": {
+          "description": "Whether pre-releases (`8.6.0-RC1`) belong to the channel. Default `false`.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "constraint"
+      ]
+    },
+    "Checksum": {
+      "description": "`checksum` of an `http` provider.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/ChecksumType"
+        },
+        "url": {
+          "description": "URL template of the checksum file (`{url}`, `{file}` and the provider placeholders).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ]
+    },
+    "ChecksumType": {
+      "description": "Hash algorithm. Default `sha256`.",
+      "type": "string",
+      "enum": [
+        "sha256",
+        "sha512"
+      ]
+    },
+    "CommandProbe": {
+      "description": "`health.command`.",
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "type": "string"
+        },
+        "exit_code": {
+          "description": "Default `0`.",
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cmd"
+      ]
+    },
+    "CommandSpec": {
+      "description": "A command line (`check`, `data.init`).",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ]
+    },
+    "Config": {
+      "description": "`spec.config`.",
+      "type": "object",
+      "properties": {
+        "env": {
+          "description": "Variables injected in the processes of the tool.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "extensions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExtensionsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConfigFile"
+          }
+        },
+        "quick_settings": {
+          "description": "Native controls in the UI (docs/04 §1.3).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuickSetting"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConfigFile": {
+      "description": "`config.files[]`.",
+      "type": "object",
+      "properties": {
+        "editable": {
+          "description": "Default `true`.",
+          "type": "boolean"
+        },
+        "format": {
+          "$ref": "#/$defs/ConfigFormat"
+        },
+        "id": {
+          "description": "Referenced by `quick_settings[].file`, `ui.actions[].open: config:<id>` and\n`{{ instance.config.<id> }}`.",
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "format"
+      ]
+    },
+    "ConfigFormat": {
+      "description": "Format of a config file; decides how quick settings are written.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "ini",
+            "yaml",
+            "json"
+          ]
+        },
+        {
+          "description": "Apache/Nginx directives; edited only inside the managed block.",
+          "type": "string",
+          "const": "conf-directive"
+        },
+        {
+          "description": "Command line arguments of the service.",
+          "type": "string",
+          "const": "args"
+        },
+        {
+          "description": "Plain text: editable, no quick settings.",
+          "type": "string",
+          "const": "text"
+        }
+      ]
+    },
+    "ConsoleSignal": {
+      "description": "Console control event sent to the process group.",
+      "type": "string",
+      "enum": [
+        "ctrl-c",
+        "ctrl-break"
+      ]
+    },
+    "CopyAction": {
+      "description": "`post_install[].copy`.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Relative to the version folder, or starting with `{{ paths.<dir> }}`.",
+          "type": "string"
+        },
+        "if_missing": {
+          "description": "Keep an existing destination (user edits). Default `false`.",
+          "type": "boolean"
+        },
+        "to": {
+          "description": "Must start with `{{ paths.<dir> }}` (rule 6).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "CopyDirAction": {
+      "description": "`migrate[].copy_dir`: paths relative to the old and new version folders.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "only_missing": {
+          "description": "Only files missing in the new version. Default `false`.",
+          "type": "boolean"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "DaemonService": {
+      "description": "`service.daemon` (docs/04 §1.2).",
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "autostart": {
+          "description": "Start with the daemon. Default `false`.",
+          "type": "boolean"
+        },
+        "check": {
+          "description": "Config validation before start (`nginx -t`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommandSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "console_group": {
+          "description": "`CREATE_NEW_PROCESS_GROUP`, needed for `ctrl-break`. Default `true`.",
+          "type": "boolean"
+        },
+        "cwd": {
+          "description": "Default `{{ paths.version }}`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DataSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "depends_on": {
+          "description": "Tools whose service must be `Running` first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolId"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "exe": {
+          "description": "Relative to the version folder.",
+          "type": "string"
+        },
+        "health": {
+          "description": "Default: the process being alive is enough.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Health"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LogSpec"
+          }
+        },
+        "multi_instance": {
+          "description": "Several named instances with their own data dirs and ports. Default `false`.",
+          "type": "boolean"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PortSpec"
+          }
+        },
+        "reload": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reload"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restart_policy": {
+          "$ref": "#/$defs/RestartPolicy"
+        },
+        "start_timeout": {
+          "description": "Deadline of `Starting`. Default `30s`.",
+          "$ref": "#/$defs/Duration"
+        },
+        "stop": {
+          "$ref": "#/$defs/Stop"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "exe"
+      ]
+    },
+    "DataSpec": {
+      "description": "`service.daemon.data`.",
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "init": {
+          "description": "Run once when `dir` does not exist yet.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommandSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "dir"
+      ]
+    },
+    "Discover": {
+      "description": "`spec.discover`: recognizing manual installs in `bin/` (docs/03 §5.3).",
+      "type": "object",
+      "properties": {
+        "match_files": {
+          "description": "Files that must exist in the folder.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variant_detect": {
+          "description": "Per variant key (`ts`).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/VariantDetect"
+          }
+        },
+        "version_command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_regex": {
+          "description": "Regex with group 1 = version, applied to the output. Default: trimmed output.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "match_files"
+      ]
+    },
+    "Duration": {
+      "description": "Duration with an explicit unit, e.g. \"15s\", \"2m\", \"1h\", \"1h 30m\".",
+      "type": "string",
+      "examples": [
+        "15s",
+        "2m",
+        "1h"
+      ],
+      "pattern": "^\\s*[0-9]+\\s*[a-zA-Z]+(\\s*[0-9]+\\s*[a-zA-Z]+)*\\s*$"
+    },
+    "ExtensionSource": {
+      "description": "Where bundled extensions come from.",
+      "oneOf": [
+        {
+          "description": "Files shipped in the tool archive (`ext/*.dll`).",
+          "type": "string",
+          "const": "bundled"
+        }
+      ]
+    },
+    "ExtensionsConfig": {
+      "description": "`config.extensions`: bundled extensions shown as toggles.",
+      "type": "object",
+      "properties": {
+        "defaults_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ini_dir": {
+          "description": "Where the generated `.ini` files go.",
+          "type": "string"
+        },
+        "pattern": {
+          "description": "File name of an extension with `{name}` (`php_{name}.dll`).",
+          "type": "string"
+        },
+        "source": {
+          "description": "Default `bundled`.",
+          "$ref": "#/$defs/ExtensionSource"
+        },
+        "zend_extensions": {
+          "description": "`zend_extension=` lines of the overlay (`opcache`), optionally gated by a version\nconstraint (same syntax as `versioning.channels.*.constraint`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ZendExtension"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ini_dir",
+        "pattern"
+      ]
+    },
+    "GatedZendExtension": {
+      "description": "Object form of [`ZendExtension`].",
+      "type": "object",
+      "properties": {
+        "constraint": {
+          "description": "Version constraint in the tool scheme (`\"<8.5\"`); absent = always.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "Health": {
+      "description": "`service.daemon.health`: exactly one of `tcp`, `http`, `command`.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommandProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_threshold": {
+          "description": "Default `3`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "http": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HttpProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interval": {
+          "description": "Default `5s`.",
+          "$ref": "#/$defs/Duration"
+        },
+        "success_threshold": {
+          "description": "Default `1`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "tcp": {
+          "description": "`host:port`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "HttpProbe": {
+      "description": "`health.http`.",
+      "type": "object",
+      "properties": {
+        "expect_status": {
+          "description": "Default `200`.",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ]
+    },
+    "Install": {
+      "description": "`spec.install` of a Tool. Every field has a default.",
+      "type": "object",
+      "properties": {
+        "archive": {
+          "description": "Default: inferred from the file name (`ArchiveFormat::infer`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArchiveFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "current_link": {
+          "description": "Create/update the `bin/<id>/current` junction. Default `true`.",
+          "type": "boolean"
+        },
+        "layout": {
+          "description": "Default `versioned`.",
+          "$ref": "#/$defs/Layout"
+        },
+        "path": {
+          "description": "Sub-folders exposed on PATH through `current` (`\".\"`). Default: none.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "post_install": {
+          "description": "Declarative, idempotent actions run in order after extraction.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PostInstallAction"
+          }
+        },
+        "shims": {
+          "description": "`bin/shims/<name>.cmd → bin/<id>/current/<name>.exe`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "size_estimate_mb": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "strip_root": {
+          "description": "Default `auto`.",
+          "$ref": "#/$defs/StripRoot"
+        },
+        "uninstall": {
+          "$ref": "#/$defs/Uninstall"
+        },
+        "verify": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Verify"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Layout": {
+      "description": "`install.layout`.",
+      "oneOf": [
+        {
+          "description": "`bin/<id>/<version>/` (default).",
+          "type": "string",
+          "const": "versioned"
+        },
+        {
+          "description": "`bin/<id>/` (tools without versions side by side).",
+          "type": "string",
+          "const": "single"
+        }
+      ]
+    },
+    "LogSpec": {
+      "description": "`service.daemon.logs[]`.",
+      "type": "object",
+      "properties": {
+        "format": {
+          "description": "Parser id for the log viewer (`mysql`, `nginx-error`, `json`). Default: plain text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "path"
+      ]
+    },
+    "Maintainer": {
+      "description": "`metadata.maintainers[]`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "MigrateAction": {
+      "description": "`update.migrate[]`: single-key map.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "copy_dir": {
+              "$ref": "#/$defs/CopyDirAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "copy_dir"
+          ]
+        }
+      ]
+    },
+    "Platform": {
+      "description": "Target platform of a tool (`spec.platforms`).",
+      "type": "string",
+      "enum": [
+        "windows-x64",
+        "windows-arm64",
+        "macos-arm64",
+        "linux-x64"
+      ]
+    },
+    "PoolHealth": {
+      "description": "`pool.health`.",
+      "type": "object",
+      "properties": {
+        "fastcgi": {
+          "description": "Script requested through FastCGI (`/_forgebox/health.php`).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fastcgi"
+      ]
+    },
+    "PoolProtocol": {
+      "description": "Protocol spoken by the pool workers.",
+      "type": "string",
+      "enum": [
+        "fastcgi"
+      ]
+    },
+    "PoolService": {
+      "description": "`service.pool`: FastCGI pool (docs/03 §2).",
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "exe": {
+          "type": "string"
+        },
+        "health": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PoolHealth"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "port_range": {
+          "description": "Named range of `forgebox.toml`; must exist (rule 3). Default `php-pools`.",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "Default `fastcgi`.",
+          "$ref": "#/$defs/PoolProtocol"
+        },
+        "recycle": {
+          "$ref": "#/$defs/Recycle"
+        },
+        "scaling": {
+          "$ref": "#/$defs/Scaling"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "exe"
+      ]
+    },
+    "PortSpec": {
+      "description": "`service.daemon.ports[]`.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "Preferred port; default: first free port of `range`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "env": {
+          "description": "Environment variable that receives the port.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Referenced as `{{ instance.ports.<name> }}`.",
+          "type": "string"
+        },
+        "range": {
+          "description": "Named range of `forgebox.toml` (`databases`, `web`...); must exist (rule 3).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "range"
+      ]
+    },
+    "PostInstallAction": {
+      "description": "`install.post_install[]`: one action, written as a single-key map (`- copy: {...}`).",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "copy": {
+              "$ref": "#/$defs/CopyAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "copy"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "render": {
+              "$ref": "#/$defs/RenderAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "render"
+          ]
+        },
+        {
+          "description": "Folder to create (inside the root: starts with `{{ paths.<dir> }}`).",
+          "type": "object",
+          "properties": {
+            "mkdir": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "mkdir"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/RunAction"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "run"
+          ]
+        }
+      ]
+    },
+    "ProgramService": {
+      "description": "`service.oneshot` / `service.gui`: a program launched by the engine.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "exe": {
+          "description": "Relative to the version folder.",
+          "type": "string"
+        },
+        "timeout": {
+          "description": "`oneshot` only. Default: none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "exe"
+      ]
+    },
+    "Provider": {
+      "description": "`source.providers[]`, selected by `type` (docs/05 §1).",
+      "oneOf": [
+        {
+          "description": "`type: php-windows`: `releases.json` of windows.php.net.",
+          "type": "object",
+          "properties": {
+            "include_archives": {
+              "description": "Also list old versions from `releases/archives/`. Default `true`.",
+              "type": "boolean"
+            },
+            "qa": {
+              "description": "QA/RC builds (`qa/`), only for channels with `prerelease`. Default `false`.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "php-windows"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: apache-lounge`: download pages of apachelounge.com.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "description": "Regex for the file name; default: the `httpd-<version>-<date>-win64-VS<nn>.zip` archive.\nModules on the same page (mod_fcgid) set their own.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "builds": {
+              "description": "Pages to parse (`download/VS17/`, `download/VS18/`). Default `[vs17, vs18]`.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "apache-lounge"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: nginx-org`: `nginx.org/en/download.html` (mainline and stable). Upstream has no\nhash (PGP only), so `releases[].sha256` is curated (rule 2).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "nginx-org"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: github-release`.",
+          "type": "object",
+          "properties": {
+            "asset": {
+              "description": "Regex matched against asset names (`^mailpit-windows-amd64\\.zip$`).",
+              "type": "string"
+            },
+            "checksum": {
+              "description": "Checksum asset; without it, `releases[].sha256` is required (rule 2).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/AssetChecksum"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prerelease": {
+              "description": "Include GitHub pre-releases. Default `false`.",
+              "type": "boolean"
+            },
+            "repo": {
+              "description": "`owner/name`.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "github-release"
+            },
+            "version_regex": {
+              "description": "Regex with one group extracting the version from the tag. Default: tag without a leading `v`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "repo",
+            "asset"
+          ]
+        },
+        {
+          "description": "`type: mysql`: curated `releases:` (upstream publishes md5 only).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mysql"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: mariadb`: official REST API (`downloads.mariadb.org/rest-api`).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mariadb"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: postgresql-edb`: curated `releases:` (EDB has no index).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "postgresql-edb"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: nodejs-dist`: `nodejs.org/dist/index.json` + `SHASUMS256.txt`.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "nodejs-dist"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: python-embed`: python.org packages; hashes are curated (rule 2).",
+          "type": "object",
+          "properties": {
+            "package": {
+              "description": "Default `embed`.",
+              "$ref": "#/$defs/PythonPackage"
+            },
+            "type": {
+              "type": "string",
+              "const": "python-embed"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "`type: http`: generic URL template.",
+          "type": "object",
+          "properties": {
+            "checksum": {
+              "description": "Without it, `releases[].sha256` is required (rule 2).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Checksum"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "http"
+            },
+            "url": {
+              "description": "Placeholders: `{version}`, `{series}`, `{major}`, `{minor}`, `{patch}`, variant keys, `vars`.",
+              "type": "string"
+            },
+            "vars": {
+              "description": "Extra placeholders mapped from a variant value: `{ ts_flag: { nts: \"nts\", ts: \"\" } }`.",
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "version_source": {
+              "description": "Where to list versions when `releases:` is empty.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/VersionSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "url"
+          ]
+        },
+        {
+          "description": "`type: local`: archive given by the user (`forge tool add-local <zip>`).",
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "local"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    },
+    "PythonPackage": {
+      "description": "Which python.org package `python-embed` downloads.",
+      "oneOf": [
+        {
+          "description": "`python-3.X.Y-embed-amd64.zip`.",
+          "type": "string",
+          "const": "embed"
+        },
+        {
+          "description": "`python.3.X.Y.nupkg` (includes pip).",
+          "type": "string",
+          "const": "nuget"
+        }
+      ]
+    },
+    "QuickSetting": {
+      "description": "`config.quick_settings[]`.",
+      "type": "object",
+      "properties": {
+        "also_set": {
+          "description": "Other keys written with the same value (`{ post_max_size: \"{{ value }}\" }`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "apply": {
+          "description": "Default `restart`.",
+          "$ref": "#/$defs/Apply"
+        },
+        "arg": {
+          "description": "Target in an `args` file (`--smtp`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default": true,
+        "directive": {
+          "description": "Target in a `conf-directive` file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file": {
+          "description": "`config.files[].id` written by this setting.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ini": {
+          "description": "Target in an `ini` file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min": {
+          "description": "Bounds of `number`/`slider`.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "off": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on": {
+          "description": "Value written by a `toggle` when on/off. Default: the native boolean of the format.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "options": {
+          "description": "Choices of `select` and `multi`.",
+          "type": "array",
+          "items": true
+        },
+        "pointer": {
+          "description": "Target in a `yaml`/`json` file (dotted path).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reserve": {
+          "description": "`port`: reserve the port in the allocator (Xdebug 9003). Default `false`.",
+          "type": "boolean"
+        },
+        "step": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "type": {
+          "$ref": "#/$defs/QuickSettingType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "type"
+      ]
+    },
+    "QuickSettingType": {
+      "description": "`quick_settings[].type` (docs/04 §1.3).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "toggle",
+            "select",
+            "number",
+            "text",
+            "path",
+            "port"
+          ]
+        },
+        {
+          "description": "Needs `min` and `max`; `step` optional.",
+          "type": "string",
+          "const": "slider"
+        },
+        {
+          "description": "List of checkboxes over `options`.",
+          "type": "string",
+          "const": "multi"
+        }
+      ]
+    },
+    "Recycle": {
+      "description": "`pool.recycle`. Default `{ max_requests: 500, max_rss_mb: 256, max_age: 1h }`.",
+      "type": "object",
+      "properties": {
+        "max_age": {
+          "$ref": "#/$defs/Duration",
+          "default": "1h"
+        },
+        "max_requests": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 500,
+          "minimum": 0
+        },
+        "max_rss_mb": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 256,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Reload": {
+      "description": "`service.daemon.reload`: `command` or `signal`.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConsoleSignal"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RenderAction": {
+      "description": "`post_install[].render`: template from `forge-render/templates/` or `<registry>/templates/`.",
+      "type": "object",
+      "properties": {
+        "template": {
+          "description": "Relative path with `/` (`php/php.ini.j2`); must exist (rule 4).",
+          "type": "string"
+        },
+        "to": {
+          "description": "Must start with `{{ paths.<dir> }}` (rule 6).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "template",
+        "to"
+      ]
+    },
+    "RestartOn": {
+      "description": "Restart behaviour (`restart_policy.on`, `processes.*.restart`).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "never",
+            "always"
+          ]
+        },
+        {
+          "description": "Restart after an unexpected exit (default).",
+          "type": "string",
+          "const": "failure"
+        }
+      ]
+    },
+    "RestartPolicy": {
+      "description": "`service.daemon.restart_policy`. Default `{ on: failure, max: 3, window: 60s }`.",
+      "type": "object",
+      "properties": {
+        "max": {
+          "description": "Restarts allowed inside `window`.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3,
+          "minimum": 0
+        },
+        "on": {
+          "$ref": "#/$defs/RestartOn",
+          "default": "failure"
+        },
+        "window": {
+          "$ref": "#/$defs/Duration",
+          "default": "1m"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RunAction": {
+      "description": "A command run by the engine (`post_install[].run`, `post_create[].run`).\n\nIn `post_install`, the executable (first token of `command`) is resolved inside\n`{{ paths.version }}` and never through `PATH` (docs/04 §6 rule 6, docs/11 §2).",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Default: no limit other than the job's.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ]
+    },
+    "Scaling": {
+      "description": "`pool.scaling`. Default `{ min: 2, max: 12, idle_timeout: 120s }` (docs/03 §2.1).",
+      "type": "object",
+      "properties": {
+        "idle_timeout": {
+          "$ref": "#/$defs/Duration",
+          "default": "2m"
+        },
+        "max": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 12,
+          "minimum": 0
+        },
+        "min": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 2,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Service": {
+      "description": "`spec.service`: `kind` plus the block of that kind (`daemon:`, `pool:`, `oneshot:`, `gui:`).",
+      "type": "object",
+      "properties": {
+        "daemon": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DaemonService"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gui": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProgramService"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "description": "Default `none`.",
+          "$ref": "#/$defs/ServiceKind",
+          "default": "none"
+        },
+        "oneshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProgramService"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PoolService"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ServiceKind": {
+      "description": "`service.kind` (docs/04 §1.1).",
+      "oneOf": [
+        {
+          "description": "Not a process (library, CLI).",
+          "type": "string",
+          "const": "none"
+        },
+        {
+          "description": "Long-running process managed by the supervisor.",
+          "type": "string",
+          "const": "daemon"
+        },
+        {
+          "description": "FastCGI pool managed by `forge-fcgi`.",
+          "type": "string",
+          "const": "pool"
+        },
+        {
+          "description": "Runs and exits.",
+          "type": "string",
+          "const": "oneshot"
+        },
+        {
+          "description": "Graphical app launched on demand, outside the Job.",
+          "type": "string",
+          "const": "gui"
+        }
+      ]
+    },
+    "Sha256": {
+      "description": "SHA-256 digest (64 hexadecimal digits).",
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "ShellAction": {
+      "description": "`ui.actions[].shell`: terminal with this version first on PATH.",
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "path_prepend": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Source": {
+      "description": "`spec.source`.",
+      "type": "object",
+      "properties": {
+        "mirrors": {
+          "description": "URL templates with `{file}` tried in order after the original URL.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providers": {
+          "description": "Tried in order; the first that resolves the version wins.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Provider"
+          }
+        },
+        "releases": {
+          "description": "Static list of releases (curated by the registry bot when upstream has no API/hash).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StaticRelease"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "providers"
+      ]
+    },
+    "StaticRelease": {
+      "description": "`source.releases[]`.",
+      "type": "object",
+      "properties": {
+        "published_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "size": {
+          "description": "Bytes.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "url": {
+          "description": "Omitted when the provider builds the URL (`http` with `url`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variants": {
+          "description": "Variant values of this build (`{ ts: nts, compiler: vs17, arch: x64 }`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ]
+    },
+    "Stop": {
+      "description": "`service.daemon.stop` (docs/03 §1.3).",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "First attempt (`mysqladmin shutdown`, `nginx -s quit`). Default: none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "then": {
+          "description": "Next step if the command does not stop it. Default `ctrl-break`.",
+          "$ref": "#/$defs/StopSignal",
+          "default": "ctrl-break"
+        },
+        "timeout": {
+          "description": "Budget of the command. Default `15s`.",
+          "$ref": "#/$defs/Duration",
+          "default": "15s"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StopSignal": {
+      "description": "Stop step after `stop.command`; the cascade always ends with `kill` (Job Object).",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "ctrl-c",
+            "ctrl-break",
+            "kill"
+          ]
+        },
+        {
+          "description": "`WM_CLOSE` to the top-level windows (GUIs).",
+          "type": "string",
+          "const": "close"
+        }
+      ]
+    },
+    "StripRoot": {
+      "description": "true, false or auto (remove a single top-level folder if present).",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "const": "auto"
+        }
+      ]
+    },
+    "ToolId": {
+      "description": "Tool slug: [a-z0-9-], starts and ends with a letter or digit, at most 64 characters.",
+      "type": "string",
+      "not": {
+        "enum": [
+          "shims",
+          "current"
+        ]
+      },
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "ToolKind": {
+      "description": "`kind: Tool`.",
+      "type": "string",
+      "enum": [
+        "Tool"
+      ]
+    },
+    "ToolMetadata": {
+      "description": "`metadata` of a Tool or Extension.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/Category"
+        },
+        "deprecated": {
+          "description": "Hidden from the catalog (installed versions are kept).",
+          "type": "boolean"
+        },
+        "description": {
+          "description": "Long Markdown text shown in the catalog.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "docs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "homepage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "description": "SVG file in `registry/icons/` or an `https://` URL (rule 7).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique slug in the registry (`[a-z0-9-]`).",
+          "$ref": "#/$defs/ToolId"
+        },
+        "license": {
+          "description": "SPDX expression.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maintainers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Maintainer"
+          }
+        },
+        "name": {
+          "type": "string"
+        },
+        "replaced_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "category"
+      ]
+    },
+    "ToolSpec": {
+      "description": "`spec` of a Tool.",
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/Config"
+        },
+        "depends_on": {
+          "description": "Other tools that must be installed.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolId"
+          }
+        },
+        "discover": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Discover"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "install": {
+          "$ref": "#/$defs/Install"
+        },
+        "platforms": {
+          "description": "Must not be empty (rule 1).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Platform"
+          }
+        },
+        "runtime_deps": {
+          "description": "System prerequisites known by the engine (`vcredist-vs17`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "service": {
+          "$ref": "#/$defs/Service"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "suggests": {
+          "description": "Offered by the UI after installing.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ToolId"
+          }
+        },
+        "ui": {
+          "$ref": "#/$defs/Ui"
+        },
+        "update": {
+          "$ref": "#/$defs/Update"
+        },
+        "versioning": {
+          "$ref": "#/$defs/Versioning"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "platforms",
+        "source"
+      ]
+    },
+    "Ui": {
+      "description": "`spec.ui`.",
+      "type": "object",
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UiAction"
+          }
+        },
+        "badges": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "color": {
+          "description": "`#RRGGBB`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "UiAction": {
+      "description": "`ui.actions[]`: exactly one of `open`, `shell`, `browse`.",
+      "type": "object",
+      "properties": {
+        "browse": {
+          "description": "URL opened in the browser.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "icon": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "open": {
+          "description": "`config:<file id>` or a path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shell": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShellAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label"
+      ]
+    },
+    "Uninstall": {
+      "description": "`install.uninstall`.",
+      "type": "object",
+      "properties": {
+        "keep": {
+          "description": "Paths preserved when the version is removed.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Update": {
+      "description": "`spec.update` (docs/05 §4). Default `{ policy: notify, retention: 1, check_interval: 6h }`.",
+      "type": "object",
+      "properties": {
+        "check_interval": {
+          "$ref": "#/$defs/Duration",
+          "default": "6h"
+        },
+        "migrate": {
+          "description": "What to carry from the old version to the new one in the same series.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MigrateAction"
+          }
+        },
+        "policy": {
+          "$ref": "#/$defs/UpdatePolicy",
+          "default": "notify"
+        },
+        "retention": {
+          "description": "Previous versions kept per series for rollback.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "UpdatePolicy": {
+      "description": "`update.policy`.",
+      "type": "string",
+      "enum": [
+        "manual",
+        "notify",
+        "auto-patch",
+        "auto-minor",
+        "auto"
+      ]
+    },
+    "Variant": {
+      "description": "`versioning.variants[]`: one build dimension (`ts`, `compiler`, `arch`).",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "Preferred value; ranks before the others.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "derive": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VariantDerive"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "description": "Human labels per value.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "values": {
+          "description": "Values in order of preference (`[nts, ts]`, `[vs17, vs16, vc15]`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "values"
+      ]
+    },
+    "VariantDerive": {
+      "description": "Where the value of a variant comes from when the user does not choose it.",
+      "oneOf": [
+        {
+          "description": "The provider reports it with each release.",
+          "type": "string",
+          "const": "from_provider"
+        }
+      ]
+    },
+    "VariantDetect": {
+      "description": "`discover.variant_detect.<key>`.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "map": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "regex": {
+          "description": "Group 1 is looked up in `map`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command",
+        "regex",
+        "map"
+      ]
+    },
+    "Verify": {
+      "description": "`install.verify`: command run inside the version folder after install.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "regex": {
+          "description": "Regex whose group 1 must equal the installed version. Default: exit code 0 is enough.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ]
+    },
+    "VersionScheme": {
+      "description": "How versions of a tool are written and compared (`spec.versioning.scheme`).",
+      "oneOf": [
+        {
+          "description": "Semantic versioning (`8.3.37`, `1.27.0-rc1`); `X` and `X.Y` are read as `X.0.0`/`X.Y.0`.",
+          "type": "string",
+          "const": "semver"
+        },
+        {
+          "description": "Calendar versions (`2024.10.1`): dot-separated, first segment numeric.",
+          "type": "string",
+          "const": "calver"
+        },
+        {
+          "description": "Free text (`12.8.0.6908`, `2.47.1.windows.1`), compared segment by segment.",
+          "type": "string",
+          "const": "string"
+        }
+      ]
+    },
+    "VersionSource": {
+      "description": "`version_source` of an `http` provider: one of `regex` or `json_path`.",
+      "type": "object",
+      "properties": {
+        "json_path": {
+          "description": "JSONPath to the list of versions.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "regex": {
+          "description": "Regex with one capture group per version, applied to the body.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ]
+    },
+    "Versioning": {
+      "description": "`spec.versioning`.",
+      "type": "object",
+      "properties": {
+        "channels": {
+          "description": "Named channels (`stable`, `preview`, `lts`...).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Channel"
+          }
+        },
+        "scheme": {
+          "description": "Default `semver`.",
+          "$ref": "#/$defs/VersionScheme",
+          "default": "semver"
+        },
+        "series_key": {
+          "description": "Groups versions into a series (`{major}`, `{minor}`, `{patch}`). Default `{major}.{minor}`.",
+          "type": "string",
+          "default": "{major}.{minor}"
+        },
+        "variants": {
+          "description": "Orthogonal build dimensions, in the order used by the folder name (docs/08 §5).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Variant"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ZendExtension": {
+      "description": "An item of `config.extensions.zend_extensions`: `opcache` or `{ name, constraint }`.",
+      "anyOf": [
+        {
+          "description": "Always emitted.",
+          "type": "string"
+        },
+        {
+          "description": "Emitted only when `constraint` matches the installed version.",
+          "$ref": "#/$defs/GatedZendExtension"
+        }
+      ]
+    }
+  }
+}
