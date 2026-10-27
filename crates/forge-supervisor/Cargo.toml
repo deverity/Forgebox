@@ -20,8 +20,11 @@ path = "src/bin/forgebox-ctrl.rs"
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+# HTTP health probes (docs/03 §1.4): rustls only, proxies disabled per client.
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 

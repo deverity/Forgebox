@@ -1361,10 +1361,12 @@ dependencies = [
  "forge-core",
  "forge-ipc",
  "pretty_assertions",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
+ "thiserror",
  "tokio",
  "tracing",
 ]

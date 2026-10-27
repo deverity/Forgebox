@@ -5,9 +5,14 @@
 //! (mapped in `EVENT_PAYLOADS` and in the GUI's `methods.ts`). forge-supervisor does not
 //! depend on forge-ipc, so it serializes the equivalent [`ServiceEventPayload`]: the same
 //! field names, types and enum values. The fields after `error` (`run`, `step`,
-//! `timeout_ms`, `elapsed_ms`, `leftovers_killed`) are optional in `ServicePayload` too
-//! and are left out when they do not apply to the kind. `tests/service_payload_contract.rs`
-//! deserializes every kind into `ServicePayload`.
+//! `timeout_ms`, `elapsed_ms`, `leftovers_killed`, `cause`, `restart_in_ms`, `reason`) are
+//! optional in `ServicePayload` too and are left out when they do not apply to the kind.
+//! `tests/service_payload_contract.rs` deserializes every kind into `ServicePayload`.
+//!
+//! One event is published per state transition of the instance (docs/03 §1.4), except
+//! the entry into `Stopping`, which is announced by the `service.stopping` of the first
+//! cascade step (one event per step). The periodic `service.metrics` sample has its own
+//! payload ([`crate::metrics::ServiceMetricsPayload`]).
 
 use std::time::Duration;
 
@@ -17,6 +22,7 @@ use forge_core::ids::{InstanceId, ToolId};
 use forge_core::jobs::JobErrorInfo;
 use serde::{Deserialize, Serialize};
 
+use crate::service::{FailureReason, StopCause};
 use crate::stop::{StopReport, StopStrategy};
 
 /// Version of the `service.*` payloads (same as `forge_ipc`'s `EVENT_PAYLOAD_VERSION`).
@@ -39,8 +45,7 @@ impl ServiceRef {
 }
 
 /// `state` of a payload: the state the instance is in when the event is published. The
-/// values are those of `forge_ipc::api::services::ServiceState` (which also has
-/// `maintenance`, never set by the supervisor).
+/// values are those of `forge_ipc::api::services::ServiceState`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceEventState {
@@ -50,17 +55,19 @@ pub enum ServiceEventState {
     Stopped,
     Crashed,
     Failed,
+    Maintenance,
 }
 
 impl ServiceEventState {
     /// Every state, in lifecycle order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Starting,
         Self::Running,
         Self::Stopping,
         Self::Stopped,
         Self::Crashed,
         Self::Failed,
+        Self::Maintenance,
     ];
 
     /// The event kind announcing this state (`service.<state>`).
@@ -72,6 +79,7 @@ impl ServiceEventState {
             Self::Stopped => EventKind::ServiceStopped,
             Self::Crashed => EventKind::ServiceCrashed,
             Self::Failed => EventKind::ServiceFailed,
+            Self::Maintenance => EventKind::ServiceMaintenance,
         }
     }
 }
@@ -122,6 +130,17 @@ pub struct ServiceEventPayload {
     /// exited, then terminated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leftovers_killed: Option<u32>,
+    /// `stopping`: why the instance is being stopped; `crashed`: `unhealthy` when it was
+    /// stopped for failing health checks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cause: Option<StopCause>,
+    /// `crashed`: the restart policy starts it again after this delay (absent: no
+    /// automatic restart).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restart_in_ms: Option<u64>,
+    /// `failed`: structured diagnosis (`port_in_use`, `missing_dll`, `health_timeout`...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<FailureReason>,
 }
 
 impl ServiceEventPayload {
@@ -141,6 +160,9 @@ impl ServiceEventPayload {
             timeout_ms: None,
             elapsed_ms: None,
             leftovers_killed: None,
+            cause: None,
+            restart_in_ms: None,
+            reason: None,
         }
     }
 
@@ -152,8 +174,8 @@ impl ServiceEventPayload {
         }
     }
 
-    /// `service.running`: the process of run `run` was created and resumed (health
-    /// checks: M1-E3-T2).
+    /// `service.running`: run `run` is healthy (or, without a health check, its process
+    /// was created and resumed).
     pub fn running(service: &ServiceRef, run: u64, pid: u32) -> Self {
         Self {
             pid: Some(pid),
@@ -169,12 +191,14 @@ impl ServiceEventPayload {
         pid: u32,
         strategy: StopStrategy,
         wait: Duration,
+        cause: StopCause,
     ) -> Self {
         Self {
             pid: Some(pid),
             strategy: Some(strategy),
             step: Some(strategy.step()),
             timeout_ms: Some(millis(wait)),
+            cause: Some(cause),
             ..Self::new(service, ServiceEventState::Stopping)
         }
     }
@@ -207,14 +231,43 @@ impl ServiceEventPayload {
         }
     }
 
-    /// `service.failed`: the instance could not be started (or stopped); `pid` is the
+    /// `cause` of a `crashed` (`unhealthy`) or `stopping` payload.
+    pub fn with_cause(mut self, cause: StopCause) -> Self {
+        self.cause = Some(cause);
+        self
+    }
+
+    /// `restart_in_ms` of a `crashed` payload: the policy restarts it after `delay`.
+    pub fn with_restart_in(mut self, delay: Duration) -> Self {
+        self.restart_in_ms = Some(millis(delay));
+        self
+    }
+
+    /// `service.failed` for an error without a structured diagnosis; `pid` is the
     /// process left behind, if any.
     pub fn failed(service: &ServiceRef, pid: Option<u32>, err: &ForgeError) -> Self {
+        Self::failed_with(service, pid, &FailureReason::from_error(err))
+    }
+
+    /// `service.failed` with its structured diagnosis (`error` derived from it).
+    pub fn failed_with(service: &ServiceRef, pid: Option<u32>, reason: &FailureReason) -> Self {
         Self {
             pid,
-            error: Some(JobErrorInfo::from(err)),
+            error: Some(reason.error_info()),
+            reason: Some(reason.clone()),
             ..Self::new(service, ServiceEventState::Failed)
         }
+    }
+
+    /// `service.maintenance`: install/upgrade in progress, starts are refused.
+    pub fn maintenance(service: &ServiceRef) -> Self {
+        Self::new(service, ServiceEventState::Maintenance)
+    }
+
+    /// `service.stopped` when the instance goes back to `Stopped` without a process
+    /// (end of maintenance).
+    pub fn idle(service: &ServiceRef) -> Self {
+        Self::new(service, ServiceEventState::Stopped)
     }
 
     /// Kind to publish this payload under (`service.<state>`).
@@ -245,6 +298,7 @@ mod tests {
             4242,
             StopStrategy::CtrlBreak,
             Duration::from_secs(15),
+            StopCause::User,
         );
         assert_eq!(payload.kind(), EventKind::ServiceStopping);
         let json = serde_json::to_value(&payload).unwrap();
@@ -262,6 +316,7 @@ mod tests {
                 "error": null,
                 "step": 2,
                 "timeout_ms": 15000,
+                "cause": "user",
             })
         );
         let back: ServiceEventPayload = serde_json::from_value(json).unwrap();
@@ -296,7 +351,38 @@ mod tests {
         assert_eq!(json["state"], "failed");
         assert_eq!(json["error"]["code"], "not_found");
         assert_eq!(json["error"]["message"], err.to_string());
+        assert_eq!(json["reason"]["kind"], "other");
+        assert_eq!(json["reason"]["code"], "not_found");
         assert!(json.get("run").is_none());
         assert_eq!(json["pid"], serde_json::Value::Null);
+
+        let reason = FailureReason::HealthTimeout {
+            timeout_ms: 2000,
+            last_error: None,
+        };
+        let json =
+            serde_json::to_value(ServiceEventPayload::failed_with(&mysql(), Some(9), &reason))
+                .unwrap();
+        assert_eq!(json["error"]["code"], "timeout");
+        assert_eq!(json["reason"]["kind"], "health_timeout");
+        assert_eq!(json["reason"]["timeout_ms"], 2000);
+    }
+
+    #[test]
+    fn crashed_payload_announces_the_restart() {
+        let json = serde_json::to_value(
+            ServiceEventPayload::crashed(&mysql(), Some(7), 3, 0)
+                .with_cause(StopCause::Unhealthy)
+                .with_restart_in(Duration::from_millis(1500)),
+        )
+        .unwrap();
+        assert_eq!(json["cause"], "unhealthy");
+        assert_eq!(json["restart_in_ms"], 1500);
+        let maintenance = ServiceEventPayload::maintenance(&mysql());
+        assert_eq!(maintenance.kind(), EventKind::ServiceMaintenance);
+        assert_eq!(
+            serde_json::to_value(maintenance).unwrap()["state"],
+            "maintenance"
+        );
     }
 }

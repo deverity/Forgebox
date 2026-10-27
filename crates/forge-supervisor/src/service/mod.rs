@@ -1,33 +1,48 @@
 //! The instance actor (docs/03 §1.4 and §7.2): one actor per service instance, owning its
-//! Job Object, its process and its output.
+//! Job Object, its process, its output, its health checks, its restart policy and its
+//! metrics.
 //!
 //! The actor never waits for a process. Spawning (`CreateProcess` in `spawn_blocking`),
-//! watching the exit and the stop cascade run in tasks of their own and report back
-//! with internal messages, so `Status` is answered in microseconds even while a stop is
-//! stuck for 15 s (docs/03 §7.6). Requests that take time (`Start`, `Stop`, `Restart`)
+//! watching the exit, the stop cascade, the health probes, the start deadline, the
+//! restart backoff and the metrics sampler run in tasks of their own and report back
+//! with internal messages (the sampler writes to a `watch` channel instead), so
+//! `Status` is answered in microseconds even while a stop is stuck for 15 s
+//! (docs/03 §7.6). Requests that take time (`Start`, `Stop`, `Restart`, maintenance)
 //! keep their reply channel and are answered when the operation completes; callers pick
 //! their `ask` timeout ([`InstanceHandle`] has helpers).
 //!
-//! States (basic machine of M1-E3-T1; health probes and restart policies are M1-E3-T2):
+//! Every state change goes through the pure machine of [`state`] ([`next_state`]): a
+//! trigger that is not allowed is an error, never a panic, and every accepted transition
+//! publishes its `service.*` event ([`crate::events`]). Summary:
 //!
-//! ```text
-//! Stopped ─start─▶ Starting ─spawned─▶ Running ─stop─▶ Stopping ─exited─▶ Stopped
-//!    ▲                │ spawn failed        │ unexpected exit
-//!    │                ▼                     ▼
-//!    └──start── Failed{code, reason}    Crashed{exit_code} ──start──▶ Starting
-//! ```
+//! * `Start` → `Starting`; the process is created; without a [`HealthSpec`] it is
+//!   `Running` at once, with one it is `Running` after `success_threshold` passing
+//!   probes. `Start` is answered with the pid when the instance is `Running`.
+//! * Past `start_timeout` the instance is stopped with the cascade and ends
+//!   `Failed(HealthTimeout)`; a process that exits while `Starting` ends
+//!   `Failed(ExitedDuringStart | MissingDll | Permission)`.
+//! * An unexpected exit while `Running` is `Crashed(code)`; `failure_threshold` failing
+//!   probes stop it (cascade) and also end in `Crashed`. Then the [`RestartPolicy`]
+//!   decides: a restart after a backoff (`service.crashed` carries `restart_in_ms`),
+//!   staying `Crashed`, or `Failed(CrashLoop)`. Exit codes that no restart fixes
+//!   (missing DLL, access denied) go straight to `Failed`.
+//! * `EnterMaintenance` stops a running instance first, then holds it in `Maintenance`
+//!   (starts refused) until `ExitMaintenance`.
 //!
 //! Tasks spawned by the actor hold only a weak address and a weak reference to the job:
 //! dropping every [`InstanceHandle`] stops the actor, its `on_stop` terminates the job,
-//! and the job's `KILL_ON_JOB_CLOSE` covers everything else. After a panic the actor is
-//! restarted by the [`ActorSupervisor`]; the new incarnation terminates whatever ran in
-//! the job (its state was lost) and reports `Failed`.
+//! and the job's `KILL_ON_JOB_CLOSE` covers everything else. Probe, deadline and restart
+//! tasks are aborted when the actor drops them. After a panic the actor is restarted by
+//! the [`ActorSupervisor`]; the new incarnation terminates whatever ran in the job (its
+//! state was lost) and reports `Failed`.
 //!
 //! A run is reported finished (`service.crashed`, `service.stopped`) only once the job is
 //! empty: job termination is asynchronous in the OS and a job still terminating refuses
 //! new processes (docs/03 §1.1). Every termination of the job waits for it
 //! ([`ProcessGroup::terminate_all`]); the ones started outside a run (a process of a run
 //! this incarnation does not track) are awaited by the next run before it spawns.
+
+pub mod state;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -41,21 +56,31 @@ use forge_core::actor::{
 use forge_core::event::EventBus;
 use forge_core::ids::{InstanceId, ToolId};
 use forge_core::paths::ForgeRoot;
-use forge_core::platform::{ProcessControl, ProcessGroup, SpawnedProcess, TERMINATE_TIMEOUT};
+use forge_core::platform::{
+    ProcessControl, ProcessGroup, ProcessStats, SpawnedProcess, TERMINATE_TIMEOUT, process_stats,
+};
 use forge_core::{ForgeError, Result, Timestamp};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
+pub use self::state::{
+    FailureReason, InstanceState, InvalidTransition, STATUS_ACCESS_DENIED, STATUS_DLL_NOT_FOUND,
+    STATUS_ENTRYPOINT_NOT_FOUND, StopCause, Trigger, next_state,
+};
 use crate::events::{ServiceEventPayload, ServiceRef};
+use crate::health::{HealthSpec, HealthStatus, Prober};
 use crate::job::JobTree;
 use crate::logs::{LogHub, LogOptions, LogSubscription};
+use crate::metrics::{InstanceMetrics, MetricsOptions, SamplerOutput, sample_run};
+use crate::policy::{Failure, RestartDecision, RestartPolicy, RestartTracker};
 use crate::process::SpawnSpec;
 use crate::stop::{
     Cascade, ExitInfo, StepObserver, StopPlan, StopReport, StopStrategy, TERMINATED_EXIT_CODE,
 };
 
-/// Timeout used by [`InstanceHandle`] for quick requests (`Status`, `SubscribeLogs`).
+/// Timeout used by [`InstanceHandle`] for quick requests (`Status`, `SubscribeLogs`,
+/// `Metrics`).
 pub const QUICK_ASK_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Everything needed to run one instance.
@@ -68,10 +93,15 @@ pub struct InstanceSpec {
     pub spawn: SpawnSpec,
     pub stop: StopPlan,
     pub logs: LogOptions,
+    /// `None`: `Running` as soon as the process exists.
+    pub health: Option<HealthSpec>,
+    pub restart: RestartPolicy,
+    pub metrics: MetricsOptions,
 }
 
 impl InstanceSpec {
-    /// Spec with the default stop plan and live-only logs (no file).
+    /// Spec with the default stop plan, live-only logs (no file), no health check, the
+    /// default restart policy (`on-failure`, 3 in 60 s) and metrics every 2 s.
     pub fn new(id: InstanceId, tool: ToolId, name: impl Into<String>, spawn: SpawnSpec) -> Self {
         Self {
             id,
@@ -80,6 +110,9 @@ impl InstanceSpec {
             spawn,
             stop: StopPlan::default(),
             logs: LogOptions::default(),
+            health: None,
+            restart: RestartPolicy::default(),
+            metrics: MetricsOptions::default(),
         }
     }
 
@@ -87,6 +120,18 @@ impl InstanceSpec {
     pub fn log_to(mut self, root: &ForgeRoot) -> Result<Self> {
         self.logs.file = Some(instance_log_path(root, &self.tool, &self.name)?);
         Ok(self)
+    }
+
+    /// Sets the health check.
+    pub fn with_health(mut self, health: HealthSpec) -> Self {
+        self.health = Some(health);
+        self
+    }
+
+    /// Sets the restart policy.
+    pub fn with_restart(mut self, restart: RestartPolicy) -> Self {
+        self.restart = restart;
+        self
     }
 }
 
@@ -109,37 +154,6 @@ pub fn instance_log_path(root: &ForgeRoot, tool: &ToolId, instance: &str) -> Res
         .join(format!("{instance}.out.log")))
 }
 
-/// Lifecycle state of an instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum InstanceState {
-    Stopped,
-    /// Creating the process.
-    Starting,
-    /// Process created and resumed (health checks arrive in M1-E3-T2).
-    Running,
-    /// Stop cascade in progress; `strategy` is the step being tried.
-    Stopping {
-        strategy: Option<StopStrategy>,
-    },
-    /// Exited without being asked to.
-    Crashed {
-        exit_code: u32,
-    },
-    /// Could not start (or stop); `code` is a [`ForgeError::code`].
-    Failed {
-        code: String,
-        reason: String,
-    },
-}
-
-impl InstanceState {
-    /// Whether a process may be alive (`Starting`, `Running`, `Stopping`).
-    pub fn is_active(&self) -> bool {
-        matches!(self, Self::Starting | Self::Running | Self::Stopping { .. })
-    }
-}
-
 /// Snapshot answered by `Status`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstanceStatus {
@@ -153,22 +167,36 @@ pub struct InstanceStatus {
     pub since: Timestamp,
     /// Starts so far (the current run number).
     pub runs: u64,
+    /// Automatic restarts by the restart policy since the instance was created.
+    pub restarts: u32,
+    /// When the restart policy starts a crashed instance again.
+    pub next_restart_at: Option<Timestamp>,
+    /// Health of the current run; `None` without a health check.
+    pub health: Option<HealthStatus>,
     pub log_file: Option<PathBuf>,
 }
 
 /// Mailbox of an [`InstanceActor`].
 pub enum InstanceMsg {
-    /// Start; answered with the pid once the process runs (immediately if it already
-    /// does).
+    /// Start; answered with the pid once the instance is `Running` (immediately if it
+    /// already is).
     Start(Reply<Result<u32>>),
     /// Stop with the cascade; answered when the instance is down.
     Stop(Reply<Result<StopReport>>),
-    /// Stop (if running) then start; answered with the new pid.
+    /// Stop (if running) then start; answered with the new pid once `Running`.
     Restart(Reply<Result<u32>>),
     /// Snapshot; always answered at once.
     Status(Reply<InstanceStatus>),
     /// Live output (survives restarts of the process).
     SubscribeLogs(Reply<LogSubscription>),
+    /// Latest metrics sample (`None` when no run is active or none was taken yet).
+    Metrics(Reply<Option<InstanceMetrics>>),
+    /// Receiver of every new metrics sample (the latest is always readable).
+    SubscribeMetrics(Reply<watch::Receiver<Option<InstanceMetrics>>>),
+    /// Stop if needed, then hold the instance in `Maintenance`; answered once there.
+    EnterMaintenance(Reply<Result<()>>),
+    /// Leave `Maintenance` (back to `Stopped`).
+    ExitMaintenance(Reply<Result<()>>),
     /// Reports of the actor's own tasks (cannot be built outside this crate).
     #[doc(hidden)]
     Internal(Internal),
@@ -191,6 +219,16 @@ enum Notice {
         run: u64,
         report: StopReport,
     },
+    Probe {
+        run: u64,
+        outcome: std::result::Result<(), String>,
+    },
+    StartDeadline {
+        run: u64,
+    },
+    RestartDue {
+        generation: u64,
+    },
 }
 
 /// State shared by every incarnation of an instance actor.
@@ -200,8 +238,27 @@ struct Shared {
     job: Arc<dyn ProcessGroup>,
     root: Arc<dyn ProcessGroup>,
     processes: Arc<dyn ProcessControl>,
+    stats: Arc<dyn ProcessStats>,
     logs: LogHub,
+    metrics: Arc<watch::Sender<Option<InstanceMetrics>>>,
     runs: AtomicU64,
+}
+
+/// What follows the stop in progress.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AfterStop {
+    Nothing,
+    Start,
+    Maintenance,
+}
+
+/// Aborts its task when dropped.
+struct TaskGuard(JoinHandle<()>);
+
+impl Drop for TaskGuard {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Actor of one instance. Built by [`Supervisor::spawn_instance`].
@@ -213,16 +270,28 @@ pub struct InstanceActor {
     pid: Option<u32>,
     exited: Option<watch::Receiver<Option<ExitInfo>>>,
     stop_progress: Option<watch::Receiver<Option<StopStrategy>>>,
-    /// Waiting for the run being started.
+    /// Waiting for the run being started to be `Running`.
     pending_start: Vec<Reply<Result<u32>>>,
     /// Waiting for the run that follows the current stop.
     pending_restart: Vec<Reply<Result<u32>>>,
     pending_stop: Vec<Reply<Result<StopReport>>>,
-    stop_after_start: bool,
-    start_after_stop: bool,
+    pending_maintenance: Vec<Reply<Result<()>>>,
+    /// A stop requested while the process was still being created.
+    stop_after_spawn: Option<StopCause>,
+    after_stop: AfterStop,
+    /// Failure that ends the stop in progress (start deadline).
+    stop_failure: Option<FailureReason>,
     /// Terminations of the job started outside a run; the next run waits for them
     /// before spawning into the job.
     job_cleanups: Vec<JoinHandle<()>>,
+    health: Option<HealthStatus>,
+    probes: Option<TaskGuard>,
+    start_deadline: Option<TaskGuard>,
+    restarts: RestartTracker,
+    restart_timer: Option<TaskGuard>,
+    /// Identifies the scheduled automatic restart (older timers are ignored).
+    restart_generation: u64,
+    next_restart_at: Option<Timestamp>,
 }
 
 /// Publishes `payload` under its kind (`service.<state>`).
@@ -292,6 +361,14 @@ async fn deliver(me: &WeakActorRef<InstanceMsg>, notice: Notice) {
     }
 }
 
+/// Delivers `notice` after `delay` (start deadline, restart backoff).
+fn deliver_after(me: WeakActorRef<InstanceMsg>, delay: Duration, notice: Notice) -> TaskGuard {
+    TaskGuard(tokio::spawn(async move {
+        tokio::time::sleep(delay).await;
+        deliver(&me, notice).await;
+    }))
+}
+
 /// How long the job may take to empty by itself after the main process exited.
 ///
 /// The console host of the service's hidden console (`conhost.exe`) is a member of the
@@ -351,12 +428,13 @@ async fn terminate_job(job: Arc<dyn ProcessGroup>) {
 }
 
 /// One run: wait for pending terminations of the job, create the process, start the log
-/// pumps, report, wait for the exit, empty the job, report again.
+/// pumps and the metrics sampler, report, wait for the exit, empty the job, report again.
 async fn run_process(
     shared: Arc<Shared>,
     me: WeakActorRef<InstanceMsg>,
     run: u64,
     cleanups: Vec<JoinHandle<()>>,
+    events: EventBus,
 ) {
     for cleanup in cleanups {
         if tokio::time::timeout(CLEANUP_WAIT, cleanup).await.is_err() {
@@ -398,6 +476,21 @@ async fn run_process(
     let weak_job: Weak<dyn ProcessGroup> = Arc::downgrade(&job);
     drop(job);
     let _pipeline = shared.logs.attach(stdout, stderr);
+    let metrics = Arc::clone(&shared.metrics);
+    let sampler = TaskGuard(tokio::spawn(sample_run(
+        weak_job.clone(),
+        Arc::clone(&shared.stats),
+        pid,
+        shared.spec.metrics.interval,
+        SamplerOutput {
+            latest: Arc::clone(&metrics),
+            events: shared
+                .spec
+                .metrics
+                .publish_events
+                .then(|| (events, shared.service.clone())),
+        },
+    )));
     drop(shared);
 
     let (exit_tx, exit_rx) = watch::channel(None);
@@ -416,6 +509,8 @@ async fn run_process(
             u32::MAX
         }
     };
+    drop(sampler);
+    metrics.send_replace(None);
     let leftovers_killed = match weak_job.upgrade() {
         Some(job) => kill_leftovers(job).await,
         None => 0,
@@ -426,6 +521,31 @@ async fn run_process(
     };
     exit_tx.send_replace(Some(info));
     deliver(&me, Notice::Exited { run, info }).await;
+}
+
+/// Probes of one run until the task is aborted (the run left `Starting`/`Running`) or
+/// the actor is gone.
+async fn probe_loop(spec: HealthSpec, prober: Prober, me: WeakActorRef<InstanceMsg>, run: u64) {
+    let mut successes = 0_u32;
+    let mut healthy_once = false;
+    loop {
+        let outcome = prober.check().await;
+        if outcome.is_ok() {
+            successes = successes.saturating_add(1);
+            healthy_once |= successes >= spec.success_threshold;
+        } else {
+            successes = 0;
+        }
+        if me.upgrade().is_none() {
+            return;
+        }
+        deliver(&me, Notice::Probe { run, outcome }).await;
+        tokio::time::sleep(spec.next_wait(healthy_once)).await;
+    }
+}
+
+fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 impl InstanceActor {
@@ -441,21 +561,55 @@ impl InstanceActor {
             pending_start: Vec::new(),
             pending_restart: Vec::new(),
             pending_stop: Vec::new(),
-            stop_after_start: false,
-            start_after_stop: false,
+            pending_maintenance: Vec::new(),
+            stop_after_spawn: None,
+            after_stop: AfterStop::Nothing,
+            stop_failure: None,
             job_cleanups: Vec::new(),
+            health: None,
+            probes: None,
+            start_deadline: None,
+            restarts: RestartTracker::new(),
+            restart_timer: None,
+            restart_generation: 0,
+            next_restart_at: None,
         }
     }
 
-    fn set_state(&mut self, state: InstanceState) {
-        self.state = state;
+    /// Applies `trigger` through the state machine and publishes `payload` (`None` only
+    /// for the entry into `Stopping`, announced by the cascade steps).
+    fn enter(
+        &mut self,
+        trigger: Trigger,
+        payload: Option<ServiceEventPayload>,
+        ctx: &Context<Self>,
+    ) -> Result<()> {
+        let next = next_state(&self.state, trigger).map_err(|err| {
+            tracing::error!(
+                instance = %self.shared.service.instance,
+                tool = %self.shared.service.tool,
+                %err,
+                "rejected instance state transition"
+            );
+            ForgeError::from(err)
+        })?;
+        self.state = next;
         self.since = Timestamp::now();
+        if let Some(payload) = payload {
+            publish(ctx.events(), &payload);
+        }
+        Ok(())
+    }
+
+    fn service(&self) -> &ServiceRef {
+        &self.shared.service
     }
 
     fn status(&self) -> InstanceStatus {
         let state = match &self.state {
-            InstanceState::Stopping { .. } => InstanceState::Stopping {
+            InstanceState::Stopping { cause, .. } => InstanceState::Stopping {
                 strategy: self.stop_progress.as_ref().and_then(|p| *p.borrow()),
+                cause: *cause,
             },
             other => other.clone(),
         };
@@ -467,36 +621,115 @@ impl InstanceActor {
             pid: self.pid,
             since: self.since,
             runs: self.run,
+            restarts: self.restarts.total(),
+            next_restart_at: self.next_restart_at,
+            health: self.health.clone(),
             log_file: self.shared.spec.logs.file.clone(),
         }
     }
 
+    fn cancel_restart_timer(&mut self) {
+        self.restart_timer = None;
+        self.restart_generation += 1;
+        self.next_restart_at = None;
+    }
+
+    /// Pending start requests are superseded by a stop.
+    fn cancel_start_waiters(&mut self, why: &str) {
+        let err = ForgeError::Cancelled(why.to_owned());
+        fail_all(std::mem::take(&mut self.pending_start), &err);
+    }
+
+    /// A restart queued after the current stop is superseded (stop or maintenance).
+    fn cancel_queued_start(&mut self, why: &str) {
+        if self.after_stop == AfterStop::Start {
+            self.after_stop = AfterStop::Nothing;
+            let err = ForgeError::Cancelled(why.to_owned());
+            fail_all(std::mem::take(&mut self.pending_restart), &err);
+        }
+    }
+
+    /// A new run (user start, restart or restart policy).
     fn begin_start(&mut self, ctx: &mut Context<Self>) {
-        let run = self.shared.runs.fetch_add(1, Ordering::SeqCst) + 1;
+        self.cancel_restart_timer();
+        let run = self.shared.runs.load(Ordering::SeqCst) + 1;
+        let payload = ServiceEventPayload::starting(self.service(), run);
+        if let Err(err) = self.enter(Trigger::Start, Some(payload), ctx) {
+            fail_all(std::mem::take(&mut self.pending_start), &err);
+            return;
+        }
+        self.shared.runs.store(run, Ordering::SeqCst);
         self.run = run;
         self.pid = None;
         self.exited = None;
         self.stop_progress = None;
-        self.set_state(InstanceState::Starting);
-        publish(
-            ctx.events(),
-            &ServiceEventPayload::starting(&self.shared.service, run),
-        );
+        self.stop_failure = None;
+        self.stop_after_spawn = None;
+        self.probes = None;
+        self.health = self
+            .shared
+            .spec
+            .health
+            .as_ref()
+            .map(|h| HealthStatus::new(&h.probe));
+        self.start_deadline = self.shared.spec.health.as_ref().map(|h| {
+            deliver_after(
+                ctx.myself_weak(),
+                h.start_timeout,
+                Notice::StartDeadline { run },
+            )
+        });
         tokio::spawn(run_process(
             Arc::clone(&self.shared),
             ctx.myself_weak(),
             run,
             std::mem::take(&mut self.job_cleanups),
+            ctx.events().clone(),
         ));
     }
 
-    fn begin_stop(&mut self, ctx: &mut Context<Self>) {
-        let (Some(pid), Some(exited)) = (self.pid, self.exited.clone()) else {
-            // Not running: nothing to stop.
-            self.finish_stop(StopReport::not_running(), ctx);
+    /// `Starting` → `Running`: health passed (or there is none).
+    fn become_running(&mut self, ctx: &mut Context<Self>) {
+        let Some(pid) = self.pid else {
             return;
         };
-        self.set_state(InstanceState::Stopping { strategy: None });
+        self.start_deadline = None;
+        let payload = ServiceEventPayload::running(self.service(), self.run, pid);
+        if self.enter(Trigger::Healthy, Some(payload), ctx).is_ok() {
+            for reply in std::mem::take(&mut self.pending_start) {
+                let _ = reply.send(Ok(pid));
+            }
+        }
+    }
+
+    /// Starts the stop cascade (the process exists). Without a process yet, the stop
+    /// waits for the spawn.
+    fn begin_stop(&mut self, cause: StopCause, ctx: &mut Context<Self>) {
+        let (Some(pid), Some(exited)) = (self.pid, self.exited.clone()) else {
+            self.stop_after_spawn = Some(cause);
+            return;
+        };
+        self.probes = None;
+        self.start_deadline = None;
+        match cause {
+            StopCause::Restart => {
+                // They asked for a started instance: they get the next run.
+                let waiting = std::mem::take(&mut self.pending_start);
+                self.pending_restart.extend(waiting);
+            }
+            StopCause::StartTimeout => {
+                if let Some(reason) = &self.stop_failure {
+                    let err = reason.to_error();
+                    fail_all(std::mem::take(&mut self.pending_start), &err);
+                }
+            }
+            StopCause::User | StopCause::Maintenance | StopCause::Unhealthy => {
+                self.cancel_start_waiters("a stop was requested before the instance was running");
+            }
+        }
+        if self.enter(Trigger::Stop { cause }, None, ctx).is_err() {
+            return;
+        }
         let (progress_tx, progress_rx) = watch::channel(None);
         self.stop_progress = Some(progress_rx);
         let events = ctx.events().clone();
@@ -505,7 +738,7 @@ impl InstanceActor {
             progress_tx.send_replace(Some(strategy));
             publish(
                 &events,
-                &ServiceEventPayload::stopping(&service, pid, strategy, wait),
+                &ServiceEventPayload::stopping(&service, pid, strategy, wait, cause),
             );
         });
         let cascade = Cascade {
@@ -527,56 +760,188 @@ impl InstanceActor {
     }
 
     fn finish_stop(&mut self, report: StopReport, ctx: &mut Context<Self>) {
+        let InstanceState::Stopping { cause, .. } = self.state else {
+            return;
+        };
         let pid = self.pid.take();
         self.stop_progress = None;
-        let stopped = report.exited() || (report.strategy.is_none() && report.attempted.is_empty());
-        if stopped {
-            self.set_state(InstanceState::Stopped);
-            publish(
-                ctx.events(),
-                &ServiceEventPayload::stopped(&self.shared.service, pid, &report),
-            );
-        } else {
+        let after = std::mem::replace(&mut self.after_stop, AfterStop::Nothing);
+        let Some(code) = report.exit_code else {
+            // The process outlived TerminateJobObject: nothing new goes into a job whose
+            // processes may still be dying.
             let err = ForgeError::Timeout {
                 operation: "the process did not exit after TerminateJobObject".to_owned(),
                 after: self.shared.spec.stop.worst_case(),
             };
-            // Nothing new goes into a job whose processes may still be dying.
-            if std::mem::take(&mut self.start_after_stop) {
-                fail_all(std::mem::take(&mut self.pending_restart), &err);
+            fail_all(std::mem::take(&mut self.pending_restart), &err);
+            fail_all(std::mem::take(&mut self.pending_maintenance), &err);
+            self.stop_failure = None;
+            self.fail(FailureReason::from_error(&err), pid, ctx);
+            self.answer_stops(&report);
+            return;
+        };
+        match cause {
+            StopCause::User | StopCause::Restart | StopCause::Maintenance => {
+                let payload = ServiceEventPayload::stopped(self.service(), pid, &report);
+                let _ = self.enter(
+                    Trigger::StopFinished { exit_code: code },
+                    Some(payload),
+                    ctx,
+                );
             }
-            self.fail(err, pid, ctx);
+            StopCause::Unhealthy => {
+                self.crashed(
+                    Trigger::StopFinished { exit_code: code },
+                    Failure::Unhealthy,
+                    pid,
+                    code,
+                    report.leftovers_killed,
+                    ctx,
+                );
+            }
+            StopCause::StartTimeout => {
+                let reason = self
+                    .stop_failure
+                    .take()
+                    .unwrap_or(FailureReason::HealthTimeout {
+                        timeout_ms: self
+                            .shared
+                            .spec
+                            .health
+                            .as_ref()
+                            .map_or(0, |h| millis(h.start_timeout)),
+                        last_error: None,
+                    });
+                self.fail(reason, pid, ctx);
+            }
         }
+        self.answer_stops(&report);
+        match after {
+            AfterStop::Nothing => {}
+            AfterStop::Start => {
+                self.restarts.reset();
+                self.pending_start.append(&mut self.pending_restart);
+                self.begin_start(ctx);
+            }
+            AfterStop::Maintenance => self.enter_maintenance(ctx),
+        }
+    }
+
+    fn answer_stops(&mut self, report: &StopReport) {
         for reply in std::mem::take(&mut self.pending_stop) {
             let _ = reply.send(Ok(report.clone()));
         }
-        if std::mem::take(&mut self.start_after_stop) {
-            self.pending_start.append(&mut self.pending_restart);
-            self.begin_start(ctx);
+    }
+
+    /// Enters `Failed(reason)` and publishes `service.failed` (`pid`: a process left
+    /// behind, if any).
+    fn fail(&mut self, reason: FailureReason, pid: Option<u32>, ctx: &mut Context<Self>) {
+        self.probes = None;
+        self.start_deadline = None;
+        self.cancel_restart_timer();
+        let payload = ServiceEventPayload::failed_with(self.service(), pid, &reason);
+        let err = reason.to_error();
+        if self
+            .enter(Trigger::Fail { reason }, Some(payload), ctx)
+            .is_ok()
+        {
+            fail_all(std::mem::take(&mut self.pending_start), &err);
         }
     }
 
-    /// Enters `Failed` and publishes `service.failed` (`pid`: a process left behind).
-    fn fail(&mut self, err: ForgeError, pid: Option<u32>, ctx: &mut Context<Self>) {
-        publish(
-            ctx.events(),
-            &ServiceEventPayload::failed(&self.shared.service, pid, &err),
+    /// The run ended without being asked to: `Crashed`, then what the restart policy
+    /// says.
+    fn crashed(
+        &mut self,
+        trigger: Trigger,
+        failure: Failure,
+        pid: Option<u32>,
+        exit_code: u32,
+        leftovers_killed: u32,
+        ctx: &mut Context<Self>,
+    ) {
+        self.probes = None;
+        self.start_deadline = None;
+        let mut payload =
+            ServiceEventPayload::crashed(self.service(), pid, exit_code, leftovers_killed);
+        if failure == Failure::Unhealthy {
+            payload = payload.with_cause(StopCause::Unhealthy);
+        }
+        // Restarting cannot fix a missing DLL or an access denied.
+        let hopeless = match failure {
+            Failure::Exit(code) => FailureReason::for_exit_code(code),
+            Failure::Unhealthy => None,
+        };
+        let decision = match hopeless {
+            Some(_) => RestartDecision::Stay,
+            None => self.restarts.decide(
+                &self.shared.spec.restart,
+                failure,
+                tokio::time::Instant::now(),
+            ),
+        };
+        if let RestartDecision::Restart { delay, .. } = decision {
+            payload = payload.with_restart_in(delay);
+        }
+        tracing::warn!(
+            instance = %self.shared.service.instance,
+            tool = %self.shared.service.tool,
+            exit_code,
+            ?failure,
+            ?decision,
+            "instance crashed"
         );
-        self.set_state(InstanceState::Failed {
-            code: err.code().to_owned(),
-            reason: err.to_string(),
-        });
+        if self.enter(trigger, Some(payload), ctx).is_err() {
+            return;
+        }
+        if let Some(reason) = hopeless {
+            self.fail(reason, None, ctx);
+            return;
+        }
+        match decision {
+            RestartDecision::Restart { delay, .. } => {
+                self.cancel_restart_timer();
+                let generation = self.restart_generation;
+                self.next_restart_at = Timestamp::now().checked_add(delay).ok();
+                self.restart_timer = Some(deliver_after(
+                    ctx.myself_weak(),
+                    delay,
+                    Notice::RestartDue { generation },
+                ));
+            }
+            RestartDecision::Stay => {}
+            RestartDecision::GiveUp { restarts, window } => {
+                let reason = FailureReason::CrashLoop {
+                    restarts,
+                    window_ms: millis(window),
+                    exit_code: match failure {
+                        Failure::Exit(code) => Some(crate::events::wire_exit_code(code)),
+                        Failure::Unhealthy => None,
+                    },
+                };
+                self.fail(reason, None, ctx);
+            }
+        }
     }
 
-    /// A pending start/restart is superseded by a stop request.
-    fn cancel_restart(&mut self) {
-        if std::mem::take(&mut self.start_after_stop) {
-            let err = ForgeError::Cancelled("a stop was requested before the restart".into());
-            fail_all(std::mem::take(&mut self.pending_restart), &err);
+    fn enter_maintenance(&mut self, ctx: &mut Context<Self>) {
+        self.cancel_restart_timer();
+        let payload = ServiceEventPayload::maintenance(self.service());
+        let result = self.enter(Trigger::EnterMaintenance, Some(payload), ctx);
+        for reply in std::mem::take(&mut self.pending_maintenance) {
+            let _ = reply.send(match &result {
+                Ok(()) => Ok(()),
+                Err(err) => Err(duplicate(err)),
+            });
         }
     }
 
     fn on_start(&mut self, reply: Reply<Result<u32>>, ctx: &mut Context<Self>) {
+        let entering_maintenance = || {
+            Err(ForgeError::Conflict(
+                "the instance is entering maintenance".into(),
+            ))
+        };
         match self.state {
             InstanceState::Running => {
                 let _ =
@@ -584,20 +949,28 @@ impl InstanceActor {
                         ForgeError::Internal("running instance without a pid".into())
                     }));
             }
-            InstanceState::Starting if self.stop_after_start => {
-                self.start_after_stop = true;
-                self.pending_restart.push(reply);
+            InstanceState::Starting if self.stop_after_spawn.is_none() => {
+                self.pending_start.push(reply);
             }
-            InstanceState::Starting => self.pending_start.push(reply),
-            InstanceState::Stopping { .. } => {
-                self.start_after_stop = true;
-                self.pending_restart.push(reply);
+            InstanceState::Starting | InstanceState::Stopping { .. } => {
+                if self.after_stop == AfterStop::Maintenance {
+                    let _ = reply.send(entering_maintenance());
+                } else {
+                    self.after_stop = AfterStop::Start;
+                    self.pending_restart.push(reply);
+                }
             }
             InstanceState::Stopped
             | InstanceState::Crashed { .. }
             | InstanceState::Failed { .. } => {
+                self.restarts.reset();
                 self.pending_start.push(reply);
                 self.begin_start(ctx);
+            }
+            InstanceState::Maintenance => {
+                let _ = reply.send(Err(ForgeError::Conflict(
+                    "the instance is under maintenance".into(),
+                )));
             }
         }
     }
@@ -606,20 +979,31 @@ impl InstanceActor {
         match self.state {
             InstanceState::Running => {
                 self.pending_stop.push(reply);
-                self.begin_stop(ctx);
+                self.begin_stop(StopCause::User, ctx);
             }
             InstanceState::Starting => {
-                self.cancel_restart();
+                self.cancel_queued_start("a stop was requested before the restart");
                 self.pending_stop.push(reply);
-                self.stop_after_start = true;
+                match self.stop_after_spawn {
+                    // Already going down for maintenance or a missed deadline.
+                    Some(StopCause::Maintenance | StopCause::StartTimeout) => {}
+                    _ => self.begin_stop(StopCause::User, ctx),
+                }
             }
-            InstanceState::Stopping { .. } => {
-                self.cancel_restart();
+            InstanceState::Stopping { ref mut cause, .. } => {
+                // A requested stop ends in Stopped, not in Crashed.
+                if *cause == StopCause::Unhealthy {
+                    *cause = StopCause::User;
+                }
+                self.cancel_queued_start("a stop was requested before the restart");
                 self.pending_stop.push(reply);
             }
-            InstanceState::Stopped
-            | InstanceState::Crashed { .. }
-            | InstanceState::Failed { .. } => {
+            InstanceState::Crashed { .. } => {
+                // No automatic restart after an explicit stop.
+                self.cancel_restart_timer();
+                let _ = reply.send(Ok(StopReport::not_running()));
+            }
+            InstanceState::Stopped | InstanceState::Failed { .. } | InstanceState::Maintenance => {
                 let _ = reply.send(Ok(StopReport::not_running()));
             }
         }
@@ -629,78 +1013,267 @@ impl InstanceActor {
         match self.state {
             InstanceState::Running => {
                 self.pending_restart.push(reply);
-                self.start_after_stop = true;
-                self.begin_stop(ctx);
+                self.after_stop = AfterStop::Start;
+                self.begin_stop(StopCause::Restart, ctx);
             }
-            InstanceState::Starting => {
+            InstanceState::Starting | InstanceState::Stopping { .. } => {
+                if self.after_stop == AfterStop::Maintenance {
+                    let _ = reply.send(Err(ForgeError::Conflict(
+                        "the instance is entering maintenance".into(),
+                    )));
+                    return;
+                }
                 self.pending_restart.push(reply);
-                self.stop_after_start = true;
-                self.start_after_stop = true;
-            }
-            InstanceState::Stopping { .. } => {
-                self.pending_restart.push(reply);
-                self.start_after_stop = true;
+                self.after_stop = AfterStop::Start;
+                if self.state == InstanceState::Starting && self.stop_after_spawn.is_none() {
+                    self.begin_stop(StopCause::Restart, ctx);
+                }
             }
             InstanceState::Stopped
             | InstanceState::Crashed { .. }
             | InstanceState::Failed { .. } => {
+                self.restarts.reset();
                 self.pending_start.push(reply);
                 self.begin_start(ctx);
             }
+            InstanceState::Maintenance => {
+                let _ = reply.send(Err(ForgeError::Conflict(
+                    "the instance is under maintenance".into(),
+                )));
+            }
+        }
+    }
+
+    fn on_enter_maintenance(&mut self, reply: Reply<Result<()>>, ctx: &mut Context<Self>) {
+        match self.state {
+            InstanceState::Maintenance => {
+                let _ = reply.send(Ok(()));
+            }
+            InstanceState::Stopped
+            | InstanceState::Crashed { .. }
+            | InstanceState::Failed { .. } => {
+                self.pending_maintenance.push(reply);
+                self.enter_maintenance(ctx);
+            }
+            InstanceState::Running | InstanceState::Starting => {
+                self.cancel_queued_start("maintenance was requested before the restart");
+                self.pending_maintenance.push(reply);
+                self.after_stop = AfterStop::Maintenance;
+                match self.stop_after_spawn {
+                    Some(_) => self.stop_after_spawn = Some(StopCause::Maintenance),
+                    None => self.begin_stop(StopCause::Maintenance, ctx),
+                }
+            }
+            InstanceState::Stopping { ref mut cause, .. } => {
+                if *cause == StopCause::Unhealthy {
+                    *cause = StopCause::Maintenance;
+                }
+                self.cancel_queued_start("maintenance was requested before the restart");
+                self.pending_maintenance.push(reply);
+                self.after_stop = AfterStop::Maintenance;
+            }
+        }
+    }
+
+    fn on_exit_maintenance(&mut self, reply: Reply<Result<()>>, ctx: &mut Context<Self>) {
+        let result = if self.state == InstanceState::Maintenance {
+            let payload = ServiceEventPayload::idle(self.service());
+            self.enter(Trigger::ExitMaintenance, Some(payload), ctx)
+        } else {
+            Err(ForgeError::Conflict(format!(
+                "the instance is not under maintenance (state {})",
+                self.state.name()
+            )))
+        };
+        let _ = reply.send(result);
+    }
+
+    fn on_spawned(
+        &mut self,
+        result: Result<(u32, watch::Receiver<Option<ExitInfo>>)>,
+        ctx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok((pid, exited)) => {
+                self.pid = Some(pid);
+                self.exited = Some(exited);
+                if let Some(cause) = self.stop_after_spawn.take() {
+                    self.begin_stop(cause, ctx);
+                    return;
+                }
+                let Some(spec) = self.shared.spec.health.clone() else {
+                    self.become_running(ctx);
+                    return;
+                };
+                match Prober::new(
+                    &spec,
+                    pid,
+                    Arc::clone(&self.shared.processes),
+                    Arc::clone(&self.shared.root),
+                ) {
+                    Ok(prober) => {
+                        self.probes = Some(TaskGuard(tokio::spawn(probe_loop(
+                            spec,
+                            prober,
+                            ctx.myself_weak(),
+                            self.run,
+                        ))));
+                    }
+                    Err(err) => {
+                        // The process runs but cannot be checked: stop it and fail.
+                        self.stop_failure = Some(FailureReason::from_error(&err));
+                        self.begin_stop(StopCause::StartTimeout, ctx);
+                    }
+                }
+            }
+            Err(err) => {
+                tracing::warn!(
+                    instance = %self.shared.service.instance,
+                    tool = %self.shared.service.tool,
+                    %err,
+                    "instance failed to start"
+                );
+                fail_all(std::mem::take(&mut self.pending_start), &err);
+                fail_all(std::mem::take(&mut self.pending_restart), &err);
+                for reply in std::mem::take(&mut self.pending_stop) {
+                    let _ = reply.send(Ok(StopReport::not_running()));
+                }
+                self.stop_after_spawn = None;
+                self.stop_failure = None;
+                let after = std::mem::replace(&mut self.after_stop, AfterStop::Nothing);
+                self.fail(FailureReason::from_error(&err), None, ctx);
+                if after == AfterStop::Maintenance {
+                    self.enter_maintenance(ctx);
+                }
+            }
+        }
+    }
+
+    fn on_probe(&mut self, outcome: std::result::Result<(), String>, ctx: &mut Context<Self>) {
+        if !matches!(self.state, InstanceState::Starting | InstanceState::Running) {
+            return;
+        }
+        let (Some(spec), Some(health)) = (self.shared.spec.health.as_ref(), self.health.as_mut())
+        else {
+            return;
+        };
+        health.record(&outcome, Timestamp::now());
+        let healthy = health.is_healthy(spec);
+        let newly_unhealthy = health.became_unhealthy(spec);
+        let last_error = health.last_error.clone().unwrap_or_default();
+        match self.state {
+            InstanceState::Starting if healthy && self.stop_after_spawn.is_none() => {
+                self.become_running(ctx);
+            }
+            InstanceState::Running if newly_unhealthy => {
+                if self.shared.spec.restart == RestartPolicy::Never {
+                    tracing::warn!(
+                        instance = %self.shared.service.instance,
+                        tool = %self.shared.service.tool,
+                        error = %last_error,
+                        "instance is unhealthy; restart policy is never, leaving it running"
+                    );
+                } else {
+                    tracing::warn!(
+                        instance = %self.shared.service.instance,
+                        tool = %self.shared.service.tool,
+                        error = %last_error,
+                        "instance is unhealthy; stopping it for the restart policy"
+                    );
+                    self.begin_stop(StopCause::Unhealthy, ctx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn on_start_deadline(&mut self, ctx: &mut Context<Self>) {
+        if self.state != InstanceState::Starting {
+            return;
+        }
+        let timeout_ms = self
+            .shared
+            .spec
+            .health
+            .as_ref()
+            .map_or(0, |h| millis(h.start_timeout));
+        let reason = FailureReason::HealthTimeout {
+            timeout_ms,
+            last_error: self.health.as_ref().and_then(|h| h.last_error.clone()),
+        };
+        tracing::warn!(
+            instance = %self.shared.service.instance,
+            tool = %self.shared.service.tool,
+            %reason,
+            "instance did not become healthy in time; stopping it"
+        );
+        self.stop_failure = Some(reason);
+        if self.stop_after_spawn.is_none() {
+            self.begin_stop(StopCause::StartTimeout, ctx);
+        }
+        // Otherwise a stop is already queued for the spawn and keeps its cause.
+    }
+
+    fn on_exited(&mut self, info: ExitInfo, ctx: &mut Context<Self>) {
+        match self.state {
+            InstanceState::Running => {
+                let pid = self.pid.take();
+                self.crashed(
+                    Trigger::Exited {
+                        exit_code: info.code,
+                    },
+                    Failure::Exit(info.code),
+                    pid,
+                    info.code,
+                    info.leftovers_killed,
+                    ctx,
+                );
+            }
+            InstanceState::Starting => {
+                // Exited before it became healthy.
+                let pid = self.pid.take();
+                self.probes = None;
+                self.start_deadline = None;
+                let reason = FailureReason::exited_during_start(info.code);
+                tracing::warn!(
+                    instance = %self.shared.service.instance,
+                    tool = %self.shared.service.tool,
+                    %reason,
+                    "instance exited while starting"
+                );
+                let err = reason.to_error();
+                let payload = ServiceEventPayload::failed_with(self.service(), pid, &reason);
+                let trigger = Trigger::Exited {
+                    exit_code: info.code,
+                };
+                if self.enter(trigger, Some(payload), ctx).is_ok() {
+                    fail_all(std::mem::take(&mut self.pending_start), &err);
+                }
+            }
+            // Stopping: the cascade observes the same exit and reports.
+            _ => {}
         }
     }
 
     fn on_notice(&mut self, notice: Notice, ctx: &mut Context<Self>) {
         match notice {
-            Notice::Spawned { run, result } if run == self.run => match result {
-                Ok((pid, exited)) => {
-                    self.pid = Some(pid);
-                    self.exited = Some(exited);
-                    self.set_state(InstanceState::Running);
-                    publish(
-                        ctx.events(),
-                        &ServiceEventPayload::running(&self.shared.service, run, pid),
-                    );
-                    for reply in std::mem::take(&mut self.pending_start) {
-                        let _ = reply.send(Ok(pid));
-                    }
-                    if std::mem::take(&mut self.stop_after_start) {
-                        self.begin_stop(ctx);
-                    }
-                }
-                Err(err) => {
-                    tracing::warn!(instance = %self.shared.service.instance, tool = %self.shared.service.tool, %err, "instance failed to start");
-                    fail_all(std::mem::take(&mut self.pending_start), &err);
-                    fail_all(std::mem::take(&mut self.pending_restart), &err);
-                    for reply in std::mem::take(&mut self.pending_stop) {
-                        let _ = reply.send(Ok(StopReport::not_running()));
-                    }
-                    self.stop_after_start = false;
-                    self.start_after_stop = false;
-                    self.fail(err, None, ctx);
-                }
-            },
-            Notice::Exited { run, info } if run == self.run => {
-                if self.state == InstanceState::Running {
-                    let pid = self.pid.take();
-                    tracing::warn!(instance = %self.shared.service.instance, tool = %self.shared.service.tool, code = info.code, "instance exited unexpectedly");
-                    self.set_state(InstanceState::Crashed {
-                        exit_code: info.code,
-                    });
-                    publish(
-                        ctx.events(),
-                        &ServiceEventPayload::crashed(
-                            &self.shared.service,
-                            pid,
-                            info.code,
-                            info.leftovers_killed,
-                        ),
-                    );
-                }
-                // Stopping: the cascade observes the same exit and reports.
+            Notice::Spawned { run, result }
+                if run == self.run && self.state == InstanceState::Starting =>
+            {
+                self.on_spawned(result, ctx);
             }
+            Notice::Exited { run, info } if run == self.run => self.on_exited(info, ctx),
             Notice::StopFinished { run, report } if run == self.run => {
                 self.finish_stop(report, ctx);
+            }
+            Notice::Probe { run, outcome } if run == self.run => self.on_probe(outcome, ctx),
+            Notice::StartDeadline { run } if run == self.run => self.on_start_deadline(ctx),
+            Notice::RestartDue { generation } => {
+                if generation == self.restart_generation
+                    && matches!(self.state, InstanceState::Crashed { .. })
+                {
+                    self.begin_start(ctx);
+                }
             }
             Notice::Spawned {
                 result: Ok((pid, _)),
@@ -721,6 +1294,7 @@ impl InstanceActor {
     /// Terminates the job and waits until it is empty.
     async fn terminate_job(&self) {
         terminate_job(Arc::clone(&self.shared.job)).await;
+        self.shared.metrics.send_replace(None);
     }
 }
 
@@ -738,6 +1312,15 @@ impl Actor for InstanceActor {
             InstanceMsg::SubscribeLogs(reply) => {
                 let _ = reply.send(self.shared.logs.subscribe());
             }
+            InstanceMsg::Metrics(reply) => {
+                let latest = self.shared.metrics.borrow().clone();
+                let _ = reply.send(latest);
+            }
+            InstanceMsg::SubscribeMetrics(reply) => {
+                let _ = reply.send(self.shared.metrics.subscribe());
+            }
+            InstanceMsg::EnterMaintenance(reply) => self.on_enter_maintenance(reply, ctx),
+            InstanceMsg::ExitMaintenance(reply) => self.on_exit_maintenance(reply, ctx),
             InstanceMsg::Internal(Internal(notice)) => self.on_notice(notice, ctx),
         }
     }
@@ -745,6 +1328,9 @@ impl Actor for InstanceActor {
     /// Actor shutdown: the processes go with it (graceful stops are requested before, by
     /// the daemon, with `Stop`).
     async fn on_stop(&mut self, _ctx: &mut Context<Self>) {
+        self.probes = None;
+        self.start_deadline = None;
+        self.restart_timer = None;
         self.terminate_job().await;
     }
 
@@ -753,10 +1339,13 @@ impl Actor for InstanceActor {
     async fn on_restart(&mut self, ctx: &mut Context<Self>, info: &RestartInfo) {
         self.terminate_job().await;
         self.fail(
-            ForgeError::Internal(format!(
-                "instance supervisor restarted after an internal error: {}",
-                info.reason
-            )),
+            FailureReason::Other {
+                code: "internal".to_owned(),
+                message: format!(
+                    "instance supervisor restarted after an internal error: {}",
+                    info.reason
+                ),
+            },
             None,
             ctx,
         );
@@ -801,7 +1390,7 @@ impl InstanceHandle {
         self.handle.actor_ref()
     }
 
-    /// Starts and waits at most `timeout` for the pid.
+    /// Starts and waits at most `timeout` for the pid of the running instance.
     pub async fn start(&self, timeout: Duration) -> Result<u32> {
         self.actor().ask(InstanceMsg::Start, timeout).await?
     }
@@ -827,6 +1416,37 @@ impl InstanceHandle {
             .actor()
             .ask(InstanceMsg::SubscribeLogs, timeout)
             .await?)
+    }
+
+    /// Latest metrics sample within `timeout`.
+    pub async fn metrics(&self, timeout: Duration) -> Result<Option<InstanceMetrics>> {
+        Ok(self.actor().ask(InstanceMsg::Metrics, timeout).await?)
+    }
+
+    /// Receiver of the metrics samples within `timeout`.
+    pub async fn subscribe_metrics(
+        &self,
+        timeout: Duration,
+    ) -> Result<watch::Receiver<Option<InstanceMetrics>>> {
+        Ok(self
+            .actor()
+            .ask(InstanceMsg::SubscribeMetrics, timeout)
+            .await?)
+    }
+
+    /// Stops the instance if needed and holds it in `Maintenance`; waits at most
+    /// `timeout`.
+    pub async fn enter_maintenance(&self, timeout: Duration) -> Result<()> {
+        self.actor()
+            .ask(InstanceMsg::EnterMaintenance, timeout)
+            .await?
+    }
+
+    /// Leaves `Maintenance` within `timeout`.
+    pub async fn exit_maintenance(&self, timeout: Duration) -> Result<()> {
+        self.actor()
+            .ask(InstanceMsg::ExitMaintenance, timeout)
+            .await?
     }
 
     /// Polls the status until `pred` holds, at most `timeout`.
@@ -861,15 +1481,37 @@ impl InstanceHandle {
 }
 
 /// Entry point: the root job and the actors of the instances. Cheap to clone.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Supervisor {
     jobs: JobTree,
     actors: ActorSupervisor,
+    stats: Arc<dyn ProcessStats>,
+}
+
+impl std::fmt::Debug for Supervisor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Supervisor")
+            .field("jobs", &self.jobs)
+            .field("actors", &self.actors)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Supervisor {
+    /// Supervisor reading process counters from the running OS
+    /// ([`forge_core::platform::process_stats`]).
     pub fn new(jobs: JobTree, actors: ActorSupervisor) -> Self {
-        Self { jobs, actors }
+        Self {
+            jobs,
+            actors,
+            stats: process_stats(),
+        }
+    }
+
+    /// Replaces the process counters (fakes in tests).
+    pub fn with_process_stats(mut self, stats: Arc<dyn ProcessStats>) -> Self {
+        self.stats = stats;
+        self
     }
 
     pub fn jobs(&self) -> &JobTree {
@@ -891,6 +1533,9 @@ impl Supervisor {
                 )));
             }
         }
+        if let Some(health) = &spec.health {
+            health.validate()?;
+        }
         let job = self.jobs.instance_job()?;
         let service = ServiceRef {
             instance_id: spec.id,
@@ -907,6 +1552,8 @@ impl Supervisor {
             job,
             root: Arc::clone(self.jobs.root()),
             processes: Arc::clone(self.jobs.processes()),
+            stats: Arc::clone(&self.stats),
+            metrics: Arc::new(watch::channel(None).0),
             runs: AtomicU64::new(0),
         });
         let actor_spec = ActorSpec::new(format!("instance/{tool}/{name}"));
@@ -941,17 +1588,22 @@ mod tests {
     }
 
     #[test]
-    fn state_serializes_with_tag() {
-        let json = serde_json::to_value(InstanceState::Stopping {
-            strategy: Some(StopStrategy::CtrlBreak),
-        })
-        .unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({"state": "stopping", "strategy": "ctrl_break"})
+    fn spec_defaults() {
+        let spec = InstanceSpec::new(
+            InstanceId::new(),
+            ToolId::new("mysql").unwrap(),
+            "default",
+            SpawnSpec::new("C:/x.exe", "C:/"),
         );
-        assert!(InstanceState::Starting.is_active());
-        assert!(!InstanceState::Crashed { exit_code: 3 }.is_active());
+        assert_eq!(spec.health, None);
+        assert_eq!(spec.restart, RestartPolicy::default());
+        assert_eq!(spec.metrics.interval, Duration::from_secs(2));
+        assert!(!spec.metrics.publish_events);
+        let spec = spec
+            .with_restart(RestartPolicy::Never)
+            .with_health(HealthSpec::new(crate::health::Probe::Pid));
+        assert_eq!(spec.restart, RestartPolicy::Never);
+        assert!(spec.health.is_some());
     }
 
     #[test]
