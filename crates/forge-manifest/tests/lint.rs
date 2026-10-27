@@ -155,21 +155,16 @@ fn index_sha256_must_match_the_file() {
 }
 
 #[test]
-fn dev_signature_may_be_empty_but_a_real_key_may_not() {
+fn a_legacy_inline_signature_is_refused() {
+    // The signature is the detached `index.yaml.minisig` (ADR-0018); `spec.signature` is gone.
     let registry = full_registry();
     let text = read(&registry.root().join("index.yaml"));
-    let dev = format!("{text}  signature: {{ type: minisign, key_id: dev, sig: \"\" }}\n");
-    registry.write("index.yaml", &dev);
-    assert!(registry.lint(&context()).is_clean());
-    let real =
-        format!("{text}  signature: {{ type: minisign, key_id: RWR0000000000000, sig: \"\" }}\n");
-    registry.write("index.yaml", &real);
-    let report = registry.lint(&context());
-    assert_eq!(report.issues.len(), 1, "{:#?}", report.issues);
-    assert_eq!(
-        report.issues[0].field.as_deref(),
-        Some("spec.signature.sig")
+    let legacy = format!(
+        "{text}  signature: {{ type: minisign, key_id: dev, sig: \"\" }}
+"
     );
+    registry.write("index.yaml", &legacy);
+    assert!(!registry.lint(&context()).is_clean());
 }
 
 #[test]

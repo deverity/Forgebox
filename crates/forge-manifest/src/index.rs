@@ -2,8 +2,8 @@
 //!
 //! [`build_index`] reads `tools/*.yaml` and `stacks/*.yaml`, hashes each file
 //! ([`sha256_hex`], over the exact bytes on disk, LF by `.gitattributes`) and resolves the
-//! newest stable version offline from `source.releases` ([`latest_version`]). The signature
-//! is a placeholder (`dev`, empty `sig`); `cargo xtask registry-sign` replaces it.
+//! newest stable version offline from `source.releases` ([`latest_version`]). The index is
+//! unsigned here; `cargo xtask registry-sign` writes the detached `index.yaml.minisig`.
 //! Used by `cargo xtask registry-index`; `lint_registry` checks the same hashes.
 //!
 //! Blocking file I/O: call from `spawn_blocking` in async code.
@@ -17,8 +17,7 @@ use crate::lint::RegistryDir;
 use crate::parse::{self, ManifestError};
 use crate::schema::common::{Category, Kind, RegistryKind, Sha256};
 use crate::schema::registry::{
-    DEV_KEY_ID, REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryMetadata, RegistrySpec, Signature,
-    SignatureType,
+    REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryMetadata, RegistrySpec,
 };
 use crate::schema::tool::StaticRelease;
 use crate::schema::{ApiVersion, Manifest, RegistryManifest, VersionScheme};
@@ -143,7 +142,7 @@ fn relative_path(path: &Path) -> String {
     format!("{folder}/{name}")
 }
 
-/// Builds the whole index with the placeholder signature.
+/// Builds the whole index (unsigned: the signature is the detached `index.yaml.minisig`).
 pub fn build_index(
     dir: &RegistryDir,
     name: &str,
@@ -163,11 +162,6 @@ pub fn build_index(
             updated_at,
             tools,
             stacks,
-            signature: Some(Signature {
-                kind: SignatureType::Minisign,
-                key_id: DEV_KEY_ID.to_owned(),
-                sig: String::new(),
-            }),
         },
     })
 }

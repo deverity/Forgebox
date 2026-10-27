@@ -43,8 +43,6 @@ pub struct RegistrySpec {
     /// `stacks/*.yaml`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stacks: Vec<RegistryEntry>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub signature: Option<Signature>,
 }
 
 /// `spec.tools[]` / `spec.stacks[]`.
@@ -61,26 +59,4 @@ pub struct RegistryEntry {
     /// Newest stable version, for the catalog list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest: Option<String>,
-}
-
-/// `key_id` of the placeholder signature written by `cargo xtask registry-index` (`sig` is
-/// empty until `cargo xtask registry-sign` fills it with the minisign key id and signature).
-/// A loader accepts an unsigned index only for `trusted_unsigned` registries (docs/04 §5).
-pub const DEV_KEY_ID: &str = "dev";
-
-/// `spec.signature`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Signature {
-    #[serde(rename = "type")]
-    pub kind: SignatureType,
-    pub key_id: String,
-    pub sig: String,
-}
-
-/// Signature scheme of a registry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum SignatureType {
-    Minisign,
 }
