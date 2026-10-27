@@ -124,6 +124,7 @@ spec:
       ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
       pattern: "php_{name}.dll"
       defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
+      zend_extensions: [{ name: opcache, constraint: "<8.5" }]
     env:
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"

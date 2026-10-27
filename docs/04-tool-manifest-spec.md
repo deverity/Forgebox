@@ -99,6 +99,7 @@ spec:
       - copy: { from: "php.ini-development", to: "{{ paths.etc }}/php/{{ series }}/php.ini", if_missing: true }
       - render: { template: "php/php.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/10-forgebox.ini" }
       - mkdir: "{{ paths.tmp }}/php/{{ series }}/sessions"
+      - mkdir: "{{ paths.tmp }}/php/{{ series }}/uploads"   # upload_tmp_dir do overlay
       # - run: { command: "bin/tool.exe --init", cwd: "{{ paths.version }}", timeout: 60s }   # só executáveis da própria versão (regra 6)
     uninstall:
       keep: ["{{ paths.etc }}/php/{{ series }}"]  # o que preservar ao remover a versão
@@ -151,6 +152,10 @@ spec:
       ini_dir: "{{ paths.etc }}/php/{{ series }}/conf.d"
       pattern: "php_{name}.dll"  # precisa de {name}
       defaults_on: [curl, mbstring, openssl, pdo_mysql, pdo_sqlite, pdo_pgsql, fileinfo, gd, intl, zip, sodium, exif, bcmath]
+      zend_extensions: [{ name: opcache, constraint: "<8.5" }]  # PHP 8.5+ embute o OPcache
+    # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de
+    # versioning.channels.*.constraint (scheme da tool) e o item só é emitido quando casa com a versão
+    # instalada (ausente = sempre). Resolvido por ExtensionsConfig::zend_extensions_for.
     env:                         # variáveis injetadas nos processos desta tool
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"

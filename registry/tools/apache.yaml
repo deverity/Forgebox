@@ -8,8 +8,7 @@
 # process keeps running, so neither is used. Ctrl+Break on the console group does a graceful
 # restart (AH00424 "Received restart signal -- Restarting the server") and Ctrl+C shuts down
 # (mpm_winnt console handler); hence reload = ctrl-break and stop = ctrl-c.
-# Config templates (httpd.conf, sites, upstreams) arrive with M1-E4-T1, which adds the `render`
-# actions; until then `httpd_conf` is only declared.
+# Config files are rendered by forge-render targets, not by manifest actions (docs/03 section 3.2.1).
 apiVersion: forgebox.dev/v1
 kind: Tool
 
@@ -74,15 +73,15 @@ spec:
       regex: "Apache/(\\d+\\.\\d+\\.\\d+)"
     post_install:
       - mkdir: "{{ paths.logs }}/apache"
-      - mkdir: "{{ paths.etc }}/apache/{{ version }}"
+      - mkdir: "{{ paths.etc }}/apache"
     uninstall:
-      keep: ["{{ paths.etc }}/apache/{{ version }}"]
+      keep: ["{{ paths.etc }}/apache"]
     size_estimate_mb: 55
 
   config:
     files:
       - id: httpd_conf
-        path: "{{ paths.etc }}/apache/{{ version }}/httpd.conf"
+        path: "{{ paths.etc }}/apache/httpd.conf"
         format: conf-directive
         label: httpd.conf
         editable: true
@@ -136,7 +135,7 @@ spec:
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
         - { label: Error log, path: "{{ paths.logs }}/apache/error.log", format: apache-error }
-        - { label: Access log (JSON), path: "{{ paths.logs }}/apache/access.log", format: forgebox-json }
+        - { label: Access log (JSON), path: "{{ paths.logs }}/apache/access.json", format: forgebox-json }
       autostart: true
 
   discover:

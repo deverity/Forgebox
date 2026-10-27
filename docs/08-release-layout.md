@@ -94,7 +94,7 @@ C:\Forgebox\
 ├── logs\
 │   ├── forgeboxd.log , forgeboxd.log.1 ...   # daemon (tracing, JSON lines)
 │   ├── helper.log                             # tudo que o helper elevado fez
-│   ├── nginx\access.log , error.log
+│   ├── nginx\access.json , error.log
 │   ├── apache\...
 │   ├── php\8.3\error.log , 8.3\pool.log
 │   ├── mysql\default\error.log
