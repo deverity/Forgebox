@@ -93,7 +93,7 @@ C:\Forgebox\
 │
 ├── logs\
 │   ├── forgeboxd.log , forgeboxd.log.1 ...   # daemon (tracing, JSON lines)
-│   ├── helper.log                             # tudo que o helper elevado fez
+│   ├── helper.log                             # tudo que o helper elevado fez (JSON lines: ts, request_id, op, dry_run, ok, code, message)
 │   ├── nginx\access.json , error.log
 │   ├── apache\...
 │   ├── php\8.3\error.log , 8.3\pool.log
@@ -118,7 +118,7 @@ C:\Forgebox\
 ```
 
 ### 2.1 Modo "por usuário" (alternativo)
-Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binários ficam lá e **a raiz de dados** (`bin\ etc\ data\ www\ certs\ logs\ state\ tmp\ backups\ manifests\`) vai para a pasta escolhida (padrão `C:\Forgebox`). `forgebox.toml` em `%LOCALAPPDATA%\Forgebox\root.toml` aponta a raiz. Tudo o resto é idêntico.
+Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binários ficam lá e **a raiz de dados** (`bin\ etc\ data\ www\ certs\ logs\ state\ tmp\ backups\ manifests\`) vai para a pasta escolhida (padrão `C:\Forgebox`). `forgebox.toml` em `%LOCALAPPDATA%\Forgebox\root.toml` aponta a raiz. Tudo o resto é idêntico. **Exceção pendente (M4-E1):** o `forgebox-helper.exe` só atende a raiz em que ele mesmo está ([ADR-0022](adr/0022-elevated-helper-protocol.md)/[ADR-0023](adr/0023-helper-execution.md)); neste modo o instalador precisa colocar uma cópia dele na raiz de dados.
 
 ### 2.2 Modo portátil
 `portable.flag` presente → nenhuma escrita fora da pasta: sem PATH, sem registro, sem CA no store (usa `--insecure` ou instala CA manualmente), DNS via `hosts` só se o usuário pedir. Útil para pendrive, VM descartável, CI.
