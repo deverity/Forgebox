@@ -202,8 +202,11 @@ pub struct FsCaseSensitivityPayload {
     pub v: u32,
     pub dir: String,
     pub site_id: Option<SiteId>,
-    /// Why it is unavailable.
+    /// Why it is unavailable (pt-BR text).
     pub reason: Option<String>,
+    /// Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
+    /// `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+    pub reason_code: Option<String>,
 }
 
 /// `tool.install.started|progress|completed|failed`.

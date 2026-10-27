@@ -160,6 +160,32 @@ impl SiteService {
         Ok(site)
     }
 
+    /// Records whether the site's project folder is case-sensitive (after a conversion
+    /// or the boot check, docs/15 §3.1). Emits `site.updated` only when the value
+    /// changed. `NotFound` if the site does not exist.
+    pub async fn set_case_sensitive(&self, id: SiteId, enabled: bool) -> Result<Site> {
+        let (site, changed) = self
+            .writer
+            .execute(move |conn| {
+                let repo = SiteRepo::new(conn);
+                let mut site = repo
+                    .get(id)?
+                    .ok_or_else(|| ForgeError::NotFound(format!("site {id}")))?;
+                if site.case_sensitive == enabled {
+                    return Ok((site, false));
+                }
+                site.case_sensitive = enabled;
+                site.updated_at = Timestamp::now();
+                repo.update(&site)?;
+                Ok((site, true))
+            })
+            .await?;
+        if changed {
+            self.bus.publish(EventKind::SiteUpdated, payload(&site));
+        }
+        Ok(site)
+    }
+
     /// Removes the site; `NotFound` if it does not exist. Emits `site.removed`.
     pub async fn remove(&self, id: SiteId) -> Result<Site> {
         let removed = self

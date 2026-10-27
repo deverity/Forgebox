@@ -233,6 +233,9 @@ fn fakes() -> Fakes {
             dir: "C:/Forgebox/www".into(),
             supported: true,
             enabled: Some(true),
+            fs_type: Some("NTFS".into()),
+            os_build: Some(19045),
+            win_version_ok: Some(true),
             reason: None,
         },
         stats: StatsDto {

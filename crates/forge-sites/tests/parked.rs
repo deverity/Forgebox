@@ -82,6 +82,7 @@ fn scan_lists_project_folders_only() {
     );
     assert!(parked::scan(&www.join("missing"), "test").is_err());
     assert!(!parked::is_parkable(".git") && !parked::is_parkable("_x") && parked::is_parkable("x"));
+    assert!(!parked::is_parkable("loja.cs-tmp") && !parked::is_parkable("loja.cs-old"));
 }
 
 #[tokio::test]

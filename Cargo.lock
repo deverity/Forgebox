@@ -1489,6 +1489,7 @@ dependencies = [
  "jiff",
  "notify",
  "pretty_assertions",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

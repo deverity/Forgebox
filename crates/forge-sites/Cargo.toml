@@ -17,6 +17,8 @@ forge-render = { path = "../forge-render" }
 forge-core = { path = "../forge-core" }
 forge-manifest = { path = "../forge-manifest" }
 notify = { workspace = true }
+# Reference extraction of the Case Mismatch Finder (lint_case).
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

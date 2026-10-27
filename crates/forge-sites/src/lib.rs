@@ -9,18 +9,28 @@
 //! - [`vhost`]: `Site` to the server-neutral `VhostModel` of `forge-render`.
 //! - [`parked`]: parked directories, reconcile and the debounced `notify` watcher.
 //! - [`project_file`]: `forgebox.yaml` loader producing a [`project_file::ProjectPlan`].
+//! - [`lint_case`]: Case Mismatch Finder (docs/15 §6): references whose case differs from
+//!   the files on disk, with fixes (rename or edit) and a dry-run preview.
+//! - [`case_parity`]: case sensitivity per site (badge state, boot re-verification,
+//!   `forge site case-sensitive` and `forge site lint-case` as jobs).
+//! - [`parity`]: Git/`.gitattributes`/`.editorconfig` parity for `forge new`/`site add`.
 //!
 //! Proxies and Procfile apps arrive with M1-E4-T5.
 
+pub mod case_parity;
 pub mod drivers;
+pub mod lint_case;
 pub mod messages;
+pub mod parity;
 pub mod parked;
 pub mod project_file;
 pub mod service;
 pub mod site;
 pub mod vhost;
 
+pub use case_parity::{CaseParity, SiteCaseCheck};
 pub use drivers::{Confidence, Detection, Driver, VhostContext};
+pub use parity::{GitParityOptions, GitParityReport, git_parity_init};
 pub use parked::{ParkedConfig, ParkedDir, ParkedSync, ParkedWatcher};
 pub use project_file::ProjectPlan;
 pub use service::SiteService;

@@ -30,3 +30,36 @@ pub fn host_invalid(host: &str, why: &str) -> (&'static str, String) {
         format!("Host inválido '{host}': {why}."),
     )
 }
+
+/// Progress text of the Case Mismatch Finder (`job.progress`).
+pub fn lint_case_progress(files: u32) -> (&'static str, String) {
+    (
+        "sites.lint_case.progress",
+        format!("Verificando referências de arquivos ({files} arquivos lidos)"),
+    )
+}
+
+/// Parity note: an existing `.gitattributes`/`.editorconfig` lacks the LF rule; the user
+/// is told what to add instead of Forgebox rewriting their file.
+pub fn parity_suggestion(file: &str, rule: &str) -> (&'static str, String) {
+    (
+        "sites.parity.suggestion",
+        format!("Sugestão: adicione `{rule}` ao início de {file} para manter LF como no Linux."),
+    )
+}
+
+/// Parity note: Git is not available, so its settings were not changed.
+pub fn parity_git_missing() -> (&'static str, &'static str) {
+    (
+        "sites.parity.git_missing",
+        "Git não encontrado: core.ignorecase e core.autocrlf não foram ajustados.",
+    )
+}
+
+/// Parity note: the folder is not a Git repository.
+pub fn parity_not_a_repo() -> (&'static str, &'static str) {
+    (
+        "sites.parity.not_a_repo",
+        "A pasta não é um repositório Git; nada a ajustar no Git.",
+    )
+}
