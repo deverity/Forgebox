@@ -210,6 +210,9 @@ pub struct FsCaseSensitivityPayload {
 }
 
 /// `tool.install.started|progress|completed|failed`.
+///
+/// Published by `forge_provider::layout::ToolInstallEventPayload`. `step` and
+/// `canonical_name` were added without bumping `v` (optional, may be missing).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 pub struct ToolInstallPayload {
     pub v: u32,
@@ -220,6 +223,13 @@ pub struct ToolInstallPayload {
     pub version_id: Option<VersionId>,
     pub progress: Option<JobProgress>,
     pub error: Option<JobErrorInfo>,
+    /// Step running (`progress`) or that failed (`failed`): `verify`, `extract`,
+    /// `post_install`, `verify_command`, `move`, `register`, `current`, `shims`.
+    #[serde(default)]
+    pub step: Option<String>,
+    /// Folder name of the version (`8.3.37-nts-vs17-x64`).
+    #[serde(default)]
+    pub canonical_name: Option<String>,
 }
 
 /// `tool.updated|rollback`.
@@ -230,6 +240,25 @@ pub struct ToolVersionChangePayload {
     pub from: String,
     pub to: String,
     pub version_id: VersionId,
+}
+
+/// `tool.current_changed`: the `bin/<tool>/current` junction was switched (`forge use`).
+///
+/// Published by `forge_provider::layout::ToolCurrentEventPayload` (same fields).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ToolCurrentPayload {
+    pub v: u32,
+    pub tool: ToolId,
+    /// Folder name `current` pointed at before (`8.3.37-nts-vs17-x64`); `None` when it did
+    /// not exist.
+    pub from: Option<String>,
+    /// Folder name it points at now.
+    pub to: String,
+    /// Registered version behind `to`.
+    pub version_id: Option<VersionId>,
+    /// Duration of the junction switch itself.
+    #[specta(type = specta_typescript::Number)]
+    pub elapsed_us: u64,
 }
 
 /// `service.starting|running|stopping|stopped|crashed|failed|maintenance`.
@@ -473,6 +502,7 @@ pub const EVENT_PAYLOADS: &[(&str, &str)] = &[
     ("tool.install.failed", "ToolInstallPayload"),
     ("tool.updated", "ToolVersionChangePayload"),
     ("tool.rollback", "ToolVersionChangePayload"),
+    ("tool.current_changed", "ToolCurrentPayload"),
     ("service.starting", "ServicePayload"),
     ("service.running", "ServicePayload"),
     ("service.stopping", "ServicePayload"),
@@ -512,6 +542,7 @@ pub(crate) fn register_payload_types(types: specta::Types) -> specta::Types {
         .register::<FsCaseSensitivityPayload>()
         .register::<ToolInstallPayload>()
         .register::<ToolVersionChangePayload>()
+        .register::<ToolCurrentPayload>()
         .register::<ServicePayload>()
         .register::<ServiceMetricsPayload>()
         .register::<PoolScaledPayload>()

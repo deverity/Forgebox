@@ -39,6 +39,7 @@
 //! | 10 | `ipc.client` (`forge_ipc` client: connection slot, pending calls, routes, subscription queues) | map/queue operations only; each is a separate mutex, never nested |
 //! | 10 | `registry.state` (`forge_registry` service: slots, snapshots, refresh marks) | map operations only; leaf lock: never held while starting a job, awaiting or publishing |
 //! | 10 | `fs.case_conversions` ([`crate::fs::case`]: folders being converted) | inserting or removing one path; leaf lock |
+//! | 10 | `layout.tools` (`forge_provider::layout`: per-tool turn semaphores) | looking up or inserting a semaphore; the semaphore itself is acquired after the guard is dropped |
 //! | 200 | `event_bus.seq` ([`crate::event::EventBus`]) | numbering an event and handing it to the broadcast channel |
 //!
 //! Rules: no lock is ever held across `.await` (clippy `await_holding_lock` and

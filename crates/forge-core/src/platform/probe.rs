@@ -89,14 +89,29 @@ async fn read_capped(pipe: Option<PipeReader>) -> Vec<u8> {
 /// Blocking: call it from `spawn_blocking`. It drives its own small runtime, so it works
 /// with or without a caller runtime.
 pub fn run_probe(cmd: &ProbeCommand, timeout: Duration) -> Result<ProbeOutput> {
+    run_probe_with_env(cmd, &[], timeout)
+}
+
+/// [`run_probe`] with `extra_env` added to (or replacing entries of) the explicit
+/// environment. Used by `post_install[].run` actions, whose manifests may set variables
+/// (docs/04 `RunAction.env`).
+pub fn run_probe_with_env(
+    cmd: &ProbeCommand,
+    extra_env: &[(OsString, OsString)],
+    timeout: Duration,
+) -> Result<ProbeOutput> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| ForgeError::io("starting the probe runtime", e))?;
-    runtime.block_on(probe_async(cmd, timeout))
+    runtime.block_on(probe_async(cmd, extra_env, timeout))
 }
 
-async fn probe_async(cmd: &ProbeCommand, timeout: Duration) -> Result<ProbeOutput> {
+async fn probe_async(
+    cmd: &ProbeCommand,
+    extra_env: &[(OsString, OsString)],
+    timeout: Duration,
+) -> Result<ProbeOutput> {
     let control = process_control(ProcessControlOptions::default());
     let group = control.create_group(GroupOptions {
         kill_on_close: true,
@@ -106,6 +121,11 @@ async fn probe_async(cmd: &ProbeCommand, timeout: Duration) -> Result<ProbeOutpu
     let mut env = control.base_env();
     if let Ok(path) = std::env::join_paths(control.system_path()) {
         env.push((OsString::from("PATH"), path));
+    }
+    for (name, value) in extra_env {
+        // Environment names are case-insensitive on Windows.
+        env.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
+        env.push((name.clone(), value.clone()));
     }
     let mut process = ProcessCommand::new(&cmd.exe, &cmd.cwd);
     process.args.clone_from(&cmd.args);
@@ -164,6 +184,18 @@ mod tests {
         let out = run_probe(&cmd_exe(&["/c", "echo hello & exit 3"]), PROBE_TIMEOUT).unwrap();
         assert_eq!(out.exit_code, Some(3));
         assert_eq!(out.stdout.trim(), "hello");
+    }
+
+    #[test]
+    fn extra_env_reaches_the_process() {
+        let env = [(OsString::from("FORGEBOX_PROBE_X"), OsString::from("42"))];
+        let out = run_probe_with_env(
+            &cmd_exe(&["/c", "echo %FORGEBOX_PROBE_X%"]),
+            &env,
+            PROBE_TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(out.stdout.trim(), "42");
     }
 
     #[test]

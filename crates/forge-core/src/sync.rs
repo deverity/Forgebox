@@ -49,6 +49,9 @@ impl LockLevel {
     /// Folders being converted to/from case-sensitive (`crate::fs::case`). Leaf lock:
     /// held only to insert or remove one path.
     pub const CASE_CONVERSIONS: LockLevel = LockLevel::new(10, "fs.case_conversions");
+    /// Per-tool turn semaphores of the layout engine (`forge_provider::layout`). Leaf lock:
+    /// held only to look up or insert a semaphore, never while acquiring it.
+    pub const LAYOUT_TOOLS: LockLevel = LockLevel::new(10, "layout.tools");
     /// Sequence counter of the [`crate::event::EventBus`]. Innermost lock: nothing may be
     /// acquired while it is held.
     pub const EVENT_BUS_SEQ: LockLevel = LockLevel::new(200, "event_bus.seq");

@@ -89,6 +89,8 @@ event_kinds! {
     ToolInstallFailed => "tool.install.failed",
     ToolUpdated => "tool.updated",
     ToolRollback => "tool.rollback",
+    /// `bin/<tool>/current` now points at another version (`forge use`, ADR-0005).
+    ToolCurrentChanged => "tool.current_changed",
     ServiceStarting => "service.starting",
     ServiceRunning => "service.running",
     ServiceStopping => "service.stopping",

@@ -4,8 +4,8 @@
 //! carries a header saying so (ADR-0007). Missing keys take the defaults below, so an
 //! empty or partial file is valid; unknown keys are ignored (a newer Forgebox may have
 //! written them). Defaults come from docs/03 §4 (port ranges), docs/06 (TLD, server, DNS
-//! zones), docs/13 §5 (zones of remote daemons), docs/14 (metrics) and docs/15 (case
-//! sensitivity).
+//! zones), docs/13 §5 (zones of remote daemons), docs/14 (metrics), docs/15 (case
+//! sensitivity) and docs/03 §5.2 (what goes on the user `PATH`).
 //!
 //! Port ranges are named; manifests refer to them by name (`port_range: php-pools`,
 //! `ports[].range: databases`, docs/04). Each range is a list of single ports and
@@ -54,6 +54,7 @@ pub struct ForgeConfig {
     pub updates: UpdatesConfig,
     pub editor: EditorConfig,
     pub terminal: TerminalConfig,
+    pub path: PathConfig,
 }
 
 impl Default for ForgeConfig {
@@ -69,6 +70,7 @@ impl Default for ForgeConfig {
             updates: UpdatesConfig::default(),
             editor: EditorConfig::default(),
             terminal: TerminalConfig::default(),
+            path: PathConfig::default(),
         }
     }
 }
@@ -372,6 +374,27 @@ pub struct TerminalConfig {
     pub command: Option<String>,
 }
 
+/// `[path]` (docs/03 §5.2, docs/08 §3): what `forge_provider::layout::path::ensure` puts on
+/// the user `PATH` once the user agreed to it (onboarding). Never used in portable mode.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PathConfig {
+    /// `bin/<tool>/current` (plus the manifest's `install.path` subfolders) of every
+    /// installed tool with `current_link`. Default: true.
+    pub current_links: bool,
+    /// `bin/shims` (`.cmd` shims that honour `.php-version`/`.nvmrc`...). Default: false.
+    pub shims: bool,
+}
+
+impl Default for PathConfig {
+    fn default() -> Self {
+        Self {
+            current_links: true,
+            shims: false,
+        }
+    }
+}
+
 impl ForgeConfig {
     /// Every suffix answered by the local resolver: `tld` then `[dns] extra_tlds`, without
     /// duplicates (`[".test"]` by default).
@@ -499,6 +522,7 @@ mod tests {
         assert_eq!(c.updates.quiet_hours, None);
         assert_eq!(c.editor.command, None);
         assert_eq!(c.terminal.command, None);
+        assert!(c.path.current_links && !c.path.shims);
         assert_eq!(c.dns, DnsConfig::default());
         assert_eq!(c.tlds(), vec![".test".to_owned()]);
 
@@ -540,6 +564,7 @@ mod tests {
         });
         c.updates.metered = MeteredPolicy::Allow;
         c.editor.command = Some("code".into());
+        c.path.shims = true;
         let text = c.to_toml().unwrap();
         assert!(text.starts_with(CONFIG_HEADER));
         assert!(!text.contains('\r'));

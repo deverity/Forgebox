@@ -34,7 +34,7 @@ C:\Forgebox\
 │   └── fonts\Inter-*.woff2, JetBrainsMono-*.woff2
 │
 ├── bin\                          # TOOLS INSTALADAS — layout versionado, visível, copiável
-│   ├── shims\                    # php.cmd, composer.cmd, node.cmd... → bin\<tool>\current (opcional ao PATH)
+│   ├── shims\                    # php.cmd, composer.cmd, node.cmd... → versão do projeto (.php-version, .nvmrc, forgebox.yaml) ou bin\<tool>\current; forgebox-project.ps1 lê o forgebox.yaml (opcional ao PATH; docs/06 §2.3)
 │   ├── php\
 │   │   ├── 8.3.37-nts-vs17-x64\   # pasta = versão + variantes (nome canônico do Forgebox)
 │   │   ├── 8.4.14-nts-vs17-x64\
@@ -132,7 +132,7 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 
 | Item | Onde | Quando | Reversão |
 |---|---|---|---|
-| PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` | Onboarding, se o usuário marcar | Desinstalador remove entradas que contenham `\Forgebox\bin\` |
+| PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` (entradas no início do PATH do usuário, sem duplicatas, `REG_EXPAND_SZ` e demais entradas preservados; [ADR-0025](adr/0025-layout-staging-shims-user-path.md)) | Onboarding, se o usuário marcar (`[path]` do `forgebox.toml`: `bin\<tool>\current` e/ou `bin\shims`); nunca no modo portátil | Desinstalador remove entradas sob `<raiz>\bin\` (`Layout::remove_path_entries`) |
 | Iniciar com Windows | `HKCU\...\Run\Forgebox` | Opt-in | Desinstalador remove |
 | Protocolo `forgebox://` | `HKCU\Software\Classes\forgebox` | Instalação | Desinstalador remove |
 | CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover: a CA atual e toda raiz registrada em `certs\ca\trust.json` (thumbprint SHA-1 + escopo; inclui CAs antigas cuja remoção foi recusada numa rotação). Remover de `CurrentUser\Root` mostra o diálogo do Windows; `LocalMachine` vai pelo helper |

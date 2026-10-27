@@ -97,7 +97,7 @@ Ferramenta no Diagnóstico do site e `forge site lint-case loja.test`: varre o c
 ## 7. Outras paridades Linux ativadas por padrão (desativáveis individualmente)
 | Item | Padrão Forgebox | Motivo |
 |---|---|---|
-| Fim de linha em arquivos gerados pelo Forgebox | LF | igual Linux; Git limpo |
+| Fim de linha em arquivos gerados pelo Forgebox | LF (exceção: os shims `bin/shims/*.cmd` e `forgebox-project.ps1` são CRLF e ASCII, porque rótulos/`goto` do `cmd.exe` falham com LF puro; [ADR-0025](adr/0025-layout-staging-shims-user-path.md)) | igual Linux; Git limpo |
 | Encoding | UTF-8 sem BOM | PHP quebra com BOM antes de `<?php` |
 | Separador de caminho em configs geradas | `/` | Apache/Nginx/PHP aceitam; igual Linux |
 | `.editorconfig` em `forge new` | `end_of_line = lf`, `charset = utf-8` | consistência da equipe |

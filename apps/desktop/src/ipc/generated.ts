@@ -2044,6 +2044,27 @@ export type ToolAddLocalParams = {
 	source: string,
 };
 
+/**
+ *  `tool.current_changed`: the `bin/<tool>/current` junction was switched (`forge use`).
+ * 
+ *  Published by `forge_provider::layout::ToolCurrentEventPayload` (same fields).
+ */
+export type ToolCurrentPayload = {
+	v: number,
+	tool: ToolId,
+	/**
+	 *  Folder name `current` pointed at before (`8.3.37-nts-vs17-x64`); `None` when it did
+	 *  not exist.
+	 */
+	from: string | null,
+	/**  Folder name it points at now. */
+	to: string,
+	/**  Registered version behind `to`. */
+	version_id: VersionId | null,
+	/**  Duration of the junction switch itself. */
+	elapsed_us: number,
+};
+
 /**  Result of the `tools.discover` job. */
 export type ToolDiscoverDto = {
 	/**  Versions registered from loose folders in `bin/`. */
@@ -2094,7 +2115,12 @@ export type ToolInstallParams = {
 	yes?: boolean,
 };
 
-/**  `tool.install.started|progress|completed|failed`. */
+/**
+ *  `tool.install.started|progress|completed|failed`.
+ * 
+ *  Published by `forge_provider::layout::ToolInstallEventPayload`. `step` and
+ *  `canonical_name` were added without bumping `v` (optional, may be missing).
+ */
 export type ToolInstallPayload = {
 	v: number,
 	job_id: JobId | null,
@@ -2104,6 +2130,13 @@ export type ToolInstallPayload = {
 	version_id: VersionId | null,
 	progress: JobProgress | null,
 	error: JobErrorInfo | null,
+	/**
+	 *  Step running (`progress`) or that failed (`failed`): `verify`, `extract`,
+	 *  `post_install`, `verify_command`, `move`, `register`, `current`, `shims`.
+	 */
+	step?: string | null,
+	/**  Folder name of the version (`8.3.37-nts-vs17-x64`). */
+	canonical_name?: string | null,
 };
 
 /**  Result of the `tools.install` job. */

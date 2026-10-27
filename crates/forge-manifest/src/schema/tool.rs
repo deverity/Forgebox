@@ -450,9 +450,21 @@ pub struct Install {
     /// Sub-folders exposed on PATH through `current` (`"."`). Default: none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<String>,
-    /// `bin/shims/<name>.cmd → bin/<id>/current/<name>.exe`.
+    /// `bin/shims/<name>.cmd`: runs `<name>` (`.exe`, `.com`, `.cmd` or `.bat`, searched in
+    /// the version folder and its `path` subfolders) of the version selected by the
+    /// project (`version_files`, `project_key`) or of `current` (docs/06 §2.3).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub shims: Vec<String>,
+    pub shims: Vec<Shim>,
+    /// Files that select the version of this tool for a project folder, looked up in the
+    /// current directory and its ancestors by the shims (`.php-version`, `.nvmrc`). The
+    /// first word of the first line is a series or an exact version (`8.3`, `v22.12.0`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub version_files: Vec<String>,
+    /// Dotted key of a project `forgebox.yaml` (`kind: Project`) holding the version of
+    /// this tool (`spec.site.php`). `spec.runtimes[]` entries with `tool: <id>` always
+    /// count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verify: Option<Verify>,
     /// Declarative, idempotent actions run in order after extraction.
@@ -473,10 +485,65 @@ impl Default for Install {
             current_link: true,
             path: Vec::new(),
             shims: Vec::new(),
+            version_files: Vec::new(),
+            project_key: None,
             verify: None,
             post_install: Vec::new(),
             uninstall: Uninstall::default(),
             size_estimate_mb: None,
+        }
+    }
+}
+
+/// An item of `install.shims`: `php` or `{ name, file, interpreter }`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Shim {
+    /// `bin/shims/<name>.cmd` runs `<name>.exe|.com|.cmd|.bat` of the selected version.
+    Name(String),
+    /// Explicit file and/or interpreter.
+    Detailed(ShimSpec),
+}
+
+/// Object form of [`Shim`] (`{ name: composer, file: composer.phar, interpreter: php }`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShimSpec {
+    /// Command name (`bin/shims/<name>.cmd`).
+    pub name: String,
+    /// File run by the shim, relative to the version folder with `/` (`composer.phar`).
+    /// Default: `<name>` with `.exe`, `.com`, `.cmd` or `.bat`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// Another shim that runs `file` (`php` for a `.phar`): the shim calls
+    /// `bin/shims/<interpreter>.cmd <file> <args>`, so the interpreter's own project
+    /// version applies too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interpreter: Option<String>,
+}
+
+impl Shim {
+    /// Command name.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Name(name) => name,
+            Self::Detailed(spec) => &spec.name,
+        }
+    }
+
+    /// Explicit file, relative to the version folder.
+    pub fn file(&self) -> Option<&str> {
+        match self {
+            Self::Name(_) => None,
+            Self::Detailed(spec) => spec.file.as_deref(),
+        }
+    }
+
+    /// Shim that runs [`Shim::file`].
+    pub fn interpreter(&self) -> Option<&str> {
+        match self {
+            Self::Name(_) => None,
+            Self::Detailed(spec) => spec.interpreter.as_deref(),
         }
     }
 }

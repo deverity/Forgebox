@@ -698,11 +698,18 @@ expression: text
             "$ref": "#/$defs/PostInstallAction"
           }
         },
+        "project_key": {
+          "description": "Dotted key of a project `forgebox.yaml` (`kind: Project`) holding the version of\nthis tool (`spec.site.php`). `spec.runtimes[]` entries with `tool: <id>` always\ncount.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "shims": {
-          "description": "`bin/shims/<name>.cmd → bin/<id>/current/<name>.exe`.",
+          "description": "`bin/shims/<name>.cmd`: runs `<name>` (`.exe`, `.com`, `.cmd` or `.bat`, searched in\nthe version folder and its `path` subfolders) of the version selected by the\nproject (`version_files`, `project_key`) or of `current` (docs/06 §2.3).",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/Shim"
           }
         },
         "size_estimate_mb": {
@@ -729,6 +736,13 @@ expression: text
               "type": "null"
             }
           ]
+        },
+        "version_files": {
+          "description": "Files that select the version of this tool for a project folder, looked up in the\ncurrent directory and its ancestors by the shims (`.php-version`, `.nvmrc`). The\nfirst word of the first line is a series or an exact version (`8.3`, `v22.12.0`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false
@@ -1710,6 +1724,47 @@ expression: text
         }
       },
       "additionalProperties": false
+    },
+    "Shim": {
+      "description": "An item of `install.shims`: `php` or `{ name, file, interpreter }`.",
+      "anyOf": [
+        {
+          "description": "`bin/shims/<name>.cmd` runs `<name>.exe|.com|.cmd|.bat` of the selected version.",
+          "type": "string"
+        },
+        {
+          "description": "Explicit file and/or interpreter.",
+          "$ref": "#/$defs/ShimSpec"
+        }
+      ]
+    },
+    "ShimSpec": {
+      "description": "Object form of [`Shim`] (`{ name: composer, file: composer.phar, interpreter: php }`).",
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "File run by the shim, relative to the version folder with `/` (`composer.phar`).\nDefault: `<name>` with `.exe`, `.com`, `.cmd` or `.bat`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interpreter": {
+          "description": "Another shim that runs `file` (`php` for a `.phar`): the shim calls\n`bin/shims/<interpreter>.cmd <file> <args>`, so the interpreter's own project\nversion applies too.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Command name (`bin/shims/<name>.cmd`).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
     },
     "Source": {
       "description": "`spec.source`.",

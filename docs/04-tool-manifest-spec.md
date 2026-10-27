@@ -91,8 +91,11 @@ spec:
     current_link: true           # cria/atualiza junction bin/<id>/current
     path:                        # subpastas a expor no PATH via `current` e shims
       - "."
-    shims: [php, php-cgi, phpdbg, pear, pecl]    # bin/shims/<nome>.cmd → bin/<id>/current/<nome>.exe
-    verify:
+    shims: [php, php-cgi, phpdbg, pear, pecl]    # bin/shims/<nome>.cmd → <nome>.exe|.com|.cmd|.bat da versão do projeto ou de current
+    # forma objeto: { name: composer, file: composer.phar, interpreter: php } → bin/shims/php.cmd <file> <args>
+    version_files: [".php-version"]   # arquivos do projeto (diretório atual e acima) que escolhem a versão nos shims
+    project_key: spec.site.php        # chave do forgebox.yaml (kind: Project) com a versão; spec.runtimes[] com `tool: <id>` vale sempre
+    verify:                      # roda na versão recém-extraída, antes do move para bin/ (docs/03 §5.1)
       command: "php.exe -v"
       regex: "^PHP (\\d+\\.\\d+\\.\\d+)"          # grupo 1 = versão instalada (opcional)
     post_install:                # ações declarativas, executadas em ordem, idempotentes
@@ -302,7 +305,7 @@ Placeholders de URL usam chaves simples: `{version}`, `{series}`, `{major}`, `{m
 | Campo | Padrão |
 |---|---|
 | `versioning` | `scheme: semver`, `series_key: "{major}.{minor}"`, sem canais e sem variantes |
-| `install` | `archive` deduzido do arquivo, `strip_root: auto`, `layout: versioned`, `current_link: true`, `path: []` |
+| `install` | `archive` deduzido do arquivo, `strip_root: auto`, `layout: versioned`, `current_link: true`, `path: []`, `shims: []`, `version_files: []`, sem `project_key` |
 | `config.files[].editable` | `true` |
 | `quick_settings[].apply` / `toggle.apply` | `restart` |
 | `service.kind` | `none` |
@@ -449,7 +452,7 @@ spec:
 ## 6. Regras de lint (`cargo xtask lint-registry`)
 Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::parse::validate` (um manifesto). Cada problema tem um código estável (`IssueCode`, também chave de i18n) e a regra a que pertence.
 
-1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui.
+1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
 2. Provider sem checksum upstream (`http`/`github-release` sem `checksum`, `nginx-org`, `mysql`, `postgresql-edb`, `python-embed`) precisa de `releases[].sha256` em todas as releases.
 3. `service.daemon.ports[].range` e `service.pool.port_range` devem existir nas faixas conhecidas (`forge_core::config`, [03](03-engine.md) §4).
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).
