@@ -47,7 +47,7 @@ metadata:
 
 spec:
   platforms: [windows-x64]       # windows-x64 | windows-arm64 | macos-arm64 | linux-x64 (futuro); não pode ser vazio
-  runtime_deps: [vcredist-vs17]  # pré-requisitos do sistema; ids conhecidos pelo motor
+  runtime_deps: [vcredist-vs17]  # pré-requisitos do sistema; ids conhecidos pelo motor: vcredist-vc15|vs16|vs17|vs18 (VC++ x64 ≥ 14.10|14.20|14.30|14.50; docs/03 §1.5)
   depends_on: []                 # outras tools obrigatórias (ex. phpmyadmin → php)
   suggests: [composer, xdebug]   # UI oferece após instalar
 
@@ -219,7 +219,7 @@ service:
     console_group: true            # CREATE_NEW_PROCESS_GROUP (para CTRL_BREAK); padrão true
     ports:
       - { name: main, default: 3306, env: null, range: databases }   # range deve existir (regra 3)
-    check: { command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --validate-config" }
+    check: { command: "bin/mysqld.exe --defaults-file={{ instance.config.my_ini }} --validate-config" }   # pré-checagem antes do start e do restart (docs/03 §1.5); saída ≠ 0 = config_invalid; prazo fixo de 30 s
     start_timeout: 45s
     health:
       tcp: "127.0.0.1:{{ instance.ports.main }}"   # ou http: {url, expect_status} ou command: {cmd, exit_code}; exatamente um
