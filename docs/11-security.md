@@ -47,7 +47,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 - Logs de processes passam por redator básico para `Authorization:`/`password=`.
 
 ## 7. Supply chain do próprio Forgebox
-- A chave de produção do registry oficial é embutida na release no lugar de `registry/keys/dev.pub`; o segredo fica fora do repositório (CI de release). `cargo xtask registry-sign` assina o `index.yaml` (a chave de dev secreta fica em `Forgebox-wt/cache/keys/dev.key`, fora do git).
+- A chave de produção do registry oficial é embutida na release no lugar de `registry/keys/dev.pub`; o segredo fica fora do repositório (CI de release). `cargo xtask registry-sign` assina o `index.yaml` com uma assinatura minisign destacada (`index.yaml.minisig`, [ADR-0018](adr/0018-detached-index-signature.md)) (a chave de dev secreta fica em `Forgebox-wt/cache/keys/dev.key`, fora do git).
 - `cargo-deny` (licenças, advisories), `cargo-audit` em CI, lockfile commitado, builds reprodutíveis em GitHub Actions com SLSA provenance, binários assinados com certificado Authenticode do projeto (quando disponível) + minisign sempre.
 - Telemetria: **desligada por padrão**; opt-in; só contadores agregados (versão, SO, features usadas); nunca hosts, caminhos ou IPs. Documentado na UI com o payload exato.
 
