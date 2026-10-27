@@ -372,6 +372,12 @@ impl Platform {
         self.case_sensitive_fs.as_ref()
     }
 
+    /// Shared handle of [`Platform::case_sensitive_fs`] (for components that keep it,
+    /// such as `fs::case::CaseConversions`).
+    pub fn shared_case_sensitive_fs(&self) -> Arc<dyn CaseSensitiveFs> {
+        Arc::clone(&self.case_sensitive_fs)
+    }
+
     /// Job Objects, spawn, console control events, window close requests.
     pub fn processes(&self) -> &Arc<dyn ProcessControl> {
         &self.processes

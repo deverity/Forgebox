@@ -10,8 +10,8 @@ use ::windows::Win32::Foundation::{
 };
 use ::windows::Win32::Networking::NetworkListManager::{
     INetworkCostManager, NLM_CONNECTION_COST_APPROACHINGDATALIMIT, NLM_CONNECTION_COST_FIXED,
-    NLM_CONNECTION_COST_OVERDATALIMIT, NLM_CONNECTION_COST_ROAMING,
-    NLM_CONNECTION_COST_VARIABLE, NetworkListManager,
+    NLM_CONNECTION_COST_OVERDATALIMIT, NLM_CONNECTION_COST_ROAMING, NLM_CONNECTION_COST_VARIABLE,
+    NetworkListManager,
 };
 use ::windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 use ::windows::Win32::System::Threading::{
@@ -81,10 +81,10 @@ impl NetworkCost for WindowsNetworkCost {
         let _com = ComGuard::init();
         // SAFETY: COM is initialized on this thread; the CLSID/IID pair is the documented
         // Network List Manager class.
-        let manager: INetworkCostManager =
-            unsafe { CoCreateInstance(&NetworkListManager, None, CLSCTX_ALL) }.map_err(|e| {
-                ForgeError::UnsupportedPlatform(format!("Network List Manager: {e}"))
-            })?;
+        let manager: INetworkCostManager = unsafe {
+            CoCreateInstance(&NetworkListManager, None, CLSCTX_ALL)
+        }
+        .map_err(|e| ForgeError::UnsupportedPlatform(format!("Network List Manager: {e}")))?;
         let mut cost = 0u32;
         // SAFETY: `cost` outlives the call; a null destination asks for the machine cost.
         unsafe { manager.GetCost(&mut cost, std::ptr::null()) }

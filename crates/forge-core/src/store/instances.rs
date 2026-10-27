@@ -158,7 +158,9 @@ impl<'c> InstanceRepo<'c> {
         let settings = serde_json::to_string(&row.settings)
             .map_err(|e| ForgeError::Internal(format!("instance settings: {e}")))?;
         self.conn.execute(
-            &format!("INSERT INTO instances ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"),
+            &format!(
+                "INSERT INTO instances ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+            ),
             params![
                 row.id,
                 row.tool_id,
@@ -212,7 +214,9 @@ impl<'c> InstanceRepo<'c> {
         let mut stmt = self
             .conn
             .prepare(&format!("SELECT {COLUMNS} FROM instances WHERE id = ?1"))?;
-        stmt.query_row(params![id], from_row).optional()?.transpose()
+        stmt.query_row(params![id], from_row)
+            .optional()?
+            .transpose()
     }
 
     pub fn find(&self, tool: &ToolId, name: &str) -> Result<Option<InstanceRow>> {
@@ -292,7 +296,8 @@ mod tests {
         assert_eq!(found.settings["max_connections"], "200");
         assert!(found.autostart);
 
-        repo.set_desired_state(row.id, DesiredState::Running).unwrap();
+        repo.set_desired_state(row.id, DesiredState::Running)
+            .unwrap();
         assert_eq!(
             repo.get(row.id).unwrap().unwrap().desired_state,
             DesiredState::Running
