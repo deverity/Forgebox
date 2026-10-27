@@ -24,6 +24,11 @@ pub struct CaStatusDto {
     pub subject: Option<String>,
     /// SHA-256 thumbprint (hex).
     pub thumbprint_sha256: Option<String>,
+    /// SHA-1 thumbprint (40 hex, uppercase): what `certmgr.msc`, `certutil` and `Cert:\`
+    /// show, and what the helper's `trust.*_machine_root` operations take (ADR-0023).
+    /// Additive field (v1 clients ignore it).
+    #[serde(default)]
+    pub thumbprint_sha1: Option<String>,
     pub not_after: Option<Timestamp>,
     pub trusted_current_user: bool,
     pub trusted_local_machine: bool,

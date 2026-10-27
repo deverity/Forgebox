@@ -27,10 +27,12 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 5. `post_install` só executa binários dentro da própria versão instalada.
 
 ## 3. CA local
-- Chave privada da CA em `certs/ca/forgebox-ca.key` com ACL só do usuário; nunca sai da máquina; nunca é lida pela GUI (só o daemon).
-- Instalação em `CurrentUser\Root` (não afeta outros usuários) por padrão. `LocalMachine` só via helper e opt-in explícito.
-- Name constraints no certificado da CA (`permittedSubtrees: .test, .localhost, IPs 127.0.0.0/8`) para que, mesmo vazando a chave, ela não possa assinar `google.com`. Isso é algo que mkcert e Herd **não** fazem.
-- Rotação em 1 clique; thumbprint salvo para remoção limpa na desinstalação.
+Detalhes e medições em [ADR-0023](adr/0023-local-ca-name-constraints-trust.md).
+- Chave privada da CA em `certs/ca/forgebox-ca.key` com ACL só do usuário (DACL protegida com um único ACE, aplicada ao arquivo ainda vazio, antes do segredo); nunca sai da máquina; nunca é lida pela GUI nem devolvida pela API (só o daemon a carrega, em memória do ator `tls`). Chaves dos sites (`certs/sites/<host>.key`) recebem a mesma ACL.
+- Instalação em `CurrentUser\Root` (não afeta outros usuários) por padrão. `LocalMachine` só via helper e opt-in explícito. Modo portátil nunca toca no store.
+- Name constraints **críticas** no certificado da CA (`permittedSubtrees`: `dNSName` de cada TLD configurado **de uso local** — `.test`, `.localhost`; um `.dev` no `forgebox.toml` fica de fora, o mesmo filtro do helper —, `localhost`, `iPAddress` `127.0.0.0/8` e `::1/128`) e `pathLenConstraint = 0`, para que, mesmo vazando a chave, ela não possa assinar `google.com` nem uma CA intermediária. Verificado por teste no webpki (rustls), no CryptoAPI do Windows (o que Schannel/`curl.exe`/Chrome/Edge usam) e no OpenSSL (`permitted subtree violation`). Isso é algo que mkcert e Herd **não** fazem.
+- Rotação em 1 clique, com a nova CA confiada antes de qualquer arquivo mudar; thumbprints SHA-1 de toda raiz adicionada ficam em `certs/ca/trust.json` para remoção limpa (rotação e desinstalação).
+- CRL vazia assinada pela CA servida só em `127.0.0.1` (porta da faixa `tls-crl`, padrão 47480), só para a checagem de revogação do Schannel passar; não expõe nada além de um documento público.
 
 ## 4. API local (IPC)
 - Named pipe `\\.\pipe\forgebox` (raiz padrão; outras raízes usam `\\.\pipe\forgebox-<hash da raiz>`) com descritor `O:<SID>D:P(A;;GA;;;<SID>)`: dono e único acesso = usuário atual, `PIPE_REJECT_REMOTE_CLIENTS` e primeira instância exclusiva (`FILE_FLAG_FIRST_PIPE_INSTANCE`: um segundo daemon ou um posseiro não compartilha o nome). O cliente confere que o pipe pertence ao usuário atual antes de enviar qualquer coisa (`forge_core::platform::windows::pipe_security`).
@@ -40,7 +42,7 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 - MCP server (`forge mcp serve`) via stdio apenas; ferramentas destrutivas (`remove`, `drop`) exigem `confirm: true` explícito no payload.
 
 ## 5. Serviços expostos
-- Todos os serviços escutam em `127.0.0.1` por padrão (Laragon/XAMPP frequentemente usam `0.0.0.0`). Expor na LAN é ação explícita por serviço/site, com regra de firewall nomeada e aviso.
+- Todos os serviços escutam em `127.0.0.1` por padrão (Laragon/XAMPP frequentemente usam `0.0.0.0`). Expor na LAN é ação explícita por serviço/site, com regra de firewall nomeada e aviso. O próprio daemon escuta em `127.0.0.1` para o resolvedor DNS (`:53`) e para a CRL da CA local (`:47480`, só `GET` de um caminho).
 - MySQL/MariaDB: `root` sem senha **só em 127.0.0.1** (prática de dev), mas o Forgebox gera um usuário `forgebox` com senha aleatória para uso das próprias ferramentas e oferece "definir senha de root" no onboarding.
 - PostgreSQL: `trust` apenas para `127.0.0.1/32`.
 - Mailpit/MinIO/Meilisearch: credenciais padrão geradas aleatoriamente e exibidas/copiáveis (não `minioadmin/minioadmin`).
@@ -60,7 +62,8 @@ Um ambiente de desenvolvimento local tem privilégios perigosos: edita `hosts`, 
 | Registry comprometido injeta URL maliciosa | Assinatura minisign do index; hash por manifesto; PR review + bot |
 | Zip malicioso com path traversal | Extrator rejeita; staging isolado |
 | Processo local de outro usuário fala com o daemon | DACL do pipe |
-| Site local malicioso usa a CA para MITM | Name constraints na CA |
+| Site local malicioso usa a CA para MITM | Name constraints críticas na CA (só TLDs de uso local, `localhost`, loopback) e `pathLen 0` |
+| Chave da CA lida por outro usuário da máquina | DACL só do usuário em `forgebox-ca.key`, aplicada antes de o segredo ser escrito |
 | Pool PHP acessível por outras máquinas | Bind 127.0.0.1 em tudo; firewall só explícito |
 | Helper elevado usado como escada de privilégio | Allowlist fechada, validação estrita, sem shell, log |
 | `forgebox.toml` adulterado (`tld = ".com"`) para desviar o DNS da máquina via NRPT/`hosts` | Helper só roteia/mapeia nomes sob sufixos de uso local, só para loopback ([ADR-0022](adr/0022-elevated-helper-protocol.md)) |
