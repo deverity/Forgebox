@@ -22,7 +22,6 @@ mod common;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -52,26 +51,7 @@ static HEAVY: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 /// `fake_mailpit.exe`, compiled once per test binary.
 fn fake_mailpit() -> PathBuf {
     static EXE: OnceLock<PathBuf> = OnceLock::new();
-    EXE.get_or_init(|| {
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("fake_mailpit");
-        std::fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join("fake_mailpit.exe");
-        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake_mailpit.rs");
-        let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-        let output = Command::new(rustc)
-            .args(["--edition", "2024", "-O", "-o"])
-            .arg(&exe)
-            .arg(&source)
-            .output()
-            .expect("running rustc");
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        exe
-    })
-    .clone()
+    EXE.get_or_init(|| compile_fixture("fake_mailpit")).clone()
 }
 
 /// A root whose `mail` range has two free ports and whose `bin/` holds the fake Mailpit
