@@ -3,9 +3,9 @@
 //! checksums; the Windows build is `mariadb-X.Y.Z-winx64.zip` (the `.msi` and
 //! `debugsymbols` files are ignored).
 //!
-//! * Only series that can contain a version of the request's constraint are fetched
-//!   (the constraint is probed with `X.Y.0` and `X.Y.9999`), and a series that fails is
-//!   skipped with a warning unless every series fails.
+//! * Every series in the index is fetched (cached by TTL, 4 at a time); the request's
+//!   constraint is applied to the actual releases in `filter::finish`. A series that
+//!   fails is skipped with a warning, and an error is returned only if all of them fail.
 //! * Series whose status is not `Stable` (`RC`, `Preview`, `Alpha`...) are pre-releases:
 //!   versions get a `-rc`/`-preview` suffix (`13.1.1-rc`) so channels with `prerelease`
 //!   select them and the others do not.
