@@ -26,6 +26,14 @@ pub const PHP_8_4: Archive = Archive {
     inner: "",
 };
 
+/// PHP 8.3.36 NTS VS16 x64 (`releases.json` of downloads.php.net).
+pub const PHP_8_3: Archive = Archive {
+    file: "php-8.3.36-1-nts-Win32-vs16-x64.zip",
+    url: "https://downloads.php.net/~windows/releases/archives/php-8.3.36-nts-Win32-vs16-x64.zip",
+    sha256: "1a097d52b7a68622cdc723073b61cc70caf79c941218ff65b2d8441dbc6b10d4",
+    inner: "",
+};
+
 /// nginx 1.30.6 (curated sha256 of `registry/tools/nginx.yaml`).
 pub const NGINX_1_30: Archive = Archive {
     file: "nginx-1.30.6.zip",

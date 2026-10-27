@@ -3,7 +3,8 @@
 //! after a restart; its web ports reserved on free high ports). The boot starts the
 //! site's pool, renders `etc/nginx` (main config, upstream `php_8_4`, the site) and starts
 //! nginx (its `nginx -t` pre-check passes); an HTTP request with `Host: app.test` runs the
-//! site's PHP through the pool. `services.reload nginx` re-renders without changes;
+//! site's PHP through the pool. Then `sites.php app.test 8.3` switches the site live to
+//! PHP 8.3.36 while requests keep coming (none may fail) and the 8.4 pool is drained.
 //! `daemon.stop` leaves neither nginx nor php-cgi running.
 //!
 //! `cargo test -p forge-daemon --test web_nginx_php_online -- --ignored --nocapture`.
@@ -19,8 +20,10 @@ use forge_core::store::{
     InstanceRepo, InstanceRow, NewToolVersion, PortRepo, Site, SiteKind, SiteRepo, Store,
     ToolVersionRepo, VersionSource, VersionState,
 };
-use forge_ipc::api::methods::{services_status, sites_list};
-use forge_ipc::api::{NoParams, ServiceState};
+use forge_ipc::api::methods::{jobs_get, php_pool_status, services_status, sites_list, sites_php};
+use forge_ipc::api::{
+    JobIdParams, JobState, NoParams, PhpPoolStatusParams, ServiceState, SitePhpParams, SiteRef,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use common::*;
@@ -40,12 +43,17 @@ async fn http_get(port: u16, host: &str, path: &str) -> String {
 #[ignore = "needs the official nginx 1.30.6 and PHP 8.4.27 zips (shared cache) and VC++ 2022"]
 async fn boot_renders_and_starts_nginx_in_front_of_the_php_pool_online() {
     let php = online::extracted(&online::PHP_8_4);
+    let php83 = online::extracted(&online::PHP_8_3);
     let nginx = online::extracted(&online::NGINX_1_30);
     let root = TestRoot::new();
     let nginx_dir = root.root.bin().join("nginx").join("1.30.6");
     online::copy_tree(
         &php,
         &root.root.bin().join("php").join("8.4.27-nts-vs17-x64"),
+    );
+    online::copy_tree(
+        &php83,
+        &root.root.bin().join("php").join("8.3.36-nts-vs16-x64"),
     );
     online::copy_tree(&nginx, &nginx_dir);
     // What `post_install` of the manifests creates on a real installation.
@@ -55,6 +63,9 @@ async fn boot_renders_and_starts_nginx_in_front_of_the_php_pool_online() {
         "logs/php/8.4",
         "tmp/php/8.4/sessions",
         "tmp/php/8.4/uploads",
+        "logs/php/8.3",
+        "tmp/php/8.3/sessions",
+        "tmp/php/8.3/uploads",
     ] {
         std::fs::create_dir_all(root.path().join(dir)).unwrap();
     }
@@ -192,6 +203,69 @@ async fn boot_renders_and_starts_nginx_in_front_of_the_php_pool_online() {
     assert_eq!(
         sites.sites[0].php.as_ref().unwrap().resolved.as_deref(),
         Some("8.4.27")
+    );
+
+    // Live switch of the site's PHP (docs/06 §2.2) while requests keep coming: the 8.3
+    // pool starts, nginx is re-rendered and reloaded, the 8.4 pool is drained.
+    let load = tokio::spawn(async move {
+        let (mut ok, mut bad) = (0u32, Vec::new());
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while Instant::now() < deadline {
+            let answer = http_get(http, "app.test", "/").await;
+            if answer.starts_with("HTTP/1.1 200") {
+                ok += 1;
+            } else {
+                bad.push(answer.lines().next().unwrap_or_default().to_owned());
+            }
+        }
+        (ok, bad)
+    });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let job = client
+        .call::<sites_php>(SitePhpParams {
+            site: SiteRef::from("app.test"),
+            php: "8.3".into(),
+        })
+        .await
+        .unwrap();
+    let switch_started = Instant::now();
+    loop {
+        let info = client
+            .call::<jobs_get>(JobIdParams { job_id: job.id })
+            .await
+            .unwrap();
+        match info.state {
+            JobState::Done => break,
+            JobState::Failed | JobState::Cancelled => panic!("{:?}", info.error),
+            _ => {}
+        }
+        assert!(switch_started.elapsed() < Duration::from_secs(60));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    println!("sites.php 8.3 done in {:?}", switch_started.elapsed());
+    let (ok, bad) = load.await.unwrap();
+    println!(
+        "requests during the switch: {ok} ok, {} failed {bad:?}",
+        bad.len()
+    );
+    assert!(bad.is_empty(), "requests failed during the switch: {bad:?}");
+    let answer = http_get(http, "app.test", "/").await;
+    assert!(answer.contains("site app.test php 8.3.36"), "{answer}");
+    let drained = Instant::now();
+    loop {
+        let pools = client
+            .call::<php_pool_status>(PhpPoolStatusParams { version: None })
+            .await
+            .unwrap();
+        if pools.pools.iter().all(|p| p.version == "8.3.36") {
+            break;
+        }
+        assert!(drained.elapsed() < Duration::from_secs(60), "{pools:?}");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    println!(
+        "8.4 pool out of service {:?} after the switch (drains in the background)",
+        drained.elapsed()
     );
 
     let new_cgi: Vec<u32> = pids_of("php-cgi.exe")

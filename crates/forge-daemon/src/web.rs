@@ -223,7 +223,8 @@ impl WebManager {
     }
 
     /// Steps 7-8 of the boot, and the reaction to site changes: pools for the sites,
-    /// web servers rendered and reloaded, unused pools stopped.
+    /// web servers rendered and reloaded, unused pools drained (blue/green of docs/06
+    /// §2.2: target up, vhost re-rendered, reload, source drained).
     pub async fn reconcile(&self, reason: &str) -> Result<WebReport> {
         let sites = self.inner.sites.list().await?;
         let plan = self.php_plan(&sites).await?;
@@ -242,10 +243,9 @@ impl WebManager {
         if let Some(pools) = self.pools() {
             for handle in pools.handles() {
                 if !needed.contains(&handle.version_id()) {
-                    tracing::info!(pool = %handle.upstream_name(), version = %handle.spec().version, "no site uses this pool; stopping");
-                    if let Err(err) = pools.stop(handle.version_id()).await {
-                        tracing::warn!(%err, "pool stop failed");
-                    }
+                    // The web servers no longer route to it (rendered above): drain.
+                    tracing::info!(pool = %handle.upstream_name(), version = %handle.spec().version, "no site uses this pool; draining");
+                    pools.retire(handle.version_id());
                 }
             }
         }
@@ -253,14 +253,22 @@ impl WebManager {
     }
 
     /// Upstreams of the running pools, plus an alias per exact pin (`php_8_3_36` →
-    /// the servers of its version's pool).
-    async fn upstreams(&self, plan: &BTreeMap<SiteId, SitePhp>) -> Vec<UpstreamModel> {
+    /// the servers of its version's pool). Two pools of one series share its name
+    /// during a blue/green switch: the one serving wins, and `pinned` (the model a pool
+    /// just handed to the listener) wins over both.
+    async fn upstreams(
+        &self,
+        plan: &BTreeMap<SiteId, SitePhp>,
+        pinned: Option<&forge_fcgi::UpstreamModel>,
+    ) -> Vec<UpstreamModel> {
         let Some(pools) = self.pools() else {
             return Vec::new();
         };
         let mut by_version: BTreeMap<VersionId, Vec<UpstreamServer>> = BTreeMap::new();
         let mut names: BTreeMap<String, Vec<UpstreamServer>> = BTreeMap::new();
-        for status in pools.statuses().await {
+        let mut statuses = pools.statuses().await;
+        statuses.sort_by_key(|s| s.serving);
+        for status in statuses {
             if !matches!(status.state, PoolState::Running | PoolState::Starting) {
                 continue;
             }
@@ -275,6 +283,14 @@ impl WebManager {
             }
             by_version.insert(status.version_id, servers.clone());
             names.insert(status.upstream.name.clone(), servers);
+        }
+        if let Some(model) = pinned.filter(|m| !m.is_empty()) {
+            let servers: Vec<UpstreamServer> = model
+                .servers()
+                .into_iter()
+                .map(|(host, port)| UpstreamServer { host, port })
+                .collect();
+            names.insert(model.name.clone(), servers);
         }
         for php in plan.values() {
             if let Some(servers) = by_version.get(&php.version.id) {
@@ -417,6 +433,7 @@ impl WebManager {
         &self,
         entry: &Entry,
         report: &mut WebReport,
+        pinned: Option<&forge_fcgi::UpstreamModel>,
     ) -> Result<Option<RenderContext>> {
         let (Some(manifest), Some(version)) = (&entry.manifest, &entry.version) else {
             return Ok(None);
@@ -449,7 +466,7 @@ impl WebManager {
         if self.is_web_server_entry(entry) {
             let sites = self.inner.sites.list().await?;
             let plan = self.php_plan(&sites).await?;
-            let upstreams = self.upstreams(&plan).await;
+            let upstreams = self.upstreams(&plan, pinned).await;
             ctx.sites = self
                 .vhosts(
                     entry.row.tool_id.as_str(),
@@ -464,8 +481,13 @@ impl WebManager {
         Ok(Some(ctx))
     }
 
-    async fn render_entry(&self, entry: &Entry, report: &mut WebReport) -> Result<bool> {
-        let Some(ctx) = self.instance_context(entry, report).await? else {
+    async fn render_entry(
+        &self,
+        entry: &Entry,
+        report: &mut WebReport,
+        pinned: Option<&forge_fcgi::UpstreamModel>,
+    ) -> Result<bool> {
+        let Some(ctx) = self.instance_context(entry, report, pinned).await? else {
             return Ok(false);
         };
         let (root, engine, bus, owner) = (
@@ -487,6 +509,16 @@ impl WebManager {
     /// Renders every web server's configuration and reloads the running ones whose
     /// files changed.
     pub async fn apply_web(&self, reason: &str) -> Result<WebReport> {
+        self.apply_web_with(reason, None).await
+    }
+
+    /// [`WebManager::apply_web`] where `pinned` (the model a pool hands to its listener)
+    /// decides the servers of its upstream name.
+    pub async fn apply_web_with(
+        &self,
+        reason: &str,
+        pinned: Option<&forge_fcgi::UpstreamModel>,
+    ) -> Result<WebReport> {
         let _turn = self.turn().await?;
         let mut report = WebReport::default();
         for entry in self.inner.services.entries() {
@@ -494,7 +526,7 @@ impl WebManager {
                 continue;
             }
             report.servers.push(entry.label());
-            match self.render_entry(&entry, &mut report).await {
+            match self.render_entry(&entry, &mut report, pinned).await {
                 Ok(true) => match self.inner.services.apply_reload(entry.row.id).await {
                     Ok(true) => report.reloaded.push(entry.label()),
                     Ok(false) => {}
@@ -514,7 +546,9 @@ impl ConfigRenderer for WebManager {
         Box::pin(async move {
             let _turn = self.turn().await?;
             let mut report = WebReport::default();
-            self.render_entry(entry, &mut report).await.map(|_| ())
+            self.render_entry(entry, &mut report, None)
+                .await
+                .map(|_| ())
         })
     }
 }
@@ -523,15 +557,18 @@ impl UpstreamListener for WebManager {
     fn upstream_changed(&self, change: UpstreamChange) -> UpstreamFuture {
         let this = self.clone();
         Box::pin(async move {
-            let reason = match &change {
+            let (reason, pinned) = match &change {
                 UpstreamChange::Scaled { model, reason } => {
-                    format!("pool {} {}", model.name, reason.as_str())
+                    (format!("pool {} {}", model.name, reason.as_str()), model)
                 }
+                // The target takes over the name of the source (both are `php_8_3` in a
+                // patch update): render it before the update engine records the new
+                // active version.
                 UpstreamChange::Swapped { from, to } => {
-                    format!("swap {} -> {}", from.name, to.name)
+                    (format!("swap {} -> {}", from.name, to.name), to)
                 }
             };
-            this.apply_web(&reason).await.map(|_| ())
+            this.apply_web_with(&reason, Some(pinned)).await.map(|_| ())
         })
     }
 }

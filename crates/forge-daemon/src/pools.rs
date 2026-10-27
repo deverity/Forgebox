@@ -44,6 +44,8 @@ use crate::vars::{PoolVars, RuntimeVars};
 pub const POOL_START_TIMEOUT: Duration = Duration::from_secs(60);
 /// Budget of a pool stop.
 pub const POOL_STOP_TIMEOUT: Duration = Duration::from_secs(40);
+/// Budget of a drain (the pool's own `drain_timeout`, 30 s, plus the workers' stop).
+pub const POOL_DRAIN_TIMEOUT: Duration = Duration::from_secs(90);
 /// Quick asks (status).
 pub const POOL_QUICK: Duration = Duration::from_secs(1);
 const TURN_TIMEOUT: Duration = Duration::from_secs(90);
@@ -229,6 +231,27 @@ impl PoolManager {
             result?;
         }
         Ok(())
+    }
+
+    /// Takes the pool of `version` out of service without cutting requests (docs/06
+    /// §2.2): it leaves the table at once and, in the background, drains (each worker
+    /// stops once its connections end, at most the pool's `drain_timeout`) and stops.
+    pub fn retire(&self, version: VersionId) {
+        let Some(handle) = self.inner.table.lock().remove(&version) else {
+            return;
+        };
+        tokio::spawn(async move {
+            match handle.drain(POOL_DRAIN_TIMEOUT).await {
+                Ok(report) => {
+                    tracing::info!(pool = %handle.upstream_name(), version = %handle.spec().version, workers = report.workers, forced = report.forced, "pool drained")
+                }
+                Err(err) => {
+                    tracing::warn!(pool = %handle.upstream_name(), %err, "pool drain failed; stopping");
+                    let _ = handle.stop(POOL_STOP_TIMEOUT).await;
+                }
+            }
+            handle.shutdown().await;
+        });
     }
 
     /// Stops every pool in parallel within `timeout`, then their actors.
