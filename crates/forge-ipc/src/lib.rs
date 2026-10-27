@@ -26,6 +26,10 @@ pub mod server;
 pub(crate) mod stream_queue;
 pub mod transport;
 
+/// The base crate (ids, paths, error codes, timestamps) re-exported so that thin clients
+/// (CLI, MCP, desktop) depend on `forge-ipc` only (docs/01 §3): `forge_ipc::base::paths::ForgeRoot`.
+pub use forge_core as base;
+
 pub use api::{API_VERSION, ApiError, METHODS};
 pub use client::{CallOptions, Client, ClientError, ClientOptions, Credentials};
 pub use server::{Server, ServerConfig, ServerHandle};

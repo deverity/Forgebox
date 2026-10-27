@@ -46,6 +46,14 @@ specta-typescript = "=0.0.14"
 specta-serde = "=0.0.14"
 minijinja = "3.0.3"
 clap = { version = "4.6.7", features = ["derive"] }
+# Shell completion scripts (`forge completions`), generated from the clap tree.
+clap_complete = "4.6.11"
+# Human output of `forge` (docs/09): tables, progress bars of jobs and colors that degrade
+# with NO_COLOR / non-terminals. anstream/anstyle are the ones clap already depends on.
+tabled = { version = "0.22.0", default-features = false, features = ["std", "ansi"] }
+indicatif = "0.18.6"
+anstream = "1.0.0"
+anstyle = "1.0.14"
 # features Win32 são adicionadas nos crates que usam a API (somente forge-core/platform/windows).
 windows = "0.62.2"
 # Sem `unstable_admin`: não tentar habilitar SeRestorePrivilege/SeBackupPrivilege no token.

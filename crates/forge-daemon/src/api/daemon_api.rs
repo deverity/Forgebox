@@ -295,6 +295,15 @@ pub async fn run_checks(daemon: &Daemon, filters: &[String]) -> Vec<CheckDto> {
             ),
         });
     }
+    if wanted(filters, "path") {
+        out.push(path_check(daemon).await);
+    }
+    if wanted(filters, "defender") {
+        out.push(defender_check(daemon).await);
+    }
+    if wanted(filters, "versions") {
+        out.push(versions_check(daemon).await);
+    }
     if wanted(filters, "registry") {
         for info in daemon.registry.list() {
             out.push(match &info.last_error {
@@ -336,6 +345,174 @@ pub async fn run_checks(daemon: &Daemon, filters: &[String]) -> Vec<CheckDto> {
     out
 }
 
+/// The user `PATH` has the Forgebox entries (portable mode never touches it).
+async fn path_check(daemon: &Daemon) -> CheckDto {
+    if daemon.root.is_portable() {
+        return check(
+            "path.user",
+            CheckStatus::Skipped,
+            "portable mode never changes the user PATH",
+            None,
+        );
+    }
+    match super::shell::snapshot(daemon).await {
+        Ok(path) if path.missing.is_empty() => check(
+            "path.user",
+            CheckStatus::Ok,
+            format!(
+                "{} Forgebox entries in the user PATH",
+                path.forgebox_entries.len()
+            ),
+            None,
+        ),
+        Ok(path) => check(
+            "path.user",
+            CheckStatus::Warn,
+            format!(
+                "{} Forgebox entries missing from the user PATH (new terminals will not find the tools)",
+                path.missing.len()
+            ),
+            Some("forge path add"),
+        ),
+        Err(err) => check("path.user", CheckStatus::Skipped, err.to_string(), None),
+    }
+}
+
+/// What `Get-MpPreference` says about the root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefenderState {
+    /// The root, or a folder above it, is excluded.
+    Excluded,
+    NotExcluded,
+    /// Not an administrator (the list is hidden) or no Defender: cannot tell.
+    Unreadable,
+}
+
+/// Reads the exclusion list printed one path per line.
+pub fn defender_state(output: &str, root: &str) -> DefenderState {
+    fn key(path: &str) -> String {
+        path.trim()
+            .trim_matches('"')
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    }
+    let lines: Vec<&str> = output
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    if lines.iter().any(|l| l.starts_with("N/A")) {
+        return DefenderState::Unreadable;
+    }
+    let root = key(root);
+    let excluded = lines
+        .iter()
+        .map(|l| key(l))
+        .any(|e| !e.is_empty() && (root == e || root.starts_with(&format!("{e}/"))));
+    if excluded {
+        DefenderState::Excluded
+    } else {
+        DefenderState::NotExcluded
+    }
+}
+
+/// Microsoft Defender exclusion of the root (`Get-MpPreference`), a big win for build and
+/// extraction speed (docs/11).
+async fn defender_check(daemon: &Daemon) -> CheckDto {
+    let root = forge_core::paths::plain_path(daemon.root.path())
+        .to_string_lossy()
+        .into_owned();
+    let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+    let exe = std::path::PathBuf::from(system_root)
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    let probe = forge_core::platform::ProbeCommand {
+        exe,
+        args: [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "(Get-MpPreference).ExclusionPath",
+        ]
+        .map(Into::into)
+        .to_vec(),
+        cwd: daemon.root.tmp(),
+    };
+    let result = forge_core::runtime::spawn_blocking_timeout(
+        "defender probe",
+        Duration::from_secs(20),
+        move || forge_core::platform::run_probe(&probe, Duration::from_secs(15)),
+    )
+    .await;
+    match result {
+        Ok(output) if output.exit_code == Some(0) => match defender_state(&output.stdout, &root) {
+            DefenderState::Excluded => check(
+                "defender.exclusion",
+                CheckStatus::Ok,
+                format!("{root} is excluded from Defender scanning"),
+                None,
+            ),
+            DefenderState::NotExcluded => check(
+                "defender.exclusion",
+                CheckStatus::Warn,
+                format!(
+                    "{root} is not excluded from Defender real-time scanning (installs and builds are slower)"
+                ),
+                Some("Add-MpPreference -ExclusionPath <root> (administrator PowerShell)"),
+            ),
+            DefenderState::Unreadable => check(
+                "defender.exclusion",
+                CheckStatus::Skipped,
+                "the exclusion list is only visible to administrators",
+                None,
+            ),
+        },
+        Ok(output) => check(
+            "defender.exclusion",
+            CheckStatus::Skipped,
+            format!(
+                "Get-MpPreference failed (exit {:?}): Defender is probably not the active antivirus",
+                output.exit_code
+            ),
+            None,
+        ),
+        Err(err) => check(
+            "defender.exclusion",
+            CheckStatus::Skipped,
+            err.to_string(),
+            None,
+        ),
+    }
+}
+
+/// Versions of the daemon, the API and the installed tools.
+async fn versions_check(daemon: &Daemon) -> CheckDto {
+    let installed = crate::catalog::all_installed(&daemon.reader)
+        .await
+        .map(|rows| rows.len());
+    let api = forge_ipc::api::API_VERSION;
+    match installed {
+        Ok(count) => check(
+            "versions.daemon",
+            CheckStatus::Ok,
+            format!(
+                "forgeboxd {}, API {api}, {count} tool versions installed",
+                env!("CARGO_PKG_VERSION")
+            ),
+            None,
+        ),
+        Err(err) => check(
+            "versions.daemon",
+            CheckStatus::Skipped,
+            err.to_string(),
+            None,
+        ),
+    }
+}
+
 async fn doctor(daemon: Daemon, params: DoctorParams, ctx: Ctx) -> Result<JobDto> {
     let d = daemon.clone();
     daemon.job(&ctx, "daemon.doctor", move |_job| async move {
@@ -343,4 +520,44 @@ async fn doctor(daemon: Daemon, params: DoctorParams, ctx: Ctx) -> Result<JobDto
             checks: run_checks(&d, &params.checks).await,
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defender_exclusions_match_the_root_or_a_parent() {
+        let root = r"C:\Forgebox";
+        assert_eq!(
+            defender_state("C:\\Forgebox\nD:\\other\n", root),
+            DefenderState::Excluded
+        );
+        assert_eq!(
+            defender_state("c:\\FORGEBOX\\\n", root),
+            DefenderState::Excluded
+        );
+        assert_eq!(defender_state("C:\\\n", root), DefenderState::Excluded);
+        assert_eq!(
+            defender_state("C:\\Forge\nC:\\Forgebox2\n", root),
+            DefenderState::NotExcluded
+        );
+        assert_eq!(defender_state("", root), DefenderState::NotExcluded);
+        assert_eq!(
+            defender_state("N/A: Must be an administrator to view exclusions\n", root),
+            DefenderState::Unreadable
+        );
+    }
+
+    #[test]
+    fn defender_nested_root_is_covered_by_a_parent_exclusion() {
+        assert_eq!(
+            defender_state("D:\\dev\n", r"D:\dev\forgebox"),
+            DefenderState::Excluded
+        );
+        assert_eq!(
+            defender_state("D:\\de\n", r"D:\dev\forgebox"),
+            DefenderState::NotExcluded
+        );
+    }
 }
