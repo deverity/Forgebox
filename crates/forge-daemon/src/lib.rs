@@ -22,6 +22,7 @@ pub mod daemon;
 pub mod event_log;
 pub mod install;
 pub mod instance_lock;
+pub mod internal;
 pub mod logging;
 pub mod messages;
 pub mod pools;

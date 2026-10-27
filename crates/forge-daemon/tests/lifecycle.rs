@@ -62,6 +62,22 @@ async fn boots_serves_the_api_and_stops_cleanly() {
         other => panic!("{other:?}"),
     }
 
+    // The internal endpoint answers on its port of the `internal` range.
+    let config =
+        forge_core::config::ForgeConfig::load_or_default(&root.root.forgebox_toml()).unwrap();
+    let internal = config
+        .ports
+        .range("internal")
+        .unwrap()
+        .ports()
+        .next()
+        .unwrap();
+    let health = http_get(internal, "/_forgebox/health").await;
+    assert!(health.starts_with("HTTP/1.1 200"), "{health}");
+    assert!(health.ends_with("ok"), "{health}");
+    let unknown = http_get(internal, "/_forgebox/starting?host=nope.test").await;
+    assert!(unknown.starts_with("HTTP/1.1 404"), "{unknown}");
+
     // Domain methods answer from the real components.
     let tools = client
         .call::<tools_list>(ToolListParams::default())
@@ -286,4 +302,16 @@ async fn restart_starts_a_new_daemon_on_the_same_root() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert!(root.stray_lock_files().is_empty());
+}
+
+async fn http_get(port: u16, path: &str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let request = format!("GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut out = String::new();
+    stream.read_to_string(&mut out).await.unwrap();
+    out
 }

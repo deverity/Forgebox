@@ -45,8 +45,10 @@ impl TestRoot {
         let dir = tempfile::Builder::new().prefix("fbd-").tempdir().unwrap();
         let root = ForgeRoot::new(dir.path()).unwrap();
         std::fs::create_dir_all(root.etc()).unwrap();
+        // Private CRL and internal-endpoint ports: tests run in parallel.
         let toml = format!(
-            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\n",
+            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\n",
+            free_port(),
             free_port()
         );
         std::fs::write(root.forgebox_toml(), toml).unwrap();
@@ -282,4 +284,31 @@ pub async fn stop(
         )
     });
     (status, asked.elapsed())
+}
+
+/// The daemon's JSON log of `root` (for diagnostics), one `ts level message` per line.
+pub fn daemon_log(root: &TestRoot) -> String {
+    let mut out = String::new();
+    for file in forge_daemon::logging::log_files(&root.root.logs()) {
+        for line in std::fs::read_to_string(file).unwrap_or_default().lines() {
+            let Ok(json) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            out.push_str(&format!(
+                "{} {} {} {}\n",
+                json["timestamp"].as_str().unwrap_or_default(),
+                json["level"].as_str().unwrap_or_default(),
+                json["fields"]["message"].as_str().unwrap_or_default(),
+                json["fields"]
+            ));
+        }
+    }
+    out
+}
+
+/// Prints [`daemon_log`] when `FORGEBOX_TEST_SHOW_LOG` is set.
+pub fn show_log(root: &TestRoot) {
+    if std::env::var_os("FORGEBOX_TEST_SHOW_LOG").is_some() {
+        println!("{}", daemon_log(root));
+    }
 }

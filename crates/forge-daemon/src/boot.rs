@@ -99,6 +99,8 @@ async fn open_store(root: &ForgeRoot) -> Result<(Store, u64)> {
     tokio::task::spawn_blocking(move || {
         let store = Store::open(&root.db())?;
         let max_seq = store.events().max_seq()?;
+        let schema = store.schema_version()?;
+        tracing::info!(root = %root, schema, last_seq = max_seq, "store opened");
         Ok((store, max_seq))
     })
     .await
@@ -259,7 +261,6 @@ pub async fn boot(
 
     // 1. Store, events.
     let (store, max_seq) = open_store(&root).await?;
-    tracing::info!(root = %root, schema = store.schema_version().unwrap_or_default(), last_seq = max_seq, "store opened");
     let bus = EventBus::with_options(EventBusOptions {
         next_seq: max_seq + 1,
         ..EventBusOptions::default()
@@ -468,6 +469,10 @@ pub async fn boot(
         endpoint: endpoint.clone(),
     });
 
+    // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web
+    // server is rendered: its port goes into their configuration.
+    start_internal(&daemon).await;
+
     // 6. Instances (web servers wait for step 8).
     let loaded = services.load_all().await?;
     let created = services.ensure_defaults().await?;
@@ -559,6 +564,31 @@ pub async fn boot(
         parked,
         boot_ms,
     })
+}
+
+async fn start_internal(daemon: &Daemon) {
+    let owner = match crate::internal::owner() {
+        Ok(owner) => owner,
+        Err(err) => {
+            tracing::warn!(%err, "internal endpoint owner");
+            return;
+        }
+    };
+    let port = match daemon
+        .ports
+        .allocate(crate::internal::INTERNAL_RANGE, owner)
+        .await
+    {
+        Ok(reservation) => reservation.port,
+        Err(err) => {
+            tracing::warn!(%err, "internal endpoint: no port; on-visit pages unavailable");
+            return;
+        }
+    };
+    match crate::internal::serve(port, daemon.apps.clone(), daemon.shutdown.token()).await {
+        Ok(port) => daemon.web.set_internal_port(port),
+        Err(err) => tracing::warn!(%err, "internal endpoint did not start"),
+    }
 }
 
 async fn start_parked(daemon: &Daemon) -> Option<ParkedWatcher> {

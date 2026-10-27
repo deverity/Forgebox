@@ -172,16 +172,17 @@ async fn serve(
         println!("{}", messages::stopped(report.elapsed_ms));
     }
     if restart {
-        match std::env::current_exe() {
-            Ok(exe) => match forge_core::platform::spawn_detached(
-                &exe,
-                &args.restart_args(root.path()),
-                root.path(),
-            ) {
-                Ok(pid) => tracing::info!(pid, "new daemon started"),
-                Err(err) => tracing::error!(%err, "the new daemon did not start"),
-            },
-            Err(err) => tracing::error!(%err, "cannot find the daemon executable"),
+        let restart_args = args.restart_args(root.path());
+        let started = tokio::task::spawn_blocking(move || -> forge_core::Result<u32> {
+            let exe = std::env::current_exe()
+                .map_err(|e| forge_core::ForgeError::io("finding the daemon executable", e))?;
+            forge_core::platform::spawn_detached(&exe, &restart_args, root.path())
+        })
+        .await;
+        match started {
+            Ok(Ok(pid)) => tracing::info!(pid, "new daemon started"),
+            Ok(Err(err)) => tracing::error!(%err, "the new daemon did not start"),
+            Err(e) => tracing::error!(%e, "restart task failed"),
         }
     }
     exit::OK

@@ -103,6 +103,9 @@ fn default_ranges() -> BTreeMap<String, PortSet> {
         // CRL responder of the local CA (forge-tls, ADR-0023): its address is written in
         // every site certificate, so it must not move.
         ("tls-crl", "47480"),
+        // Internal HTTP endpoint of the daemon (`/_forgebox/starting`, docs/06 §4.4 and §8):
+        // web server configs point at it.
+        ("internal", "47481"),
     ]
     .into_iter()
     .map(|(name, spec)| (name.to_owned(), spec.parse().expect("valid default")))

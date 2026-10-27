@@ -401,12 +401,12 @@ async fn subscribe(
         }
         Target::File(path) => {
             let p = path.clone();
-            let (lines, total) = tokio::task::spawn_blocking(move || tail_file(&p, tail.max(1)))
-                .await
-                .ok()
-                .and_then(Result::ok)
-                .unwrap_or_default();
-            let len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+            let ((lines, total), len) = tokio::task::spawn_blocking(move || {
+                let len = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                (tail_file(&p, tail.max(1)).unwrap_or_default(), len)
+            })
+            .await
+            .unwrap_or_default();
             if params.resume_from.is_none() {
                 for (seq, text) in lines.into_iter().rev().take(tail).rev() {
                     let _ = sender

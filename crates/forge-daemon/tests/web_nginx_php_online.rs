@@ -215,4 +215,5 @@ async fn boot_renders_and_starts_nginx_in_front_of_the_php_pool_online() {
         .collect();
     assert!(left.is_empty(), "left running: {left:?}");
     assert!(children_of(&[pid]).is_empty());
+    show_log(&root);
 }

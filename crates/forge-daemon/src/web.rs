@@ -65,6 +65,8 @@ struct Inner {
     tls: TlsManager,
     config: Arc<dyn Fn() -> Arc<ForgeConfig> + Send + Sync>,
     turn: Arc<Semaphore>,
+    /// Port of the daemon's internal endpoint (`prefs.internal_port`); 0 = not running.
+    internal_port: std::sync::atomic::AtomicU16,
 }
 
 /// Rendering of sites and pools into the web servers. Cheap to clone.
@@ -114,8 +116,16 @@ impl WebManager {
                 tls,
                 config,
                 turn: Arc::new(Semaphore::new(1)),
+                internal_port: std::sync::atomic::AtomicU16::new(0),
             }),
         }
+    }
+
+    /// The port of the internal endpoint the web servers send `/_forgebox/*` to.
+    pub fn set_internal_port(&self, port: u16) {
+        self.inner
+            .internal_port
+            .store(port, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Plugs the pool table (created after this manager: pools need it as listener).
@@ -149,7 +159,29 @@ impl WebManager {
             Some(&tool.manifest),
         )
         .await?;
-        let Some(newest) = rows.first() else {
+        if rows.is_empty() {
+            return Ok(out);
+        }
+        // A series is served by its *active* version (the update engine's view: after a
+        // rollback the older, retained build serves even though a newer one is
+        // installed; docs/05 §4.1), not simply by the newest installed one.
+        let history = {
+            let id = tool.manifest.metadata.id.clone();
+            self.inner
+                .reader
+                .query(move |conn| {
+                    forge_core::store::UpdateHistoryRepo::new(conn).list(Some(&id), 200)
+                })
+                .await
+                .unwrap_or_default()
+        };
+        let mut active: Vec<ToolVersionRow> =
+            forge_provider::update::policy::active_versions(&tool.manifest, &rows, &history)
+                .into_iter()
+                .map(|a| a.row.clone())
+                .collect();
+        catalog::sort_newest_first(&tool.manifest, &mut active);
+        let Some(newest) = active.first().or(rows.first()) else {
             return Ok(out);
         };
         let default_series = catalog::series_of(&tool.manifest, &newest.version);
@@ -163,7 +195,13 @@ impl WebManager {
                 .as_deref()
                 .or(site.php.series.as_deref())
                 .unwrap_or(&default_series);
-            match catalog::pick(&tool.manifest, &rows, wanted) {
+            let chosen = if site.php.exact.is_some() {
+                catalog::pick(&tool.manifest, &rows, wanted)
+            } else {
+                catalog::pick(&tool.manifest, &active, wanted)
+                    .or_else(|| catalog::pick(&tool.manifest, &rows, wanted))
+            };
+            match chosen {
                 Some(row) => {
                     out.insert(
                         site.id,
@@ -400,6 +438,13 @@ impl WebManager {
         }
         if let Some(port) = entry.ports.get("https") {
             ctx.prefs.https_port = *port;
+        }
+        let internal = self
+            .inner
+            .internal_port
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if internal != 0 {
+            ctx.prefs.internal_port = internal;
         }
         if self.is_web_server_entry(entry) {
             let sites = self.inner.sites.list().await?;

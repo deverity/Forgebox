@@ -152,7 +152,9 @@ pub async fn run(booted: Booted, lock: InstanceLock) -> ShutdownReport {
     }
 
     // 6.
-    lock.release();
+    if let Err(e) = tokio::task::spawn_blocking(move || lock.release()).await {
+        tracing::error!(%e, "releasing the instance lock");
+    }
     let elapsed_ms = started.elapsed().as_millis();
     tracing::info!(elapsed_ms, events_written, "daemon stopped");
     ShutdownReport {
