@@ -9,9 +9,12 @@
 //! M1-E2-T2), [`FileAcl`] (owner-only secret files) and [`windows::pipe_security`]
 //! (DACL and owner check of the local API pipe; M1-E5-T1) and the process primitives of
 //! [`process`] ([`ProcessGroup`], [`ProcessControl`]: Job Objects, spawn, `CTRL_BREAK`,
-//! `WM_CLOSE`; M1-E3-T1) and the per-process counters of [`process_stats`]
-//! ([`ProcessStats`]: CPU time, working set, handles; M1-E3-T2) are implemented for
-//! Windows. [`TrustStore`] (M1-E4-T4) and
+//! `WM_CLOSE`; M1-E3-T1), the per-process counters of [`process_stats`]
+//! ([`ProcessStats`]: CPU time, working set, handles; M1-E3-T2), the TCP table of
+//! [`net_table`] ([`PortTable`]: listeners with owning PID/exe, established connections
+//! per port) and the system runtimes of [`runtime_deps`] ([`RuntimeDeps`]: VC++
+//! Redistributable; both M1-E3-T3) are implemented for Windows. [`TrustStore`]
+//! (M1-E4-T4) and
 //! [`DnsPolicy`] (M1-E4-T3) are declared only; their signatures may still grow in those
 //! tasks.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
@@ -28,17 +31,23 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
+pub mod net_table;
 pub mod process;
 pub mod process_stats;
+pub mod runtime_deps;
 #[cfg(windows)]
 pub mod windows;
 
+pub use net_table::{PortOwner, PortProto, PortTable, port_table};
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
     SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
 };
 pub use process_stats::{ProcStats, ProcessStats, process_stats};
+pub use runtime_deps::{
+    RuntimeDep, RuntimeDeps, VCREDIST_X64_URL, VcRedistFlavor, VcRuntimeVersion, runtime_deps,
+};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.
@@ -190,6 +199,8 @@ pub struct Platform {
     process_stats: Arc<dyn ProcessStats>,
     code_sign: Arc<dyn CodeSign>,
     file_acl: Arc<dyn FileAcl>,
+    port_table: Arc<dyn PortTable>,
+    runtime_deps: Arc<dyn RuntimeDeps>,
 }
 
 impl fmt::Debug for Platform {
@@ -202,10 +213,11 @@ impl fmt::Debug for Platform {
 
 impl Platform {
     /// Assembles a platform from parts (tests use fakes). Process operations default to
-    /// [`process_control`] with default options; process counters, code signing and file
-    /// ACLs to the implementations of the running OS. See [`Platform::with_processes`],
-    /// [`Platform::with_process_stats`], [`Platform::with_code_sign`] and
-    /// [`Platform::with_file_acl`].
+    /// [`process_control`] with default options; process counters, code signing, file
+    /// ACLs, the TCP table and runtime detection to the implementations of the running
+    /// OS. See [`Platform::with_processes`], [`Platform::with_process_stats`],
+    /// [`Platform::with_code_sign`], [`Platform::with_file_acl`],
+    /// [`Platform::with_port_table`] and [`Platform::with_runtime_deps`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -219,6 +231,8 @@ impl Platform {
             process_stats: process_stats(),
             code_sign: default_code_sign(),
             file_acl: default_file_acl(),
+            port_table: port_table(),
+            runtime_deps: runtime_deps(),
         }
     }
 
@@ -243,6 +257,18 @@ impl Platform {
     /// Replaces the secret file ACL implementation (fakes in tests).
     pub fn with_file_acl(mut self, file_acl: Arc<dyn FileAcl>) -> Self {
         self.file_acl = file_acl;
+        self
+    }
+
+    /// Replaces the TCP table (fakes in tests).
+    pub fn with_port_table(mut self, port_table: Arc<dyn PortTable>) -> Self {
+        self.port_table = port_table;
+        self
+    }
+
+    /// Replaces the runtime detection (fakes in tests).
+    pub fn with_runtime_deps(mut self, runtime_deps: Arc<dyn RuntimeDeps>) -> Self {
+        self.runtime_deps = runtime_deps;
         self
     }
 
@@ -278,6 +304,17 @@ impl Platform {
     /// Owner-only ACLs for secret files (`state/ipc.token`).
     pub fn file_acl(&self) -> &dyn FileAcl {
         self.file_acl.as_ref()
+    }
+
+    /// TCP listeners and connections with their owning processes (shared, so it can
+    /// move into `spawn_blocking`).
+    pub fn port_table(&self) -> &Arc<dyn PortTable> {
+        &self.port_table
+    }
+
+    /// VC++ Redistributable detection (shared, so it can move into `spawn_blocking`).
+    pub fn runtime_deps(&self) -> &Arc<dyn RuntimeDeps> {
+        &self.runtime_deps
     }
 }
 
