@@ -56,6 +56,14 @@ spec:
       - mkdir: "{{ paths.tmp }}/nodejs"
     size_estimate_mb: 90
 
+  config:
+    # Injected in the processes that run on this runtime (`runtime: nodejs@22`, docs/06 §4.2):
+    # Node trusts the Forgebox CA (https://app.test from a server-side fetch) and `npm -g`
+    # stays inside the version it was run with, so global packages never leak across versions.
+    env:
+      NODE_EXTRA_CA_CERTS: "{{ paths.certs }}/ca/forgebox-ca.crt"
+      npm_config_prefix: "{{ paths.data }}/node/{{ version }}/npm-global"
+
   discover:
     match_files: [node.exe]
     version_command: "node.exe -v"

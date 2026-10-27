@@ -105,6 +105,7 @@ impl Engine {
         env.add_filter("quote", quote);
         env.add_filter("indent", indent);
         env.add_filter("to_yaml", to_yaml);
+        env.add_filter("html", html_escape);
         Ok(env)
     }
 }
@@ -186,6 +187,22 @@ fn indent(value: String, width: usize) -> String {
         .join("\n")
 }
 
+/// Escapes text for HTML (`pages/*.html.j2`; config templates have autoescape off).
+fn html_escape(value: String) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 fn to_yaml(value: Value) -> std::result::Result<String, minijinja::Error> {
     serde_yaml_ng::to_string(&value)
         .map(|s| s.trim_end().to_owned())
@@ -228,6 +245,18 @@ mod tests {
         assert_eq!(
             out,
             "C:\\x\\y|C:/x/y|\"a\\\"b\"|\n  l1\n\n  l2\nk:\n- 1\n- 2\n"
+        );
+    }
+
+    #[test]
+    fn html_filter_escapes_markup() {
+        let dir = tempfile::tempdir().unwrap();
+        let e = Engine::with_override_dir(dir.path());
+        std::fs::write(dir.path().join("h.j2"), "{{ v | html }}").unwrap();
+        assert_eq!(
+            e.render("h.j2", &json!({"v": "<a href=\"x\">&'</a>"}))
+                .unwrap(),
+            "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;\n"
         );
     }
 

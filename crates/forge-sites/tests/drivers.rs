@@ -26,6 +26,8 @@ fn ctx() -> VhostContext {
         certs_sites: fake_root().certs_sites(),
         default_php_series: "8.3".to_owned(),
         extra: forge_render::ExtraModel::default(),
+        app_ports: Default::default(),
+        proxy_options: Default::default(),
     }
 }
 

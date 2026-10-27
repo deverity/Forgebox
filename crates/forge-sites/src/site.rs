@@ -11,8 +11,10 @@ use std::path::{Path, PathBuf};
 use forge_core::error::{ForgeError, Result};
 use forge_core::paths::posix_string;
 pub use forge_core::store::sites::{Site, SiteKind, SitePhp, SiteRepo, SiteXdebug};
+use forge_manifest::schema::project::ProcessSpec;
 use jiff::Timestamp;
 
+use crate::apps;
 use crate::drivers;
 use crate::messages;
 
@@ -173,6 +175,9 @@ pub struct SiteDraft {
     pub env: BTreeMap<String, String>,
     pub xdebug: SiteXdebug,
     pub parked: bool,
+    /// Procfile processes (`forgebox.yaml spec.processes`, docs/06 §4.2). A `kind: app`
+    /// site needs exactly one with `proxy: true`; its `root` is then the project folder.
+    pub processes: BTreeMap<String, ProcessSpec>,
 }
 
 impl SiteDraft {
@@ -203,6 +208,7 @@ impl SiteDraft {
             env: BTreeMap::new(),
             xdebug: SiteXdebug::Inherit,
             parked: false,
+            processes: BTreeMap::new(),
         }
     }
 
@@ -230,12 +236,22 @@ impl SiteDraft {
                     "um site php/static precisa de root".to_owned(),
                 ));
             }
-            SiteKind::Proxy | SiteKind::App if self.upstream.is_none() => {
+            SiteKind::Proxy if self.upstream.is_none() => {
                 return Err(ForgeError::InvalidInput(
                     "um site proxy precisa de upstream".to_owned(),
                 ));
             }
+            SiteKind::App if self.root.is_none() => {
+                return Err(ForgeError::InvalidInput(
+                    "um site app precisa de root (a pasta do projeto)".to_owned(),
+                ));
+            }
             _ => {}
+        }
+        apps::validate_processes(&host.value, &self.processes)?;
+        if self.kind == SiteKind::App {
+            // The upstream of an app is its process' port: one process takes the host.
+            apps::proxied_process(&host.value, &self.processes)?;
         }
         if let Some(id) = &self.driver {
             if drivers::by_id(id).is_none() {
@@ -258,6 +274,7 @@ impl SiteDraft {
         site.env = self.env;
         site.xdebug = self.xdebug;
         site.parked = self.parked;
+        site.processes = apps::processes_to_json(&self.processes);
         site.created_at = now;
         site.updated_at = now;
         Ok((site, warnings))
@@ -342,6 +359,7 @@ mod tests {
             env: BTreeMap::new(),
             xdebug: SiteXdebug::Inherit,
             parked: false,
+            processes: BTreeMap::new(),
         };
         let (site, warnings) = draft.clone().into_site(&SiteRules::default()).unwrap();
         assert_eq!(site.host, "loja.test");

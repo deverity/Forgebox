@@ -22,6 +22,8 @@ use forge_manifest::schema::project::{
     ProcessSpec, ProjectRuntime, ProjectService, ProjectSite, Share, XdebugMode,
 };
 
+use crate::apps;
+use crate::proxy::ProxyOptions;
 use crate::site::{
     SiteDraft, SiteKind, SitePhp, SiteRules, SiteXdebug, Warning, host_label_for_folder,
     normalize_host,
@@ -49,6 +51,8 @@ pub struct ProjectPlan {
     pub processes: BTreeMap<String, ProcessSpec>,
     /// Extra reverse-proxy sites (kind `proxy`).
     pub proxies: Vec<SiteDraft>,
+    /// Proxy options by host (`websocket` of each `spec.proxies[]` entry).
+    pub proxy_options: BTreeMap<String, ProxyOptions>,
     /// Tunnel provider.
     pub share: Option<Share>,
     /// Normalization remarks (uppercase hosts are rejected by validation, so usually empty).
@@ -182,10 +186,21 @@ impl ProjectPlan {
         if let Some(secure) = site.secure {
             draft.secure = secure;
         }
+        draft.processes = processes.clone();
+        if processes.values().any(|p| p.proxy) {
+            // The host proxies to a process: an app site whose root is the project.
+            draft.kind = SiteKind::App;
+            draft.driver = None;
+            draft.root = Some(dir.to_path_buf());
+            draft.upstream = None;
+            draft.php = SitePhp::default();
+        }
+        apps::validate_processes(&host, &processes)?;
         // Validate (and normalize) the main site once, so errors surface at load time.
         let (_, mut warnings) = draft.clone().into_site(rules)?;
 
         let mut proxy_drafts = Vec::new();
+        let mut proxy_options = BTreeMap::new();
         for proxy in proxies {
             let host = normalize_host(&proxy.host, rules)?;
             warnings.extend(host.warnings);
@@ -203,8 +218,16 @@ impl ProjectPlan {
                 env: BTreeMap::new(),
                 xdebug: SiteXdebug::Inherit,
                 parked: false,
+                processes: BTreeMap::new(),
             };
             draft.clone().into_site(rules)?;
+            proxy_options.insert(
+                draft.host.clone(),
+                ProxyOptions {
+                    websocket: proxy.websocket,
+                    ..ProxyOptions::default()
+                },
+            );
             proxy_drafts.push(draft);
         }
         Ok(Self {
@@ -216,6 +239,7 @@ impl ProjectPlan {
             runtimes,
             processes,
             proxies: proxy_drafts,
+            proxy_options,
             share,
             warnings,
         })

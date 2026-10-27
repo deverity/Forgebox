@@ -159,7 +159,7 @@ spec:
     # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de
     # versioning.channels.*.constraint (scheme da tool) e o item só é emitido quando casa com a versão
     # instalada (ausente = sempre). Resolvido por ExtensionsConfig::zend_extensions_for.
-    env:                         # variáveis injetadas nos processos desta tool
+    env:                         # variáveis injetadas nos processos desta tool e nos `processes:` que usam esta tool como `runtime:` (ex. nodejs: NODE_EXTRA_CA_CERTS, npm_config_prefix; docs/06 §4.4). Variáveis em tempo de execução: version, series, tool, paths.<dir> (sem paths.version)
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"
 

@@ -209,7 +209,7 @@ Sites com `runtime: frankenphp` não usam pool: o Forgebox sobe um `frankenphp.e
   - `conflicts(is_owner_pid)`: cruza as reservas TCP com os listeners e grava o estado de cada uma — `bound` (um PID do próprio dono escuta; o daemon responde pelos Jobs das instâncias), `conflict` (só outros processos escutam; PID/exe gravados) ou `reserved` — e devolve os conflitos com `newly_detected`, para o daemon publicar `port.conflict` só uma vez por intruso.
   - Não é ator: não tem estado além da tabela, e a thread de escrita já serializa as decisões. Leitura da tabela TCP e bind de teste em `spawn_blocking` com timeout. Só TCP (nenhum serviço declara UDP ainda).
 - `PortTable::established_count(porta)` (conexões `ESTABLISHED` cuja porta **local** é a dada) é a base do scaling dos pools (§2.1); `PortTable::connections(portas)` lista todas as conexões (qualquer estado, `TIME_WAIT` incluído, as duas pontas de loopback) das portas dadas, base da estimativa de requests por worker.
-- `forge_core::model::port::PortReservations` é o alocador visto por crates que não podem depender de `forge-net` (`allocate`, `release`, `release_owner`); `PortAllocator` o implementa por delegação.
+- `forge_core::model::port::PortReservations` é o alocador visto por crates que não podem depender de `forge-net` (`allocate`, `release`, `release_owner` e `reserve`, este último opcional: `NotImplemented` por padrão); `PortAllocator` o implementa por delegação. Os processes de sites (`forge_sites::apps`, [06 §4.4](06-sites-vhosts-multi-php.md)) usam dono `{app, <site id>, <process>}` na faixa `apps`.
 
 ## 5. Providers, instalação e layout (`forge-provider`)
 

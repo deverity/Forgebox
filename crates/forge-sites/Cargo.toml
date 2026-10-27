@@ -16,6 +16,8 @@ workspace = true
 forge-render = { path = "../forge-render" }
 forge-core = { path = "../forge-core" }
 forge-manifest = { path = "../forge-manifest" }
+forge-supervisor = { path = "../forge-supervisor" }
+futures = { workspace = true }
 notify = { workspace = true }
 # Reference extraction of the Case Mismatch Finder (lint_case).
 regex = { workspace = true }
@@ -25,10 +27,16 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 jiff = { workspace = true }
+# Upstream URLs of proxy sites.
+url = { workspace = true }
 
 [dev-dependencies]
 # Contract test of the site.* payloads (tests/payload_contract.rs).
 forge-ipc = { path = "../forge-ipc" }
+# Real port allocator (store + TCP table) for the tests that start processes.
+forge-net = { path = "../forge-net" }
 insta = { workspace = true }
 pretty_assertions = { workspace = true }
+serde_yaml_ng = { workspace = true }
+sha2 = { workspace = true }
 tempfile = { workspace = true }

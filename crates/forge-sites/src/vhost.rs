@@ -8,9 +8,11 @@
 use forge_core::error::{ForgeError, Result};
 use forge_core::paths::posix_string;
 use forge_core::store::sites::{Site, SiteKind as StoredKind, SitePhp};
-use forge_render::{ProxyModel, SiteKind, SslModel, VhostModel};
+use forge_manifest::schema::project::{ProcessAutostart, ProcessPort};
+use forge_render::{SiteKind, SslModel, VhostModel};
 
 use crate::drivers::{self, Driver, VhostContext};
+use crate::{apps, proxy};
 
 /// Paths answered with 403 on every site: `.htaccess`/`.htpasswd`, `.env*`, `.git*`.
 pub fn default_deny() -> Vec<String> {
@@ -66,25 +68,55 @@ pub fn base_model(site: &Site, ctx: &VhostContext, kind: StoredKind) -> VhostMod
     }
 }
 
+/// `kind: proxy`: the upstream the user gave, with the options of the host (or the
+/// defaults: WebSocket on).
 fn proxy_model(site: &Site, ctx: &VhostContext) -> Result<VhostModel> {
     let upstream = site.upstream.clone().ok_or_else(|| {
         ForgeError::InvalidInput(format!("proxy site {} without upstream", site.host))
     })?;
-    let mut model = base_model(site, ctx, site.kind);
-    model.proxy = Some(ProxyModel {
-        upstream,
-        websocket: true,
-        read_timeout_secs: 3600,
-        start_on_visit: false,
-    });
-    Ok(model)
+    let options = ctx
+        .proxy_options
+        .get(&site.host)
+        .cloned()
+        .unwrap_or_default();
+    proxy::proxy_vhost(site, ctx, &upstream, &options)
+}
+
+/// `kind: app`: the host proxies to the process that declares `proxy: true`, listening on
+/// `127.0.0.1:$PORT` (docs/06 §4.2).
+fn app_model(site: &Site, ctx: &VhostContext) -> Result<VhostModel> {
+    let processes = apps::processes_of(&site.processes)?;
+    let (name, spec) = apps::proxied_process(&site.host, &processes)?;
+    if spec.proxy_path.as_deref().is_some_and(|p| p != "/") {
+        return Err(ForgeError::NotImplemented(format!(
+            "{}: proxy_path on process {name} (only whole-host proxies are rendered)",
+            site.host
+        )));
+    }
+    let port = match spec.port {
+        Some(ProcessPort::Fixed(port)) => port,
+        _ => ctx.app_ports.get(name).copied().ok_or_else(|| {
+            ForgeError::Conflict(format!(
+                "{}: the port of process {name} is not allocated yet",
+                site.host
+            ))
+        })?,
+    };
+    let mut options = ctx
+        .proxy_options
+        .get(&site.host)
+        .cloned()
+        .unwrap_or_default();
+    options.start_on_visit = spec.autostart == ProcessAutostart::OnVisit;
+    proxy::proxy_vhost(site, ctx, &proxy::loopback_upstream(port), &options)
 }
 
 /// Complete, validated vhost of `site`: picks the driver (`site.driver`; `generic-php`
 /// or `static` when unset), asks it for the model and runs `VhostModel::normalized`.
 pub fn build(site: &Site, ctx: &VhostContext) -> Result<VhostModel> {
     let model = match site.kind {
-        StoredKind::Proxy | StoredKind::App => proxy_model(site, ctx)?,
+        StoredKind::Proxy => proxy_model(site, ctx)?,
+        StoredKind::App => app_model(site, ctx)?,
         StoredKind::Php | StoredKind::Static => {
             let id = site.driver.as_deref().unwrap_or(match site.kind {
                 StoredKind::Static => "static",
