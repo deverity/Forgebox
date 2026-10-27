@@ -8,13 +8,16 @@
 //! `job.*` events), [`store`] (dedicated SQLite writer thread + read pool) and
 //! [`runtime`] (tokio runtime configuration, opt-in tokio-console). [`helper`] is the
 //! protocol of the elevated `forgebox-helper` (allowlist, validation, request/response,
-//! `hosts` managed block), shared by the daemon and the helper (ADR-0022).
+//! `hosts` managed block), shared by the daemon and the helper (ADR-0022). [`fs`] holds the
+//! file system operations that are more than a platform call: the case sensitivity
+//! status and the reversible conversion of a tree (docs/15, ADR-0010).
 
 pub mod actor;
 pub mod config;
 pub mod dns_name;
 pub mod error;
 pub mod event;
+pub mod fs;
 pub mod helper;
 pub mod ids;
 pub mod jobs;

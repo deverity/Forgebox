@@ -98,9 +98,14 @@ pub struct ParkedEntry {
 }
 
 /// Whether a folder name takes part in parking: hidden (`.git`) and `_`-prefixed folders
-/// (`_old`, `_backup`) do not.
+/// (`_old`, `_backup`) do not, nor the temporary siblings of a case sensitivity
+/// conversion (`loja.cs-tmp`, `loja.cs-old`, docs/15 §3.1).
 pub fn is_parkable(name: &str) -> bool {
-    !(name.starts_with('.') || name.starts_with('_'))
+    use forge_core::fs::case::{OLD_SUFFIX, TMP_SUFFIX};
+    !(name.starts_with('.')
+        || name.starts_with('_')
+        || name.ends_with(TMP_SUFFIX)
+        || name.ends_with(OLD_SUFFIX))
 }
 
 /// Project folders of `dir`, sorted by name. Blocking.

@@ -133,19 +133,36 @@ export type CaStatusDto = {
 	name_constraints: string[],
 };
 
-/**  Result of the `fs_parity.case_convert` job. */
+/**
+ *  Result of the `fs_parity.case_convert` job (`forge_core::fs::case::ConvertReport`).
+ *  The conversion moves every entry into a new flagged folder and back on failure; it
+ *  keeps no backup (docs/15 §3.1).
+ */
 export type CaseConvertDto = {
 	dir: string,
+	/**  `true`: the tree is now case-sensitive; `false`: reverted to insensitive. */
+	enabled: boolean,
+	/**  Folders, root included. */
 	directories: number,
 	files: number,
-	/**  Folder kept for `--revert`. */
-	backup: string | null,
+	/**  Junctions and symbolic links (moved, never followed). */
+	links: number,
+	bytes: number,
+	/**  Files whose SHA-256 was compared before and after. */
+	sampled: number,
+	/**  Already in the requested state: nothing moved. */
+	already: boolean,
+	/**  An interrupted conversion was undone first. */
+	recovered: boolean,
+	/**  `<dir>.cs-old` kept because files were written into it during the conversion. */
+	leftover: string | null,
+	duration_ms: number,
 };
 
 /**  Params of `fs_parity.case_convert`. */
 export type CaseConvertParams = {
 	dir: string,
-	/**  Undo a previous conversion. */
+	/**  Undo a previous conversion (back to case-insensitive). */
 	revert?: boolean,
 };
 
@@ -155,32 +172,110 @@ export type CaseDirParams = {
 	dir: string,
 };
 
-/**  A reference whose case differs from the file on disk. */
+/**  Default strategy of `forge site lint-case --fix`. */
+export type CaseFixChoice = 
+/**
+ *  Rename when only the file name differs and nothing else uses the current name;
+ *  edit otherwise (docs/15 §6).
+ */
+"auto" | "rename" | "edit";
+
+/**  A planned (dry run) or applied fix. */
+export type CaseFixDto = {
+	strategy: CaseFixStrategy,
+	/**  Rename: current path; edit: the reference as written. */
+	from: string,
+	/**  Rename: new path; edit: the reference rewritten. */
+	to: string,
+	/**  Edit: the source line before and after. */
+	before: string | null,
+	after: string | null,
+	applied: boolean,
+	error: string | null,
+};
+
+/**  How a case mismatch is fixed. */
+export type CaseFixStrategy = 
+/**  Rename the file on disk to the spelling of the reference. */
+"rename" | 
+/**  Rewrite the reference with the spelling on disk. */
+"edit";
+
+/**  Category of a Case Mismatch Finder finding. */
+export type CaseIssueCategory = 
+/**  A reference whose case differs from the file on disk (fixable). */
+"mismatch" | 
+/**  Names in one folder that differ only by case. */
+"case_duplicate" | 
+/**  A name Windows cannot hold (`aux`, `con`, `a:b`, trailing dot); `detail` = reason. */
+"reserved_name" | 
+/**  `.env` keys that differ only by case. */
+"env_case_duplicate" | 
+/**  A script whose shebang line ends in CRLF. */
+"crlf_shebang";
+
+/**  A finding of the Case Mismatch Finder (`forge_sites::lint_case::CaseIssue`). */
 export type CaseIssueDto = {
-	/**  File containing the reference (relative to the site root, `/`). */
+	/**  Stable id (`<file>:<line>:<column>` for mismatches), used by `overrides`/`only`. */
+	id: string,
+	category: CaseIssueCategory,
+	/**  File containing the reference, or the offending entry (relative to the project, `/`). */
 	file: string,
+	/**  1-based; 0 when not about a line. */
 	line: number,
-	/**  As written (`views/Header.php`). */
+	/**  1-based (characters); 0 when not about a line. */
+	column: number,
+	/**  As written (`Views/header.php`). */
 	reference: string,
-	/**  As on disk (`Views/header.php`). */
+	/**  As on disk (`views/Header.php`). */
 	actual: string,
-	/**  `php-include`, `psr4`, `html`, `css`, `js-import`, `composer`. */
+	/**
+	 *  `php-include`, `php-path`, `php-view`, `blade-include`, `twig-include`, `psr4`,
+	 *  `js-import`, `html`, `asset`, `css`, `composer`, `package-json`; `fs`, `env`,
+	 *  `script` for the other categories.
+	 */
 	kind: string,
+	/**  Real file the reference reaches. */
+	target: string | null,
+	/**  Path the reference names (result of a rename). */
+	expected: string | null,
+	/**  Several entries matched ignoring case (case-sensitive folder). */
+	ambiguous: boolean,
+	detail: string | null,
+	/**  Strategies that can fix it (empty: report only). */
+	fixes: CaseFixStrategy[],
+	fix: CaseFixDto | null,
 	fixed: boolean,
 };
 
-/**  Result of the `fs_parity.lint_case` job. */
+/**  Result of the `fs_parity.lint_case` job (`forge_sites::lint_case::LintReport`). */
 export type CaseLintReportDto = {
+	/**  Version of this report shape. */
+	v: number,
+	/**  Project folder scanned. */
+	root: string,
 	issues: CaseIssueDto[],
 	files_scanned: number,
+	references_checked: number,
+	/**  Fixes were planned or applied. */
+	fix: boolean,
+	dry_run: boolean,
+	/**  Mismatches left after fixing; `None` when nothing was applied. */
+	remaining: number | null,
 };
 
-/**  Case sensitivity of a folder. */
+/**  Case sensitivity of a folder (`forge_core::fs::case::CaseStatus`). */
 export type CaseSensitivityDto = {
 	dir: string,
 	supported: boolean,
 	/**  `None` when unsupported. */
 	enabled: boolean | null,
+	/**  File system of the volume (`NTFS`, `FAT32`, `ReFS`...), when known. */
+	fs_type: string | null,
+	/**  OS build number (`19045`), when known. */
+	os_build: number | null,
+	/**  Windows 10 1803 (build 17134) or later; `None` when unknown (other OSes). */
+	win_version_ok: boolean | null,
 	/**  Why it is unsupported (file system, Windows version). */
 	reason: string | null,
 };
@@ -602,8 +697,13 @@ export type FsCaseSensitivityPayload = {
 	v: number,
 	dir: string,
 	site_id: SiteId | null,
-	/**  Why it is unavailable. */
+	/**  Why it is unavailable (pt-BR text). */
 	reason: string | null,
+	/**
+	 *  Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
+	 *  `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+	 */
+	reason_code: string | null,
 };
 
 /**  Encoding of file content on the wire. */
@@ -920,8 +1020,16 @@ export type LanSiteParams = {
 /**  Params of `fs_parity.lint_case`. */
 export type LintCaseParams = {
 	site: SiteRef,
-	/**  Rewrite references to the on-disk spelling. */
+	/**  Fix the mismatches (rename files or edit references). */
 	fix?: boolean,
+	/**  With `fix`: plan and preview only, write nothing. */
+	dry_run?: boolean,
+	/**  With `fix`: default strategy. */
+	strategy?: CaseFixChoice,
+	/**  With `fix`: strategy per issue id. */
+	overrides?: { [key in string]: CaseFixStrategy },
+	/**  With `fix`: only these issue ids. */
+	only: string[] | null,
 };
 
 /**  Add or remove. */

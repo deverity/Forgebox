@@ -46,6 +46,9 @@ impl LockLevel {
     /// Configured registries, catalog snapshots and refresh marks of `forge_registry`.
     /// Leaf lock: no job is started and nothing is awaited or published while it is held.
     pub const REGISTRY_STATE: LockLevel = LockLevel::new(10, "registry.state");
+    /// Folders being converted to/from case-sensitive (`crate::fs::case`). Leaf lock:
+    /// held only to insert or remove one path.
+    pub const CASE_CONVERSIONS: LockLevel = LockLevel::new(10, "fs.case_conversions");
     /// Per-tool turn semaphores of the layout engine (`forge_provider::layout`). Leaf lock:
     /// held only to look up or insert a semaphore, never while acquiring it.
     pub const LAYOUT_TOOLS: LockLevel = LockLevel::new(10, "layout.tools");

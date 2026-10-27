@@ -41,6 +41,9 @@ Forgebox/
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas, [dns] extra_tlds/remote_zones)
 │   │       ├── dns_name.rs       # sintaxe de nomes DNS (rótulos minúsculos), sufixos de uso local (test, localhost, home.arpa...)
+│   │       ├── fs/               # case/ (docs/15, ADR-0026): status (flag, FS, build), convert_tree (recria a árvore em
+│   │       │                     #   <dir>.cs-tmp, rename de arquivos/links, troca, verificação, rollback), recover, tree_flags,
+│   │       │                     #   CaseConversions (job, progresso, fs.case_sensitivity_*), fold_case, messages.rs (pt-BR)
 │   │       ├── helper/           # protocolo do forgebox-helper (ADR-0022): op.rs (HelperOp allowlist + HelperPolicy/validate),
 │   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts; apply_hosts_block_bytes preserva bytes fora do bloco),
@@ -157,7 +160,12 @@ Forgebox/
 │   │       ├── site.rs           # SiteDraft, validação de host, aliases (Site + SiteRepo ficam em forge-core/store/sites.rs)
 │   │       ├── service.rs        # CRUD de sites + eventos site.created/updated/removed
 │   │       ├── drivers/          # trait Driver + mod.rs (detecção/desempate), php.rs (laravel, symfony, wordpress, cakephp, drupal, magento, generic-php), web.rs (static, spa)
-│   │       ├── parked.rs         # watcher (notify) em diretórios "parked" → sites implícitos
+│   │       ├── parked.rs         # watcher (notify) em diretórios "parked" → sites implícitos (ignora *.cs-tmp/*.cs-old)
+│   │       ├── lint_case/        # Case Mismatch Finder (docs/15 §6): mod.rs (varredura, relatório = CaseLintReportDto),
+│   │       │                     #   refs.rs (extração por regex por tipo de arquivo, manifestos, PSR-4), resolve.rs (listagens
+│   │       │                     #   exatas, candidatos .js/index/_parcial/.blade.php), fix.rs (renomear/editar, auto, prévia)
+│   │       ├── case_parity.rs    # estado Aa/aA por site (pasta do projeto), reverify no boot, jobs site_case e lint_case
+│   │       ├── parity.rs         # git_parity_init: core.ignorecase/autocrlf=false, .gitattributes, .editorconfig (forge new)
 │   │       ├── vhost.rs          # gera modelo de vhost (independente de servidor) → forge-render
 │   │       ├── proxy.rs          # sites proxy (Node/Next/Vite...), websocket, headers
 │   │       ├── apps.rs           # Procfile / processes: web, worker, scheduler, com $PORT
