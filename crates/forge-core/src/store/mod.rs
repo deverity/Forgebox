@@ -26,6 +26,7 @@ pub mod events;
 pub mod migrations;
 pub mod ports;
 mod reader;
+pub mod sites;
 pub mod tool_versions;
 pub mod writer;
 
@@ -39,6 +40,7 @@ pub use events::EventRepo;
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;
+pub use sites::{Site, SiteKind, SitePhp, SiteRepo, SiteXdebug};
 pub use tool_versions::{
     NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,
 };

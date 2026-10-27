@@ -116,8 +116,9 @@ Forgebox/
 │   │       └── targets/          # um módulo por tool conhecida: o que renderiza e para onde
 │   ├── forge-sites/
 │   │   └── src/
-│   │       ├── site.rs           # criação/edição, validação de host, aliases
-│   │       ├── drivers/          # detecção de framework: laravel, symfony, wordpress, cakephp, drupal, magento, static, spa, generic
+│   │       ├── site.rs           # SiteDraft, validação de host, aliases (Site + SiteRepo ficam em forge-core/store/sites.rs)
+│   │       ├── service.rs        # CRUD de sites + eventos site.created/updated/removed
+│   │       ├── drivers/          # trait Driver + mod.rs (detecção/desempate), php.rs (laravel, symfony, wordpress, cakephp, drupal, magento, generic-php), web.rs (static, spa)
 │   │       ├── parked.rs         # watcher (notify) em diretórios "parked" → sites implícitos
 │   │       ├── vhost.rs          # gera modelo de vhost (independente de servidor) → forge-render
 │   │       ├── proxy.rs          # sites proxy (Node/Next/Vite...), websocket, headers

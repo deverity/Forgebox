@@ -49,6 +49,28 @@ VhostModel {
 }
 ```
 
+### 1.3 Implementação (M1-E4-T2)
+
+- **Persistência:** `Site` e o repositório (`SiteRepo`) vivem em `forge-core::store::sites` (o store não depende de `forge-sites`); `forge-sites::site` os reexporta e acrescenta `SiteDraft` (entrada de `site.create`), `normalize_host` e `slug_for_host`. Host e aliases são únicos **globalmente** (um alias não pode ser host de outro site).
+- **Validação de host:** minúsculo, `[a-z0-9.-]`, labels de 1–63 chars sem `-` nas pontas, terminando em um TLD configurado (`SiteRules::tlds`, padrão `test`). Maiúsculas são **normalizadas com aviso** (`sites.host_lowercased`), nunca gravadas. Aliases seguem a mesma sintaxe sem a restrição de TLD (`loja.local`). Slug = host com `.` → `-`.
+- **Drivers:** `Driver { id, kind, detect(dir) -> Option<Confidence>, root(dir), tune(&mut VhostModel), vhost(site, ctx) }`. Maior `Confidence` vence; empate vai ao primeiro da lista (`laravel, symfony, wordpress, cakephp, drupal, magento, generic-php, spa, static`). Pasta que ninguém reconhece → `generic-php` com a pasta como root. Override manual (`forgebox.yaml spec.site.driver`) ignora a detecção.
+
+| Driver | Marcadores (alta confiança) | Root | `try_files` |
+|---|---|---|---|
+| laravel | `artisan` + `public/index.php` | `public/` | `$uri $uri/ /index.php?$query_string` |
+| symfony | `bin/console` + `public/index.php` | `public/` | `$uri /index.php?$query_string` |
+| wordpress | `wp-config.php` ou `wp-load.php` (Bedrock: `web/wp-config.php`) | raiz (ou `web/`) | `$uri $uri/ /index.php?$args`; nega `.php` em `wp-content/uploads` |
+| cakephp | `bin/cake.php` + `webroot/index.php` (CakePHP 2: `lib/Cake` + `app/webroot`) | `webroot/` | `$uri $uri/ /index.php?$args` |
+| drupal | `core/lib/Drupal.php` (também sob `web/` ou `docroot/`) | raiz, `web/` ou `docroot/` | `$uri /index.php?$query_string`; nega extensões internas |
+| magento | `bin/magento` + `pub/` | `pub/` | `$uri $uri/ /index.php?$query_string`; `MAGE_MODE=developer` |
+| generic-php | `index.php` na raiz ou em `public/`, `public_html/`, `web/` (média); outro `.php` na raiz (baixa) | raiz ou subpasta com `index.php` | padrão |
+| spa | `dist/` ou `build/` com `index.html`, sem `index.php` na raiz/`public/` | `dist/` ou `build/` | `$uri $uri/ /index.html` |
+| static | `index.html`/`index.htm` na raiz, sem `.php` | raiz | `$uri $uri/ =404` |
+
+- **Vhost (`vhost::build`):** `hosts = [host, "*.host", ...aliases]`; `php_upstream = php_<série com _>` (`php_8_3`) ou `php_<versão exata com _>` (`php_8_3_36`, pool próprio, §2.1); `deny` sempre inclui `/\.ht`, `/\.env`, `/\.git`; TLS em `certs/sites/<host>.crt|key` quando `secure`; `http_redirect` só com TLS; `extra` por servidor vem do contexto (texto do usuário, repassado sem alteração).
+- **Parked (`parked.rs`):** `ParkedSync::reconcile` compara disco e store (cria, remove, atualiza root/driver); `ParkedWatcher` roda um reconcile na partida e após cada rajada de eventos do `notify`, com debounce de 500 ms (teto de 5 s). O watch **não é recursivo**: criar/apagar a pasta do projeto é visto na hora; mudança de driver dentro do projeto (ex. `artisan` aparece) é vista no próximo reconcile. Pastas iniciadas por `.` ou `_` são ignoradas; nome da pasta vira label (`Minha Loja_2` → `minha-loja-2.test`). Site explícito com o mesmo host sempre vence (o implícito não é criado; criar o explícito substitui o implícito). Diretório parked ilegível (disco removido) não apaga seus sites.
+- **`forgebox.yaml`:** `ProjectPlan::load(dir, rules)` valida com `forge-manifest` e resolve para `{ site: SiteDraft, php_ini, services, runtimes, processes, proxies: Vec<SiteDraft>, share }`; `site.root` deve ficar dentro do projeto; `php: "8.3"` é série e `"8.3.36"` é versão exata.
+
 ## 2. PHP por vhost (o recurso central)
 
 ### 2.1 Como funciona

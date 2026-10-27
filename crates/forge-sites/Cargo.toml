@@ -14,3 +14,19 @@ workspace = true
 
 [dependencies]
 forge-render = { path = "../forge-render" }
+forge-core = { path = "../forge-core" }
+forge-manifest = { path = "../forge-manifest" }
+notify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+jiff = { workspace = true }
+
+[dev-dependencies]
+# Contract test of the site.* payloads (tests/payload_contract.rs).
+forge-ipc = { path = "../forge-ipc" }
+insta = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }
