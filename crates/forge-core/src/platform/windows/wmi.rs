@@ -1,4 +1,4 @@
-//! Minimal WMI client for the elevated helper (ADR-0023): calls **static methods** of CIM
+//! Minimal WMI client for the elevated helper (ADR-0024): calls **static methods** of CIM
 //! classes, the same entry points the PowerShell cmdlets use, without starting a shell.
 //!
 //! * `PS_DnsClientNrptRule` (`root/Microsoft/Windows/DNS`): `Add`/`Remove`, behind

@@ -89,7 +89,9 @@ C:\Forgebox\
 │
 ├── certs\
 │   ├── ca\forgebox-ca.crt , forgebox-ca.key (ACL: só o usuário)
-│   └── sites\loja.test.crt , loja.test.key , ...
+│   │      forgebox-ca.crl                      # CRL vazia assinada pela CA (servida em 127.0.0.1:47480, ADR-0023)
+│   │      trust.json                           # thumbprints SHA-1 das raízes que o Forgebox pôs no Windows (remoção limpa)
+│   └── sites\loja.test.crt , loja.test.key (ACL: só o usuário) , ...
 │
 ├── logs\
 │   ├── forgeboxd.log , forgeboxd.log.1 ...   # daemon (tracing, JSON lines)
@@ -118,7 +120,7 @@ C:\Forgebox\
 ```
 
 ### 2.1 Modo "por usuário" (alternativo)
-Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binários ficam lá e **a raiz de dados** (`bin\ etc\ data\ www\ certs\ logs\ state\ tmp\ backups\ manifests\`) vai para a pasta escolhida (padrão `C:\Forgebox`). `forgebox.toml` em `%LOCALAPPDATA%\Forgebox\root.toml` aponta a raiz. Tudo o resto é idêntico. **Exceção pendente (M4-E1):** o `forgebox-helper.exe` só atende a raiz em que ele mesmo está ([ADR-0022](adr/0022-elevated-helper-protocol.md)/[ADR-0023](adr/0023-helper-execution.md)); neste modo o instalador precisa colocar uma cópia dele na raiz de dados.
+Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binários ficam lá e **a raiz de dados** (`bin\ etc\ data\ www\ certs\ logs\ state\ tmp\ backups\ manifests\`) vai para a pasta escolhida (padrão `C:\Forgebox`). `forgebox.toml` em `%LOCALAPPDATA%\Forgebox\root.toml` aponta a raiz. Tudo o resto é idêntico. **Exceção pendente (M4-E1):** o `forgebox-helper.exe` só atende a raiz em que ele mesmo está ([ADR-0022](adr/0022-elevated-helper-protocol.md)/[ADR-0024](adr/0024-helper-execution.md)); neste modo o instalador precisa colocar uma cópia dele na raiz de dados.
 
 ### 2.2 Modo portátil
 `portable.flag` presente → nenhuma escrita fora da pasta: sem PATH, sem registro, sem CA no store (usa `--insecure` ou instala CA manualmente), DNS via `hosts` só se o usuário pedir. Útil para pendrive, VM descartável, CI.
@@ -133,7 +135,7 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 | PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` | Onboarding, se o usuário marcar | Desinstalador remove entradas que contenham `\Forgebox\bin\` |
 | Iniciar com Windows | `HKCU\...\Run\Forgebox` | Opt-in | Desinstalador remove |
 | Protocolo `forgebox://` | `HKCU\Software\Classes\forgebox` | Instalação | Desinstalador remove |
-| CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover (identifica pelo thumbprint salvo) |
+| CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover: a CA atual e toda raiz registrada em `certs\ca\trust.json` (thumbprint SHA-1 + escopo; inclui CAs antigas cuja remoção foi recusada numa rotação). Remover de `CurrentUser\Root` mostra o diálogo do Windows; `LocalMachine` vai pelo helper |
 | Regra NRPT `.test` | Política DNS do sistema | Opt-in via helper | Desinstalador remove via helper |
 | `hosts` | bloco gerenciado | Fallback | Bloco removido |
 | Firewall | regras `Forgebox-*` | Só com "expor na LAN" | Removidas |

@@ -1,5 +1,5 @@
 //! Certificates for the elevated helper's `trust.add_machine_root` /
-//! `trust.remove_machine_root` (docs/11 §1, ADR-0023): parsing (thumbprint, subject,
+//! `trust.remove_machine_root` (docs/11 §1, ADR-0024): parsing (thumbprint, subject,
 //! self-signature, Basic Constraints, Name Constraints) and the `LocalMachine\Root` store.
 //!
 //! Parsing and reading the store need no elevation; adding to or deleting from

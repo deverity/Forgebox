@@ -1,4 +1,4 @@
-//! What each allowlisted operation does (docs/11 §1, ADR-0023). Every function first reads
+//! What each allowlisted operation does (docs/11 §1, ADR-0024). Every function first reads
 //! the current state and builds the plan (also the `--dry-run` answer), then, unless it is
 //! a dry run, changes the system through [`PrivilegedOps`] and reports what it did.
 //!

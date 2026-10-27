@@ -1,5 +1,5 @@
 //! Windows Defender Firewall rules through the COM API (`INetFwPolicy2`), for the elevated
-//! helper's `firewall.add`/`firewall.remove` (docs/11 §1, ADR-0023). No `netsh`.
+//! helper's `firewall.add`/`firewall.remove` (docs/11 §1, ADR-0024). No `netsh`.
 //!
 //! Reading the rules works without elevation; adding or removing fails with
 //! `E_ACCESSDENIED` (→ `needs_elevation`) unless the process is elevated.
@@ -19,7 +19,7 @@ use crate::error::{ForgeError, Result};
 use crate::platform::privileged::FirewallRuleSpec;
 
 /// Profiles the helper's rules apply to: private and domain networks only. A LAN exposure
-/// never opens the port on networks Windows classifies as public (ADR-0023).
+/// never opens the port on networks Windows classifies as public (ADR-0024).
 pub(crate) const RULE_PROFILES: i32 = NET_FW_PROFILE2_PRIVATE.0 | NET_FW_PROFILE2_DOMAIN.0;
 
 /// Upper bound of removals for one name (rules are only ever created one per name).

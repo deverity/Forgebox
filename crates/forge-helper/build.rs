@@ -1,4 +1,4 @@
-//! Embeds the application manifest of `forgebox-helper.exe` (docs/11 §1, ADR-0023):
+//! Embeds the application manifest of `forgebox-helper.exe` (docs/11 §1, ADR-0024):
 //! `requestedExecutionLevel level="requireAdministrator"`, so Windows always starts it
 //! elevated (UAC prompt through `ShellExecuteExW`, `ERROR_ELEVATION_REQUIRED` for a plain
 //! `CreateProcess` from a non-elevated parent).

@@ -1,4 +1,4 @@
-//! [`PrivilegedOps`] for Windows (docs/11 §1, ADR-0023). No shell, no `netsh`, no
+//! [`PrivilegedOps`] for Windows (docs/11 §1, ADR-0024). No shell, no `netsh`, no
 //! PowerShell: every change goes through the API that the corresponding cmdlet uses.
 //!
 //! | operation | API |

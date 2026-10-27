@@ -17,11 +17,13 @@
 //! Redistributable; both M1-E3-T3) are implemented for Windows, as are the DNS side of
 //! M1-E4-T3: [`Elevation`] (launching `forgebox-helper` through UAC), [`DnsPolicy`] (NRPT
 //! rules and `hosts`, changed through the helper; resolver cache flush), [`NetAdapters`]
-//! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`].
-//! [`PrivilegedOps`] (M1-E5-T4) gathers the machine-wide changes behind the elevated
-//! helper's allowlist (WMI, firewall COM API, `LocalMachine\Root`, staging of installers)
-//! and [`secure_file`] the link-safe file access the helper uses inside the root.
-//! [`TrustStore`] (M1-E4-T4) is declared only; its signature may still grow in that task.
+//! (adapters and their DNS servers) and the UDP endpoints of [`PortTable`]. M1-E4-T4 added
+//! [`TrustStore`] (root certificates of `CurrentUser\Root` and, through the helper,
+//! `LocalMachine\Root`, by SHA-1 [`CertThumbprint`]; server chain checks by the OS
+//! verifier against an explicit anchor). [`PrivilegedOps`] (M1-E5-T4) gathers the
+//! machine-wide changes behind the elevated helper's allowlist (WMI, firewall COM API,
+//! `LocalMachine\Root`, staging of installers) and [`secure_file`] the link-safe file
+//! access the helper uses inside the root.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -45,6 +47,7 @@ pub mod process;
 pub mod process_stats;
 pub mod runtime_deps;
 pub mod secure_file;
+pub mod trust_store;
 #[cfg(windows)]
 pub mod windows;
 
@@ -71,6 +74,7 @@ pub use runtime_deps::{
     VcRedistFlavor, VcRuntimeVersion, runtime_deps,
 };
 pub use secure_file::{NoFollow, NoFollowFile, final_path, open_no_follow};
+pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
 
 /// Directory links used for `bin/<tool>/current` (ADR-0005). On Windows these are
 /// junctions: no privilege nor Developer Mode needed.
@@ -171,25 +175,6 @@ pub trait CodeSign: Send + Sync {
     /// Unsigned or untrusted files are `Ok` with `signed`/`trusted` false; `Err` only when
     /// the file cannot be opened or the OS has no such mechanism.
     fn verify(&self, path: &Path) -> Result<CodeSignInfo>;
-}
-
-/// Where a root certificate is trusted (docs/06 §6, docs/11).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrustScope {
-    /// `CurrentUser\Root`, no elevation.
-    CurrentUser,
-    /// `LocalMachine\Root`, through `forgebox-helper`.
-    LocalMachine,
-}
-
-/// OS certificate trust store. Implemented in M1-E4-T4.
-pub trait TrustStore: Send + Sync {
-    /// Whether the DER certificate is trusted in `scope`.
-    fn is_trusted(&self, cert_der: &[u8], scope: TrustScope) -> Result<bool>;
-    /// Adds the DER root certificate to `scope`.
-    fn add_root(&self, cert_der: &[u8], scope: TrustScope) -> Result<()>;
-    /// Removes the DER root certificate from `scope`.
-    fn remove_root(&self, cert_der: &[u8], scope: TrustScope) -> Result<()>;
 }
 
 /// Implementations for the running OS. Cheap to clone.
@@ -322,9 +307,15 @@ impl Platform {
         &self.code_sign
     }
 
-    /// Owner-only ACLs for secret files (`state/ipc.token`).
+    /// Owner-only ACLs for secret files (`state/ipc.token`, the CA and site keys).
     pub fn file_acl(&self) -> &dyn FileAcl {
         self.file_acl.as_ref()
+    }
+
+    /// [`Platform::file_acl`] as a shared handle, to move into `spawn_blocking` or into an
+    /// actor (`forge_tls::TlsManager`).
+    pub fn shared_file_acl(&self) -> Arc<dyn FileAcl> {
+        Arc::clone(&self.file_acl)
     }
 
     /// TCP listeners and connections with their owning processes (shared, so it can

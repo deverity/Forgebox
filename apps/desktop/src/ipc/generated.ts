@@ -120,6 +120,12 @@ export type CaStatusDto = {
 	subject: string | null,
 	/**  SHA-256 thumbprint (hex). */
 	thumbprint_sha256: string | null,
+	/**
+	 *  SHA-1 thumbprint (40 hex, uppercase): what `certmgr.msc`, `certutil` and `Cert:\`
+	 *  show, and what the helper's `trust.*_machine_root` operations take (ADR-0023).
+	 *  Additive field (v1 clients ignore it).
+	 */
+	thumbprint_sha1?: string | null,
 	not_after: string | null,
 	trusted_current_user: boolean,
 	trusted_local_machine: boolean,

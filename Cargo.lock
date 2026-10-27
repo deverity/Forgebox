@@ -1278,6 +1278,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha1",
  "sha2 0.11.1",
  "specta",
  "specta-typescript",
@@ -1532,7 +1533,24 @@ dependencies = [
 name = "forge-tls"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "forge-core",
+ "forge-ipc",
+ "getrandom 0.4.3",
+ "jiff",
+ "pretty_assertions",
+ "rcgen",
+ "rustls",
+ "rustls-webpki",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "x509-parser",
 ]
 
 [[package]]

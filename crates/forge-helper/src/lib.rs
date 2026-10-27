@@ -1,5 +1,5 @@
 //! `forgebox-helper`: the only elevated binary of Forgebox (docs/11 §1, ADR-0022,
-//! ADR-0023). It runs **one** allowlisted operation per process, started by the daemon
+//! ADR-0024). It runs **one** allowlisted operation per process, started by the daemon
 //! through UAC, and exits.
 //!
 //! A run, in order (any failure ends it with a refusal, nothing changed):

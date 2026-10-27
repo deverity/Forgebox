@@ -44,10 +44,12 @@ Forgebox/
 │   │       ├── helper/           # protocolo do forgebox-helper (ADR-0022): op.rs (HelperOp allowlist + HelperPolicy/validate),
 │   │       │                     #   protocol.rs (HelperRequest/HelperResponse v1, arquivos de troca em state/locks),
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts; apply_hosts_block_bytes preserva bytes fora do bloco),
-│   │       │                     #   client.rs (HelperClient, FakeElevation), trust.rs (CA aceita em LocalMachine\Root, ADR-0023)
+│   │       │                     #   client.rs (HelperClient, FakeElevation), trust.rs (CA aceita em LocalMachine\Root, ADR-0024)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore) + current();
+│   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
+│   │                             #   verify_server: cadeia pelo verificador do SO com raiz exclusiva, revogação opcional);
 │   │                             #   privileged.rs: PrivilegedOps + privileged_ops() (mudanças de máquina do forgebox-helper:
-│   │                             #   NRPT, hosts, LocalMachine\Root, firewall, Defender, instalador verificado; ADR-0023);
+│   │                             #   NRPT, hosts, LocalMachine\Root, firewall, Defender, instalador verificado; ADR-0024);
 │   │                             #   secure_file.rs: open_no_follow/final_path (arquivos da raiz sem seguir links);
 │   │                             #   dns_policy.rs: DnsPolicy (regras NRPT, hosts, flush do cache; mudanças via helper), NrptRule;
 │   │                             #   elevation.rs: Elevation (forgebox-helper elevado); net_adapters.rs: NetAdapters (adaptadores + DNS);
@@ -61,6 +63,8 @@ Forgebox/
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
 │   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
 │   │                             #   file_acl.rs (DACL só do usuário), pipe_security.rs (descritor do pipe da API, checagem do dono),
+│   │                             #   trust_store.rs (CertOpenStore SYSTEM_REGISTRY, CertAdd/Find/Delete por SHA-1,
+│   │                             #   motor de cadeia com hExclusiveRoot + CERT_CHAIN_POLICY_SSL),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
 │   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
 │   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
@@ -159,11 +163,18 @@ Forgebox/
 │   │       ├── policy.rs         # DnsPolicyManager: NRPT via helper, hosts fallback, flush, eventos dns.policy_applied/helper.op
 │   │       ├── messages.rs       # textos pt-BR das dicas de diagnóstico
 │   │       └── firewall.rs       # regras via helper (netsh/API) só se o usuário quiser acesso LAN
-│   ├── forge-tls/
+│   ├── forge-tls/                # ADR-0023
+│   │   ├── examples/tls_demo.rs  # teste manual: CA + folhas em uma raiz, HTTPS de teste + responder de CRL (docs/06 §6.4)
 │   │   └── src/
-│   │       ├── ca.rs             # geração/rotação da CA (ECDSA P-256, 10 anos), armazenamento em certs/ca/
-│   │       ├── leaf.rs           # cert por site: SAN host + *.host, 825 dias, renovação automática
-│   │       └── trust.rs          # CurrentUser\Root (sem admin) + opcional LocalMachine via helper; Firefox/NSS; NODE_EXTRA_CA_CERTS
+│   │       ├── ca.rs             # CA ECDSA P-256, 10 anos, pathLen 0, name constraints críticas (TLDs de uso local,
+│   │       │                     #   localhost, 127.0.0.0/8, ::1/128); certs/ca/ com chave só do usuário; recuperação de escrita
+│   │       ├── leaf.rs           # cert por site: SAN host + *.host + aliases, 825 dias, serverAuth, CRL DP; certs/sites/
+│   │       ├── crl.rs            # CRL vazia assinada pela CA + responder HTTP mínimo em 127.0.0.1 (Schannel/curl.exe)
+│   │       ├── cert.rs           # PEM, leitura de volta (x509-parser), thumbprints, escrita atômica de par cert/chave
+│   │       ├── trust.rs          # livro certs/ca/trust.json (raízes adicionadas por thumbprint) + instruções Node/Firefox/Python/Java
+│   │       ├── manager.rs        # ator `tls` (TlsManager): issue, renew, rotate (duas fases), status, install/uninstall,
+│   │       │                     #   verificação diária, eventos tls.* (forma de TlsPayload) e helper.op
+│   │       └── messages.rs       # textos pt-BR (instruções, avisos)
 │   ├── forge-ipc/                # protocolo: ADR-0015
 │   │   └── src/
 │   │       ├── api/              # contratos: um módulo de DTOs por grupo do docs/09 (daemon, tools, services, logs, php, sites,
@@ -179,7 +190,7 @@ Forgebox/
 │   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
 │   ├── forge-daemon/             # bin forgeboxd.exe: main.rs, boot.rs, scheduler.rs, tray-less
 │   ├── forge-cli/                # bin forge.exe: commands/*.rs (um por grupo), output.rs (table|json|plain)
-│   ├── forge-helper/             # forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022/0023); lib + bin (test = false)
+│   ├── forge-helper/             # forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022/0024); lib + bin (test = false)
 │   │   ├── build.rs              # manifest requireAdministrator embutido (crate embed-manifest)
 │   │   ├── src/                  # lib.rs (Helper: validação léxica + canônica, elevação, run), args.rs, exchange.rs (arquivos de
 │   │   │                         #   troca), ops.rs (cada operação: plano/--dry-run e execução), log.rs (logs/helper.log), messages.rs

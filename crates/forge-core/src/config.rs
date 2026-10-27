@@ -98,6 +98,9 @@ fn default_ranges() -> BTreeMap<String, PortSet> {
         ("apps", "3000-3999"),
         ("mail", "1025, 8025"),
         ("storage", "9000, 9001"),
+        // CRL responder of the local CA (forge-tls, ADR-0023): its address is written in
+        // every site certificate, so it must not move.
+        ("tls-crl", "47480"),
     ]
     .into_iter()
     .map(|(name, spec)| (name.to_owned(), spec.parse().expect("valid default")))

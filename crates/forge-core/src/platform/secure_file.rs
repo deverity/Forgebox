@@ -1,5 +1,5 @@
 //! Opening files for the elevated helper without following links planted by the user
-//! (ADR-0022 obligations, ADR-0023).
+//! (ADR-0022 obligations, ADR-0024).
 //!
 //! `forgebox-helper` runs as an administrator but reads and writes inside the Forgebox
 //! root, which belongs to the user: a symbolic link, junction or hard link placed there

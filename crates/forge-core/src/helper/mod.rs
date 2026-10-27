@@ -25,7 +25,7 @@
 //!   (writing) agree byte for byte.
 //! * [`trust`]: what the helper accepts to add to (or remove from) `LocalMachine\Root`:
 //!   only a self-signed Forgebox CA whose Name Constraints stay under local-use suffixes
-//!   (ADR-0023).
+//!   (ADR-0024).
 //!
 //! Requirements on the helper side (M1-E5-T4), part of the protocol:
 //! 1. `request.root` must be the helper's own root (the folder of `forgebox-helper.exe`);
@@ -39,7 +39,7 @@
 //! 4. Every operation (accepted or refused) is appended to `logs/helper.log`; the daemon
 //!    publishes `helper.op {name, ok}`.
 //!
-//! The helper itself lives in the `forge-helper` crate (M1-E5-T4, ADR-0023); its
+//! The helper itself lives in the `forge-helper` crate (M1-E5-T4, ADR-0024); its
 //! privileged side effects are [`crate::platform::PrivilegedOps`].
 
 mod client;

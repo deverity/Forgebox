@@ -1,5 +1,5 @@
 //! What the helper accepts to trust (or distrust) for every user of the machine
-//! (`trust.add_machine_root` / `trust.remove_machine_root`, docs/11 §1 and §3, ADR-0023).
+//! (`trust.add_machine_root` / `trust.remove_machine_root`, docs/11 §1 and §3, ADR-0024).
 //!
 //! `certs/ca/` is writable by the user, so "the certificate in `certs/ca/` with this
 //! thumbprint" alone would let any process of the user install **any** root CA for every

@@ -1,4 +1,4 @@
-//! Machine-wide changes that need administrator rights (docs/11 §1, ADR-0022, ADR-0023).
+//! Machine-wide changes that need administrator rights (docs/11 §1, ADR-0022, ADR-0024).
 //!
 //! Used **only** by `forgebox-helper`, after the request was parsed and validated against
 //! the allowlist ([`crate::helper::HelperOp::validate`]). The daemon never calls these: it

@@ -1,4 +1,4 @@
-# ADR-0023 — Execução das operações do `forgebox-helper`: APIs sem shell, cópia verificada do instalador, CA restrita, log antes de agir
+# ADR-0024 — Execução das operações do `forgebox-helper`: APIs sem shell, cópia verificada do instalador, CA restrita, log antes de agir
 
 **Status:** aceito · **Data:** 2026-10-27 · Complementa a [ADR-0022](0022-elevated-helper-protocol.md) (protocolo).
 
