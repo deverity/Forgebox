@@ -16,6 +16,8 @@ workspace = true
 forge-render = { path = "../forge-render" }
 forge-core = { path = "../forge-core" }
 forge-manifest = { path = "../forge-manifest" }
+# Tool discovery of the Laragon import (forge_registry::discover_in).
+forge-registry = { path = "../forge-registry" }
 forge-supervisor = { path = "../forge-supervisor" }
 futures = { workspace = true }
 notify = { workspace = true }

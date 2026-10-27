@@ -41,7 +41,9 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::error::{ForgeError, IoResultExt, Result};
 pub use events::EventRepo;
-pub use instances::{DesiredState, InstanceRepo, InstanceRow, validate_instance_name};
+pub use instances::{
+    DesiredState, EXTERNAL_DATA_DIR_KEY, InstanceRepo, InstanceRow, validate_instance_name,
+};
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;

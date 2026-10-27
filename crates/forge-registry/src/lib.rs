@@ -22,7 +22,10 @@ pub mod search;
 pub mod service;
 pub mod source;
 
-pub use discover::{Confidence, DiscoveredVersion, ImportReport, discover, import_discovered};
+pub use discover::{
+    Confidence, DiscoveredVersion, ImportReport, NameHint, discover, discover_in,
+    import_discovered, parse_folder_name,
+};
 pub use index::{LoadOptions, Verification, VerifyOptions};
 pub use search::{CatalogEntry, MatchKind, SearchHit};
 pub use service::{LoadReport, LoadSource, Registry, RegistryConfig, RegistryInfo, ServiceOptions};
