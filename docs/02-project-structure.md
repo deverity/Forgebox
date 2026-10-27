@@ -36,17 +36,22 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate
 │   │       ├── config.rs         # forgebox.toml (preferências, faixas de portas nomeadas)
-│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, TrustStore, DnsPolicy) + current();
+│   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, TrustStore, DnsPolicy) + current();
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE)
 │   │                             #   impl windows/: link_fs.rs (crate junction), case_sensitive_fs.rs (NtSetInformationFile),
+│   │                             #   authenticode.rs (WinVerifyTrust + catálogos, publisher via CryptQueryObject),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
 │   │                             #   console_ctrl.rs (forgebox-ctrl, ADR-0015), window_close.rs (EnumWindows + WM_CLOSE)
 │   ├── forge-manifest/
 │   │   └── src/
-│   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema
-│   │       ├── parse.rs          # load + validação semântica (ids, versões, portas, templates)
-│   │       ├── version.rs        # ranges semver, canais, ordenação de builds (vs16/vs17, ts/nts)
-│   │       └── lint.rs           # regras de lint para manifestos do registry
+│   │       ├── schema/           # structs serde do forgebox.yaml (v1), schemars → JSON Schema: common, tool,
+│   │       │                     #   extension, stack, project, registry; enum Manifest (despacho por `kind`)
+│   │       ├── parse.rs          # load_str (erros com linha/coluna) + validação semântica (ids, versões, portas, templates)
+│   │       ├── version.rs        # ranges semver, canais, ordenação de builds (vs16/vs17, ts/nts), canonical_name
+│   │       ├── lint.rs           # as 7 regras de lint sobre uma pasta de registry (RegistryDir, LintContext)
+│   │       ├── issue.rs          # IssueCode (código estável = chave i18n, regra 1..7) e ValidationIssue
+│   │       ├── template.rs       # leitura das referências {{ ... }} dos manifestos
+│   │       └── yaml.rs           # único módulo que usa serde_yaml_ng (ADR-0012)
 │   ├── forge-registry/
 │   │   └── src/
 │   │       ├── index.rs          # index.yaml do registry, cache em state/registry/
@@ -54,12 +59,15 @@ Forgebox/
 │   │       ├── search.rs         # busca por nome/categoria/tag, ranking
 │   │       └── discover.rs       # heurísticas para pastas soltas em bin/ (php.exe, httpd.exe, mysqld.exe...)
 │   ├── forge-provider/
+│   │   ├── keys/                 # keyrings PGP embutidos (nginx.asc, nodejs.asc), fingerprints comentados e fixados por teste
 │   │   └── src/
 │   │       ├── provider/         # trait Provider + impls: http, github_release, php_windows, apache_lounge,
 │   │       │                     #   nginx_org, mysql, mariadb, postgresql_edb, nodejs_dist, python, composer, mailpit...
-│   │       ├── download.rs       # fila, paralelismo, resume (Range), progresso, mirrors
-│   │       ├── verify.rs         # sha256/sha512, minisign/gpg quando disponível, tamanho
-│   │       ├── extract.rs        # zip/7z/tar.*; strip_root; staging em tmp/ e move atômico
+│   │       ├── download.rs       # fila (ator), paralelismo, resume (Range), progresso, mirrors; submódulos download/{transfer,limiter,progress,messages}.rs
+│   │       ├── verify.rs         # tamanho, sha256/sha512, minisign, Authenticode (platform::CodeSign); verify/pgp.rs (rpgp, keyrings)
+│   │       ├── extract.rs        # zip/7z/tar.gz/tar.xz/arquivo único; strip_root; staging em tmp/stage e move atômico;
+│   │       │                     #   extract/{entry (nomes seguros), formats, install (strip, rename, cópia entre volumes)}.rs
+│   │       ├── messages.rs       # textos de progresso pt-BR de verify/extract (até existir i18n)
 │   │       ├── layout.rs         # bin/<tool>/<version>, junction current, PATH shims
 │   │       └── update.rs         # checagem periódica, políticas, retenção, rollback
 │   ├── forge-supervisor/
@@ -181,9 +189,11 @@ Forgebox/
 │   │   ├── cakephp.yaml
 │   │   └── nextjs-php-api.yaml
 │   └── schema/
-│       ├── tool.v1.json          # gerado por `cargo xtask schema`
+│       ├── tool.v1.json          # gerados por `cargo xtask schema`
+│       ├── extension.v1.json
 │       ├── stack.v1.json
-│       └── project.v1.json
+│       ├── project.v1.json
+│       └── registry.v1.json      # index.yaml
 │
 ├── installer/
 │   ├── nsis/                     # hooks NSIS: PATH, exclusão do Defender (opt-in), associação forgebox://

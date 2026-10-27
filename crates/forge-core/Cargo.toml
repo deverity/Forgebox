@@ -20,6 +20,9 @@ specta = ["dep:specta", "specta/ulid", "specta/jiff"]
 # tokio-console instrumentation for development (`runtime::init_console`). Requires
 # RUSTFLAGS="--cfg tokio_unstable"; the default build does not.
 console = ["dep:console-subscriber"]
+# Implements `schemars::JsonSchema` for `ToolId` (pattern of the slug). Enabled by
+# forge-manifest so that the manifest JSON Schemas (`cargo xtask schema`) describe ids.
+schemars = ["dep:schemars"]
 
 [dependencies]
 console-subscriber = { workspace = true, optional = true }
@@ -27,6 +30,7 @@ futures = { workspace = true }
 jiff = { workspace = true }
 parking_lot = { workspace = true }
 rusqlite = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 specta = { workspace = true, features = ["derive"], optional = true }
@@ -39,13 +43,17 @@ ulid = { workspace = true }
 
 # Win32 only behind `platform::windows` (CLAUDE.md). `junction` wraps
 # CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile, Job Objects,
-# CreateProcessW, console control events and EnumWindows/PostMessageW.
+# CreateProcessW, console control events, EnumWindows/PostMessageW and the
+# Authenticode APIs (WinVerifyTrust, catalogs, CryptQueryObject).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_WinTrust",
     "Win32_Storage_FileSystem",
     "Win32_System_Console",
     "Win32_System_IO",

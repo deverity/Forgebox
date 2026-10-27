@@ -1,4 +1,4 @@
-msrv = "1.85"
+msrv = "1.88"
 too-many-arguments-threshold = 8
 # Guards that must never live across an `.await` (lint `await_holding_invalid_type`,
 # denied in [workspace.lints.clippy]). Lock order: forge_core::sync and actor/mod.rs.

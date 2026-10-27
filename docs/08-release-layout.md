@@ -144,7 +144,7 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 Diálogo com três opções: **Manter tudo em `C:\Forgebox`** (só remove binários do app e entradas do sistema), **Remover tools mas manter dados** (`bin\`, `tmp\`, `state\`; mantém `www\ data\ etc\ certs\ backups\`), **Apagar tudo** (exige digitar "APAGAR"). Sempre reverte a tabela da seção 3.
 
 ## 5. Nome canônico de pasta de versão
-`<version>[-<variant>...]` com variantes em ordem definida no manifesto: PHP `8.3.37-nts-vs17-x64`; Apache `2.4.69-vs18-x64`; demais só `<version>`. O motor também reconhece nomes do Laragon (`php-8.3-Win32-vs16-x64`) via `discover` e os importa **sem renomear** (a pasta continua como está; o registro guarda o caminho).
+`<version>[-<variant>...]` com variantes na ordem de `versioning.variants` do manifesto (`forge_manifest::version::canonical_name`): PHP (`ts`, `compiler`, `arch`) `8.3.37-nts-vs17-x64`; Apache (`compiler`, `arch`) `2.4.69-vs18-x64`; tools sem variantes, só `<version>`. O motor também reconhece nomes do Laragon (`php-8.3-Win32-vs16-x64`) via `discover` e os importa **sem renomear** (a pasta continua como está; o registro guarda o caminho).
 
 ## 6. Migração a partir do Laragon
 `forge import laragon C:\laragon`: importa versões de PHP/Apache/Nginx/MySQL/Node encontradas em `bin\` (copiando ou referenciando), vhosts de `etc\apache2\sites-enabled\auto.*.conf` como sites, data dirs de `data\` como instâncias (sem copiar: oferece mover), `www\` como parked dir, preferências de `usr\laragon.ini` (TLD, documentroot). Relatório do que foi e não foi importado.
