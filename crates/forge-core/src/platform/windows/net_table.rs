@@ -39,7 +39,7 @@ const AF_INET: u32 = 2;
 const AF_INET6: u32 = 23;
 
 /// Attempts when the table keeps growing between the size query and the copy.
-const TABLE_ATTEMPTS: usize = 8;
+const TABLE_ATTEMPTS: usize = 16;
 
 /// [`PortTable`] for Windows.
 #[derive(Debug, Clone, Copy, Default)]
@@ -61,8 +61,9 @@ fn tcp_table(family: u32, class: TCP_TABLE_CLASS) -> Result<Vec<u32>> {
             return Ok(buffer);
         }
         if status == NO_ERROR.0 || status == ERROR_INSUFFICIENT_BUFFER.0 {
-            // Room for the reported size plus a little growth.
-            let words = (size as usize).div_ceil(4) + 64;
+            // Room for the reported size plus growth: busy pools leave thousands of
+            // TIME_WAIT rows that come and go between the two calls.
+            let words = (size as usize).div_ceil(4) + (size as usize) / 16 + 256;
             buffer = vec![0_u32; words];
             size = u32::try_from(words * 4).unwrap_or(u32::MAX);
             continue;
