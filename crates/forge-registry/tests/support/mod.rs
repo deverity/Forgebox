@@ -4,7 +4,7 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::Router;
@@ -19,9 +19,8 @@ use forge_core::paths::ForgeRoot;
 use forge_core::store::Store;
 use forge_manifest::index::{build_index, render_index, sha256_hex};
 use forge_manifest::lint::RegistryDir;
-use forge_manifest::schema::registry::{Signature, SignatureType};
-use forge_registry::index::{encode_signature, key_id_of_public_key, signing_payload};
 use forge_registry::{Registry, ServiceOptions};
+use tokio::sync::Semaphore;
 
 /// `tests/fixtures/registry`: signed with the development key.
 pub fn fixture_dir() -> PathBuf {
@@ -55,29 +54,34 @@ pub fn new_key() -> minisign::KeyPair {
     minisign::KeyPair::generate_unencrypted_keypair().unwrap()
 }
 
-/// Regenerates `dir/index.yaml` from the manifests in `dir`; signs it with `key` if given.
+/// Regenerates `dir/index.yaml` from the manifests in `dir`; signs it with `key` if given
+/// (detached `index.yaml.minisig` over the raw bytes) and removes a stale signature otherwise.
 pub fn index_registry(dir: &Path, name: &str, key: Option<&minisign::KeyPair>) {
     let registry = RegistryDir::new(dir);
     let now = Timestamp::from_second(Timestamp::now().as_second()).unwrap();
-    let mut index = build_index(&registry, name, None, now).unwrap();
-    index.spec.signature = None;
-    if let Some(pair) = key {
-        let payload = signing_payload(&index).unwrap();
-        let signature = minisign::sign(
-            Some(&pair.pk),
-            &pair.sk,
-            Cursor::new(payload),
-            Some("trusted comment"),
-            Some("untrusted comment"),
-        )
-        .unwrap();
-        index.spec.signature = Some(Signature {
-            kind: SignatureType::Minisign,
-            key_id: key_id_of_public_key(&pair.pk.to_base64()).unwrap(),
-            sig: encode_signature(&signature.into_string()),
-        });
+    let index = build_index(&registry, name, None, now).unwrap();
+    let bytes = render_index(&index).unwrap().into_bytes();
+    std::fs::write(registry.index_path(), &bytes).unwrap();
+    let sig_path = dir.join("index.yaml.minisig");
+    match key {
+        Some(pair) => sign_file(&bytes, &sig_path, pair),
+        None => {
+            let _ = std::fs::remove_file(&sig_path);
+        }
     }
-    std::fs::write(registry.index_path(), render_index(&index).unwrap()).unwrap();
+}
+
+/// Writes the minisign signature of `bytes` to `sig_path`.
+pub fn sign_file(bytes: &[u8], sig_path: &Path, pair: &minisign::KeyPair) {
+    let signature = minisign::sign(
+        Some(&pair.pk),
+        &pair.sk,
+        Cursor::new(bytes),
+        Some("trusted comment"),
+        Some("untrusted comment"),
+    )
+    .unwrap();
+    std::fs::write(sig_path, signature.into_string()).unwrap();
 }
 
 /// A minimal valid tool manifest.
@@ -158,18 +162,33 @@ pub struct TestServer {
     pub base: String,
     pub hits: Arc<AtomicUsize>,
     pub log: Arc<std::sync::Mutex<Vec<String>>>,
+    hold: Arc<Hold>,
+}
+
+/// Lets a test freeze requests for `index.yaml` until it decides to answer them, with no
+/// timing involved: `arrived` gets one permit per held request, `release` is where held
+/// requests wait for a permit.
+struct Hold {
+    enabled: AtomicBool,
+    arrived: Semaphore,
+    release: Semaphore,
 }
 
 struct ServerState {
     dir: PathBuf,
     hits: Arc<AtomicUsize>,
     log: Arc<std::sync::Mutex<Vec<String>>>,
+    hold: Arc<Hold>,
 }
 
 async fn serve(State(state): State<Arc<ServerState>>, uri: Uri, headers: HeaderMap) -> Response {
     state.hits.fetch_add(1, Ordering::SeqCst);
     let rel = uri.path().trim_start_matches('/').to_owned();
     state.log.lock().unwrap().push(rel.clone());
+    if rel == "index.yaml" && state.hold.enabled.load(Ordering::SeqCst) {
+        state.hold.arrived.add_permits(1);
+        state.hold.release.acquire().await.unwrap().forget();
+    }
     let Ok(bytes) = std::fs::read(state.dir.join(&rel)) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -188,10 +207,16 @@ impl TestServer {
     pub async fn start(dir: &Path) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hold = Arc::new(Hold {
+            enabled: AtomicBool::new(false),
+            arrived: Semaphore::new(0),
+            release: Semaphore::new(0),
+        });
         let state = Arc::new(ServerState {
             dir: dir.to_owned(),
             hits: Arc::clone(&hits),
             log: Arc::clone(&log),
+            hold: Arc::clone(&hold),
         });
         let app = Router::new().fallback(serve).with_state(state);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -203,7 +228,28 @@ impl TestServer {
             base: format!("http://{addr}"),
             hits,
             log,
+            hold,
         }
+    }
+
+    /// From now on, requests for `index.yaml` are held until [`TestServer::release_all`].
+    pub fn hold_index(&self) {
+        self.hold.enabled.store(true, Ordering::SeqCst);
+    }
+
+    /// Waits until a request for `index.yaml` is being held.
+    pub async fn index_requested(&self) {
+        tokio::time::timeout(Duration::from_secs(10), self.hold.arrived.acquire())
+            .await
+            .expect("no request for index.yaml arrived")
+            .unwrap()
+            .forget();
+    }
+
+    /// Answers every held request and stops holding.
+    pub fn release_all(&self) {
+        self.hold.enabled.store(false, Ordering::SeqCst);
+        self.hold.release.add_permits(1024);
     }
 
     pub fn index_url(&self) -> url::Url {

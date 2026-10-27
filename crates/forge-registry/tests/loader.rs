@@ -43,6 +43,7 @@ async fn loads_the_signed_fixture_from_a_folder() {
     let cache = env.registry.cache_path("fixture");
     for file in [
         "index.yaml",
+        "index.yaml.minisig",
         "tools/hello-web.yaml",
         "tools/hello-db.yaml",
         "stacks/hello-stack.yaml",
@@ -457,8 +458,8 @@ async fn http_source_loads_caches_and_revalidates_with_etag() {
     assert!(report.verification.is_verified());
     assert_eq!((report.tools, report.stacks), (2, 1));
     assert!(report.etag.is_some());
-    // index + 2 tools + 1 stack
-    assert_eq!(server.hits(), 4);
+    // index + its detached signature + 2 tools + 1 stack
+    assert_eq!(server.hits(), 5);
     let log = server.log.lock().unwrap().clone();
     assert_eq!(
         log[0], "index.yaml",
@@ -470,14 +471,14 @@ async fn http_source_loads_caches_and_revalidates_with_etag() {
         env.registry.load("remote").await.unwrap().source,
         LoadSource::Memory
     );
-    assert_eq!(server.hits(), 4);
+    assert_eq!(server.hits(), 5);
 
     // An explicit refresh sends If-None-Match: one request, answered 304.
     let job = env.registry.refresh("remote").unwrap();
     let info = env.wait_job(job).await;
     assert_eq!(info.state, JobState::Done, "{:?}", info.error);
     assert_eq!(info.result.unwrap()["source"], "not_modified");
-    assert_eq!(server.hits(), 5);
+    assert_eq!(server.hits(), 6);
     assert!(env.registry.find("hello-web").is_some());
 
     // After a restart the cache is used; an ETag survived in SQLite.
@@ -487,7 +488,7 @@ async fn http_source_loads_caches_and_revalidates_with_etag() {
         restarted.load("remote").await.unwrap().source,
         LoadSource::Cache
     );
-    assert_eq!(server.hits(), 5);
+    assert_eq!(server.hits(), 6);
 }
 
 #[tokio::test]
@@ -509,7 +510,11 @@ async fn http_source_verifies_the_signature_before_requesting_manifests() {
         .unwrap();
     let err = env.registry.load("remote").await.unwrap_err();
     assert_eq!(err.code(), "verification_failed");
-    assert_eq!(server.hits(), 1, "no manifest was requested");
+    assert_eq!(
+        server.hits(),
+        2,
+        "only the index and its signature were requested"
+    );
 }
 
 #[tokio::test]
@@ -613,4 +618,56 @@ async fn git_source_without_a_repository_fails_cleanly() {
     assert!(env.registry.load("nogit").await.is_err());
     let checkout = env.root.state_registry().join("nogit.git");
     assert!(!checkout.exists(), "failed clone leaves nothing behind");
+}
+
+/// A git repository holding one signed tool registry.
+fn git_registry(env: &Env, folder: &str, tool: &str, key: &minisign::KeyPair) -> url::Url {
+    let repo = env.scratch(folder);
+    std::fs::create_dir_all(repo.join("tools")).unwrap();
+    std::fs::write(repo.join(format!("tools/{tool}.yaml")), tool_yaml(tool, "")).unwrap();
+    index_registry(&repo, folder, Some(key));
+    git(&repo, &["init", "-q"]);
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "registry"]);
+    url::Url::from_directory_path(&repo).unwrap()
+}
+
+#[tokio::test]
+async fn changing_the_url_of_a_git_registry_fetches_from_the_new_repository() {
+    if !git_available() {
+        eprintln!("git is not installed: skipping");
+        return;
+    }
+    let env = Env::new();
+    let key = new_key();
+    let repo_a = git_registry(&env, "repo-a", "alpha", &key);
+    let repo_b = git_registry(&env, "repo-b", "beta", &key);
+    let config = |url: &url::Url| {
+        let mut config = RegistryConfig::new("moving", RegistrySource::Git(url.clone()));
+        config.public_key = Some(key.pk.to_base64());
+        config
+    };
+
+    env.registry.add(config(&repo_a)).await.unwrap();
+    env.registry.load("moving").await.unwrap();
+    assert!(env.registry.find("alpha").is_some());
+    assert!(env.registry.find("beta").is_none());
+
+    // Same name, another repository with other signed content.
+    env.registry.add(config(&repo_b)).await.unwrap();
+    let job = env.registry.refresh("moving").unwrap();
+    let info = env.wait_job(job).await;
+    assert_eq!(info.state, JobState::Done, "{:?}", info.error);
+    assert_eq!(info.result.unwrap()["source"], "source");
+    assert!(env.registry.find("beta").is_some(), "the new URL is used");
+    assert!(
+        env.registry.find("alpha").is_none(),
+        "nothing of the old repository is served"
+    );
+
+    // Back to A: a plain `load` (not a forced refresh) must not trust the TTL of B either.
+    env.registry.add(config(&repo_a)).await.unwrap();
+    env.registry.load("moving").await.unwrap();
+    assert!(env.registry.find("alpha").is_some());
+    assert!(env.registry.find("beta").is_none());
 }

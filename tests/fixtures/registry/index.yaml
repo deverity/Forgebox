@@ -6,7 +6,7 @@ metadata:
   name: fixture
 spec:
   schema_version: 1
-  updated_at: 2026-10-27T01:56:13Z
+  updated_at: 2026-10-27T02:46:00Z
   tools:
   - id: hello-db
     path: tools/hello-db.yaml
@@ -23,7 +23,3 @@ spec:
   - id: hello-stack
     path: stacks/hello-stack.yaml
     sha256: 762e0ebcce359926958e2f26acb12440c8378f065def79595d4b7cbe7f815723
-  signature:
-    type: minisign
-    key_id: 6F03D19A26B6D573
-    sig: dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIGZvcmdlYm94IHJlZ2lzdHJ5LXNpZ24KUlVSejFiWW1tdEVEYjY5Uk1uTkw4eGZ2ZjNOM2ZhaTEyVXF0cDk1OWNPaU5kYzFGMnpLZDZaZkM4aWI5OG5XYnpiekpERThQNzN5MGg0RVlnTWtpSjhmQUdDNE8rRjlNRFF3PQp0cnVzdGVkIGNvbW1lbnQ6IGZvcmdlYm94IHJlZ2lzdHJ5IGZpeHR1cmUgdXBkYXRlZF9hdCAyMDI2LTEwLTI3VDAxOjU2OjEzWgpNRlllU08vVUN5STJiU2FqOU9yWktOR0t5cFJjWUxtYzJzTklldjVjbGlKclNGN01pdnZWeWJEN1A0WnVzeGVsd3pPbHcyWUxtVlYwOWcyOE5TcWpEdz09Cg==
