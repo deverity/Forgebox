@@ -100,7 +100,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E3-T21 | Gate do E3 (checklist entre telas, smoke live, STATUS) | todo | — | |
 | M2-E5-T1 | Desenho das métricas v1: ADR-0044, docs e contratos aditivos | todo | — | |
 | M2-E5-T2 | Schema de manifesto: `logs[].access` + rotação; manifestos nginx/apache/caddy | todo | — | |
-| M2-E5-T3 | `forge-metrics`: parser de registro de acesso, roteador host->site, normalizador de URI | todo | — | |
+| M2-E5-T3 | `forge-metrics`: parser de registro de acesso, roteador host->site, normalizador de URI | doing | feature/M2-E5-T3-metrics-parser | |
 | M2-E5-T4 | `forge-metrics`: tailer de logs (polling, linhas parciais, rotação, checkpoints, amostragem) | todo | — | |
 | M2-E5-T5 | `forge-metrics`: agregador (camadas HDR, merges exatos, top-K de rotas, erros recentes) | todo | — | |
 | M2-E5-T6 | Atribuição de CPU/RAM por vhost + amostragem de CPU do pool no `forge-fcgi` | todo | — | |
