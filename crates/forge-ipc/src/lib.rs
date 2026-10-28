@@ -12,7 +12,9 @@
 //! * [`auth`]: `state/ipc.token` and the `system.hello` check.
 //! * [`server`]: dispatcher, per-connection tasks, streams with `seq` and
 //!   `resume_from`, built-in `events.*`/`jobs.*`/`fs.*`.
-//! * [`client`]: typed client with retries by `request_id` and resumable subscriptions.
+//! * [`client`]: typed client with retries by `request_id`, resumable subscriptions, an
+//!   observable connection state and, in [`client::local`], the daemon auto-start shared
+//!   by the CLI and the desktop app.
 //!
 //! Remote-ready by construction (ADR-0009): identities are ULIDs, every operation has a
 //! `request_id`, streams have `seq`, `local_only` and roles are in the contracts, and
@@ -31,7 +33,10 @@ pub mod transport;
 pub use forge_core as base;
 
 pub use api::{API_VERSION, ApiError, METHODS};
-pub use client::{CallOptions, Client, ClientError, ClientOptions, Credentials};
+pub use client::{
+    CallOptions, Client, ClientError, ClientOptions, ConnectionState, Credentials,
+    CredentialsProvider,
+};
 pub use server::{Server, ServerConfig, ServerHandle};
 
 #[cfg(test)]

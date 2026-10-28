@@ -876,6 +876,22 @@ pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<
 /// keep the pipe open and `forge status | more` would never see EOF. The environment is the
 /// caller's. Returns the pid; the caller never waits for it.
 pub(crate) fn create_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Result<u32> {
+    create_detached_handle(exe, args, cwd).map(|(pid, _process)| pid)
+}
+
+/// [`create_detached`] keeping the process handle, so the caller can learn how the
+/// process ended (an auto-started daemon that exits at once) without racing a pid that
+/// may already be gone. Dropping the [`ProcessExit`] only stops watching.
+pub(crate) fn create_detached_watched(
+    exe: &Path,
+    args: &[OsString],
+    cwd: &Path,
+) -> Result<ProcessExit> {
+    let (pid, process) = create_detached_handle(exe, args, cwd)?;
+    Ok(ProcessExit::new(pid, Box::new(ExitWatch::new(process)?)))
+}
+
+fn create_detached_handle(exe: &Path, args: &[OsString], cwd: &Path) -> Result<(u32, OwnedHandle)> {
     let app = wide(exe.as_os_str());
     let mut line = command_line(exe, args)?;
     let cwd_wide = wide(cwd.as_os_str());
@@ -929,10 +945,10 @@ pub(crate) fn create_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Resu
         match created {
             Ok(()) => {
                 // SAFETY: CreateProcessW succeeded; both handles are ours to close.
-                drop(unsafe { owned(pi.hProcess) });
+                let process = unsafe { owned(pi.hProcess) };
                 // SAFETY: as above.
                 drop(unsafe { owned(pi.hThread) });
-                return Ok(pi.dwProcessId);
+                return Ok((pi.dwProcessId, process));
             }
             Err(e) if win32_code(&e) == Some(ERROR_ACCESS_DENIED.0) => last = Some(e),
             Err(e) => {

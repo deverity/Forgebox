@@ -2,7 +2,7 @@
 //! waiting calls and notifications to subscriptions, and the `system.hello` handshake.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -39,6 +39,9 @@ pub(crate) struct Conn {
     /// Lock: `ipc.client` (rank 10), never nested with `pending`.
     routes: OrderedMutex<HashMap<SubscriptionId, Arc<SubShared>>>,
     next_id: AtomicU64,
+    /// `system.hello` succeeded: losing the connection from now on wakes the client's
+    /// maintenance task (a failed handshake is reported by the attempt itself).
+    established: AtomicBool,
     pub(crate) closed: CancellationToken,
 }
 
@@ -225,9 +228,13 @@ async fn read_loop(conn: Arc<Conn>, mut stream: FrameStream, lost: Arc<Notify>) 
             Err(err) => tracing::warn!(%err, "invalid frame from the daemon"),
         }
     }
+    // Cancel before waking: the client checks `closed` to never report a lost
+    // connection as connected after the loss was reported.
     conn.closed.cancel();
     conn.fail_all();
-    lost.notify_one();
+    if conn.established.load(Ordering::SeqCst) {
+        lost.notify_one();
+    }
 }
 
 /// Opens a connection and authenticates it.
@@ -253,6 +260,7 @@ pub(crate) async fn connect(
         pending: OrderedMutex::new(LockLevel::IPC_CLIENT, HashMap::new()),
         routes: OrderedMutex::new(LockLevel::IPC_CLIENT, HashMap::new()),
         next_id: AtomicU64::new(1),
+        established: AtomicBool::new(false),
         closed: closed.clone(),
     });
     tokio::spawn(write_loop(sink, outbound_rx, closed.clone()));
@@ -288,5 +296,10 @@ pub(crate) async fn connect(
         )));
     }
     let _ = conn.hello.set(dto);
+    conn.established.store(true, Ordering::SeqCst);
+    if conn.is_closed() {
+        // Lost right after the handshake, before the reader could see `established`.
+        return Err(ClientError::Disconnected);
+    }
     Ok(conn)
 }
