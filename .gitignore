@@ -1,0 +1,9 @@
+/target
+**/node_modules
+apps/desktop/dist
+*.local.toml
+.DS_Store
+Thumbs.db
+*.log
+/tmp-root/
+.vscode/*.local.json

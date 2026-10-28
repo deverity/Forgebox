@@ -1,0 +1,15 @@
+# expect: unknown_template_variable
+# spec.install runs once per version, before any instance exists (M1 gate: the mysql manifest
+# had `{{ instance.name }}` in post_install and failed at install time).
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: install-instance-variable, name: Fixture, category: database }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  install:
+    archive: zip
+    post_install:
+      - mkdir: "{{ paths.logs }}/fixture/{{ instance.name }}"

@@ -1,0 +1,15 @@
+# Fixture of the forge-provider layout tests: a fake tool executable (php.exe) whose
+# version comes from `fake-version.txt` next to it, so two "versions" are the same binary.
+# Independent cargo project (own [workspace], no dependencies), built by the tests into
+# their own target dir (see tests/layout.rs). Not a member of the Forgebox workspace.
+[package]
+name = "fake-tool"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "fake_tool"
+path = "src/main.rs"
+
+[workspace]

@@ -1,0 +1,44 @@
+---
+source: crates/forge-sites/tests/drivers.rs
+expression: "model_json(name, driver, root)"
+---
+{
+  "kind": "php",
+  "hosts": [
+    "laravel.test",
+    "*.laravel.test",
+    "admin.laravel.test"
+  ],
+  "root": "C:/fb-test/www/laravel/public",
+  "index": [
+    "index.php",
+    "index.html"
+  ],
+  "php_upstream": "php_8_3",
+  "try_files": [
+    "$uri",
+    "$uri/",
+    "/index.php?$query_string"
+  ],
+  "static_locations": [],
+  "deny": [
+    "/\\.ht",
+    "/\\.env",
+    "/\\.git"
+  ],
+  "headers": {},
+  "client_max_body": "256M",
+  "ssl": {
+    "cert": "C:/fb-test/certs/sites/laravel.test.crt",
+    "key": "C:/fb-test/certs/sites/laravel.test.key"
+  },
+  "http_redirect": true,
+  "proxy": null,
+  "env": {},
+  "extra": {
+    "apache": null,
+    "nginx": null,
+    "caddy": null
+  },
+  "fallback_resource": "/index.php"
+}

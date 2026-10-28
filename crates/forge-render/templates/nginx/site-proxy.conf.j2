@@ -1,0 +1,58 @@
+{% set s = site %}
+{% set primary = s.hosts | first %}
+{% set p = s.proxy %}
+{% if s.ssl and s.http_redirect %}
+server {
+    listen 127.0.0.1:{{ prefs.http_port }};
+    server_name {{ s.hosts | join(' ') }};
+    return 301 https://$host{% if prefs.https_port != 443 %}:{{ prefs.https_port }}{% endif %}$request_uri;
+}
+
+{% endif %}
+server {
+{% if s.ssl %}
+    listen 127.0.0.1:{{ prefs.https_port }} ssl;
+    http2 on;
+{% else %}
+    listen 127.0.0.1:{{ prefs.http_port }};
+{% endif %}
+    server_name {{ s.hosts | join(' ') }};
+{% if s.ssl %}
+    include snippets/ssl-{{ primary }}.conf;
+{% endif %}
+    client_max_body_size {{ s.client_max_body }};
+{% for name, value in s.headers | items %}
+    add_header {{ name }} {{ value | quote }} always;
+{% endfor %}
+{% if p.start_on_visit %}
+    error_page 502 = /_forgebox/starting;
+{% endif %}
+
+    location / {
+        proxy_pass {{ p.upstream }};
+        proxy_http_version 1.1;
+{% if p.websocket %}
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+{% endif %}
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto {{ 'https' if s.ssl else 'http' }};
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header FORGEBOX_SITE {{ primary }};
+        proxy_read_timeout {{ p.read_timeout_secs }}s;
+        proxy_buffering off;
+    }
+{% if p.start_on_visit %}
+
+    # Page shown while the app behind this proxy is being started (docs/06 section 8).
+    location = /_forgebox/starting {
+        internal;
+        proxy_pass http://127.0.0.1:{{ prefs.internal_port }}/_forgebox/starting?host={{ primary }};
+        proxy_set_header Host $host;
+    }
+{% endif %}
+{% if s.extra.nginx %}
+
+{{ s.extra.nginx | indent(4) }}
+{% endif %}
+}

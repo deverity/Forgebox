@@ -1,0 +1,119 @@
+---
+source: crates/forge-sites/tests/import_laragon.rs
+expression: "plan_json(&lab, &plan)"
+---
+{
+  "source": "<laragon>",
+  "original_root": "C:/laragon",
+  "prefs": {
+    "tld": "test",
+    "document_roots": [
+      "<laragon>/www"
+    ],
+    "active_php": "php-8.1-Win32-vs16-x64",
+    "php_series": "8.1"
+  },
+  "tools": [
+    {
+      "tool_id": "mysql",
+      "tool_name": "MySQL",
+      "version": "8.0.30",
+      "folder": "mysql-8.0.30-winx64",
+      "path": "<laragon>/bin/mysql/mysql-8.0.30-winx64",
+      "variants": {},
+      "canonical_name": "8.0.30",
+      "active": true
+    },
+    {
+      "tool_id": "php",
+      "tool_name": "PHP",
+      "version": "8.1.22",
+      "folder": "php-8.1-Win32-vs16-x64",
+      "path": "<laragon>/bin/php/php-8.1-Win32-vs16-x64",
+      "variants": {
+        "arch": "x64",
+        "compiler": "vs16",
+        "ts": "nts"
+      },
+      "canonical_name": "8.1.22-nts-vs16-x64",
+      "active": true
+    },
+    {
+      "tool_id": "php",
+      "tool_name": "PHP",
+      "version": "8.3.9",
+      "folder": "php-8.3-Win32-vs16-x64",
+      "path": "<laragon>/bin/php/php-8.3-Win32-vs16-x64",
+      "variants": {
+        "arch": "x64",
+        "compiler": "vs16",
+        "ts": "nts"
+      },
+      "canonical_name": "8.3.9-nts-vs16-x64",
+      "active": false
+    }
+  ],
+  "databases": [
+    {
+      "name": "mysql-8",
+      "tool_id": "mysql",
+      "data_dir": "<laragon>/data/mysql-8",
+      "version_folder": "mysql-8.0.30-winx64",
+      "version": "8.0.30"
+    }
+  ],
+  "sites": [
+    {
+      "hosts": [
+        "app-two.test"
+      ],
+      "root": "<laragon>/www/app2",
+      "project_dir": "<laragon>/www/app2",
+      "driver": "generic-php",
+      "secure": false,
+      "php_series": "8.1",
+      "sources": [
+        "etc/apache2/sites-enabled/auto.App_Two.test.conf"
+      ],
+      "notes": [
+        "o host 'App_Two.test' virou 'app-two.test' (hosts só aceitam letras minúsculas, números e '-')",
+        "aliases curinga (*.nome) não são importados"
+      ]
+    },
+    {
+      "hosts": [
+        "app1.test"
+      ],
+      "root": "<laragon>/www/app1/public",
+      "project_dir": "<laragon>/www/app1",
+      "driver": "laravel",
+      "secure": true,
+      "php_series": "8.1",
+      "sources": [
+        "etc/apache2/sites-enabled/auto.app1.test.conf"
+      ],
+      "notes": [
+        "aliases curinga (*.nome) não são importados"
+      ]
+    }
+  ],
+  "parked": [
+    {
+      "dir": "<laragon>/www",
+      "projects": 2,
+      "offer_case_conversion": true
+    }
+  ],
+  "skipped": [
+    {
+      "kind": "tool",
+      "name": "cmder",
+      "reason": "nenhuma versão reconhecida pelos manifestos do registry (outra ferramenta, layout diferente ou versão não identificável)"
+    },
+    {
+      "kind": "vhost",
+      "name": "etc/apache2/sites-enabled/reverse.app1.test.conf",
+      "reason": "arquivo do Apache que não é auto.*.conf (configuração manual); crie o site com `forge site add` ou `forge proxy add`"
+    }
+  ]
+}

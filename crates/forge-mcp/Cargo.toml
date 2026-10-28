@@ -1,0 +1,20 @@
+[package]
+name = "forge-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox MCP server (forge-mcp): exposes the daemon API to AI agents and IDEs."
+publish = false
+
+[[bin]]
+name = "forge-mcp"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-ipc = { path = "../forge-ipc" }

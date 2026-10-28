@@ -1,0 +1,10 @@
+{
+    "name": "forgebox/case-fixture",
+    "description": "Case Mismatch Finder fixture (docs/15 §6): three references whose case differs from the files on disk.",
+    "type": "project",
+    "autoload": {
+        "psr-4": {
+            "App\\": "app/"
+        }
+    }
+}

@@ -1,0 +1,10 @@
+# expect: invalid_icon
+# icon-bytes: 21000
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: icon-too-large, name: Fixture, category: devtool, icon: icon-too-large.svg }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist

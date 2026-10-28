@@ -38,13 +38,15 @@ Regras:
 | Linguagem do motor | **Rust 2024 edition**, stable | Binário único, sem runtime, controle fino de processos/Win32 via crate `windows` |
 | Runtime assíncrono | **tokio** | Supervisão de dezenas de processos, I/O de rede, timers |
 | Persistência | **SQLite** via `rusqlite` (bundled) | Estado, sites, portas, histórico de eventos, cache de registry. Um arquivo, zero servidor |
-| Config do usuário | **YAML** (`serde_yml`) + **TOML** para preferências simples | YAML é o formato do manifesto; preferências em `forgebox.toml` |
+| Tempo | **jiff** (`Timestamp` UTC, RFC 3339 no fio; sem tzdb embutido), re-exportado como `forge_core::Timestamp` ([ADR-0013](adr/0013-jiff-timestamps.md)) | Um único tipo de instante em eventos, SQLite e API; integra com serde e specta |
+| Config do usuário | **YAML** (`serde_yaml_ng`, ver [ADR-0012](adr/0012-yaml-crate-serde-yaml-ng.md)) + **TOML** para preferências simples | YAML é o formato do manifesto; preferências em `forgebox.toml` |
 | Templates de config | **minijinja** | Sintaxe Jinja2 conhecida, sandbox, sem dependências pesadas |
 | HTTP client | **reqwest** (rustls) + resume + mirrors | Downloads grandes com retomada |
-| Extração | `zip`, `sevenz-rust`, `tar` + `flate2`/`xz2` | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz |
+| Verificação | `sha2`, `pgp` (rpgp), `minisign-verify`, Authenticode via `WinVerifyTrust` ([ADR-0017](adr/0017-verify-extract-stack.md)) | Tudo em Rust puro; chaves PGP de nginx/Node embutidas |
+| Extração | `zip`, `sevenz-rust2`, `tar` + `flate2`/`lzma-rust2` ([ADR-0017](adr/0017-verify-extract-stack.md)) | PHP/Apache/Nginx são zip; alguns upstreams em 7z/tar.gz/tar.xz; sem toolchain C |
 | DNS | **hickory-server** | Resolver `*.test` → 127.0.0.1 em `127.0.0.1:53` (ou porta alta + NRPT) |
 | TLS/CA | **rcgen** + `windows::Win32::Security::Cryptography` | CA raiz local e certificados folha; instalação no store `CurrentUser\Root` sem admin |
-| IPC | **JSON-RPC 2.0** sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md)) | Named pipe tem ACL por usuário; mesma API local e remota |
+| IPC | **JSON-RPC 2.0** (NDJSON, `request_id` obrigatório, handshake `system.hello`) sobre trait `Transport`: **Named Pipe** (`\\.\pipe\forgebox`) local; WebSocket+TLS/mTLS e túnel SSH para o modo remoto ([13](13-remote-mode.md), [ADR-0009](adr/0009-remote-ready-ipc.md), [ADR-0015](adr/0015-ipc-protocol.md)) | Named pipe tem ACL por usuário; mesma API local e remota |
 | GUI | **Tauri 2** + WebView2 (presente em todo Win10/11) | Frontend web permite acabamento Apple-ish; bundle ~10 MB; `window-vibrancy` para Mica/Acrylic. Ver [ADR-0002](adr/0002-gui-tauri.md) |
 | Frontend | **React 19 + TypeScript + Vite + Tailwind 4 + Radix Primitives + Motion** | Acessibilidade de graça (Radix), motion com springs, tokens via CSS vars |
 | CLI | **clap** v4 + `tabled`/`indicatif` + saída `--json` | UX de CLI moderna; cada comando tem saída humana e JSON |
@@ -86,7 +88,7 @@ forge-core ← forge-render ← forge-sites
 forge-core ← forge-net, forge-tls
 forge-ipc ← (todos os de domínio, só pelos tipos)
 forge-daemon → todos
-forge-cli, forge-mcp, apps/desktop → forge-ipc apenas (nunca importar crates de domínio diretamente)
+forge-cli, forge-mcp, apps/desktop → forge-ipc apenas (nunca importar crates de domínio diretamente; os tipos base — ids, paths, códigos de erro, Timestamp — vêm do re-export `forge_ipc::base`)
 ```
 
 Essa regra força que **toda** funcionalidade passe pela API, logo GUI e CLI têm paridade por construção.
@@ -120,6 +122,8 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 8. Renderiza configs (só se houver drift) e sobe web servers.
 9. Abre IPC e emite `daemon.ready`.
 
+Implementação (`forge_daemon::boot`, M1-E5-T2, [ADR-0029](adr/0029-daemon-composition.md)): o mutex (`Global\Forgebox.Daemon` ou `Global\Forgebox.Daemon-<chave da raiz>`, a mesma chave do pipe) é criado antes de tudo, e um segundo daemon sai com código 4 em ~50 ms; `ForgeRoot::init` vem logo depois, então os logs. Cada passo que depende do mundo externo tem prazo e, se falhar, vira aviso: catálogo do cache em até 10 s (o carregamento continua em segundo plano; na primeira execução o registry oficial é cadastrado), `discover` em até 20 s, DNS só com `[dns] enabled` (padrão `true`). No passo 6 os servidores web esperam: sobem no 8, depois dos pools, já com os upstreams no primeiro render. Com a API aberta, `state/locks/forgeboxd.lock` descreve o dono (pid, versão, pipe; só informativo, removido na parada). Raiz vazia: ~130–200 ms até o pipe responder.
+
 ### 5.2 Criar site com PHP específico
 `forge site add C:\www\loja --host loja.test --php 8.3 --server nginx --secure`
 1. `forge-sites` detecta driver (Laravel → root `public/`).
@@ -137,6 +141,8 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 5. Re-aponta `bin/php/current` se a versão ativa de CLI era 8.3.
 6. Mantém 8.3.36 por `retention` (padrão: 1 versão anterior) para rollback. Evento `tool.updated`.
 
+Implementação: `forge_provider::update::UpdateEngine` ([05 §4.1](05-providers-and-updates.md), [ADR-0027](adr/0027-update-engine-active-version-rollback-retention.md)); a política padrão do PHP no registry é `auto-patch`. O passo 3 é `update.migrate` (`copy_dir` de `ext/`) + re-render das ações `render` do `post_install` para a versão nova, antes da troca do passo 4 (`PoolSwitcher`, ligado pelo daemon ao `forge_fcgi::Switcher`); a retenção só roda depois da troca.
+
 ### 5.4 Trocar a versão ativa de CLI (Node, PHP, Python...) sem mexer em env-vars
 `forge use node 22`
 1. Valida que `bin/node/22.x.y` existe (oferece instalar).
@@ -146,7 +152,7 @@ Event           tudo que acontece: timestamp, origem, tipo, payload. Alimenta UI
 
 ## 6. Observabilidade
 - Cada operação do daemon gera `Event` persistido (ring buffer de 50k + arquivo).
-- Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `windows` PDH/`GetProcessTimes`).
+- Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `GetProcessTimes`/`GetProcessMemoryInfo`/`GetProcessHandleCount`, sem PDH; somadas por Job da instância, [03 §6](03-engine.md)).
 - Logs das tools são "tailados" sob demanda pelo daemon e enviados por stream para a GUI/CLI (`forge logs nginx -f`).
 - Health de cada Instance: `tcp`, `http`, `command`, `pid`. Resultados alimentam o estado exibido.
 

@@ -1,0 +1,15 @@
+# expect: run_outside_version
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: run-outside-version, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  install:
+    post_install:
+      - run: { command: "C:/Windows/System32/cmd.exe /c del x" }
+      - run: { command: "{{ paths.bin }}/other/1.0/tool.exe --init" }
+      - run: { command: "../../evil.exe" }
+      - run: { command: "%COMSPEC% /c x" }

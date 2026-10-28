@@ -1,0 +1,56 @@
+# cargo-deny: licenças, advisories, bans e origem das fontes.
+# Rodar: cargo deny check
+
+[graph]
+targets = [
+    { triple = "x86_64-pc-windows-msvc" },
+]
+
+[advisories]
+# Vulnerabilidades são sempre erro (chave removida no cargo-deny atual); unmaintained só para deps diretas do workspace.
+unmaintained = "workspace"
+yanked = "warn"
+# Each ignore needs a reason and a revisit condition (ADR-0017).
+ignore = [
+    # rsa (via pgp): Marvin timing side channel in RSA *private key* operations. Forgebox only
+    # verifies PGP signatures with public keys (docs/05 §3); no secret is ever processed.
+    # No patched rsa release exists; revisit when pgp moves to a fixed rsa.
+    { id = "RUSTSEC-2023-0071", reason = "pgp is used for signature verification with public keys only; no RSA private key operations" },
+    # crypto-bigint 0.5 (via pgp -> elliptic-curve 0.13): non constant-time arithmetic. Only
+    # public values (keys, signatures, file digests) reach it. Revisit when pgp moves to
+    # elliptic-curve 0.14 / crypto-bigint >= 0.7.6.
+    { id = "RUSTSEC-2026-0387", reason = "pgp verification handles public data only; timing leaks no secret" },
+]
+
+[licenses]
+# GPL/AGPL/LGPL não estão na lista: não entram no núcleo (ver docs/00 e LICENSE).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "CC0-1.0",
+    "OpenSSL",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Dependências entre crates do workspace são path deps sem versão (ver docs/02 §3).
+allow-wildcard-paths = true
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

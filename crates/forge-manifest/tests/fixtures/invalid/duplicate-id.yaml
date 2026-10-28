@@ -1,0 +1,10 @@
+# expect: duplicate_id, misplaced_manifest
+# with: ../valid/mysql.yaml
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: mysql, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist

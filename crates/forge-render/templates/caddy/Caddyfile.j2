@@ -1,0 +1,18 @@
+{
+    admin 127.0.0.1:2019
+    http_port {{ prefs.http_port }}
+    https_port {{ prefs.https_port }}
+    default_bind 127.0.0.1
+    auto_https disable_redirects
+    skip_install_trust
+}
+
+# Structured access log consumed by forge-metrics (docs/14 section 2).
+(forgebox_log) {
+    log {
+        output file "{{ paths.logs }}/caddy/access.json"
+        format json
+    }
+}
+
+import sites/*

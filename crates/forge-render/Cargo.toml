@@ -1,0 +1,31 @@
+[package]
+name = "forge-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox config renderer: minijinja templates, managed blocks and drift detection."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-core = { path = "../forge-core" }
+minijinja = { workspace = true, features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+# Templates embedded in the binary (docs/03 section 3.1); user overrides live in etc/templates.
+include_dir = { workspace = true }
+# Block hashes for drift detection.
+sha2 = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+pretty_assertions = { workspace = true }
+# Fake certificates so `nginx -t` / `httpd -t` can load the rendered ssl directives.
+rcgen = { workspace = true }

@@ -1,0 +1,44 @@
+//! Windows implementations of the platform traits. The only place with Win32 calls.
+
+mod authenticode;
+mod case_sensitive_fs;
+mod cert_info;
+mod com;
+pub(crate) mod console_ctrl;
+mod dns_policy;
+mod elevation;
+mod file_acl;
+mod firewall;
+mod host;
+mod link_fs;
+mod net_adapters;
+mod net_table;
+pub mod pe_resources;
+pub mod pipe_security;
+mod privileged;
+mod process;
+mod process_stats;
+pub(crate) mod secure_file;
+mod security;
+mod trust_store;
+mod user_env;
+mod vcredist;
+mod window_close;
+mod wmi;
+
+pub use authenticode::WindowsCodeSign;
+pub use case_sensitive_fs::{WindowsCaseSensitiveFs, is_reparse_point};
+pub use dns_policy::WindowsDnsPolicy;
+pub use elevation::{HELPER_RUN_TIMEOUT, WindowsElevation};
+pub use file_acl::WindowsFileAcl;
+pub use host::{NamedMutex, WindowsNetworkCost, long_path, spawn_detached};
+pub use link_fs::WindowsLinkFs;
+pub use net_adapters::WindowsNetAdapters;
+pub use net_table::WindowsPortTable;
+pub use privileged::WindowsPrivilegedOps;
+pub use process::WindowsProcessControl;
+pub use process_stats::WindowsProcessStats;
+pub use security::{current_user_sid, dacl_grants_only, process_is_elevated};
+pub use trust_store::WindowsTrustStore;
+pub use user_env::{BROADCAST_TIMEOUT, WindowsUserEnv};
+pub use vcredist::WindowsRuntimeDeps;

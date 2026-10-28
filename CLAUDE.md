@@ -25,13 +25,13 @@ Ambiente de desenvolvimento PHP (e stacks web em geral) local para Windows, em R
 - Ao divergir de um doc, **atualize o doc no mesmo PR**.
 
 ## Stack
-Rust 2024 stable · tokio · rusqlite · serde_yml · minijinja · reqwest(rustls) · hickory-server · rcgen · windows crate · clap · Tauri 2 + React 19 + TS + Tailwind 4 + Radix + Motion · pnpm.
+Rust 2024 stable · tokio · rusqlite · serde_yaml_ng · minijinja · reqwest(rustls) · hickory-server · rcgen · windows crate · clap · Tauri 2 + React 19 + TS + Tailwind 4 + Radix + Motion · pnpm.
 
 ## Comandos (após M0)
 ```
 cargo build --workspace            cargo test --workspace
 cargo clippy --workspace -- -D warnings
-cargo xtask schema | gen-ts | lint-registry
+cargo xtask schema | gen-ts | lint-registry | registry-index
 pnpm -C apps/desktop dev | build   cargo tauri dev (em apps/desktop)
 ```
 

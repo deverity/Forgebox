@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../../../../registry/schema/extension.v1.json
+# docs/04 §2, complete. Fixture only.
+apiVersion: forgebox.dev/v1
+kind: Extension
+metadata: { id: xdebug, name: Xdebug, category: devtool, icon: xdebug.svg }
+spec:
+  extends: php
+  compat:
+    - { tool: "~8.3", variant: { ts: nts, compiler: vs16 }, version: "3.4.*" }
+    - { tool: "~8.4", variant: { ts: nts, compiler: vs17 }, version: "3.4.*" }
+  source:
+    providers:
+      - type: http
+        url: "https://xdebug.org/files/php_xdebug-{version}-{php_series}-{compiler}-{ts_flag}-x86_64.dll"
+        vars: { ts_flag: { nts: "nts", ts: "" } }
+        checksum: { type: sha256, url: "https://xdebug.org/files/{file}.sha256" }
+    releases:
+      - version: "3.4.1"
+  install:
+    target: "{{ paths.version }}/ext/php_xdebug.dll"
+    post_install:
+      - render: { template: "php/xdebug.ini.j2", to: "{{ paths.etc }}/php/{{ series }}/conf.d/20-xdebug.ini" }
+  config:
+    quick_settings:
+      - { key: mode, ini: "xdebug.mode", type: multi, options: [off, debug, develop, coverage, profile, trace], default: [debug, develop] }
+      - { key: start_with_request, ini: "xdebug.start_with_request", type: select, options: [yes, trigger, no], default: trigger }
+      - { key: client_port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true }
+  toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }

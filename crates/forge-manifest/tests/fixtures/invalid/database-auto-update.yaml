@@ -1,0 +1,11 @@
+# expect: database_auto_update
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: database-auto-update, name: Fixture, category: database }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  update:
+    policy: auto-patch

@@ -1,0 +1,16 @@
+[package]
+name = "forge-metrics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox per-vhost metrics: access log tailing, latency histograms, CPU/RAM attribution."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-core = { path = "../forge-core" }

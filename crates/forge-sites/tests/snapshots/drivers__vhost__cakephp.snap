@@ -1,0 +1,44 @@
+---
+source: crates/forge-sites/tests/drivers.rs
+expression: "model_json(name, driver, root)"
+---
+{
+  "kind": "php",
+  "hosts": [
+    "cakephp.test",
+    "*.cakephp.test",
+    "admin.cakephp.test"
+  ],
+  "root": "C:/fb-test/www/cakephp/webroot",
+  "index": [
+    "index.php",
+    "index.html"
+  ],
+  "php_upstream": "php_8_3",
+  "try_files": [
+    "$uri",
+    "$uri/",
+    "/index.php?$args"
+  ],
+  "static_locations": [],
+  "deny": [
+    "/\\.ht",
+    "/\\.env",
+    "/\\.git"
+  ],
+  "headers": {},
+  "client_max_body": "256M",
+  "ssl": {
+    "cert": "C:/fb-test/certs/sites/cakephp.test.crt",
+    "key": "C:/fb-test/certs/sites/cakephp.test.key"
+  },
+  "http_redirect": true,
+  "proxy": null,
+  "env": {},
+  "extra": {
+    "apache": null,
+    "nginx": null,
+    "caddy": null
+  },
+  "fallback_resource": "/index.php"
+}

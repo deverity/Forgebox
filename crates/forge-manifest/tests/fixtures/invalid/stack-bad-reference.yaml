@@ -1,0 +1,11 @@
+# expect: invalid_reference
+# with: ../valid/mysql.yaml
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata: { id: stack-bad-reference, name: Fixture }
+spec:
+  tools:
+    - { id: mysql, series: "8.4" }
+  site:
+    post_create:
+      - create_database: { instance: postgres/default, name: app }

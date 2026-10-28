@@ -11,7 +11,7 @@ Convenção de IDs: `M<milestone>-E<épico>-T<tarefa>`. Estados: `todo | doing |
 
 - **M0-E1-T1 Workspace Cargo.** Criar `Cargo.toml` (workspace, `resolver = "3"`, `edition = "2024"`), `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `deny.toml`, `.editorconfig`, `.gitignore` (target, node_modules, `apps/desktop/dist`, `*.local.toml`). Crates vazios listados em [02](02-project-structure.md) com `lib.rs` e README de 10 linhas. **Aceite:** `cargo build --workspace` ok; `cargo clippy -- -D warnings` ok; `cargo deny check` ok.
 - **M0-E1-T2 xtask.** `cargo xtask schema` (gera JSON Schema dos manifestos via `schemars`), `cargo xtask gen-ts` (contratos IPC → TS via `specta`), `cargo xtask lint-registry`. **Aceite:** comandos existem e rodam (podem gerar vazio).
-- **M0-E1-T3 CI.** `.github/workflows/ci.yml` (windows-latest: fmt, clippy, test, lint-registry, pnpm build do desktop). **Aceite:** verde no PR.
+- **M0-E1-T3 CI.** `.github/workflows/ci.yml` (windows-latest: fmt, clippy, test, lint-registry, pnpm build do desktop). **Aceite:** verde no PR; localmente: `scripts/ci.ps1` passa; YAML validado.
 - **M0-E1-T4 forge-core base.** `paths.rs` (ForgeRoot com todos os subdiretórios de [08](08-release-layout.md) §2), `ids.rs` (ULID newtypes), `error.rs`, `event.rs` (EventBus com `tokio::sync::broadcast`), `store/` (rusqlite + migrations `0001_init.sql` com tabelas tools, tool_versions, instances, sites, ports, events, update_history, registries), `config.rs` (`forgebox.toml` com defaults). Trait `platform::{ProcessGroup, LinkFs, TrustStore, DnsPolicy, CaseSensitiveFs}` + impl Windows de `LinkFs` (junction via `CreateFile`+`FSCTL_SET_REPARSE_POINT` ou crate `junction`) e de `CaseSensitiveFs` (`NtSetInformationFile`/`FileCaseSensitiveInformation`, [15](15-linux-parity-case-sensitivity.md) §3). **Aceite:** testes de paths e migrations; junction cria/troca/remove em tmp; diretório marcado CS distingue `A.txt` de `a.txt`; `ForgeRoot::init()` cria `www/ etc/ data/ logs/ tmp/` já com a flag.
 - **M0-E1-T5 Esqueleto de concorrência.** `forge-core::actor` (trait `Actor`, mailbox mpsc, `ask()` com timeout obrigatório, supervisor de atores com restart e `catch_unwind`), `forge-core::jobs` (`JobId`, progresso, cancelamento, eventos `job.*`), thread de escrita SQLite com fila. Configuração do runtime tokio e `tokio-console` em dev. **Aceite:** teste de ator travado não afeta outro; teste de pânico reinicia ator; lint CI (`clippy::await_holding_lock` como erro).
 
@@ -52,7 +52,7 @@ Convenção de IDs: `M<milestone>-E<épico>-T<tarefa>`. Estados: `todo | doing |
 - **M1-E5-T4 Helper elevado**: allowlist, validação, log, invocação `runas`. **Aceite:** tentativa de op fora da allowlist falha; teste de validação de parâmetros.
 - **M1-E5-T5 Import do Laragon** (`forge import laragon`). **Aceite:** importa `C:\laragon` do usuário (vhosts `auto.*.conf`, `bin\php\*`, `data\mysql-8`) com relatório.
 
-**Gate M1:** script `scripts/smoke.ps1` faz do zero: instala php@8.4 + nginx + mysql@8.4 + mailpit, cria site Laravel, abre `https://loja.test`, roda `php artisan migrate`, envia e-mail capturado no Mailpit. Tudo via CLI.
+**Gate M1:** script `scripts/smoke.ps1` faz do zero: instala php@8.4 + nginx + mysql@8.4 + mailpit, cria site Laravel, abre `https://loja.test`, roda `php artisan migrate`, envia e-mail capturado no Mailpit. Tudo via CLI. (Uso, modos e resultado: [16](16-smoke-m1.md); correções e decisões: [ADR-0032](adr/0032-m1-gate-integration.md).)
 
 ## M2 — GUI (3 agentes em paralelo após M1-E5-T1)
 - **M2-E1 Shell do app**: Tauri 2 setup, titlebar custom, vibrancy + fallback, sidebar, roteamento, tema light/dark, tokens de [07](07-ui-ux.md), primitives, command palette, tray, autostart, updater. **Aceite:** checklist §11 de [07]; cold start < 800 ms.
@@ -77,7 +77,7 @@ Convenção de IDs: `M<milestone>-E<épico>-T<tarefa>`. Estados: `todo | doing |
 
 ## M6 — Modo remoto ([13](13-remote-mode.md))
 - **M6-E1** `platform::linux` (cgroups, symlinks, systemd-user, `update-ca-certificates`, `systemd-resolved`) + providers Linux (static-php-cli, apt) + build headless `forge-linux-x64.tar.gz`. **Aceite:** smoke M1 roda em Ubuntu 24.04 via CLI.
-- **M6-E2** Transporte SSH (`russh`) até unix socket remoto; perfis `state/remotes/*.toml`; seletor de contexto na GUI; `local_only` tratado; zona `*.<remote>.test` no resolver local. **Aceite:** GUI no Windows cria site e troca PHP em VM Linux; logs e métricas em tempo real.
+- **M6-E2** Transporte SSH (`russh`) até unix socket remoto; perfis em `remotes.toml` + `remotes/<nome>/` na pasta de dados do cliente (ver [13](13-remote-mode.md) §3.2); seletor de contexto na GUI; `local_only` tratado; zona `*.<remote>.test` no resolver local. **Aceite:** GUI no Windows cria site e troca PHP em VM Linux; logs e métricas em tempo real.
 - **M6-E3** WSS + mTLS com pareamento SPAKE2, perfis admin/operator/viewer, revogação, painel web mínimo em `/_forgebox/`. **Aceite:** testes de autorização por método; pareamento expira; fingerprint pinado.
 
 ---

@@ -1,0 +1,33 @@
+[package]
+name = "forge-manifest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox manifest schema (forgebox.yaml), parser, semantic validation and version rules."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# `schemars`: ToolId gets a JSON Schema with the slug pattern.
+forge-core = { path = "../forge-core", features = ["schemars"] }
+humantime = { workspace = true }
+jiff = { workspace = true }
+regex = { workspace = true }
+# `jiff02`: JSON Schema of `updated_at`/`published_at` timestamps.
+schemars = { workspace = true, features = ["jiff02"] }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

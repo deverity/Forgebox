@@ -1,0 +1,17 @@
+data_directory = '{{ (instance.data_dir) | replace("'", "''") }}'
+hba_file = '{{ (paths.etc) | replace("'", "''") }}/postgresql/{{ (instance.name) | replace("'", "''") }}/pg_hba.conf'
+ident_file = '{{ (paths.etc) | replace("'", "''") }}/postgresql/{{ (instance.name) | replace("'", "''") }}/pg_ident.conf'
+listen_addresses = '127.0.0.1'
+port = {{ instance.ports.main }}
+max_connections = {{ instance.settings.max_connections | default('100') }}
+shared_buffers = {{ instance.settings.shared_buffers | default('128MB') }}
+# Development defaults: favor speed over durability.
+synchronous_commit = off
+timezone = 'UTC'
+log_timezone = 'UTC'
+client_encoding = 'UTF8'
+log_destination = 'stderr'
+logging_collector = on
+log_directory = '{{ (paths.logs) | replace("'", "''") }}/postgresql/{{ (instance.name) | replace("'", "''") }}'
+log_filename = 'postgresql.log'
+log_min_duration_statement = {{ instance.settings.log_min_duration_statement | default('-1') }}

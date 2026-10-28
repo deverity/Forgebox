@@ -1,0 +1,140 @@
+[workspace]
+# apps/desktop/src-tauri entra no workspace em M2-E1 (ver docs/02-project-structure.md).
+members = ["crates/*", "xtask"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/deverity/Forgebox"
+# 1.88: required by zip >= 9 and pgp >= 0.18 (ADR-0017).
+rust-version = "1.88"
+authors = ["Forgebox Team"]
+
+[workspace.dependencies]
+tokio = { version = "1.54.1", features = ["full"] }
+# CancellationToken (cooperative job cancellation, docs/03 §7.4).
+tokio-util = "0.7.20"
+# Opt-in tokio-console instrumentation (forge-core feature `console`, needs --cfg tokio_unstable).
+console-subscriber = "0.5.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+# serde_yml está deprecado; ver docs/adr/0012-yaml-crate-serde-yaml-ng.md
+serde_yaml_ng = "0.10.0"
+toml = "1.1.8"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+# Daily-rotated JSON log of the daemon (logs/forgeboxd.log, docs/08 §2); non-blocking writer.
+tracing-appender = "0.2.4"
+ulid = { version = "3.0.0", features = ["serde"] }
+# Timestamps UTC (RFC 3339 no fio). Sem tzdb embutido: só Timestamp é usado no núcleo (ADR-0013).
+jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }
+rusqlite = { version = "0.41.0", features = ["bundled"] }
+schemars = { version = "1.2.3", features = ["derive"] }
+# Manifest durations ("15s", "1h") and version constraints (docs/04, forge-manifest).
+humantime = "2.4.0"
+semver = "1.0.28"
+# Regexes declared in manifests (verify, discover, assets) are compiled by the validator.
+regex = "1.12.3"
+# specta ainda está em release candidate: versão exata para evitar quebra silenciosa.
+specta = "=2.0.0-rc.27"
+specta-typescript = "=0.0.14"
+# Format::serde maps #[serde] attributes; versão exata pelo mesmo motivo do specta (rc).
+specta-serde = "=0.0.14"
+minijinja = "3.0.3"
+clap = { version = "4.6.7", features = ["derive"] }
+# Shell completion scripts (`forge completions`), generated from the clap tree.
+clap_complete = "4.6.11"
+# Human output of `forge` (docs/09): tables, progress bars of jobs and colors that degrade
+# with NO_COLOR / non-terminals. anstream/anstyle are the ones clap already depends on.
+tabled = { version = "0.22.0", default-features = false, features = ["std", "ansi"] }
+indicatif = "0.18.6"
+anstream = "1.0.0"
+anstyle = "1.0.14"
+# features Win32 são adicionadas nos crates que usam a API (somente forge-core/platform/windows).
+windows = "0.62.2"
+# Sem `unstable_admin`: não tentar habilitar SeRestorePrivilege/SeBackupPrivilege no token.
+junction = { version = "2.1.0", default-features = false }
+parking_lot = "0.13.0"
+futures = "0.3.34"
+bytes = "1.12.1"
+# OS CSPRNG for the API token (state/ipc.token).
+getrandom = "0.4.3"
+# fs.read/fs.write binary content.
+base64 = "0.22.1"
+# HTTP client for downloads: rustls only (no native-tls/OpenSSL), system proxy by default.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "system-proxy"] }
+sha2 = "0.11.1"
+# Config rendering (forge-render): embedded templates and fake certs for e2e tests.
+include_dir = "0.7.4"
+# Local CA and site certificates (forge-tls, ADR-0023). Default features (ring, pem); forge-tls
+# adds `x509-parser` to sign leaves with a CA loaded from certs/ca/.
+rcgen = "0.14.10"
+# Reads back what rcgen wrote (validity, SANs, name constraints) in forge-tls.
+x509-parser = "0.18.1"
+# rcgen's validity fields are `time::OffsetDateTime`; forge-tls converts from jiff at the edge.
+time = "0.3.55"
+# SHA-1 certificate thumbprints: the identity Windows uses for roots (forge_core::platform).
+sha1 = "0.10.7"
+# TLS handshake tests of forge-tls (dev only): a local tokio-rustls server and a rustls/webpki
+# client that must enforce the CA name constraints. Same crypto provider as reqwest (aws-lc-rs).
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { version = "0.26.6", default-features = false }
+rustls-webpki = { version = "0.103.16", default-features = false, features = ["std", "aws-lc-rs"] }
+url = "2.5.8"
+# Verification and extraction (forge-provider verify/extract, ADR-0017). Pure Rust only:
+# no C toolchain (sequoia/nettle, liblzma-sys, zstd-sys, bzip2) and no non-allowed licenses.
+pgp = { version = "0.21.0", default-features = false }
+minisign-verify = "0.3.0"
+zip = { version = "9.1.2", default-features = false, features = ["deflate-flate2", "deflate64", "jiff-02"] }
+sevenz-rust2 = { version = "0.20.2", default-features = false }
+tar = "0.4.46"
+flate2 = "1.1.10"
+# Same version as sevenz-rust2 uses: one LZMA implementation for 7z and tar.xz.
+lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz"] }
+# Signs minisign fixtures in tests and the dev registry index in xtask (never shipped); RNG of the same major as pgp (key generation in tests).
+minisign = "0.10.0"
+rand = "0.8.6"
+axum = "0.8.9"
+camino = "1.2.6"
+tempfile = "3.27.0"
+pretty_assertions = "1.4.1"
+insta = "1.49.0"
+# Filesystem watcher of parked directories (forge-sites). CC0-1.0, allowed by deny.toml.
+notify = { version = "8.2.0", default-features = false }
+# DNS server for the local zones (forge-net::dns, ADR-0004). No default features: plain UDP/TCP
+# only (no DNSSEC, DoT/DoH/DoQ, resolver or sqlite store). Its `proto` re-export is the DNS
+# message codec of the server and of the diagnostic client.
+hickory-server = { version = "0.26.3", default-features = false }
+# hickory-server's RequestHandler is an #[async_trait] trait.
+async-trait = "0.1.89"
+# Embeds the application manifest (requireAdministrator) of forgebox-helper.exe from its
+# build.rs: MIT, no dependencies, no rc.exe/mt.exe needed (ADR-0024).
+embed-manifest = "1.5.1"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# Mutex segurado através de .await trava atores; é erro (CLAUDE.md, ADR-0011).
+await_holding_lock = "deny"
+# Same for RefCell borrows and for forge_core::sync::OrderedMutexGuard (listed in clippy.toml).
+await_holding_refcell_ref = "deny"
+await_holding_invalid_type = "deny"
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "allow"
+# With MSRV 1.88 (ADR-0017) clippy suggests let-chains for nested `if let`. The migration is
+# deferred so branches written for 1.85 stay green; remove this with the let-chains cleanup.
+collapsible_if = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+# Mantemos unwind: catch_unwind é usado pelos atores (ADR-0011).
+panic = "unwind"

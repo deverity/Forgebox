@@ -9,7 +9,7 @@ Legenda de status: ✅ nativo Windows, build oficial · 🟡 nativo via terceiro
 | Tool | Status | Provider | Formato | Multi-versão | `current` junction | Observações |
 |---|---|---|---|---|---|---|
 | PHP 7.4 → 8.6 | ✅ | `php-windows` (`releases.json` + archives) | zip | sim, pools simultâneos | sim (CLI) | NTS padrão para FastCGI; TS para `mod_php` legado. Exige VC++ redist vc15/vs16/vs17 |
-| Composer | ✅ | `github-release` (composer/composer `composer.phar`) + `getcomposer.org` sig | phar + `composer.cmd` gerado | sim | sim | Usa o `php` do `current` ou `--php` |
+| Composer | ✅ | `http` (`getcomposer.org/download/<ver>/composer.phar` + `.sha256sum`; versões via `getcomposer.org/versions`) + `.sig` | phar + `composer.cmd` gerado | sim | sim | Usa o `php` do `current` ou `--php` |
 | Node.js 18/20/22/24 | ✅ | `nodejs-dist` (`index.json`, `SHASUMS256.txt`) | zip | sim | sim | Corepack on; npm-global por versão; `.nvmrc` respeitado |
 | Bun | ✅ | `github-release` (oven-sh/bun, `bun-windows-x64.zip`) | zip | sim | sim | |
 | Deno | ✅ | `github-release` (denoland/deno) | zip | sim | sim | |
@@ -47,7 +47,7 @@ Legenda de status: ✅ nativo Windows, build oficial · 🟡 nativo via terceiro
 | Tool | Status | Provider | Observações |
 |---|---|---|---|
 | MongoDB Community 7/8 + mongosh | ✅ | `http` (fastdl.mongodb.org `full.json`) | Zip oficial; Compass como GUI ⚪ |
-| **Redis-compatível: Memurai Developer** | 🟡 | `http` (memurai.com, instalador MSI → extraímos via `msiexec /a` para layout portátil) | API Redis 7.x; licença Developer proíbe produção (ok para dev local). **Padrão para "Redis" no Windows** |
+| **Redis-compatível: Memurai Developer** | 🟡 | `http` (memurai.com, instalador MSI → extraímos via `msiexec /a` para layout portátil; **lacuna:** extração MSI ainda sem tarefa no roadmap (M1-E2-T2 cobre só zip/7z/tar.*), Memurai não é instalável até lá) | API Redis 7.x; licença Developer proíbe produção (ok para dev local). **Padrão para "Redis" no Windows** |
 | redis-windows 5.0.14 (tporadowski) | 🟡 | `github-release` | Legado, sem manutenção desde 2023; mantido para compat de projetos antigos |
 | Redis oficial | 🔵 | `wsl`/`docker` (v2) | Não há build Windows oficial |
 | **Valkey** | 🔵 | `wsl`/`docker` (v2) | Documentação oficial: Windows só via WSL |
@@ -102,7 +102,7 @@ Legenda de status: ✅ nativo Windows, build oficial · 🟡 nativo via terceiro
 |---|---|---|
 | Laravel | PHP 8.4 + Composer + Nginx + MySQL 8.4 + Memurai + Mailpit + Node 22 | `composer create-project`; `.env` preenchido; processes `vite`, `queue`, `schedule` |
 | Laravel + Octane (FrankenPHP) | + FrankenPHP | `runtime: frankenphp`, worker mode |
-| WordPress | PHP 8.3 + Apache (ou Nginx) + MariaDB 11 + Mailpit | Download `latest.zip`, `wp-config.php` gerado, WP-CLI incluso |
+| WordPress | PHP 8.3 + Apache (ou Nginx) + MariaDB 11 + Mailpit | `composer create-project johnpbloch/wordpress` (core em `wordpress/`, que é a raiz do site para o driver), `wp-config.php` gerado pelo driver; WP-CLI só em M3-E1 |
 | Symfony | PHP 8.4 + Composer + Nginx + PostgreSQL 17 + Mailpit | `symfony` CLI opcional |
 | CakePHP | PHP 8.3 + Composer + Apache + MySQL 8.4 | Driver `cakephp` (root `webroot/`) — relevante para os projetos do usuário em `C:\laragon\www` |
 | Drupal / Magento / Craft / Statamic | drivers dedicados | |

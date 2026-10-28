@@ -1,0 +1,35 @@
+[package]
+name = "forge-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox manifest registry: sources, cache, search and discovery of folders in bin."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+forge-manifest = { path = "../forge-manifest" }
+forge-core = { path = "../forge-core" }
+base64 = { workspace = true }
+regex = { workspace = true }
+futures = { workspace = true }
+minisign-verify = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }
+minisign = { workspace = true }
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

@@ -1,0 +1,12 @@
+# expect: invalid_constraint
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: bad-constraint, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  versioning:
+    channels:
+      stable: { constraint: ">=x.y" }

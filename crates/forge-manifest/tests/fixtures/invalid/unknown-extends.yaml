@@ -1,0 +1,15 @@
+# expect: unknown_tool
+apiVersion: forgebox.dev/v1
+kind: Extension
+metadata: { id: unknown-extends, name: Fixture, category: devtool }
+spec:
+  extends: nope
+  source:
+    providers:
+      - type: http
+        url: "https://example.com/ext-{version}.dll"
+        checksum: { url: "{url}.sha256" }
+    releases:
+      - { version: "1.0.0" }
+  install:
+    target: "{{ paths.version }}/ext/ext.dll"

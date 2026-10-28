@@ -1,0 +1,14 @@
+# Fixture of the forge-supervisor integration tests: a fake long-running service.
+# Independent cargo project (own [workspace], no dependencies), built by the tests into
+# their own target dir (see tests/support/mod.rs). Not a member of the Forgebox workspace.
+[package]
+name = "fake-service"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "fake_service"
+path = "src/main.rs"
+
+[workspace]

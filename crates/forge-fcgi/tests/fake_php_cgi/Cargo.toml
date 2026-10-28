@@ -1,0 +1,15 @@
+# Fixture of the forge-fcgi integration tests: a fake `php-cgi.exe -b <ip>:<port>` that
+# speaks FastCGI without PHP. Independent cargo project (own [workspace], no
+# dependencies), built by the tests into their own target dir (see tests/support/mod.rs).
+# Not a member of the Forgebox workspace.
+[package]
+name = "fake-php-cgi"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "fake_php_cgi"
+path = "src/main.rs"
+
+[workspace]

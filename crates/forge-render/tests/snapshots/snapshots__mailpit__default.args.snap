@@ -1,0 +1,10 @@
+---
+source: crates/forge-render/tests/snapshots.rs
+expression: content
+---
+--listen
+127.0.0.1:8025
+--smtp
+127.0.0.1:1025
+--database
+C:/fb-test/data/mailpit/default/mailpit.db

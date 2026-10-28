@@ -1,0 +1,8 @@
+# Shared FastCGI tuning for every PHP site.
+# No fastcgi_keep_conn: php-cgi serves one connection at a time, so a kept-alive idle
+# connection would block new ones to the same worker until keepalive_timeout (docs/06 2.1).
+fastcgi_read_timeout 300s;
+fastcgi_send_timeout 300s;
+fastcgi_buffer_size 16k;
+fastcgi_buffers 16 16k;
+fastcgi_intercept_errors off;

@@ -1,0 +1,38 @@
+[package]
+name = "forge-supervisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox process supervisor: Job Objects, stdio capture, health probes and restart policies."
+publish = false
+
+[lints]
+workspace = true
+
+# Internal helper of forgeboxd that delivers CTRL_BREAK to a supervised process' console
+# (docs/03 §1.3, ADR-0016). Ships next to forgeboxd.exe (docs/08 §2).
+[[bin]]
+name = "forgebox-ctrl"
+path = "src/bin/forgebox-ctrl.rs"
+
+[dependencies]
+forge-core = { path = "../forge-core" }
+# HTTP health probes (docs/03 §1.4): rustls only, proxies disabled per client.
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+# Contract test of the service.* payloads (tests/service_payload_contract.rs); forge-ipc
+# does not depend on forge-supervisor, so there is no cycle.
+forge-ipc = { path = "../forge-ipc" }
+pretty_assertions = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }

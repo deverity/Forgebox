@@ -1,0 +1,30 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox development tasks (cargo xtask)."
+publish = false
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+forge-core = { path = "../crates/forge-core" }
+forge-manifest = { path = "../crates/forge-manifest" }
+forge-ipc = { path = "../crates/forge-ipc" }
+forge-registry = { path = "../crates/forge-registry" }
+minisign = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

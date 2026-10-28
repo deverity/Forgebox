@@ -1,0 +1,44 @@
+---
+source: crates/forge-sites/tests/drivers.rs
+expression: "model_json(name, driver, root)"
+---
+{
+  "kind": "static",
+  "hosts": [
+    "static.test",
+    "*.static.test",
+    "admin.static.test"
+  ],
+  "root": "C:/fb-test/www/static",
+  "index": [
+    "index.html",
+    "index.htm"
+  ],
+  "php_upstream": null,
+  "try_files": [
+    "$uri",
+    "$uri/",
+    "=404"
+  ],
+  "static_locations": [],
+  "deny": [
+    "/\\.ht",
+    "/\\.env",
+    "/\\.git"
+  ],
+  "headers": {},
+  "client_max_body": "256M",
+  "ssl": {
+    "cert": "C:/fb-test/certs/sites/static.test.crt",
+    "key": "C:/fb-test/certs/sites/static.test.key"
+  },
+  "http_redirect": true,
+  "proxy": null,
+  "env": {},
+  "extra": {
+    "apache": null,
+    "nginx": null,
+    "caddy": null
+  },
+  "fallback_resource": null
+}

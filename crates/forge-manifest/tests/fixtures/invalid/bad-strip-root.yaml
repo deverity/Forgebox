@@ -1,0 +1,11 @@
+# expect: schema
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: bad-strip-root, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  install:
+    strip_root: maybe

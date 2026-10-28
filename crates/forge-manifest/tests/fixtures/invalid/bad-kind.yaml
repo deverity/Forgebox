@@ -1,0 +1,9 @@
+# expect: schema
+apiVersion: forgebox.dev/v1
+kind: Gadget
+metadata: { id: bad-kind, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist

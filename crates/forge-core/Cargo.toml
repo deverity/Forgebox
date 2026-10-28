@@ -1,0 +1,103 @@
+[package]
+name = "forge-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox domain base: IDs, errors, events, actors, jobs, SQLite store, runtime, paths and platform traits."
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Derives `specta::Type` for API-facing types (IDs). Enabled by forge-ipc so that
+# `cargo xtask gen-ts` can export them; domain crates do not need it.
+# `specta-typescript` provides the `Number`/`Unknown` markers used as type overrides on
+# u64 and JSON fields of event payloads.
+specta = ["dep:specta", "dep:specta-typescript", "specta/ulid", "specta/jiff"]
+# tokio-console instrumentation for development (`runtime::init_console`). Requires
+# RUSTFLAGS="--cfg tokio_unstable"; the default build does not.
+console = ["dep:console-subscriber"]
+# Implements `schemars::JsonSchema` for `ToolId` (pattern of the slug). Enabled by
+# forge-manifest so that the manifest JSON Schemas (`cargo xtask schema`) describe ids.
+schemars = ["dep:schemars"]
+
+[dependencies]
+console-subscriber = { workspace = true, optional = true }
+futures = { workspace = true }
+jiff = { workspace = true }
+parking_lot = { workspace = true }
+rusqlite = { workspace = true }
+schemars = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Hash of the hosts managed block (same format as forge-render's managed blocks).
+sha2 = { workspace = true }
+# SHA-1 thumbprints of root certificates (platform::trust_store, docs/11 §3).
+sha1 = { workspace = true }
+specta = { workspace = true, features = ["derive"], optional = true }
+specta-typescript = { workspace = true, optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
+
+# Win32 only behind `platform::windows` (CLAUDE.md). `junction` wraps
+# CreateFile + FSCTL_SET_REPARSE_POINT; `windows` gives NtSetInformationFile, the
+# Authenticode APIs (WinVerifyTrust, catalogs, CryptQueryObject), the security
+# descriptors of the API pipe and secret files (DACLs, SIDs), and the process
+# primitives of the supervisor (Job Objects, CreateProcessW, console control events,
+# EnumWindows/PostMessageW), the per-process counters of the metrics sampler
+# (GetProcessTimes, GetProcessMemoryInfo, GetProcessHandleCount), the TCP table of the
+# pre-checks and the port allocator (GetExtendedTcpTable, QueryFullProcessImageNameW), the
+# VC++ runtime detection (RegGetValueW, GetFileVersionInfoW) and the DNS side (M1-E4-T3): UDP
+# table (GetExtendedUdpTable), network adapters (GetAdaptersAddresses), OS resolver queries
+# (DnsQuery_W, NRPT verification), NRPT rules read from
+# the registry, DnsFlushResolverCache (dnsapi.dll, loaded at run time) and the elevated helper
+# launch (ShellExecuteExW "runas", COM initialization); the helper's privileged operations
+# (M1-E5-T4, ADR-0024): WMI static methods (Wmi, Variant, Ole SAFEARRAYs), the firewall COM
+# API (WindowsFirewall), LocalMachine\Root, ReplaceFileW and the embedded manifest reader;
+# the daemon host (M1-E5-T2): single-instance mutex (CreateMutexW), connection cost
+# (INetworkCostManager) and detached start of a new daemon (daemon.restart).
+[target.'cfg(windows)'.dependencies]
+junction = { workspace = true }
+windows = { workspace = true, features = [
+    "Wdk_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_NetworkManagement_Dns",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WindowsFirewall",
+    "Win32_Networking_NetworkListManager",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_WinTrust",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_Wmi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

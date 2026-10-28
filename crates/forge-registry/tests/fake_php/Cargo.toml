@@ -1,0 +1,15 @@
+# Fixture of the forge-registry discover tests: a fake tool executable that imitates the
+# version output of php.exe / nginx.exe. Independent cargo project (own [workspace], no
+# dependencies), built by the tests into their own target dir (see tests/discover.rs).
+# Not a member of the Forgebox workspace.
+[package]
+name = "fake-php"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "fake_php"
+path = "src/main.rs"
+
+[workspace]

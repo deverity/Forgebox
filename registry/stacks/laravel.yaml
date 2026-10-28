@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../schema/stack.v1.json
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata:
+  id: laravel
+  name: Laravel
+  summary: "PHP 8.4 + Nginx + MySQL 8.4 + Memurai + Mailpit + Node 22"
+  description: |
+    Laravel pronto para usar: `composer create-project`, `.env` preenchido com as portas reais
+    do MySQL, Memurai e Mailpit, banco criado e chave gerada.
+  tags: [php, laravel, mysql, redis]
+  icon: laravel.svg
+  homepage: https://laravel.com
+spec:
+  tools:
+    - { id: php, series: "8.4", extensions: [xdebug] }
+    - { id: composer }
+    - { id: nginx }
+    - { id: mysql, series: "8.4", instance: default }
+    - { id: memurai, instance: default }
+    - { id: mailpit, instance: default }
+    - { id: nodejs, series: "22" }
+  site:
+    create_with: "composer create-project laravel/laravel {{ dir }}"
+    driver: laravel
+    php: "8.4"
+    secure: true
+    env_patch:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "{{ instances.mysql.default.ports.main }}"
+      DB_DATABASE: "{{ site.slug }}"
+      DB_USERNAME: root
+      DB_PASSWORD: ""
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "{{ instances.memurai.default.ports.main }}"
+      MAIL_MAILER: smtp
+      MAIL_HOST: 127.0.0.1
+      MAIL_PORT: "{{ instances.mailpit.default.ports.smtp }}"
+    post_create:
+      - create_database: { instance: mysql/default, name: "{{ site.slug }}" }
+      - run: { command: "php artisan key:generate", cwd: "{{ dir }}" }
