@@ -4,7 +4,9 @@
 //! * what the OS resolver answers ([`SystemResolver`], `getaddrinfo`: hosts file, NRPT,
 //!   cache, VPN rules — what browsers see);
 //! * what the Forgebox resolver answers when asked directly ([`super::client`]);
-//! * the NRPT rules (local and Group Policy), the `hosts` file ([`DnsPolicy`]);
+//! * the NRPT table (local and Group Policy rules, whether the Group Policy table exists),
+//!   the `hosts` file and a probe name of the TLD through the OS resolver ([`DnsPolicy`]):
+//!   whether NRPT really routes the TLD, regardless of `hosts`;
 //! * who holds port 53 (UDP and TCP, [`PortTable`]) and which adapters are up
 //!   ([`NetAdapters`]);
 //!
@@ -22,8 +24,7 @@ use forge_core::dns_name;
 use forge_core::error::{ForgeError, Result};
 use forge_core::helper::hosts::{lookup_hosts, read_hosts_block};
 use forge_core::platform::{
-    DnsPolicy, NetAdapter, NetAdapters, NrptRule, NrptSource, PortOwner, PortTable,
-    effective_nrpt_rules,
+    DnsPolicy, NetAdapter, NetAdapters, NrptRule, NrptSource, NrptTable, PortOwner, PortTable,
 };
 use forge_core::runtime::spawn_blocking_timeout;
 use serde::Serialize;
@@ -31,6 +32,7 @@ use serde::Serialize;
 use super::client;
 use super::zones::{ZoneKind, ZoneSet};
 use crate::messages;
+use crate::policy::{PolicyMode, PolicyReason, ProbeResult, probe_name};
 
 /// Default budget of each probe of a diagnosis.
 pub const DIAGNOSE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -73,6 +75,7 @@ pub enum DnsHintCode {
     NrptMissing,
     NrptPointsElsewhere,
     GroupPolicyNrpt,
+    NrptNotFollowed,
     HostsOverride,
     Port53Acrylic,
     Port53Docker,
@@ -94,6 +97,7 @@ impl DnsHintCode {
         Self::NrptMissing,
         Self::NrptPointsElsewhere,
         Self::GroupPolicyNrpt,
+        Self::NrptNotFollowed,
         Self::HostsOverride,
         Self::Port53Acrylic,
         Self::Port53Docker,
@@ -153,12 +157,22 @@ pub struct DnsDiagnosis {
     /// What the Forgebox resolver returns when asked directly.
     pub our_server_resolves_to: Vec<IpAddr>,
     pub our_server_error: Option<String>,
-    /// An effective NRPT rule covers the host.
+    /// An effective NRPT rule covers the host (from the registry).
     pub nrpt_present: bool,
     /// Every NRPT rule covering the host (effective or not).
     pub nrpt_rules: Vec<NrptRule>,
-    /// Group Policy NRPT rules on the machine (they disable every local rule).
+    /// Group Policy NRPT rules on the machine.
     pub group_policy_rules: usize,
+    /// The Group Policy NRPT table exists (even empty): Windows ignores every local rule.
+    pub group_policy_table: bool,
+    /// A probe name of the TLD through the OS resolver (one try, ADR-0033): whether NRPT
+    /// really reaches the Forgebox resolver, whatever `hosts` says about the host.
+    pub probe: Option<ProbeResult>,
+    /// Which path really answers the host: `hosts` (an entry in the file), `nrpt` (an
+    /// effective rule the resolver follows), or `none`.
+    pub mode: PolicyMode,
+    /// Why the host is not answered through NRPT, when that is known.
+    pub mode_reason: Option<PolicyReason>,
     /// The Forgebox block exists in `hosts`.
     pub hosts_block_present: bool,
     /// What `hosts` maps the host to, anywhere in the file.
@@ -297,10 +311,11 @@ pub fn hints(d: &DnsDiagnosis, tld: Option<&str>) -> Vec<DnsHint> {
         }
     }
     let tld = tld.unwrap_or_default();
+    let local_ignored = d.group_policy_table || d.group_policy_rules > 0;
     let effective: Vec<&NrptRule> = d
         .nrpt_rules
         .iter()
-        .filter(|r| d.group_policy_rules == 0 || r.source == NrptSource::GroupPolicy)
+        .filter(|r| !local_ignored || r.source == NrptSource::GroupPolicy)
         .collect();
     if let (Some(rule), Some(server)) = (effective.first(), d.server) {
         if !rule.nameservers.contains(&server.ip()) {
@@ -311,7 +326,7 @@ pub fn hints(d: &DnsDiagnosis, tld: Option<&str>) -> Vec<DnsHint> {
             ));
         }
     }
-    if d.group_policy_rules > 0 && effective.is_empty() {
+    if local_ignored && effective.is_empty() {
         out.push(DnsHint::new(
             C::GroupPolicyNrpt,
             if d.ok {
@@ -319,7 +334,22 @@ pub fn hints(d: &DnsDiagnosis, tld: Option<&str>) -> Vec<DnsHint> {
             } else {
                 Severity::Warning
             },
-            format!("{} regra(s)", d.group_policy_rules),
+            format!("{} regra(s) de política", d.group_policy_rules),
+        ));
+    }
+    if let Some(probe) = d.probe.as_ref().filter(|p| d.nrpt_present && !p.ok) {
+        let detail = probe
+            .error
+            .clone()
+            .unwrap_or_else(|| format!("{} respondeu [{}]", probe.host, join(&probe.resolved)));
+        out.push(DnsHint::new(
+            C::NrptNotFollowed,
+            if d.ok {
+                Severity::Warning
+            } else {
+                Severity::Error
+            },
+            detail,
         ));
     }
     let overrides: Vec<IpAddr> = d
@@ -446,7 +476,32 @@ impl DnsDiagnostics {
         };
         let policy = Arc::clone(&self.policy);
         let rules =
-            spawn_blocking_timeout("reading NRPT rules", timeout, move || policy.nrpt_rules());
+            spawn_blocking_timeout("reading NRPT rules", timeout, move || policy.nrpt_table());
+        let tld = tld_of(zones, &host);
+        let probe = async {
+            let tld = tld.as_deref()?;
+            let started = std::time::Instant::now();
+            let name = probe_name(tld);
+            let policy = Arc::clone(&self.policy);
+            let query = name.clone();
+            let answer = spawn_blocking_timeout("asking the OS resolver", timeout, move || {
+                policy.query_system(&query)
+            })
+            .await;
+            let (resolved, error) = match answer {
+                Ok(ips) => (ips, None),
+                Err(err) => (Vec::new(), Some(err.to_string())),
+            };
+            let ok = !resolved.is_empty() && resolved.iter().all(IpAddr::is_loopback);
+            Some(ProbeResult {
+                host: name,
+                ok,
+                error: error.or_else(|| (!ok).then(|| "no loopback address".to_owned())),
+                resolved,
+                attempts: 1,
+                elapsed: started.elapsed(),
+            })
+        };
         let policy = Arc::clone(&self.policy);
         let hosts = spawn_blocking_timeout("reading hosts", timeout, move || policy.read_hosts());
         let ports = Arc::clone(&self.ports);
@@ -464,8 +519,8 @@ impl DnsDiagnostics {
         let adapters = spawn_blocking_timeout("listing network adapters", timeout, move || {
             adapters.adapters()
         });
-        let (system, ours, rules, hosts, port53, adapters) =
-            tokio::join!(system, ours, rules, hosts, port53, adapters);
+        let (system, ours, rules, hosts, port53, adapters, probe) =
+            tokio::join!(system, ours, rules, hosts, port53, adapters, probe);
 
         let mut read_errors = Vec::new();
         let (system_resolves_to, system_error) = match system {
@@ -477,18 +532,25 @@ impl DnsDiagnostics {
             Some(Err(err)) => (Vec::new(), Some(err.to_string())),
             None => (Vec::new(), None),
         };
-        let rules = rules.unwrap_or_else(|err| {
+        let table = rules.unwrap_or_else(|err| {
             read_errors.push(format!("nrpt: {err}"));
-            Vec::new()
+            NrptTable::default()
         });
-        let group_policy_rules = rules
-            .iter()
-            .filter(|r| r.source == NrptSource::GroupPolicy)
-            .count();
-        let nrpt_present = effective_nrpt_rules(&rules)
+        let group_policy_rules = table.group_policy_rules();
+        let group_policy_table = table.group_policy_table;
+        let nrpt_present = table
+            .effective_rules()
             .iter()
             .any(|r| r.covers(&host) && !r.nameservers.is_empty());
-        let nrpt_rules: Vec<NrptRule> = rules.into_iter().filter(|r| r.covers(&host)).collect();
+        let local_rule = table
+            .rules
+            .iter()
+            .any(|r| r.source == NrptSource::Local && r.covers(&host));
+        let nrpt_rules: Vec<NrptRule> = table
+            .rules
+            .into_iter()
+            .filter(|r| r.covers(&host))
+            .collect();
         let (hosts_block_present, hosts_entries) = match hosts {
             Ok(text) => {
                 let block = match read_hosts_block(&text) {
@@ -529,6 +591,25 @@ impl DnsDiagnostics {
         let ok = !expected.is_empty()
             && !system_resolves_to.is_empty()
             && system_resolves_to.iter().all(|ip| expected.contains(ip));
+        let probe_ok = probe.as_ref().is_none_or(|p| p.ok);
+        let mode = if !hosts_entries.is_empty() {
+            PolicyMode::Hosts
+        } else if nrpt_present && probe_ok {
+            PolicyMode::Nrpt
+        } else {
+            PolicyMode::None
+        };
+        let mode_reason = if mode == PolicyMode::Nrpt {
+            None
+        } else if local_rule && (group_policy_table || group_policy_rules > 0) {
+            Some(PolicyReason::GroupPolicyTablePresent)
+        } else if nrpt_present && !probe_ok {
+            Some(PolicyReason::ResolverProbeFailed)
+        } else if server.is_some_and(|s| s.port() != 53) {
+            Some(PolicyReason::ResolverNotOnPort53)
+        } else {
+            None
+        };
         let mut diagnosis = DnsDiagnosis {
             host: host.clone(),
             expected,
@@ -540,6 +621,10 @@ impl DnsDiagnostics {
             nrpt_present,
             nrpt_rules,
             group_policy_rules,
+            group_policy_table,
+            probe,
+            mode,
+            mode_reason,
             hosts_block_present,
             hosts_entries,
             port53_owner,
@@ -548,7 +633,7 @@ impl DnsDiagnostics {
             ok,
             read_errors,
         };
-        diagnosis.hints = hints(&diagnosis, tld_of(zones, &host).as_deref());
+        diagnosis.hints = hints(&diagnosis, tld.as_deref());
         diagnosis
     }
 }

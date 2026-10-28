@@ -57,7 +57,8 @@ ulid = { workspace = true }
 # (GetProcessTimes, GetProcessMemoryInfo, GetProcessHandleCount), the TCP table of the
 # pre-checks and the port allocator (GetExtendedTcpTable, QueryFullProcessImageNameW), the
 # VC++ runtime detection (RegGetValueW, GetFileVersionInfoW) and the DNS side (M1-E4-T3): UDP
-# table (GetExtendedUdpTable), network adapters (GetAdaptersAddresses), NRPT rules read from
+# table (GetExtendedUdpTable), network adapters (GetAdaptersAddresses), OS resolver queries
+# (DnsQuery_W, NRPT verification), NRPT rules read from
 # the registry, DnsFlushResolverCache (dnsapi.dll, loaded at run time) and the elevated helper
 # launch (ShellExecuteExW "runas", COM initialization); the helper's privileged operations
 # (M1-E5-T4, ADR-0024): WMI static methods (Wmi, Variant, Ole SAFEARRAYs), the firewall COM
@@ -69,6 +70,7 @@ junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
+    "Win32_NetworkManagement_Dns",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
     "Win32_NetworkManagement_WindowsFirewall",

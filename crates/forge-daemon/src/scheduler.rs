@@ -8,13 +8,15 @@
 //! | registry refresh | 12 h ± 10 % | skipped on a metered connection (`metered = "pause"`) and in quiet hours |
 //! | `tmp/` cleanup | 24 h ± 10 % | `tmp/stage/*` older than 24 h, `tmp/downloads/*` older than 7 days |
 //! | port conflicts | 60 s ± 10 % | `port.conflict` once per new intruder |
-//! | site/TLS reactions | on events | `site.*`, `tool.updated|rollback|current_changed`, `tls.renewed|leaf_issued` → pools + web servers re-rendered (debounced 300 ms) |
+//! | site/TLS reactions | on events | `site.*`, `tool.updated|rollback|current_changed`, `tls.renewed|leaf_issued` → pools + web servers re-rendered (debounced 300 ms); while a TLD is in `hosts` mode, the `hosts` block follows the sites and aliases (single flight, ADR-0033) |
 //!
 //! Certificate renewal (`tls` actor), health probes and process metrics (instance
 //! actors) and pool sampling (pool actors) schedule themselves.
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
 use forge_core::Timestamp;
@@ -344,6 +346,7 @@ fn triggers_reconcile(kind: EventKind) -> bool {
 
 async fn react_loop(daemon: Daemon, stop: CancellationToken) {
     let mut events = daemon.bus.subscribe();
+    let hosts_sync = Arc::new(HostsSync::default());
     loop {
         let item = tokio::select! {
             () = stop.cancelled() => return,
@@ -374,7 +377,47 @@ async fn react_loop(daemon: Daemon, stop: CancellationToken) {
         if let Err(err) = daemon.web.reconcile("event").await {
             tracing::warn!(%err, "reconcile after event failed");
         }
+        sync_dns_hosts(&daemon, &hosts_sync);
     }
+}
+
+/// While a TLD is in `hosts` mode (docs/06 §5.4, ADR-0033), the block follows the sites
+/// and aliases. Runs apart from the reaction loop (a write waits for a UAC prompt); one
+/// sync at a time, and a change during a sync runs one more.
+fn sync_dns_hosts(daemon: &Daemon, state: &Arc<HostsSync>) {
+    if !daemon.config().dns.enabled || daemon.dns_policy.hosts_mode_tlds().is_empty() {
+        return;
+    }
+    state.dirty.store(true, Ordering::SeqCst);
+    if state.running.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let daemon = daemon.clone();
+    let state = Arc::clone(state);
+    tokio::spawn(async move {
+        while state.dirty.swap(false, Ordering::SeqCst) {
+            if daemon.shutdown.is_requested() {
+                break;
+            }
+            let synced = match crate::api::net::site_hosts(&daemon).await {
+                Ok(hosts) => daemon.dns_policy.sync_sites(&hosts).await,
+                Err(err) => Err(err),
+            };
+            match synced {
+                Ok(true) => tracing::info!("dns: hosts block updated for the sites"),
+                Ok(false) => {}
+                Err(err) => tracing::warn!(%err, "dns: hosts block not updated"),
+            }
+        }
+        state.running.store(false, Ordering::SeqCst);
+    });
+}
+
+/// Single-flight flag of [`sync_dns_hosts`].
+#[derive(Debug, Default)]
+struct HostsSync {
+    running: AtomicBool,
+    dirty: AtomicBool,
 }
 
 #[cfg(test)]

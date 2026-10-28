@@ -13,6 +13,7 @@ use forge_core::platform::{NetAdapter, NrptSource, PortOwner, PortProto};
 use forge_net::dns::{
     DnsDiagnosis, DnsDiagnostics, DnsHintCode, DnsServer, DnsServerConfig, Severity, ZoneSet,
 };
+use forge_net::policy::{PolicyMode, PolicyReason};
 use support::{FakeAdapters, FakePorts, FakeResolver, MemoryPolicy};
 
 const V4: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
@@ -93,6 +94,10 @@ async fn healthy_resolution() {
     assert_eq!(d.nrpt_rules.len(), 1);
     assert!(!d.hosts_block_present);
     assert!(d.read_errors.is_empty());
+    assert!(!d.group_policy_table);
+    assert!(d.probe.as_ref().unwrap().ok, "{:?}", d.probe);
+    assert_eq!(d.mode, PolicyMode::Nrpt);
+    assert_eq!(d.mode_reason, None);
     // Only the high test port is worth mentioning.
     assert_eq!(codes(&d), vec![DnsHintCode::ServerNotOnPort53]);
     assert!(d.hints[0].message.contains(&addr.to_string()));
@@ -200,6 +205,92 @@ async fn group_policy_rules_and_hosts_overrides() {
         !codes.contains(&DnsHintCode::NrptMissing),
         "hosts has an entry"
     );
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn an_empty_group_policy_table_hides_the_local_rule() {
+    // The M1 gate machine: the Forgebox rule is in the local table, the corporate GPO key
+    // exists with no rule, the OS resolver sends .test to the corporate DNS (ADR-0033).
+    let (server, addr) = server().await;
+    let sources = Sources {
+        policy: MemoryPolicy::accepting()
+            .with_rule(NrptSource::Local, ".test", "127.0.0.1")
+            .with_group_policy_table(),
+        system: Err("NXDOMAIN".into()),
+        ..Sources::default()
+    };
+    let d = diagnose(sources, "loja.test", Some(addr)).await;
+    assert!(!d.ok);
+    assert!(!d.nrpt_present);
+    assert!(d.group_policy_table);
+    assert_eq!(d.group_policy_rules, 0);
+    assert!(!d.probe.as_ref().unwrap().ok);
+    assert_eq!(d.mode, PolicyMode::None);
+    assert_eq!(d.mode_reason, Some(PolicyReason::GroupPolicyTablePresent));
+    let hint = d
+        .hints
+        .iter()
+        .find(|h| h.code == DnsHintCode::GroupPolicyNrpt)
+        .expect("group policy hint");
+    assert_eq!(hint.severity, Severity::Warning);
+    assert!(hint.message.contains("mesmo vazia"), "{}", hint.message);
+    assert!(
+        !codes(&d).contains(&DnsHintCode::NrptNotFollowed),
+        "the rule is not effective, nothing to follow"
+    );
+    let json = serde_json::to_value(&d).unwrap();
+    assert_eq!(json["mode"], "none");
+    assert_eq!(json["mode_reason"], "group_policy_table_present");
+
+    // With the hosts fallback in place the host resolves through hosts.
+    let sources = Sources {
+        policy: MemoryPolicy::accepting()
+            .with_rule(NrptSource::Local, ".test", "127.0.0.1")
+            .with_group_policy_table()
+            .with_hosts_line(
+                "127.0.0.1 loja.test
+::1 loja.test
+",
+            ),
+        ..Sources::default()
+    };
+    let d = diagnose(sources, "loja.test", Some(addr)).await;
+    assert!(d.ok);
+    assert_eq!(d.mode, PolicyMode::Hosts);
+    assert_eq!(d.mode_reason, Some(PolicyReason::GroupPolicyTablePresent));
+    let hint = d
+        .hints
+        .iter()
+        .find(|h| h.code == DnsHintCode::GroupPolicyNrpt)
+        .unwrap();
+    assert_eq!(hint.severity, Severity::Info);
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_rule_the_resolver_does_not_follow() {
+    // The rule is effective in the registry but a VPN/agent answers DNS itself.
+    let (server, addr) = server().await;
+    let sources = Sources {
+        policy: MemoryPolicy::accepting()
+            .with_rule(NrptSource::Local, ".test", "127.0.0.1")
+            .intercepting(Err("NXDOMAIN".into())),
+        system: Err("NXDOMAIN".into()),
+        ..Sources::default()
+    };
+    let d = diagnose(sources, "loja.test", Some(addr)).await;
+    assert!(!d.ok);
+    assert!(d.nrpt_present);
+    assert_eq!(d.mode, PolicyMode::None);
+    assert_eq!(d.mode_reason, Some(PolicyReason::ResolverProbeFailed));
+    let hint = d
+        .hints
+        .iter()
+        .find(|h| h.code == DnsHintCode::NrptNotFollowed)
+        .expect("not followed");
+    assert_eq!(hint.severity, Severity::Error);
+    assert!(hint.detail.contains("NXDOMAIN"), "{}", hint.detail);
     server.shutdown().await;
 }
 

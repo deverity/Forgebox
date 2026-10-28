@@ -15,7 +15,8 @@ use forge_core::helper::{
 use forge_core::ids::RequestId;
 use forge_core::platform::{
     CaseSensitiveFs, CaseSensitivitySupport, CertThumbprint, CertificateInfo, CodeSign,
-    CodeSignInfo, CodeSignKind, FirewallRuleSpec, NrptRule, NrptSource, PrivilegedOps, StagedFile,
+    CodeSignInfo, CodeSignKind, FirewallRuleSpec, NrptRule, NrptSource, NrptTable, PrivilegedOps,
+    StagedFile,
 };
 use pretty_assertions::assert_eq;
 use sha2::{Digest, Sha256};
@@ -29,6 +30,8 @@ use super::*;
 #[derive(Debug, Default)]
 struct State {
     rules: Vec<NrptRule>,
+    /// The Group Policy NRPT key exists (even without rules).
+    group_policy_table: bool,
     machine_root: Vec<CertificateInfo>,
     firewall: Vec<FirewallRuleSpec>,
     defender: BTreeSet<PathBuf>,
@@ -84,8 +87,12 @@ impl PrivilegedOps for FakeSys {
     fn is_elevated(&self) -> Result<bool> {
         Ok(self.elevated)
     }
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
-        Ok(self.state.lock().unwrap().rules.clone())
+    fn nrpt_table(&self) -> Result<NrptTable> {
+        let s = self.state.lock().unwrap();
+        Ok(NrptTable {
+            rules: s.rules.clone(),
+            group_policy_table: s.group_policy_table,
+        })
     }
     fn nrpt_add(&self, namespace: &str, nameserver: IpAddr, comment: &str) -> Result<()> {
         let mut s = self.state.lock().unwrap();
@@ -920,6 +927,28 @@ fn nrpt_rules_are_replaced_only_when_they_are_ours() {
         false,
     );
     assert!(none.message.contains("no Forgebox"), "{}", none.message);
+}
+
+#[test]
+fn an_empty_group_policy_table_makes_the_local_rule_ineffective() {
+    // The M1 gate machine: the corporate GPO key exists with no rule in it (ADR-0033).
+    let fx = Fx::new();
+    fx.sys.state.lock().unwrap().group_policy_table = true;
+    let add = HelperOp::NrptAdd {
+        namespace: ".test".into(),
+        nameserver: "127.0.0.1".parse().unwrap(),
+    };
+    let plan = fx.ok(add.clone(), true);
+    assert_eq!(plan.details["group_policy_rules"], 0);
+    assert_eq!(plan.details["group_policy_table"], true);
+    assert_eq!(plan.details["effective"], false);
+    assert_eq!(plan.details["reason"], "group_policy_table_present");
+
+    // Without the key: effective, no reason.
+    fx.sys.state.lock().unwrap().group_policy_table = false;
+    let plan = fx.ok(add, true);
+    assert_eq!(plan.details["effective"], true);
+    assert_eq!(plan.details["reason"], serde_json::Value::Null);
 }
 
 #[test]

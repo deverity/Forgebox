@@ -19,7 +19,7 @@ use serde::Serialize;
 #[cfg(not(windows))]
 use crate::error::ForgeError;
 use crate::error::Result;
-use crate::platform::{CertThumbprint, NrptRule};
+use crate::platform::{CertThumbprint, NrptTable};
 
 /// An inbound TCP allow rule (`firewall.add`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -120,8 +120,9 @@ pub trait PrivilegedOps: Send + Sync + fmt::Debug {
     /// Whether this process runs with an elevated (administrator) token.
     fn is_elevated(&self) -> Result<bool>;
 
-    /// Every NRPT rule, local and Group Policy (no elevation).
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>>;
+    /// The NRPT table: every rule, local and Group Policy, and whether the Group Policy
+    /// table exists (no elevation).
+    fn nrpt_table(&self) -> Result<NrptTable>;
 
     /// Adds a local NRPT rule sending `namespace` to `nameserver`, tagged with `comment`.
     fn nrpt_add(&self, namespace: &str, nameserver: IpAddr, comment: &str) -> Result<()>;
@@ -206,8 +207,8 @@ impl PrivilegedOps for Unsupported {
     fn is_elevated(&self) -> Result<bool> {
         unsupported()
     }
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
-        Ok(Vec::new())
+    fn nrpt_table(&self) -> Result<NrptTable> {
+        Ok(NrptTable::default())
     }
     fn nrpt_add(&self, _: &str, _: IpAddr, _: &str) -> Result<()> {
         unsupported()

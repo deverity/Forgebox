@@ -238,7 +238,7 @@ async fn start_dns(dns: &DnsServer, policy: &DnsPolicyManager, config: &ForgeCon
     match tokio::time::timeout(POLICY_CHECK, policy.status(&config.tlds(), nameserver)).await {
         Ok(Ok(states)) => {
             for state in states {
-                tracing::info!(tld = %state.tld, policy = ?state.state, "dns: policy");
+                tracing::info!(tld = %state.tld, policy = ?state.state, mode = ?state.state.mode(), reason = ?state.reason, probe_ok = ?state.probe.as_ref().map(|p| p.ok), "dns: policy");
             }
         }
         Ok(Err(err)) => tracing::warn!(%err, "dns: policy not readable"),

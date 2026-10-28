@@ -18,7 +18,9 @@ pub mod policy;
 pub mod ports;
 
 pub use dns::{DnsDiagnostics, DnsServer, DnsServerConfig, DnsStats, ZoneSet};
-pub use policy::{DnsPolicyManager, EnableRequest, PolicyState, TldPolicy};
+pub use policy::{
+    DnsPolicyManager, EnableRequest, PolicyMode, PolicyReason, PolicyState, ProbeResult, TldPolicy,
+};
 pub use ports::{AllocatorOptions, PortAllocator, PortConflict};
 
 #[cfg(test)]

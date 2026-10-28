@@ -27,7 +27,10 @@ pub fn hint(code: DnsHintCode, detail: &str) -> String {
             "A regra NRPT de {detail}, não para o resolvedor do Forgebox. Rode `forge dns enable` para corrigi-la."
         ),
         DnsHintCode::GroupPolicyNrpt => format!(
-            "Há regras NRPT de política de grupo ({detail}); enquanto existirem, o Windows ignora as regras locais. Comum com VPN corporativa ou DirectAccess."
+            "A tabela NRPT de política de grupo existe ({detail}); enquanto ela existir, mesmo vazia, o Windows ignora as regras locais e o Forgebox usa o arquivo hosts. Comum em máquinas de domínio, com VPN corporativa ou DirectAccess."
+        ),
+        DnsHintCode::NrptNotFollowed => format!(
+            "A regra NRPT está no registro, mas o resolvedor do Windows não a segue ({detail}): uma VPN ou agente de segurança pode estar interceptando o DNS. Rode `forge dns enable` para passar ao arquivo hosts."
         ),
         DnsHintCode::HostsOverride => format!(
             "O arquivo hosts mapeia este nome para {detail} fora do bloco do Forgebox; essa linha vence o DNS."
