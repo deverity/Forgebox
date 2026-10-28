@@ -22,6 +22,8 @@ tokio = { workspace = true }
 # CancellationToken of the hickory server (same tokio-util as hickory-server).
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+# Random probe names of the NRPT verification (forgebox-probe-<ulid>.test, ADR-0033).
+ulid = { workspace = true }
 
 [dev-dependencies]
 # Contract test only: dns.policy_applied / helper.op payloads match forge_ipc::api::events.

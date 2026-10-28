@@ -235,10 +235,16 @@ async fn start_dns(dns: &DnsServer, policy: &DnsPolicyManager, config: &ForgeCon
             None
         }
     };
+    // The hosts fallback chosen by an earlier `forge dns enable` (ADR-0033): armed again
+    // before the first status, so site changes keep reaching hosts even when no block
+    // was written yet. The scheduler syncs the block with the sites once at start.
+    if let Err(err) = policy.restore().await {
+        tracing::warn!(%err, "dns: saved hosts mode not readable");
+    }
     match tokio::time::timeout(POLICY_CHECK, policy.status(&config.tlds(), nameserver)).await {
         Ok(Ok(states)) => {
             for state in states {
-                tracing::info!(tld = %state.tld, policy = ?state.state, "dns: policy");
+                tracing::info!(tld = %state.tld, policy = ?state.state, mode = ?state.state.mode(), reason = ?state.reason, probe_ok = ?state.probe.as_ref().map(|p| p.ok), "dns: policy");
             }
         }
         Ok(Err(err)) => tracing::warn!(%err, "dns: policy not readable"),
@@ -366,6 +372,7 @@ pub async fn boot(
         services.clone(),
         tls.clone(),
         Arc::clone(&config_fn),
+        platform.shared_case_sensitive_fs(),
     );
     let late = LateListener::default();
     let pools = PoolManager::new(
@@ -428,7 +435,9 @@ pub async fn boot(
         ZoneSet::from_config(&config)?,
     );
     let dns_os_policy = platform::dns_policy(helper);
-    let dns_policy = DnsPolicyManager::new(Arc::clone(&dns_os_policy)).with_events(bus.clone());
+    let dns_policy = DnsPolicyManager::new(Arc::clone(&dns_os_policy))
+        .with_events(bus.clone())
+        .with_state_file(root.state_dns_policy());
     start_dns(&dns, &dns_policy, &config).await;
 
     let endpoint = forge_ipc::transport::local_transport(&root).endpoint();

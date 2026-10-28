@@ -156,6 +156,18 @@ pub async fn run_checks(daemon: &Daemon, filters: &[String]) -> Vec<CheckDto> {
             Ok(Ok(states)) => {
                 for state in states {
                     let ok = !matches!(state.state, forge_net::PolicyState::NotApplied);
+                    let mut detail = format!(
+                        "{} → {}",
+                        state.tld,
+                        match state.state.mode() {
+                            forge_net::PolicyMode::Nrpt => "nrpt",
+                            forge_net::PolicyMode::Hosts => "hosts",
+                            forge_net::PolicyMode::None => "none",
+                        }
+                    );
+                    if let Some(reason) = state.reason {
+                        detail.push_str(&format!(" ({})", reason.as_str()));
+                    }
                     out.push(check(
                         &format!("dns.policy{}", state.tld),
                         if ok {
@@ -163,7 +175,7 @@ pub async fn run_checks(daemon: &Daemon, filters: &[String]) -> Vec<CheckDto> {
                         } else {
                             CheckStatus::Warn
                         },
-                        format!("{} → {:?}", state.tld, state.state),
+                        detail,
                         (!ok).then_some("forge dns enable"),
                     ));
                 }

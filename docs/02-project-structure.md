@@ -189,7 +189,7 @@ Forgebox/
 │   │       ├── dns/              # zones.rs (ZoneSet: TLDs locais, zonas remotas, NXDOMAIN fora; sem upstream),
 │   │       │                     #   server.rs (DnsServer: hickory UDP+TCP, ator dns-server, fallback 127.0.0.53:53),
 │   │       │                     #   client.rs (consulta direta UDP/TCP), diagnose.rs (DnsDiagnostics → DnsDiagnosis + hints)
-│   │       ├── policy.rs         # DnsPolicyManager: NRPT via helper, hosts fallback, flush, eventos dns.policy_applied/helper.op
+│   │       ├── policy.rs         # DnsPolicyManager: NRPT via helper verificada por sonda, hosts fallback persistido em state/dns-policy.json (ADR-0033), fila de vez enable/disable/sync, flush, eventos dns.policy_applied/helper.op
 │   │       ├── messages.rs       # textos pt-BR das dicas de diagnóstico
 │   │       └── firewall.rs       # regras via helper (netsh/API) só se o usuário quiser acesso LAN
 │   ├── forge-tls/                # ADR-0023

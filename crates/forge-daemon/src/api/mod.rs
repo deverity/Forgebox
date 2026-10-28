@@ -10,7 +10,7 @@ pub mod convert;
 mod daemon_api;
 mod fs_parity;
 mod logs;
-mod net;
+pub(crate) mod net;
 pub mod not_implemented;
 mod php;
 mod registry;

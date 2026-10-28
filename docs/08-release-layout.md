@@ -107,6 +107,7 @@ C:\Forgebox\
 ├── state\                        # ESTADO INTERNO (não editar à mão)
 │   ├── forgebox.db               # SQLite: tools, versões, instâncias, sites, portas, eventos, histórico de updates
 │   ├── ipc.token                 # token da API local (ACL: só o usuário)
+│   ├── dns-policy.json           # TLDs em modo hosts (fallback da NRPT, ADR-0033); gravado por dns enable/disable
 │   ├── registry\                 # cache do(s) registry(ies) + índices de providers
 │   └── locks\                    # forgeboxd.lock (pid, versão e pipe do daemon em execução; removido na parada) + arquivos de troca do helper
 │

@@ -243,6 +243,10 @@ impl ForgeRoot {
     pub fn state_locks(&self) -> PathBuf {
         self.join(&["state", "locks"])
     }
+    /// `state/dns-policy.json`: TLDs routed by the `hosts` block (ADR-0033).
+    pub fn state_dns_policy(&self) -> PathBuf {
+        self.join(&["state", "dns-policy.json"])
+    }
     /// `tmp/`: ephemeral, cleaned automatically.
     pub fn tmp(&self) -> PathBuf {
         self.join(&["tmp"])

@@ -132,11 +132,20 @@ async fn status_latencies(client: &Client) -> (Duration, Duration) {
     (services, started.elapsed())
 }
 
+/// Last count the fake wrote. It rewrites the file with `fs::write` (truncate, then
+/// write), so a read can land in between and see it empty: that is retried, not taken
+/// for 0 (which made the rate subtractions underflow under a loaded `cargo test`).
 fn read_progress(dir: &Path) -> u64 {
-    std::fs::read_to_string(dir.join("progress.txt"))
-        .ok()
-        .and_then(|t| t.trim().parse().ok())
-        .unwrap_or(0)
+    for _ in 0..200 {
+        let count = std::fs::read_to_string(dir.join("progress.txt"))
+            .ok()
+            .and_then(|t| t.trim().parse().ok());
+        if let Some(count) = count {
+            return count;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    0
 }
 
 // ------------------------------------------------------------------ stuck service

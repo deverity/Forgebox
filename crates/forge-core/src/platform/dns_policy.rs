@@ -1,8 +1,9 @@
 //! How the OS resolver reaches the Forgebox resolver (docs/06 §5, ADR-0004).
 //!
-//! * Reading needs no elevation: the NRPT rules (Windows: the registry keys behind
-//!   `Get-DnsClientNrptRule`, local and Group Policy), the `hosts` file, and flushing the
-//!   resolver cache.
+//! * Reading needs no elevation: the NRPT table (Windows: the registry keys behind
+//!   `Get-DnsClientNrptRule`, local and Group Policy, and whether the Group Policy table
+//!   exists at all), the `hosts` file, asking the OS resolver ([`DnsPolicy::query_system`])
+//!   and flushing the resolver cache.
 //! * Changing goes through `forgebox-helper` ([`crate::helper::HelperClient`]):
 //!   `nrpt.add`/`nrpt.remove` and `hosts.set_block`.
 //!
@@ -32,8 +33,9 @@ pub const FORGEBOX_NRPT_COMMENT: &str = "Forgebox";
 pub enum NrptSource {
     /// Local table (`Add-DnsClientNrptRule` without `-GpoName`; what the helper writes).
     Local,
-    /// Group Policy (corporate policy, DirectAccess, some VPN clients). While any rule of
-    /// this kind exists, Windows ignores every local rule.
+    /// Group Policy (corporate policy, DirectAccess, some VPN clients). While the Group
+    /// Policy table exists (even empty, see [`NrptTable::group_policy_table`]), Windows
+    /// ignores every local rule.
     GroupPolicy,
 }
 
@@ -72,45 +74,164 @@ impl NrptRule {
     }
 }
 
-/// State of the OS resolver policy for a TLD.
+/// The whole Name Resolution Policy Table as Windows sees it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NrptTable {
+    /// Every rule, local and Group Policy.
+    pub rules: Vec<NrptRule>,
+    /// The Group Policy table exists (Windows:
+    /// `HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\DnsPolicyConfig`), **even
+    /// with no rule in it**: a corporate GPO that once touched the NRPT leaves the key
+    /// behind, and while it exists the DNS client ignores the whole local table
+    /// (`Get-DnsClientNrptPolicy` comes back empty). Found on the M1 gate machine
+    /// (ADR-0033).
+    pub group_policy_table: bool,
+}
+
+impl NrptTable {
+    /// Local rules only, no Group Policy table.
+    pub fn local(rules: Vec<NrptRule>) -> Self {
+        Self {
+            rules,
+            group_policy_table: false,
+        }
+    }
+
+    /// Number of Group Policy rules.
+    pub fn group_policy_rules(&self) -> usize {
+        self.rules
+            .iter()
+            .filter(|r| r.source == NrptSource::GroupPolicy)
+            .count()
+    }
+
+    /// Why Windows ignores the local rules, if it does.
+    pub fn local_rules_ignored(&self) -> Option<NrptIneffective> {
+        (self.group_policy_table || self.group_policy_rules() > 0)
+            .then_some(NrptIneffective::GroupPolicyTablePresent)
+    }
+
+    /// The rules Windows actually uses: only the Group Policy ones while the Group Policy
+    /// table exists.
+    pub fn effective_rules(&self) -> Vec<&NrptRule> {
+        let gpo = self.local_rules_ignored().is_some();
+        self.rules
+            .iter()
+            .filter(|r| !gpo || r.source == NrptSource::GroupPolicy)
+            .collect()
+    }
+}
+
+/// Why a local NRPT rule present in the registry routes nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NrptIneffective {
+    /// The Group Policy NRPT table exists (with or without rules): Windows ignores every
+    /// local rule.
+    GroupPolicyTablePresent,
+}
+
+impl NrptIneffective {
+    /// Wire value (`group_policy_table_present`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::GroupPolicyTablePresent => "group_policy_table_present",
+        }
+    }
+}
+
+impl fmt::Display for NrptIneffective {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// State of the OS resolver policy for a TLD, as written in the registry. Whether the
+/// resolver really follows it is checked by asking it ([`DnsPolicy::query_system`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DnsPolicyStatus {
-    /// Queries for the TLD go to `nameserver`.
+    /// An effective rule sends queries for the TLD to `nameserver`.
     Applied {
         nameserver: IpAddr,
+    },
+    /// A local rule sends the TLD to `nameserver`, but Windows ignores it.
+    Ignored {
+        nameserver: IpAddr,
+        reason: NrptIneffective,
     },
     NotApplied,
 }
 
-/// The rules Windows actually uses: only the Group Policy ones when there is any.
-pub fn effective_nrpt_rules(rules: &[NrptRule]) -> Vec<&NrptRule> {
-    let gpo = rules.iter().any(|r| r.source == NrptSource::GroupPolicy);
-    rules
+/// What `nrpt.add` reported (helper details `effective` / `reason`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct NrptApplied {
+    /// Whether Windows follows the local rule; `None` when the helper did not say.
+    pub effective: Option<bool>,
+    pub reason: Option<NrptIneffective>,
+}
+
+impl NrptApplied {
+    /// From the helper's `details` (`{"effective": false, "reason": "..."}`).
+    pub fn from_details(details: &serde_json::Value) -> Self {
+        Self {
+            effective: details
+                .get("effective")
+                .and_then(serde_json::Value::as_bool),
+            reason: details
+                .get("reason")
+                .and_then(|r| serde_json::from_value(r.clone()).ok()),
+        }
+    }
+}
+
+/// The rules Windows actually uses ([`NrptTable::effective_rules`]).
+pub fn effective_nrpt_rules(table: &NrptTable) -> Vec<&NrptRule> {
+    table.effective_rules()
+}
+
+/// [`DnsPolicy::status`] over an already read table.
+pub fn policy_status(table: &NrptTable, tld: &str) -> DnsPolicyStatus {
+    let tld = tld.to_ascii_lowercase();
+    let routes = |r: &&NrptRule| r.namespaces.contains(&tld) && !r.nameservers.is_empty();
+    if let Some(rule) = table.effective_rules().into_iter().find(routes) {
+        return DnsPolicyStatus::Applied {
+            nameserver: rule.nameservers[0],
+        };
+    }
+    let local = table
+        .rules
         .iter()
-        .filter(|r| !gpo || r.source == NrptSource::GroupPolicy)
-        .collect()
+        .filter(|r| r.source == NrptSource::Local)
+        .find(routes);
+    match (table.local_rules_ignored(), local) {
+        (Some(reason), Some(rule)) => DnsPolicyStatus::Ignored {
+            nameserver: rule.nameservers[0],
+            reason,
+        },
+        _ => DnsPolicyStatus::NotApplied,
+    }
 }
 
 /// OS resolver policy (NRPT on Windows, docs/06 §5).
 pub trait DnsPolicy: Send + Sync + fmt::Debug {
-    /// Every NRPT rule (local and Group Policy). No elevation.
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>>;
+    /// The NRPT table: every rule (local and Group Policy) and whether the Group Policy
+    /// table exists. No elevation.
+    fn nrpt_table(&self) -> Result<NrptTable>;
 
-    /// Current policy for `tld` (`.test`): the effective rule whose namespaces contain
-    /// exactly `tld` and that names a server.
+    /// Current policy for `tld` (`.test`) from the registry ([`policy_status`]).
     fn status(&self, tld: &str) -> Result<DnsPolicyStatus> {
-        let tld = tld.to_ascii_lowercase();
-        let rules = self.nrpt_rules()?;
-        Ok(effective_nrpt_rules(&rules)
-            .into_iter()
-            .find(|r| r.namespaces.contains(&tld) && !r.nameservers.is_empty())
-            .map_or(DnsPolicyStatus::NotApplied, |r| DnsPolicyStatus::Applied {
-                nameserver: r.nameservers[0],
-            }))
+        Ok(policy_status(&self.nrpt_table()?, tld))
     }
 
+    /// IPv4 addresses of `host` through the OS resolver, the way applications ask it
+    /// (Windows: `DnsQuery_W` through the DNS Client service, NRPT applied). Verifies that
+    /// a rule is really followed (ADR-0033), asked with a random name under the TLD that
+    /// no cache or `hosts` line can answer. No elevation; the OS has its own timeouts,
+    /// callers add theirs.
+    fn query_system(&self, host: &str) -> Result<Vec<IpAddr>>;
+
     /// Routes `tld` to `nameserver` (helper `nrpt.add`, one UAC prompt).
-    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<()>;
+    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<NrptApplied>;
 
     /// Removes the Forgebox rule of `tld` (helper `nrpt.remove`, one UAC prompt).
     fn remove(&self, tld: &str) -> Result<()>;
@@ -152,10 +273,13 @@ struct Unsupported;
 
 #[cfg(not(windows))]
 impl DnsPolicy for Unsupported {
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
-        Ok(Vec::new())
+    fn nrpt_table(&self) -> Result<NrptTable> {
+        Ok(NrptTable::default())
     }
-    fn apply(&self, _: &str, _: IpAddr) -> Result<()> {
+    fn query_system(&self, _: &str) -> Result<Vec<IpAddr>> {
+        Err(unsupported())
+    }
+    fn apply(&self, _: &str, _: IpAddr) -> Result<NrptApplied> {
         Err(unsupported())
     }
     fn remove(&self, _: &str) -> Result<()> {
@@ -195,14 +319,23 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct Rules(Vec<NrptRule>);
+    struct Rules(NrptTable);
+
+    impl Rules {
+        fn local(rules: Vec<NrptRule>) -> Self {
+            Self(NrptTable::local(rules))
+        }
+    }
 
     impl DnsPolicy for Rules {
-        fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
+        fn nrpt_table(&self) -> Result<NrptTable> {
             Ok(self.0.clone())
         }
-        fn apply(&self, _: &str, _: IpAddr) -> Result<()> {
-            Ok(())
+        fn query_system(&self, _: &str) -> Result<Vec<IpAddr>> {
+            Ok(Vec::new())
+        }
+        fn apply(&self, _: &str, _: IpAddr) -> Result<NrptApplied> {
+            Ok(NrptApplied::default())
         }
         fn remove(&self, _: &str) -> Result<()> {
             Ok(())
@@ -245,7 +378,7 @@ mod tests {
     #[test]
     fn status_uses_effective_rules() {
         let local = rule(NrptSource::Local, &[".test"], &["127.0.0.1"]);
-        let policy = Rules(vec![local.clone()]);
+        let policy = Rules::local(vec![local.clone()]);
         assert_eq!(
             policy.status(".test").unwrap(),
             DnsPolicyStatus::Applied {
@@ -260,8 +393,14 @@ mod tests {
 
         // A Group Policy rule (any namespace) hides the local ones.
         let corp = rule(NrptSource::GroupPolicy, &[".corp.example"], &["10.0.0.1"]);
-        let policy = Rules(vec![local.clone(), corp]);
-        assert_eq!(policy.status(".test").unwrap(), DnsPolicyStatus::NotApplied);
+        let policy = Rules::local(vec![local.clone(), corp]);
+        assert_eq!(
+            policy.status(".test").unwrap(),
+            DnsPolicyStatus::Ignored {
+                nameserver: "127.0.0.1".parse().unwrap(),
+                reason: NrptIneffective::GroupPolicyTablePresent
+            }
+        );
         assert_eq!(
             effective_nrpt_rules(&policy.0).len(),
             1,
@@ -269,8 +408,74 @@ mod tests {
         );
 
         // Rules without servers do not route.
-        let policy = Rules(vec![rule(NrptSource::Local, &[".test"], &[])]);
+        let policy = Rules::local(vec![rule(NrptSource::Local, &[".test"], &[])]);
         assert_eq!(policy.status(".test").unwrap(), DnsPolicyStatus::NotApplied);
+    }
+
+    #[test]
+    fn an_empty_group_policy_table_hides_the_local_rules() {
+        // The M1 gate machine: a corporate GPO left the policy key behind with no rule
+        // in it; Windows ignored the Forgebox rule (ADR-0033).
+        let local = rule(NrptSource::Local, &[".test"], &["127.0.0.1"]);
+        let table = NrptTable {
+            rules: vec![local],
+            group_policy_table: true,
+        };
+        assert_eq!(table.group_policy_rules(), 0);
+        assert_eq!(
+            table.local_rules_ignored(),
+            Some(NrptIneffective::GroupPolicyTablePresent)
+        );
+        assert!(table.effective_rules().is_empty());
+        let status = Rules(table).status(".test").unwrap();
+        assert_eq!(
+            status,
+            DnsPolicyStatus::Ignored {
+                nameserver: "127.0.0.1".parse().unwrap(),
+                reason: NrptIneffective::GroupPolicyTablePresent
+            }
+        );
+        assert_eq!(
+            NrptIneffective::GroupPolicyTablePresent.to_string(),
+            "group_policy_table_present"
+        );
+        assert_eq!(
+            serde_json::to_value(NrptIneffective::GroupPolicyTablePresent).unwrap(),
+            "group_policy_table_present"
+        );
+        assert_eq!(
+            NrptApplied::from_details(&serde_json::json!({
+                "effective": false,
+                "reason": "group_policy_table_present"
+            })),
+            NrptApplied {
+                effective: Some(false),
+                reason: Some(NrptIneffective::GroupPolicyTablePresent)
+            }
+        );
+        assert_eq!(
+            NrptApplied::from_details(&serde_json::Value::Null),
+            NrptApplied::default()
+        );
+
+        // Without a local rule there is nothing to ignore.
+        let empty = NrptTable {
+            rules: Vec::new(),
+            group_policy_table: true,
+        };
+        assert_eq!(policy_status(&empty, ".test"), DnsPolicyStatus::NotApplied);
+
+        // A Group Policy rule for the TLD itself routes it (wherever it points).
+        let corp = NrptTable {
+            rules: vec![rule(NrptSource::GroupPolicy, &[".test"], &["10.0.0.1"])],
+            group_policy_table: true,
+        };
+        assert_eq!(
+            policy_status(&corp, ".test"),
+            DnsPolicyStatus::Applied {
+                nameserver: "10.0.0.1".parse().unwrap()
+            }
+        );
     }
 
     #[test]
@@ -278,11 +483,14 @@ mod tests {
         #[derive(Debug)]
         struct File(PathBuf);
         impl DnsPolicy for File {
-            fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
+            fn nrpt_table(&self) -> Result<NrptTable> {
+                Ok(NrptTable::default())
+            }
+            fn query_system(&self, _: &str) -> Result<Vec<IpAddr>> {
                 Ok(Vec::new())
             }
-            fn apply(&self, _: &str, _: IpAddr) -> Result<()> {
-                Ok(())
+            fn apply(&self, _: &str, _: IpAddr) -> Result<NrptApplied> {
+                Ok(NrptApplied::default())
             }
             fn remove(&self, _: &str) -> Result<()> {
                 Ok(())

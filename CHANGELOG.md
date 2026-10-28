@@ -4,7 +4,7 @@ Todas as mudanças relevantes do Forgebox são registradas aqui.
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de arquitetura, em [docs/adr/](docs/adr/) (as ADRs 0012 a 0032 foram tomadas nesta versão).
+O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de arquitetura, em [docs/adr/](docs/adr/) (as ADRs 0012 a 0033 foram tomadas nesta versão).
 
 ## [Não lançado]
 
@@ -63,6 +63,9 @@ Primeira versão: fundação do repositório (M0) e motor sem interface gráfica
 - Gate M1: `scripts/smoke.ps1` (Laravel de ponta a ponta com PHP, nginx, MySQL, Mailpit e Composer) e testes de concorrência contra o daemon real (ADR-0032, docs/16).
 
 ### Corrigido
+- DNS em máquinas de domínio: `forge dns enable` dizia "aplicada" e `loja.test` não resolvia quando a política de grupo deixa a chave NRPT de política **vazia** (o Windows ignora então todas as regras locais). Agora a chave conta mesmo vazia, toda regra é verificada pelo resolvedor do Windows com um nome de sonda antes de valer e, se não funcionar (também com VPN ou agente de segurança interceptando o DNS), o Forgebox usa o arquivo `hosts`, que acompanha sites e aliases, inclusive depois de reiniciar o daemon (o modo fica em `state/dns-policy.json`, e só ele arma o modo: um bloco de outra raiz no `hosts` nunca é adotado nem reescrito sozinho); quando a NRPT volta a funcionar, `forge dns enable` tira o bloco; rodar `forge dns enable` de novo não pede UAC se nada mudou, e `forge dns disable` nunca deixa o bloco para trás. `forge dns status`, `forge dns test` e `forge doctor` mostram o modo efetivo (`nrpt` ou `hosts`) e o motivo (ADR-0033).
+- MySQL/MariaDB não inicializavam numa raiz sem a flag case-sensitive (ex.: `C:\Forgebox` criada sem elevação numa máquina gerenciada, onde a ACL de `C:\` não dá `FILE_DELETE_CHILD`): o `my.ini` saía com `lower_case_table_names=0` pelo `forgebox.toml`, sem olhar a pasta. Agora vale a flag real do data dir; sem ela, `=2` e o aviso `fs.case_sensitivity_unavailable` (docs/15 §5).
+- `scripts/smoke.ps1` não falha mais no fim quando a pasta-mãe da raiz não aceita arquivos: o log vai para `%LOCALAPPDATA%\Forgebox\smoke\` e a raiz é apagada mesmo assim.
 - Correções de integração encontradas pelo gate M1: instalação de bancos com `instance.*` em `post_install`; faixas de porta de `forge config set` aplicadas sem restart; pasta de logs por instância; `forge exec` com `PHPRC`/extensões e `PATHEXT`; shims com ambiente (`forgebox-env.cmd`); `bcmath` embutido; pool PHP com versão `8.4.27+1`; Composer confiando na CA local e na raiz corporativa.
 
 ### Problemas conhecidos
