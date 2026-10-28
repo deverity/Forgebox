@@ -1,6 +1,5 @@
 [workspace]
-# apps/desktop/src-tauri entra no workspace em M2-E1 (ver docs/02-project-structure.md).
-members = ["crates/*", "xtask"]
+members = ["crates/*", "xtask", "apps/desktop/src-tauri"]
 resolver = "3"
 
 [workspace.package]
@@ -115,6 +114,11 @@ async-trait = "0.1.89"
 # build.rs: MIT, no dependencies, no rc.exe/mt.exe needed (ADR-0024).
 embed-manifest = "1.5.1"
 
+# Desktop shell (apps/desktop/src-tauri, ADR-0002). Tauri 2 stable line; never the 3.x alphas.
+# Default features: wry/WebView2, common-controls-v6 (manifest), compression of embedded assets.
+tauri = "2.12.5"
+tauri-build = "2.7.4"
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
 
@@ -138,3 +142,17 @@ codegen-units = 1
 strip = true
 # Mantemos unwind: catch_unwind é usado pelos atores (ADR-0011).
 panic = "unwind"
+
+# Desktop GUI: size matters more than speed (LTO + codegen-units=1 are the profile above).
+# Cargo allows per-package overrides only for opt-level/codegen-units/debug/strip, so the
+# crates that make up the shell are listed here (no effect on the daemon/CLI crates).
+[profile.release.package.forgebox-desktop]
+opt-level = "s"
+[profile.release.package.tauri]
+opt-level = "s"
+[profile.release.package.tauri-runtime-wry]
+opt-level = "s"
+[profile.release.package.wry]
+opt-level = "s"
+[profile.release.package.tao]
+opt-level = "s"
