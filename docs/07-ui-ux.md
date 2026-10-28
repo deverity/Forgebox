@@ -81,6 +81,7 @@ Fonte única: [`docs/design/tokens.json`](design/tokens.json) (DTCG). `pnpm -C a
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
 - Largura mínima 960×600; sidebar colapsa para ícones abaixo de 1100 px.
+- Barra de status: **CPU/RAM = o próprio daemon** (`daemon.status.cpu_pct`/`rss_bytes`, API 1.1) **+ a stack** (CPU das instâncias; RAM de instâncias e pools PHP), do mesmo poll de 2 s das sparklines (`useStatusTotals`; só com a janela visível e focada, [ADR-0034](adr/0034-desktop-shell-architecture.md), adendo M2-E1-T9). Sem amostra (janela fora de foco desde o início, daemon desconectado) mostra o último valor ou nada, nunca zero inventado.
 - Topo da sidebar é o **seletor de contexto** (Local · remotos). Contexto remoto muda a cor de destaque da janela e mostra latência/conexão ([13](13-remote-mode.md)).
 - Janela lembra posição/tamanho por monitor. Fecha → minimiza para a bandeja (configurável).
 
@@ -162,6 +163,7 @@ Button (primary/secondary/ghost/destructive, com loading), IconButton, Toggle, S
 
 ## 10. Performance (orçamentos)
 - Primeiro frame < 800 ms; interação < 50 ms; 60 fps em listas de 500 itens (virtualização); eventos IPC aplicados em batch por frame; nenhuma re-renderização global por tick de métricas (stores por serviço).
+- Implementação (M2-E1-T9, `src/state`, adendo da [ADR-0034](adr/0034-desktop-shell-architecture.md)): eventos aplicados uma vez por `requestAnimationFrame` (≤ 2048 por lote; timer de 250 ms com a janela oculta; fila descartada e resync acima de 50 000), um `setState` por store por lote e seletores por entidade — teste de aceite: 1 000 eventos num frame → 1 commit no componente da entidade afetada, 0 renders nos demais. Métricas (sparklines, barra de status) por polling de `services.status` a cada 2 s só com um consumidor montado e a janela visível e focada; anel de 30 amostras (60 s); req/s dos pools pelo delta de `requests_total`. Os eventos `service.metrics` não alimentam a GUI.
 
 ## 11. Checklist de revisão de UI (para agentes)
 - [ ] Usa tokens, nunca cores literais.

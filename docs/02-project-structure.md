@@ -267,7 +267,7 @@ Forgebox/
 ├── apps/
 │   └── desktop/                  # Itens marcados (M2-E1-Tn) ainda não existem: chegam na tarefa indicada.
 │       ├── package.json          # pnpm@10.7.1, node >= 24; react 19, vite 8, tailwind 4, vitest, eslint 9, prettier, @tauri-apps/cli
-│       │                         #   (radix, motion, tanstack e afins entram com as tarefas que os usam)
+│       │                         #   (radix, motion e afins entram com as tarefas que os usam; zustand e @tanstack/react-query: M2-E1-T9)
 │       ├── pnpm-lock.yaml
 │       ├── index.html
 │       ├── vite.config.ts        # porta 1420 (devUrl do Tauri) + config do vitest (jsdom)
@@ -286,8 +286,19 @@ Forgebox/
 │       │   │                     #   (comandos ipc_* + forge://connection, ack por quadro), api.ts (ForgeApi: call<M>, job<M> →
 │       │   │                     #   {job, done}, subscribe<M>; ULID por intenção), errors.ts (ForgeApiError, CLIENT_ERROR_CODES),
 │       │   │                     #   fakeBridge.ts (o fake único de vitest/Playwright: cenários, jobs, streams, quedas),
-│       │   │                     #   fixtures/ (bridge-dtos.json conferido pelo Rust; not-implemented.json conferido contra o daemon)
-│       │   ├── state/            # (M2-E1-T9) stores, event bridge
+│       │   │                     #   fixtures/ (bridge-dtos.json conferido pelo Rust; not-implemented.json conferido contra o daemon),
+│       │   │                     #   cli.ts (renderCli: cli_template → comando `forge`, golden de forge-ipc/tests/fixtures/cli_templates.json),
+│       │   │                     #   describeError.ts (ApiError/FailureReasonDto → causa i18n `errors:*` + ações com o comando `forge`)
+│       │   ├── state/            # camada de dados (M2-E1-T9, ADR-0034 adendo): layer.ts (StateLayer: um ContextRuntime por contexto,
+│       │   │                     #   QueryClient compartilhado), runtime.ts (stores + stream + snapshots + métricas + fila + RTT),
+│       │   │                     #   stores.ts (stores Zustand por assunto, Draft copy-on-write, reconcile), reducers.ts (EVENT_REDUCERS:
+│       │   │                     #   um reducer ou ignore por EventKind), frame.ts (lote por rAF, timer oculto, teto), eventStream.ts
+│       │   │                     #   (events.subscribe: lagged/reset/end), snapshots.ts (SNAPSHOTS + resync com debounce), queries.ts
+│       │   │                     #   (chaves [contexto, método, params], EVENT_INVALIDATIONS), jobs.ts (watchJob: poll de 1 s), metrics.ts
+│       │   │                     #   (MetricsPoller: services.status a cada 2 s com consumidor visível e focado, anel de 30, req/s),
+│       │   │                     #   capabilities.ts (capabilityOf), reconnectQueue.ts (mutáveis do usuário por até 30 s), page.ts
+│       │   │                     #   (visível/focado), react.tsx (ForgeStateProvider + hooks: useInstance, useJob, useMetricsPoll,
+│       │   │                     #   useStatusTotals, useCapabilities, useForgeQuery...), testFixtures.ts (só testes)
 │       │   └── i18n/             # (M2-E1-T17) index.ts, format.ts, pseudo.ts, {pt-BR,en-US}/<ns>.json (tray/notifications também embutidos em src-tauri/src/i18n.rs)
 │       ├── src-tauri/            # crate `forgebox-desktop` (membro do workspace; depende só de forge-ipc, guarda: `cargo xtask arch-guard`)
 │       │   ├── Cargo.toml        # bin `Forgebox` (mainBinaryName), lib `forgebox_desktop`; feature `custom-protocol` embute dist
