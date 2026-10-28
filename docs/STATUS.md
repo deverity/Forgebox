@@ -36,11 +36,96 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M1-E5-T5 | Import do Laragon | done | feature/M1-E5-T5-import-laragon | [ADR-0031](adr/0031-laragon-import.md). `forge_sites::import` (`LaragonImporter::scan` → `ImportPlan`, somente leitura; `apply(plan, ImportOptions{dry_run, copy_tools, move_data, convert_case_sensitive}, ApplyEnv)` → `ApplyOutcome` com `ImportReport` estruturado importados/pulados-com-motivo; dry-run e importação real pelo mesmo caminho, idempotente). Lê `usr/laragon.ini`, `bin/*` (via `forge_registry::discover_in`, novo; só versões confirmadas pelo executável; junction `bin\php\php` = versão ativa, não versão), `etc/apache2/sites-enabled/auto.*.conf` (`Define`/`${VAR}`) e `etc/nginx/sites-enabled/*.conf`, `data/<tool>-<ver>` (instância por referência com marca `forgebox.external_data_dir`, `InstanceRow::external_data_dir()`; `--move-data` = rename no mesmo volume), `www/` como parked (conversão case-sensitive oferecida, `--convert-case` opt-in). Sites: driver detectado, PHP = série ativa do Laragon, `.test`+`.local` do mesmo root = host + alias, `_`→`-`. TLD só relatado. IPC `system.import_laragon` (`ImportLaragonParams` ganhou `dry_run/copy_tools/move_data/convert_case_sensitive`, `ImportReportDto.dry_run`; `generated.ts` regenerado) + handler no daemon (salva `forgebox.toml`, reconcilia parked, `ServiceManager::adopt_stored`, `resolve_spec` respeita data dir externo) + CLI `forge import laragon <dir> [--dry-run --copy-tools --move-data --convert-case]`. Testes: fixture `crates/forge-sites/tests/fixtures/laragon/` (+ `fake_tool.rs` compilado com rustc), snapshot do plano, apply por referência/cópia/move, dry-run igual ao real, idempotência, junction, vhosts agrupados, conversão case (closure), daemon real (`forge-daemon/tests/import_laragon.rs`), `real_laragon_dry_run` (`#[ignore]`, rodado contra `C:\laragon`: 28 itens seriam importados, 18 pulados, Laragon intacto). Docs 02/04/08/09/15 e ADR-0031 atualizados. |
 | M1-GATE | Gate M1 (smoke `scripts/smoke.ps1`) | done | feature/M1-GATE-smoke | [ADR-0032](adr/0032-m1-gate-integration.md), uso em [16](16-smoke-m1.md). **Verificado nesta máquina (Windows 10, inspeção TLS corporativa):** `scripts/ci.ps1` completo passa (build, fmt, clippy `--all-targets -D warnings`, `test --workspace`, `cargo deny` online, lint-registry, schema/gen-ts sem drift); `pwsh -NoProfile -File scripts/smoke.ps1 -NonInteractive` passa de ponta a ponta, duas vezes seguidas, a partir de raiz limpa (~2,5 min cada) (raiz portátil em `%TEMP%`, binários do workspace copiados para ela): `forge tool install php@8.4 nginx mysql@8.4 mailpit composer` (sha256), `forge start all`, `forge exec -- composer create-project laravel/laravel` (Laravel 13), `forge site add --driver laravel --secure`, banco pelo cliente `mysql` do Forgebox, `.env` → MySQL/Mailpit, `php artisan migrate`, `https://loja.test` 200 pela CA do Forgebox (`curl --resolve` + `--cacert`, nunca `-k`; cadeia e emissor conferidos por .NET), e-mail do Laravel achado pela API do Mailpit, DNS do Forgebox respondendo `loja.test` em `127.0.0.1:53`, teardown; com Laragon em 80/443/3306 (portas movidas pela CLI para 10080/10443/13306) e depois com elas livres; e com a porta do responder de CRL ocupada (movida para 57480 + `forge daemon restart`). Orçamentos de docs/03 §7.6 com testes contra o daemon real (`forge-daemon/tests/concurrency.rs`): serviço travado (status < 50 ms durante ~10 s de cascata; medido ≤ 5 ms), cliente de logs que não lê (serviço a 10 000 linhas/s com e sem ele, `logs.lagged`), download pesado + start (≤ 10 %). **Bugs de integração corrigidos (com teste):** manifestos de bancos com `instance.*` em `post_install` (instalação do MySQL falhava; lint novo); faixas de porta de `forge config set` só valiam após restart e porta padrão fora da faixa; pasta dos logs por instância não criada; `forge exec` sem `PHPRC`/extensões e sem achar `composer.cmd` (PATHEXT), shims sem ambiente (agora `forgebox-env.cmd` + `FORGEBOX_<TOOL>_VERSION`); `bcmath` embutido no overlay (`config.extensions.dir`, `RenderRequest.files_dir`); pool PHP recusando `8.4.27+1` (site nunca renderizado); Composer sem confiar na raiz corporativa (`certs/ca-bundle.pem` = CA local + raízes do Windows, `openssl.cafile`/`curl.cainfo`). **Smoke interativo (release 0.1.0, 2026-10-28, rodado pelo usuário nesta máquina: Windows 10 Enterprise 19045 no domínio, GPO corporativa com a chave NRPT de Group Policy vazia, inspeção TLS, Laragon pausado):** `pwsh -NoProfile -File scripts/smoke.ps1 -Root C:\fb-smoke2` passou 15/15 passos em 150 s; `forge dns enable` caiu para o modo hosts (`group_policy_table_present`) com UAC, CA instalada em `CurrentUser\Root` pelo diálogo, `loja.test` resolvido pelo resolvedor do SO na primeira tentativa, `https://loja.test` 200 sem `-k`, teardown sem bloco no hosts, sem regra NRPT e sem processos. O não interativo da release passou (`-Root %LOCALAPPDATA%\fb-smoke-rel`, 13 passos, 121,8 s). **Correções da release (bugfix/M1-E4-T3-*):** tabela NRPT de Group Policy vazia → fallback para hosts, NRPT verificado por sonda ao resolvedor, modo hosts persistido entre reinícios e enable/disable/sync serializados ([ADR-0033](adr/0033-nrpt-group-policy-table-and-resolver-probe.md)); case do MySQL: a sensibilidade a maiúsculas da instância segue a flag real da pasta de dados e instâncias já inicializadas mantêm a de criação (`kept_sensitive`). **Pendências registradas:** `forge new`/`db.*`/`mail.*` seguem em M3-E2/M2-E3 (o smoke usa `forge exec` + cliente oficial); `bin/php/current` direto no PATH roda sem `PHPRC` (use shims/`forge exec`); probe TCP no Windows segura `Starting` ~0,5 s (docs/03 §7.6). |
 | M2-PLAN | Plano de tarefas do M2 em docs/10 e STATUS | doing | feature/M2-PLAN-task-breakdown | |
-| M2-E1 | Shell do app (Tauri) | todo | — | |
-| M2-E2 | Telas núcleo | todo | — | |
-| M2-E3 | Telas complementares | todo | — | |
-| M2-E4 | Design QA | todo | — | |
-| M2-E5 | Métricas v1 | todo | — | |
+| M2-E1-T1 | Scaffold do desktop + guarda de arquitetura | todo | — | |
+| M2-E1-T2 | Cliente `forge-ipc` para GUIs | todo | — | |
+| M2-E1-T3 | Lacunas de API do shell (updates, port_check, hello, status, sites.open, details) | todo | — | |
+| M2-E1-T4 | Templates do comando `forge` equivalente na tabela de métodos | todo | — | |
+| M2-E1-T5 | Trait `SystemAppearance` (plataforma) | todo | — | |
+| M2-E1-T6 | Design tokens (JSON, CSS, Tailwind, fontes, motion, lint) | todo | — | |
+| M2-E1-T7 | Casca da janela (titlebar, materiais, estado, instância única, data dir) | todo | — | |
+| M2-E1-T8 | Ponte IPC (comandos Tauri genéricos, canais, contextos, cliente TS, fakeBridge) | todo | — | |
+| M2-E1-T9 | Camada de estado do frontend (reducers, stores, jobs, capacidades, resync) | todo | — | |
+| M2-E1-T10 | Layout do app e roteamento | todo | — | |
+| M2-E1-T11 | Primitivas parte 1 (controles) + `/__gallery` | todo | — | |
+| M2-E1-T12 | Primitivas parte 2 (superfícies e feedback) | todo | — | |
+| M2-E1-T13 | Primitivas ligadas ao daemon (CliCommand, ActionButton, AsyncView, PathField, PortField) | todo | — | |
+| M2-E1-T14 | Paleta de comandos (Ctrl+K) e registro de atalhos | todo | — | |
+| M2-E1-T15 | Bandeja do sistema (Rust) | todo | — | |
+| M2-E1-T16 | Notificações nativas do Windows via modelo da bandeja | todo | — | |
+| M2-E1-T17 | i18n pt-BR/en-US | todo | — | |
+| M2-E1-T18 | Autostart com o Windows e fluxo do atualizador (inativo na 0.2.0) | todo | — | |
+| M2-E1-T19 | Harness de testes do frontend (Playwright, modo qa, e2e real, captura, cold start) | todo | — | |
+| M2-E1-T20 | CI do desktop | todo | — | |
+| M2-E1-T21 | Gate M2-E1 (auditoria do shell, cold start medido, tamanhos) | todo | — | |
+| M2-E2-T1 | Contratos IPC das telas núcleo | todo | — | |
+| M2-E2-T2 | Correção do domínio de `seq` em `logs.subscribe` | todo | — | |
+| M2-E2-T3 | Registry: stack PHP genérica + tags e ordem do onboarding | todo | — | |
+| M2-E2-T4 | Backend de metadados do catálogo (search/info estendidos, `tools.icon`, `tools.history`) | todo | — | |
+| M2-E2-T5 | Jobs de releases e plano de instalação (`tools.releases`, `tools.plan`) | todo | — | |
+| M2-E2-T6 | Lacunas do backend de sites (troca de PHP validada, `site.php_changed`, driver, info) | todo | — | |
+| M2-E2-T7 | Backend de quick settings (`services.settings`, `services.set`, `ports.<name>`) | todo | — | |
+| M2-E2-T8 | Instalação do kind Extension (Xdebug) por versão alvo | todo | — | |
+| M2-E2-T9 | Extensões PHP e modos do Xdebug (`php.ext_*`, `php.xdebug`, IDE key) | todo | — | |
+| M2-E2-T10 | Backend de configurações avançadas da instância (`services.update`, `data_dir`) | todo | — | |
+| M2-E2-T11 | Detecção de primeira execução e escolha da raiz | todo | — | |
+| M2-E2-T12 | Tela Serviços (lista agrupada + detalhe: Visão geral, Logs, Instâncias) | todo | — | |
+| M2-E2-T13 | Formulário de quick settings + abas Configuração, Versões e Avançado | todo | — | |
+| M2-E2-T14 | Dashboard (tiles com sparklines, Atenção, Projetos, sites recentes, atividade) | todo | — | |
+| M2-E2-T15 | Tela Sites (grid/lista, busca instantânea, criar, remover) | todo | — | |
+| M2-E2-T16 | Detalhe do site (Geral com troca de PHP ao vivo, Processos, Diagnóstico) | todo | — | |
+| M2-E2-T17 | Tela PHP (colunas por série, pools, CLI padrão, extensões, Xdebug, atualizações) | todo | — | |
+| M2-E2-T18 | Catálogo (busca/filtros, página da tool, instalar com progresso, stacks) | todo | — | |
+| M2-E2-T19 | Assistente de onboarding (4 passos) | todo | — | |
+| M2-E2-T20 | Integração do E2 contra o daemon real, checklist §11 e varredura de paridade | todo | — | |
+| M2-E3-T1 | Contratos IPC do E3 (db, mail, logs, terminal, shell, config, doctor, segurança) | todo | — | |
+| M2-E3-T2 | Schema de manifesto: blocos `spec.database` e `spec.mail` + manifestos | todo | — | |
+| M2-E3-T3 | Pseudoterminal ConPTY em `forge-core` (trait + impl Windows) | todo | — | |
+| M2-E3-T4 | Sessões de terminal no daemon (`TerminalManager`) | todo | — | |
+| M2-E3-T5 | Backend de bancos no daemon (`db.list`, create, drop, url, shell) | todo | — | |
+| M2-E3-T6 | Jobs `db.export` / `db.import` no daemon (streaming, zstd/gzip, progresso, cancelar) | todo | — | |
+| M2-E3-T7 | Backend de e-mail no daemon (família Mailpit) + `mail.changed` | todo | — | |
+| M2-E3-T8 | Logs no daemon (`logs.targets`, alvos `site:`/`app:`, parsers, `before_seq`, redação) | todo | — | |
+| M2-E3-T9 | Lançadores locais no daemon (`shell.open`, `shell.open_editor`, `sites.open` editor/terminal) | todo | — | |
+| M2-E3-T10 | Suporte a Configurações e doctor (`config_list`, efeitos, `config.changed`, fixes, `--export`) | todo | — | |
+| M2-E3-T11 | Extras de segurança (`tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) | todo | — | |
+| M2-E3-T12 | Tela Logs + `LogViewer` reutilizável | todo | — | |
+| M2-E3-T13 | Tela Mail (Mailpit nativo, preview HTML isolado, badge) | todo | — | |
+| M2-E3-T14 | Tela Bancos + aba 'Banco' do site | todo | — | |
+| M2-E3-T15 | Tela Terminal (xterm.js em abas sobre sessões do daemon) | todo | — | |
+| M2-E3-T16 | Configurações parte 1 (layout, linhas por schema, Geral, Editor/Terminal, Atalhos, Avançado) | todo | — | |
+| M2-E3-T17 | Configurações parte 2 (Rede e Segurança) | todo | — | |
+| M2-E3-T18 | Configurações parte 3 (Sistema de arquivos, Registries, Atualizações) | todo | — | |
+| M2-E3-T19 | Tela Diagnóstico (doctor) com correções permitidas, 'Encerrar' e exportação | todo | — | |
+| M2-E3-T20 | Aba 'Ambiente' do site (visualizador de `.env` com segredos mascarados) | todo | — | |
+| M2-E3-T21 | Gate do E3 (checklist entre telas, smoke live, STATUS) | todo | — | |
+| M2-E5-T1 | Desenho das métricas v1: ADR-0044, docs e contratos aditivos | todo | — | |
+| M2-E5-T2 | Schema de manifesto: `logs[].access` + rotação; manifestos nginx/apache/caddy | todo | — | |
+| M2-E5-T3 | `forge-metrics`: parser de registro de acesso, roteador host->site, normalizador de URI | todo | — | |
+| M2-E5-T4 | `forge-metrics`: tailer de logs (polling, linhas parciais, rotação, checkpoints, amostragem) | todo | — | |
+| M2-E5-T5 | `forge-metrics`: agregador (camadas HDR, merges exatos, top-K de rotas, erros recentes) | todo | — | |
+| M2-E5-T6 | Atribuição de CPU/RAM por vhost + amostragem de CPU do pool no `forge-fcgi` | todo | — | |
+| M2-E5-T7 | Persistência de métricas (migration, flush, rollup, prune, rehidratação) | todo | — | |
+| M2-E5-T8 | Ator `MetricsCollector` + integração ao daemon + `stats.get` + `metrics.subscribe` | todo | — | |
+| M2-E5-T9 | Handlers `stats.series`, `stats.routes`, `stats.export`, `stats.top` + CLI | todo | — | |
+| M2-E5-T10 | Plataforma: estatísticas da máquina (CPU/RAM/disco) e nomes de imagem de processo | todo | — | |
+| M2-E5-T11 | Pool PHP dedicado por site + toggle de métricas por site (API + CLI) | todo | — | |
+| M2-E5-T12 | Rotação dos access logs pelo daemon + validação empírica por servidor | todo | — | |
+| M2-E5-T13 | Gate de aceite do E5: 1.000 req/s com < 2 % de CPU do daemon e p50/p90/p99 a ±5 % do `oha` | todo | — | |
+| M2-E5-T14 | Camada de dados de métricas da GUI (stores por site, queries, formatadores) | todo | — | |
+| M2-E5-T15 | Gráficos da GUI em uPlot (bandas de latência, vazão+erros, CPU/RAM, marcadores) | todo | — | |
+| M2-E5-T16 | Aba 'Desempenho' do site | todo | — | |
+| M2-E5-T17 | Seção 'Projetos' do Dashboard, sites ociosos, monitor da máquina, alertas de performance | todo | — | |
+| M2-E4-T1 | Fixtures gravadas de um daemon real (`cargo xtask qa-fixtures`) | todo | — | |
+| M2-E4-T2 | Matriz de screenshots, folhas de contato e docs/07 §12 | todo | — | |
+| M2-E4-T3 | Checklist §11 automatizado (`qa:check`) com autotestes negativos | todo | — | |
+| M2-E4-T4 | Orçamentos de performance e resiliência (docs/07 §10, docs/03 §7.5) | todo | — | |
+| M2-E4-T5 | Gate de paridade GUI/CLI (`gui-commands.json` + `cli-only.yaml`) | todo | — | |
+| M2-E4-T6 | Passe inicial de QA no shell e primitivas (achados, correções, tamanho mínimo, `--on-accent`) | todo | — | |
+| M2-E4-T7 | Revisão completa de Design QA e relatório (todas as telas) | todo | — | |
+| M2-E4-T8 | Correções: shell, navegação, paleta, estados transversais | todo | — | |
+| M2-E4-T9 | Correções: telas núcleo (Onboarding, Dashboard, Serviços, Sites, PHP, Catálogo) | todo | — | |
+| M2-E4-T10 | Correções: telas complementares + Desempenho/Projetos | todo | — | |
+| M2-E4-T11 | Gate do M2: script automatizado + checklist humano com aprovação do usuário | todo | — | |
 | M3-E1 | Catálogo completo de manifestos | todo | — | |
 | M3-E2 | Stacks + forge new + drivers restantes | todo | — | |
 | M3-E3 | forge share, LAN, backups, bundles | todo | — | |

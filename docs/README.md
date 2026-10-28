@@ -24,6 +24,7 @@ Esta pasta é a fonte da verdade do projeto. Agentes e humanos devem ler na orde
 | 14 | [Observabilidade por vhost](14-observability-metrics.md) | CPU, memória, req/s, p50/p90/p99, erros e consultas lentas por projeto; pipeline, UI, CLI, exportação |
 | 15 | [Paridade Linux: case-sensitive por padrão](15-linux-parity-case-sensitivity.md) | Flag NTFS por diretório, conversão, servidores/PHP/bancos, Case Mismatch Finder, outras paridades (LF, UTF-8, Git) |
 | 16 | [Smoke do gate M1](16-smoke-m1.md) | `scripts/smoke.ps1`: instalação → serviços → site Laravel HTTPS → migrate → e-mail no Mailpit, tudo pela CLI; modos interativo e `-NonInteractive` |
+| plans | [Planos estruturados](plans/m2-plan.json) | `plans/m2-plan.json`: plano integrado do M2 (tarefas com dependências, ondas e tiers, decisões tomadas, receita de ambiente e gate); a lista legível está em [10](10-roadmap-and-agent-tasks.md) e o estado em [STATUS](STATUS.md) |
 | ADR | [Decisões de arquitetura](adr/README.md) | Registros curtos de cada decisão relevante e alternativas rejeitadas |
 | design | [Artefatos de design](design/README.md) | Tokens, mockups, componentes, motion, ícones |
 
