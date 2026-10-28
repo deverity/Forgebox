@@ -368,7 +368,7 @@ export class FakeBridge implements Bridge {
 
   async call(request: CallRequest): Promise<unknown> {
     const origin = { method: request.method, requestId: request.request_id };
-    this.checkContext(request.context);
+    // Same order as src-tauri's Bridge::call: method, params, request_id, context.
     const meta = this.validateCall(request.method, origin);
     const params = this.objectParams(request.params, request.method, origin);
     if (!isUlid(request.request_id)) {
@@ -384,6 +384,7 @@ export class FakeBridge implements Bridge {
         origin,
       );
     }
+    this.checkContext(request.context);
     await this.latency();
     if (this.status !== "connected") reject(this.disconnected(request.method), origin);
     this.calls.push({
@@ -570,6 +571,20 @@ export class FakeBridge implements Bridge {
         this.attach(sub, sub.cursor);
       }
     }
+  }
+
+  /** The daemon dies (crash, kill): `reconnecting` until `autoRestart()` or `reconnect()`. */
+  crash(): void {
+    this.disconnect(
+      apiError("disconnected", "the connection to the daemon was lost", "connection_lost"),
+    );
+  }
+
+  /** What the bridge does after a crash: `starting`, one more restart, then `connected`. */
+  autoRestart(): void {
+    this.restarts += 1;
+    this.setStatus("starting");
+    this.reconnect();
   }
 
   /** The daemon stops on purpose: `daemon.shutdown {reason}`, then `stopped`. */

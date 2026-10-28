@@ -301,6 +301,17 @@ describe("fakeBridge connection", () => {
     expect(seen[1]?.hello?.local).toBe(true);
   });
 
+  it("emulates a crash answered by the bridge's automatic restart", async () => {
+    const fake = createFakeBridge();
+    const seen: ContextStateDto[] = [];
+    await fake.onConnection((state) => seen.push(state));
+    fake.crash();
+    fake.autoRestart();
+    expect(seen.map((s) => s.status)).toEqual(["reconnecting", "starting", "connected"]);
+    expect(seen[0]?.last_error?.code).toBe("disconnected");
+    expect(seen[2]?.autostart.restarts).toBe(1);
+  });
+
   it("starts an uninitialized root only when onboarding asks for it", async () => {
     const fake = createFakeBridge(SCENARIOS.get("uninitialized")?.());
     expect((await fake.state(LOCAL_CONTEXT)).status).toBe("uninitialized");
