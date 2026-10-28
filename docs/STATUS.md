@@ -58,7 +58,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E1-T20 | CI do desktop | todo | — | |
 | M2-E1-T21 | Gate M2-E1 (auditoria do shell, cold start medido, tamanhos) | todo | — | |
 | M2-E2-T1 | Contratos IPC das telas núcleo | todo | — | |
-| M2-E2-T2 | Correção do domínio de `seq` em `logs.subscribe` | todo | — | |
+| M2-E2-T2 | Correção do domínio de `seq` em `logs.subscribe` | doing | feature/M2-E2-T2-logs-seq-fix | |
 | M2-E2-T3 | Registry: stack PHP genérica + tags e ordem do onboarding | todo | — | |
 | M2-E2-T4 | Backend de metadados do catálogo (search/info estendidos, `tools.icon`, `tools.history`) | todo | — | |
 | M2-E2-T5 | Jobs de releases e plano de instalação (`tools.releases`, `tools.plan`) | todo | — | |
