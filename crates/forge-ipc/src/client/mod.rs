@@ -778,6 +778,7 @@ impl Client {
             Some(Arc::clone(&sub)),
         )
         .await;
+        sub.opened();
         match result {
             Ok(_) => Ok(Subscription::new(sub, Arc::clone(&self.shared))),
             Err(err) => {
@@ -962,10 +963,13 @@ async fn maintain(shared: Weak<Shared>, wake: Arc<Notify>, closed: CancellationT
 }
 
 /// Re-subscribes every subscription not attached to `conn`. `true` when all are.
+/// Subscriptions whose first subscribe call is still in flight are left to that call:
+/// subscribing them here too would open a second daemon-side stream feeding the same
+/// subscription (every item twice on the wire, and the lag of both counted).
 async fn restore(shared: &Arc<Shared>, conn: &Arc<Conn>, subs: &[Arc<SubShared>]) -> bool {
     let mut all = true;
     for sub in subs {
-        if sub.is_closed() {
+        if sub.is_closed() || sub.is_opening() {
             continue;
         }
         if sub
