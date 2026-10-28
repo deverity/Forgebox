@@ -23,6 +23,8 @@ mod tools;
 
 use forge_ipc::server::Router;
 
+pub(crate) use services::{instance_names, owner_name};
+
 use crate::daemon::Daemon;
 
 /// Registers `$method` with the async fn `$handler(Daemon, Params, Ctx) -> Result<R>`.

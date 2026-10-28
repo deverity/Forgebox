@@ -357,23 +357,35 @@ async fn config_files(
     Ok(config_dto(&daemon, &entries))
 }
 
-async fn ports(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<PortMapDto> {
-    let reservations = daemon.ports.list().await?;
-    let names: BTreeMap<String, String> = daemon
+/// `instance id -> "<tool>/<instance>"` (`mysql/default`) for every instance, to name the
+/// owner of a reserved port ([`owner_name`]). Read from the in-memory table: no await.
+pub(crate) fn instance_names(daemon: &Daemon) -> BTreeMap<String, String> {
+    daemon
         .services
         .entries()
         .into_iter()
         .map(|e| (e.row.id.to_string(), e.label()))
-        .collect();
+        .collect()
+}
+
+/// Name of the owner of a port reservation: `<tool>/<instance>` for an instance
+/// (`mysql/default`, from [`instance_names`]), `<kind>/<id>` for any other owner.
+pub(crate) fn owner_name(
+    instances: &BTreeMap<String, String>,
+    owner: &forge_core::model::port::ReservationOwner,
+) -> String {
+    match (owner.kind, instances.get(&owner.id)) {
+        (OwnerKind::Instance, Some(name)) => name.clone(),
+        _ => format!("{}/{}", owner.kind.as_str(), owner.id),
+    }
+}
+
+async fn ports(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<PortMapDto> {
+    let reservations = daemon.ports.list().await?;
+    let names = instance_names(&daemon);
     let ports = reservations
         .iter()
-        .map(|r| {
-            let name = names
-                .get(&r.owner.id)
-                .cloned()
-                .unwrap_or_else(|| format!("{}/{}", r.owner.kind.as_str(), r.owner.id));
-            convert::port(r, name)
-        })
+        .map(|r| convert::port(r, owner_name(&names, &r.owner)))
         .collect();
     let table = std::sync::Arc::clone(daemon.platform.port_table());
     let listeners = forge_core::runtime::spawn_blocking_timeout(

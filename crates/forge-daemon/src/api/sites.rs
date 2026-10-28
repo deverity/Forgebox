@@ -10,16 +10,16 @@ use forge_core::error::{ForgeError, Result};
 use forge_core::ids::SiteId;
 use forge_core::store::{Site, SiteKind, SitePhp};
 use forge_ipc::api::methods::{
-    sites_add, sites_alias, sites_down, sites_info, sites_list, sites_park, sites_parked,
-    sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run, sites_secure, sites_server,
-    sites_unpark, sites_up,
+    sites_add, sites_alias, sites_down, sites_info, sites_list, sites_open, sites_park,
+    sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run, sites_secure,
+    sites_server, sites_unpark, sites_up,
 };
 use forge_ipc::api::{
     Ack, CheckDto, CheckStatus, JobDto, ListAction, NoParams, ParkParams, ParkedDirDto,
     ParkedListDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, SiteAddParams,
-    SiteAliasParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteParams, SitePhpParams,
-    SiteProcessDto, SiteProcessListDto, SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams,
-    SiteSecureParams, SiteServerParams,
+    SiteAliasParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams, SiteOpenTarget,
+    SiteParams, SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams, SiteRef,
+    SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::apps::AppSite;
@@ -46,6 +46,63 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, sites_down, down);
     route!(router, daemon, sites_ps, ps);
     route!(router, daemon, sites_run, run);
+    route!(router, daemon, sites_open, open);
+    // The shell may load the browser before it answers; more than the 1 s default.
+    router.timeout::<sites_open>(OPEN_BUDGET);
+}
+
+/// Budget of the shell call of `sites.open`.
+const OPEN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// `sites.open` (local only): the site in the default browser, or its folder in the file
+/// manager, of the daemon's machine, through the platform's [`ShellOpener`]
+/// (`ShellExecuteExW`, in `spawn_blocking`). The editor and the terminal belong to
+/// M2-E3-T9 and answer `not_implemented` naming it.
+///
+/// [`ShellOpener`]: forge_core::platform::ShellOpener
+async fn open(daemon: Daemon, params: SiteOpenParams, _ctx: Ctx) -> Result<Ack> {
+    let site = find(&daemon, &params.site).await?;
+    let opener = std::sync::Arc::clone(daemon.platform.shell_opener());
+    match params.with {
+        SiteOpenTarget::Browser => {
+            let url = convert::site_url(&site);
+            forge_core::runtime::spawn_blocking_timeout(
+                "opening the browser",
+                OPEN_BUDGET,
+                move || opener.open_url(&url),
+            )
+            .await?;
+        }
+        SiteOpenTarget::Explorer => {
+            let root = site
+                .root
+                .as_deref()
+                .filter(|r| !r.is_empty())
+                .ok_or_else(|| {
+                    ForgeError::InvalidInput(format!("{} has no folder (it is a proxy)", site.host))
+                })?;
+            let root = PathBuf::from(root);
+            forge_core::runtime::spawn_blocking_timeout(
+                "opening the file manager",
+                OPEN_BUDGET,
+                move || opener.open_path(&root),
+            )
+            .await?;
+        }
+        SiteOpenTarget::Editor | SiteOpenTarget::Terminal => {
+            let what = if params.with == SiteOpenTarget::Editor {
+                "opening a site in the editor"
+            } else {
+                "opening a site in the terminal"
+            };
+            return Err(ForgeError::NotImplementedYet {
+                method: "sites.open".into(),
+                task: super::not_implemented::SITES_OPEN_EDITOR_TERMINAL_TASK.into(),
+                what: what.into(),
+            });
+        }
+    }
+    Ok(Ack::ok())
 }
 
 /// The site a reference designates.

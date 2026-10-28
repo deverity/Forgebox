@@ -64,6 +64,7 @@ use crate::pools::{DaemonPoolSwitcher, PoolManager};
 use crate::render::DaemonRenderer;
 use crate::scheduler::Scheduler;
 use crate::services::ServiceManager;
+use crate::update_feed::UpdateSource;
 use crate::web::{LateListener, WebManager};
 
 /// Name of the registry added on first boot.
@@ -252,6 +253,16 @@ async fn start_dns(dns: &DnsServer, policy: &DnsPolicyManager, config: &ForgeCon
     }
 }
 
+/// Collaborators a test replaces; `main` boots with the defaults (the real OS, the real
+/// update engine).
+#[derive(Default)]
+pub struct BootOptions {
+    /// OS facts and actions (fakes for the port table, the shell opener...).
+    pub platform: Option<Platform>,
+    /// Answers the scheduler's update questions (a fake with no network).
+    pub update_source: Option<Arc<dyn UpdateSource>>,
+}
+
 /// Runs the whole sequence. `lock` is the instance mutex taken by `main`, which also
 /// prepared the root folders (`ForgeRoot::init`, reported in `init_report`) and read
 /// `config`.
@@ -261,6 +272,26 @@ pub async fn boot(
     lock: &InstanceLock,
     config: ForgeConfig,
     init_report: InitReport,
+) -> Result<Booted> {
+    boot_with(
+        args,
+        root,
+        lock,
+        config,
+        init_report,
+        BootOptions::default(),
+    )
+    .await
+}
+
+/// [`boot`] with some collaborators replaced ([`BootOptions`]).
+pub async fn boot_with(
+    args: Args,
+    root: ForgeRoot,
+    lock: &InstanceLock,
+    config: ForgeConfig,
+    init_report: InitReport,
+    options: BootOptions,
 ) -> Result<Booted> {
     let started = Instant::now();
     let started_at = Timestamp::now();
@@ -275,7 +306,7 @@ pub async fn boot(
     publish_case_report(&bus, &init_report);
     let jobs = JobRegistry::new(bus.clone());
     let actors = ActorSupervisor::new(bus.clone());
-    let platform: Platform = platform::current();
+    let platform: Platform = options.platform.unwrap_or_else(platform::current);
     let (config_tx, config_rx) = watch::channel(Arc::new(config.clone()));
     let config_fn: Arc<dyn Fn() -> Arc<ForgeConfig> + Send + Sync> = {
         let rx = config_rx.clone();
@@ -530,6 +561,8 @@ pub async fn boot(
             ..ServerConfig::default()
         })
         .router(crate::api::router(&daemon))
+        .process_stats(Arc::clone(daemon.platform.process_stats()))
+        .not_implemented(crate::api::not_implemented::methods())
         .root(root.clone())
         .events(EventSource::new(bus.clone()).with_store(store.reader().clone()))
         .jobs(jobs.clone())
@@ -552,7 +585,10 @@ pub async fn boot(
         Ok(Err(err)) => tracing::warn!(%err, "lock file not written"),
         Err(e) => tracing::warn!(%e, "lock file task failed"),
     }
-    let scheduler = Scheduler::start(&daemon);
+    let scheduler = match options.update_source {
+        Some(source) => Scheduler::start_with(&daemon, source),
+        None => Scheduler::start(&daemon),
+    };
     let boot_ms = started.elapsed().as_millis();
     bus.publish(
         EventKind::DaemonReady,
