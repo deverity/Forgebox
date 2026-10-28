@@ -108,6 +108,7 @@ C:\Forgebox\
 │   ├── ipc.token                 # token da API local (ACL: só o usuário)
 │   ├── dns-policy.json           # TLDs em modo hosts (fallback da NRPT, ADR-0033); gravado por dns enable/disable
 │   ├── registry\                 # cache do(s) registry(ies) + índices de providers
+│   ├── gui\                      # SÓ no modo portátil: dados da GUI (prefs.json, window-state.json, webview\ = perfil do WebView2); instalado → %LOCALAPPDATA%\Forgebox\gui (ADR-0035)
 │   └── locks\                    # forgeboxd.lock (pid, versão e pipe do daemon em execução; removido na parada) + arquivos de troca do helper
 │
 ├── tmp\                          # efêmero (limpo automaticamente)
@@ -124,7 +125,7 @@ C:\Forgebox\
 Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binários ficam lá e **a raiz de dados** (`bin\ etc\ data\ www\ certs\ logs\ state\ tmp\ backups\ manifests\`) vai para a pasta escolhida (padrão `C:\Forgebox`). `forgebox.toml` em `%LOCALAPPDATA%\Forgebox\root.toml` aponta a raiz. Tudo o resto é idêntico. **Exceção pendente (M4-E1):** o `forgebox-helper.exe` só atende a raiz em que ele mesmo está ([ADR-0022](adr/0022-elevated-helper-protocol.md)/[ADR-0024](adr/0024-helper-execution.md)); neste modo o instalador precisa colocar uma cópia dele na raiz de dados.
 
 ### 2.2 Modo portátil
-`portable.flag` presente → nenhuma escrita fora da pasta: sem PATH, sem registro, sem CA no store (usa `--insecure` ou instala CA manualmente), DNS via `hosts` só se o usuário pedir. Útil para pendrive, VM descartável, CI.
+`portable.flag` presente → nenhuma escrita fora da pasta: sem PATH, sem registro, sem CA no store (usa `--insecure` ou instala CA manualmente), DNS via `hosts` só se o usuário pedir. Útil para pendrive, VM descartável, CI. A GUI guarda preferências, posição da janela e o perfil do WebView2 em `state\gui\` (nunca nas pastas padrão do Tauri em `%APPDATA%`/`%LOCALAPPDATA%`, [ADR-0035](adr/0035-window-chrome-materials.md)); `state\` só com `gui\` não conta como raiz inicializada (a GUI ainda leva ao onboarding).
 
 ### 2.4 Case sensitivity dos diretórios
 `www\`, `etc\`, `data\`, `logs\`, `tmp\` e `backups\` são criados com a flag NTFS `FILE_CS_FLAG_CASE_SENSITIVE_DIR` (herdada por subdiretórios) quando o modo paridade Linux está ligado (padrão). `bin\`, `app\`, `state\`, `certs\` e `manifests\` ficam no modo normal do Windows. Ver [15](15-linux-parity-case-sensitivity.md).
@@ -138,6 +139,7 @@ Inter e JetBrains Mono são **embutidas no frontend** (woff2 de `@fontsource/int
 |---|---|---|---|
 | PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` (entradas no início do PATH do usuário, sem duplicatas, `REG_EXPAND_SZ` e demais entradas preservados; [ADR-0025](adr/0025-layout-staging-shims-user-path.md)) | Onboarding, se o usuário marcar (`[path]` do `forgebox.toml`: `bin\<tool>\current` e/ou `bin\shims`); nunca no modo portátil | Desinstalador remove entradas sob `<raiz>\bin\` (`Layout::remove_path_entries`) |
 | Iniciar com Windows | `HKCU\...\Run\Forgebox` | Opt-in | Desinstalador remove |
+| Dados da GUI | `%LOCALAPPDATA%\Forgebox\gui` (`prefs.json`, `window-state.json`, `webview\` = perfil do WebView2; [ADR-0035](adr/0035-window-chrome-materials.md)) | Primeira execução do `Forgebox.exe`; nunca no modo portátil (`state\gui\`); `FORGE_GUI_DATA_DIR` redireciona (testes) | Desinstalador remove a pasta (M4-E1) |
 | Protocolo `forgebox://` | `HKCU\Software\Classes\forgebox` | Instalação | Desinstalador remove |
 | CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover: a CA atual e toda raiz registrada em `certs\ca\trust.json` (thumbprint SHA-1 + escopo; inclui CAs antigas cuja remoção foi recusada numa rotação). Remover de `CurrentUser\Root` mostra o diálogo do Windows; `LocalMachine` vai pelo helper |
 | Regra NRPT `.test` | Política DNS do sistema | Opt-in via helper | Desinstalador remove via helper |
