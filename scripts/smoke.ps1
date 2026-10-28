@@ -53,7 +53,8 @@ param(
     [int]$MysqlPort = 3306,
     [int]$MailpitSmtpPort = 1025,
     [int]$MailpitHttpPort = 8025,
-    # Full log. Default: <root>\logs\smoke.log (copied next to the root when it is removed).
+    # Full log. Default: <root>\logs\smoke.log (copied next to the root when it is removed,
+    # or to %LOCALAPPDATA%\Forgebox\smoke when that folder takes no files).
     [string]$LogPath,
     # Use the binaries already built in target\debug (no cargo build).
     [switch]$NoBuild,
@@ -549,10 +550,27 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
     Write-Log ("TOTAL {0:N1} s, {1} step(s), {2} failed. Root: {3}" -f $Total.Elapsed.TotalSeconds, $Results.Count, $failedSteps, $Root)
 
     if (-not $Keep -and (Test-Path -LiteralPath $Root)) {
-        $saved = Join-Path (Split-Path -Parent $Root) "$(Split-Path -Leaf $Root).smoke.log"
         if ($script:LogFile -and (Test-Path -LiteralPath $script:LogFile) -and -not $LogPath) {
-            Copy-Item -LiteralPath $script:LogFile -Destination $saved -Force
-            $script:LogFile = $saved
+            # Next to the root first; a parent where the user may create folders but not
+            # files (C:\ on a managed machine) falls back to %LOCALAPPDATA%\Forgebox\smoke.
+            # Never fatal: the root is removed either way.
+            $leaf = "$(Split-Path -Leaf $Root).smoke.log"
+            $targets = @((Join-Path (Split-Path -Parent $Root) $leaf))
+            if ($env:LOCALAPPDATA) { $targets += Join-Path $env:LOCALAPPDATA "Forgebox\smoke\$leaf" }
+            $kept = $false
+            foreach ($saved in $targets) {
+                try {
+                    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $saved) -ErrorAction Stop | Out-Null
+                    Copy-Item -LiteralPath $script:LogFile -Destination $saved -Force -ErrorAction Stop
+                    $script:LogFile = $saved
+                    $kept = $true
+                    break
+                } catch {
+                    Write-Log "WARNING: could not save the log to ${saved}: $($_.Exception.Message)" 'Yellow'
+                }
+            }
+            # The log inside the root is about to go: keep writing to the console only.
+            if (-not $kept) { $script:LogFile = $null }
         }
         for ($i = 0; $i -lt 5; $i++) {
             try { Remove-Item -LiteralPath $Root -Recurse -Force -ErrorAction Stop; break }

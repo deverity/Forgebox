@@ -13,7 +13,7 @@ pwsh -NoProfile -File scripts/smoke.ps1 -NonInteractive -Keep -Root D:\tmp\fb-sm
 | Parâmetro | Padrão | O que faz |
 |---|---|---|
 | `-Root` | `%TEMP%\fb-smoke-<data-hora>` | Raiz Forgebox nova (precisa não existir ou estar vazia). |
-| `-Keep` | — | Mantém a raiz no fim (senão é apagada e o log é copiado para `<raiz>.smoke.log` ao lado). |
+| `-Keep` | — | Mantém a raiz no fim (senão é apagada e o log é copiado para `<raiz>.smoke.log` ao lado; se a pasta-mãe não aceitar arquivos, como `C:\` numa máquina gerenciada onde o usuário cria pastas mas não arquivos, vai para `%LOCALAPPDATA%\Forgebox\smoke\<raiz>.smoke.log`; a falha da cópia nunca impede apagar a raiz). |
 | `-NonInteractive` | — | Nada eleva nem abre diálogo (ver abaixo). |
 | `-HttpPort` / `-HttpsPort` | 80 / 443 | Portas do nginx. |
 | `-MysqlPort` | 3306 | Porta do MySQL. |
