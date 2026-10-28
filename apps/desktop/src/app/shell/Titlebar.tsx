@@ -61,13 +61,15 @@ export function Titlebar({ onOpenPalette, searchSlot, windowApi }: TitlebarProps
           type="button"
           onClick={open}
           aria-keyshortcuts="Control+K"
-          aria-label={t("titlebar.searchHint")}
           title={t("titlebar.searchHint")}
-          className="mr-2 inline-flex h-6 items-center gap-2 rounded-control border border-stroke px-2 text-callout text-fg-secondary outline-none hover:bg-stroke focus-visible:outline-2 focus-visible:outline-accent"
+          className="mr-2 inline-flex h-6 items-center gap-2 rounded-control border border-stroke-strong px-2 text-callout text-fg-secondary outline-none hover:bg-stroke focus-visible:outline-2 focus-visible:outline-accent"
         >
           <SearchGlyph />
           <span>{t("titlebar.search")}</span>
-          <kbd className="font-sans text-caption text-fg-tertiary">{t("titlebar.shortcut")}</kbd>
+          {/* Announced through aria-keyshortcuts, not as part of the name. */}
+          <kbd aria-hidden="true" className="font-sans text-caption text-fg-tertiary">
+            {t("titlebar.shortcut")}
+          </kbd>
         </button>
       )}
       <WindowControls api={api} />

@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { OPEN_PALETTE_EVENT, Titlebar } from "./Titlebar";
 import type { WindowApi } from "./windowApi";
 
-const PALETTE = "Open the command palette (Ctrl+K)";
+// The visible label is the accessible name (WCAG 2.5.3), the shortcut is aria-keyshortcuts
+// and the hint is the tooltip.
+const PALETTE = "Search";
+const PALETTE_HINT = "Open the command palette (Ctrl+K)";
 
 function fakeApi(maximized = false) {
   let notify: ((value: boolean) => void) | undefined;
@@ -84,6 +87,7 @@ describe("Titlebar", () => {
     const { unmount } = render(<Titlebar windowApi={fakeApi().api} onOpenPalette={onOpen} />);
     const search = screen.getByRole("button", { name: PALETTE });
     expect(search).toHaveAttribute("aria-keyshortcuts", "Control+K");
+    expect(search).toHaveAttribute("title", PALETTE_HINT);
     expect(search).toHaveTextContent("Ctrl+K");
     await user.click(search);
     expect(onOpen).toHaveBeenCalledOnce();
@@ -101,5 +105,6 @@ describe("Titlebar", () => {
     render(<Titlebar windowApi={fakeApi().api} searchSlot={<span>slot</span>} />);
     expect(screen.getByText("slot")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: PALETTE })).toBeNull();
+    expect(screen.queryByTitle(PALETTE_HINT)).toBeNull();
   });
 });
