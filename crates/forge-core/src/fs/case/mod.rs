@@ -14,7 +14,7 @@ pub mod convert;
 mod job;
 pub mod messages;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -99,6 +99,59 @@ pub fn status(cs: &dyn CaseSensitiveFs, dir: &Path) -> Result<CaseStatus> {
     })
 }
 
+/// Case sensitivity of a data folder that may not exist yet ([`data_dir_case`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataDirCase {
+    Sensitive,
+    /// `dir` is the folder that was checked (the data folder or its closest existing
+    /// parent); `reason` is the pt-BR text, `code` its stable code.
+    Insensitive {
+        dir: PathBuf,
+        code: CaseReasonCode,
+        reason: String,
+    },
+}
+
+/// Whether `data_dir` really is case-sensitive (docs/15 §5): the folder itself when it
+/// exists, otherwise its closest existing parent, whose flag a folder created later
+/// inherits (the database creates its data folder on the first start). What the
+/// configuration asked for does not matter here: `ForgeRoot::init` may have failed to set
+/// the flag (no `FILE_DELETE_CHILD` under `C:\` on managed machines). Blocking.
+pub fn data_dir_case(cs: &dyn CaseSensitiveFs, data_dir: &Path) -> DataDirCase {
+    let insensitive = |dir: &Path, code: CaseReasonCode, detail: String| DataDirCase::Insensitive {
+        dir: dir.to_path_buf(),
+        code,
+        reason: messages::data_dir_fallback(&detail).1,
+    };
+    let Some(dir) = data_dir
+        .ancestors()
+        .find(|d| !d.as_os_str().is_empty() && d.is_dir())
+    else {
+        let text = messages::missing(&posix_string(data_dir)).1;
+        return insensitive(data_dir, CaseReasonCode::Missing, text);
+    };
+    match cs.support(dir) {
+        CaseSensitivitySupport::Unsupported(detail) => insensitive(
+            dir,
+            CaseReasonCode::Unsupported,
+            messages::unsupported(&detail).1,
+        ),
+        CaseSensitivitySupport::Supported => match cs.get(dir) {
+            Ok(true) => DataDirCase::Sensitive,
+            Ok(false) => insensitive(
+                dir,
+                CaseReasonCode::Insensitive,
+                format!(
+                    "A pasta {} não diferencia maiúsculas de minúsculas (a flag não pôde ser \
+                     aplicada; veja docs/15).",
+                    posix_string(dir)
+                ),
+            ),
+            Err(err) => insensitive(dir, CaseReasonCode::Error, err.to_string()),
+        },
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod fake {
     //! Path-keyed flag store for tests that never move directories (status, refusals
@@ -178,6 +231,47 @@ mod tests {
         assert_eq!(fold_case("Ação.txt"), "AÇÃO.TXT");
         // Full mappings that change the length are not applied (NTFS does not).
         assert_eq!(fold_case("straße"), "STRAßE");
+    }
+
+    #[test]
+    fn data_dir_case_follows_the_real_flag() {
+        let base = tempfile::tempdir().unwrap();
+        let data = base.path().join("data");
+        std::fs::create_dir(&data).unwrap();
+        let instance = data.join("mysql").join("default");
+        // Flag missing (init could not set it): the data folder, not created yet, would
+        // inherit nothing.
+        let cs = FakeCs::default();
+        let DataDirCase::Insensitive { dir, code, reason } = data_dir_case(&cs, &instance) else {
+            panic!("no flag must not count as case-sensitive");
+        };
+        assert_eq!(dir, data);
+        assert_eq!(code, CaseReasonCode::Insensitive);
+        assert!(reason.contains("lower_case_table_names=2"), "{reason}");
+        // Flag on the parent: the folder created later inherits it.
+        cs.set(&data, true).unwrap();
+        assert_eq!(data_dir_case(&cs, &instance), DataDirCase::Sensitive);
+        // The existing folder itself decides.
+        std::fs::create_dir_all(&instance).unwrap();
+        cs.set(&instance, false).unwrap();
+        assert!(matches!(
+            data_dir_case(&cs, &instance),
+            DataDirCase::Insensitive {
+                code: CaseReasonCode::Insensitive,
+                ..
+            }
+        ));
+        let unsupported = FakeCs {
+            unsupported: Some("FAT32".into()),
+            ..FakeCs::default()
+        };
+        assert!(matches!(
+            data_dir_case(&unsupported, &instance),
+            DataDirCase::Insensitive {
+                code: CaseReasonCode::Unsupported,
+                ..
+            }
+        ));
     }
 
     #[test]

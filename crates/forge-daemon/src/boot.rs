@@ -372,6 +372,7 @@ pub async fn boot(
         services.clone(),
         tls.clone(),
         Arc::clone(&config_fn),
+        platform.shared_case_sensitive_fs(),
     );
     let late = LateListener::default();
     let pools = PoolManager::new(

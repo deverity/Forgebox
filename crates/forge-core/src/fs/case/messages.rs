@@ -67,6 +67,18 @@ pub fn unsupported(detail: &str) -> (&'static str, String) {
     )
 }
 
+/// Reason when a database data folder is not case-sensitive (`detail`: why): the
+/// instance falls back to case-insensitive table names (docs/15 §5).
+pub fn data_dir_fallback(detail: &str) -> (&'static str, String) {
+    (
+        "fs.case.reason.data_dir_fallback",
+        format!(
+            "{detail} O banco desta instância usa nomes de tabela sem diferenciar \
+             maiúsculas de minúsculas (lower_case_table_names=2)."
+        ),
+    )
+}
+
 /// Error text: an entry could not be moved because a process holds it open.
 pub fn in_use(path: &str, detail: &str) -> String {
     format!(
