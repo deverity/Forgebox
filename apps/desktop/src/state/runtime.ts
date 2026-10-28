@@ -195,9 +195,14 @@ export class ContextRuntime {
   }
 
   private async boot(): Promise<void> {
-    this.unlisten = await this.bridge.onConnection((state) => {
+    const unlisten = await this.bridge.onConnection((state) => {
       if (state.context === this.context) this.onState(state);
     });
+    if (this.disposed) {
+      unlisten();
+      return;
+    }
+    this.unlisten = unlisten;
     this.cleanups.push(
       this.page.subscribe(() => {
         if (this.rttTimer === null && !this.measuring) this.scheduleRtt(0);
