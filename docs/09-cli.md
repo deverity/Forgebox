@@ -154,7 +154,25 @@ Comando equivalente ([ADR-0037](adr/0037-cli-equivalent-templates.md)): cada lin
 
 Rodam só no cliente (sem método): `forge daemon start` (inicia o `forgeboxd`), `forge completions`, `forge mcp serve`, `forge remote add|list|use|remove` e `--context` (perfis de conexão guardados na máquina do cliente).
 
+Sem comando da CLI (só a GUI e o protocolo): `net.port_check` (valida o campo de porta), `system.hello`, `system.ping` e `events.*`.
+
+`forge site open <site>` (`sites.open`, `local_only`): sem opção abre no navegador padrão; `--explorer` abre a pasta do site no Explorer (ambos pelo `ShellOpener` da plataforma, `ShellExecuteExW`); `--editor` e `--terminal` respondem `not_implemented` citando M2-E3-T9 até essa tarefa.
+
 Métodos `local_only` (recusados em conexões remotas): `sites.open`, `db.open`, `db.shell`, `services.config`, `php.ini_open`, `mail.open`, `shell.open`, `shell.env`, `tools.add_local`.
+
+## Detalhes estruturados de erro
+([ADR-0039](adr/0039-error-details-and-shell-api.md), API 1.1.) `ApiError.details` (e `JobErrorInfo.details`, `error.details` do `--json`) segue a convenção `{"reason": "<id estável em snake_case>", "args": {...}}`: a GUI traduz a partir de `code` + `details`, nunca da `message` em inglês. Adições são compatíveis; `reason` e as chaves de `args` documentadas aqui não mudam de nome.
+
+| `code` | `reason` | `args` |
+|---|---|---|
+| `port_in_use` | `port_in_use` | `port`, `owner` (`mysqld.exe (PID 4412)` ou `null`); `port` e `owner` também no nível de cima (forma da API 1.0) |
+| `needs_elevation` | `needs_elevation` | `detail` (operação que pediu o helper) |
+| `not_found` | `not_found` | `what` (o que não existe, em inglês: texto de apoio, não para traduzir) |
+| `not_implemented` | `not_implemented` | `what`; `method` e `task` quando o método ou parte dele é de uma tarefa futura (`sites.open` com `with=editor` → `task: "M2-E3-T9"`) |
+| `timeout` | `timeout` | `operation`, `after_ms` |
+| (falha de serviço) | `kind` do diagnóstico (`port_in_use`, `missing_dll`, `missing_runtime`, `config_invalid`, `dependency_not_running`, `permission`, `health_timeout`, `exited_during_start`, `crash_loop`, `other`) | os demais campos do `FailureReasonDto`, que continuam no nível de cima (API 1.0) |
+
+Os demais códigos não têm `details` (a GUI mostra o `code` e a `message`). Implementação: `ForgeError::details()` (`forge-core`) alimenta `ApiError::from` e `JobErrorInfo::from`; `ApiError::with_reason`, `reason()` e `args()` montam e leem a convenção. `system.hello` traz `not_implemented: [métodos]` (a tabela `NOT_IMPLEMENTED` do daemon) para a GUI desabilitar o que ainda não existe sem tentar; `daemon.status` traz `cpu_pct` e `rss_bytes` do próprio daemon.
 
 ## Comportamentos
 - Erros da API trazem um `code` estável (`forge_core::error::ForgeError::code`, também no `--json`) que define o código de saída (`forge_core::error::exit_code_for`): `invalid_input`, `config_invalid` → 2 · `not_found` → 3 · `conflict`, `port_in_use` → 4 · `needs_elevation` → 5 · `verification_failed` → 6 · `io`, `db`, `unsupported_platform`, `timeout`, `not_implemented`, `cancelled`, `internal`, `unauthorized` (token inválido), `forbidden` (papel insuficiente, método `local_only` em conexão remota, caminho fora de `fs.*`) → 1. Códigos nunca são renomeados; só se acrescentam.
