@@ -5,7 +5,7 @@ export function cx(...parts: readonly (string | false | null | undefined)[]): st
 
 /** Visible focus ring with the accent colour (docs/07 section 9). */
 export const FOCUS_RING =
-  "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+  "outline-hidden focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 export const DISABLED = "disabled:opacity-50 disabled:cursor-not-allowed";
 

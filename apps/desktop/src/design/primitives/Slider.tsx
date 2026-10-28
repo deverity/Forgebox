@@ -45,8 +45,8 @@ export function Slider({
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
-      <RadixSlider.Track className="relative h-1 grow rounded-full bg-stroke-strong">
-        <RadixSlider.Range className="absolute h-full rounded-full bg-accent" />
+      <RadixSlider.Track className="relative h-1 grow forced-color-adjust-none rounded-full bg-stroke-strong">
+        <RadixSlider.Range className="absolute h-full forced-color-adjust-none rounded-full bg-accent" />
       </RadixSlider.Track>
       <RadixSlider.Thumb
         aria-label={label}

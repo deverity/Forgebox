@@ -92,7 +92,7 @@ export function StatusDot({
         aria-label={text}
         data-state={state}
         data-animation={kind}
-        className={cx("inline-block size-2 rounded-full", COLOR[state])}
+        className={cx("inline-block size-2 forced-color-adjust-none rounded-full", COLOR[state])}
         {...spec}
       />
       {showLabel ? <span className="text-callout text-fg-secondary">{text}</span> : null}

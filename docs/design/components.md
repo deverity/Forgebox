@@ -23,7 +23,7 @@ Regras comuns: só tokens (`bg-surface`, `text-fg-primary`, `rounded-control`, `
 
 ## Controles (M2-E1-T11)
 
-Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyText`...); nenhum texto fixo, exceto o estado do StatusDot, localizado internamente em `common:status.*`. Nenhum aceita `className` (só tokens). Foco: anel `outline-accent` 2 px com offset 2 px (`FOCUS_RING`). Movimento: `useMotionPreset(preset)` (`design/useMotionPreset.ts`) reavalia `prefers-reduced-motion` ao vivo; sob movimento reduzido tudo vira fade de 100 ms (`data-motion="fade"`).
+Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyText`...); nenhum texto fixo, exceto o estado do StatusDot, localizado internamente em `common:status.*`. Nenhum aceita `className` (só tokens). Foco: anel `outline-accent` 2 px com offset 2 px (`FOCUS_RING`; no Tailwind 4 `outline-hidden` zera o estilo, por isso `focus-visible:outline-solid` e obrigatório, com teste de regressão). Alto contraste (forced-colors): Toggle, Slider e StatusDot usam `forced-color-adjust-none` para pintar o estado com os valores `Highlight`/`CanvasText` de `tokens.css`. Movimento: `useMotionPreset(preset)` (`design/useMotionPreset.ts`) reavalia `prefers-reduced-motion` ao vivo; sob movimento reduzido tudo vira fade de 100 ms (`data-motion="fade"`).
 
 ### Button / IconButton
 - **Anatomia:** `<button>` 32 px de altura, borda 1 px, `radius-control`; rótulo em `span`; spinner sobreposto em `loading`. IconButton é 32x32, ícone 16 px e `label` obrigatório (`aria-label` + `title`).

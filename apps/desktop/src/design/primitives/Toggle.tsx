@@ -43,7 +43,7 @@ export function Toggle({
         onCheckedChange?.(next);
       }}
       className={cx(
-        "group relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-stroke-strong bg-surface-2 p-0.5 transition-colors data-[state=checked]:border-transparent data-[state=checked]:bg-accent",
+        "group forced-color-adjust-none relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-stroke-strong bg-surface-2 p-0.5 transition-colors data-[state=checked]:border-transparent data-[state=checked]:bg-accent",
         FOCUS_RING,
         DISABLED,
       )}
@@ -51,7 +51,7 @@ export function Toggle({
     >
       <Switch.Thumb asChild>
         <motion.span
-          className="block size-4 rounded-full bg-fg-secondary group-data-[state=checked]:bg-fg-on-accent"
+          className="block size-4 forced-color-adjust-none rounded-full bg-fg-secondary group-data-[state=checked]:bg-fg-on-accent"
           initial={false}
           animate={{ x: value ? TRAVEL : 0 }}
           transition={reduced ? { duration: 0 } : transition}
