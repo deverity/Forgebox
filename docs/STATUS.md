@@ -100,7 +100,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E3-T21 | Gate do E3 (checklist entre telas, smoke live, STATUS) | todo | — | |
 | M2-E5-T1 | Desenho das métricas v1: ADR-0044, docs e contratos aditivos | todo | — | |
 | M2-E5-T2 | Schema de manifesto: `logs[].access` + rotação; manifestos nginx/apache/caddy | todo | — | |
-| M2-E5-T3 | `forge-metrics`: parser de registro de acesso, roteador host->site, normalizador de URI | doing | feature/M2-E5-T3-metrics-parser | |
+| M2-E5-T3 | `forge-metrics`: parser de registro de acesso, roteador host->site, normalizador de URI | review | feature/M2-E5-T3-metrics-parser | `AccessParser` (serde_json emprestado, pre-passagem `\xhh`, soma de upstream do nginx, limite de 16 KiB, nunca entra em panico), `HostRouter` (exato/alias, depois sufixo `*.host` mais longo, contador de nao roteados), `UriNormalizer`. Fixtures reais nginx 1.30.6/Apache 2.4.69/Caddy 2.11.7 + lixo (insta), fuzz sem panico. Vazao (release, 1 nucleo, mediana): nginx 432k, Apache 218k, Caddy 296k linhas/s (alvo 200k). |
 | M2-E5-T4 | `forge-metrics`: tailer de logs (polling, linhas parciais, rotação, checkpoints, amostragem) | todo | — | |
 | M2-E5-T5 | `forge-metrics`: agregador (camadas HDR, merges exatos, top-K de rotas, erros recentes) | todo | — | |
 | M2-E5-T6 | Atribuição de CPU/RAM por vhost + amostragem de CPU do pool no `forge-fcgi` | todo | — | |
