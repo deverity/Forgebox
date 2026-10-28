@@ -293,6 +293,7 @@ Cada `Instance`, cada `PhpPool`, cada `App` (process), o DNS server (ator `dns-s
 ### 7.5 GUI e CLI
 - Todos os comandos Tauri são `async` e finos (encaminham ao daemon). A thread de UI do WebView nunca espera I/O. Eventos são aplicados em lote por frame (`requestAnimationFrame`), stores por serviço evitam re-render global.
 - A GUI continua navegável com o daemon ocupado ou até parado (mostra estado "reconectando" e enfileira ações que fazem sentido).
+- O estado da conexão vem do próprio cliente (`forge_ipc::Client::state()`, um `tokio::sync::watch` de `ConnectionState`: `Idle`, `Connecting`, `Connected{hello, generation}`, `Reconnecting{attempt, next_retry_ms, last_error}`, `Closed`), escrito só fora dos locks do cliente; com `keep_connected` o task de manutenção reconecta com backoff mesmo sem assinaturas. Credenciais vêm de um `CredentialsProvider` relido a cada tentativa (token do primeiro boot ou de um daemon reiniciado). O auto-start do daemon (`forge_ipc::client::local::connect_or_start`) é o mesmo para `forge` e `Forgebox.exe` (M2-E1-T2).
 - A CLI usa streams para `logs -f`, `stats --watch`, `status --watch`; `Ctrl+C` cancela o job no daemon (`job.cancel`).
 
 ### 7.6 Orçamentos e testes
