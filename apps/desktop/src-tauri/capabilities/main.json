@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-window",
+  "description": "Permissions of the main window; no other window exists.",
+  "windows": ["main"],
+  "platforms": ["windows"],
+  "permissions": ["core:default"]
+}

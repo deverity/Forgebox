@@ -4,7 +4,7 @@ Monorepo Cargo workspace + app Tauri + registry de manifestos. Tudo que um agent
 
 ```
 Forgebox/
-├── Cargo.toml                    # workspace: members = ["crates/*", "xtask"]; apps/desktop/src-tauri entra no workspace em M2-E1
+├── Cargo.toml                    # workspace: members = ["crates/*", "xtask", "apps/desktop/src-tauri"]; [profile.release] com LTO e opt-level="s" só para o shell Tauri
 ├── Cargo.lock
 ├── rust-toolchain.toml           # channel = "stable", components = [rustfmt, clippy]
 ├── rustfmt.toml / clippy.toml / deny.toml (cargo-deny: licenças e advisories)
@@ -246,29 +246,39 @@ Forgebox/
 │   └── forge-mcp/                # bin forge-mcp.exe: expõe tools MCP (list_sites, create_site, logs, ...)
 │
 ├── apps/
-│   └── desktop/
-│       ├── package.json          # pnpm; react, typescript, vite, tailwind, radix, motion, zustand, tanstack-query
+│   └── desktop/                  # Itens marcados (M2-E1-Tn) ainda não existem: chegam na tarefa indicada.
+│       ├── package.json          # pnpm@10.7.1, node >= 24; react 19, vite 8, tailwind 4, vitest, eslint 9, prettier, @tauri-apps/cli
+│       │                         #   (radix, motion, tanstack e afins entram com as tarefas que os usam)
+│       ├── pnpm-lock.yaml
 │       ├── index.html
+│       ├── vite.config.ts        # porta 1420 (devUrl do Tauri) + config do vitest (jsdom)
+│       ├── tsconfig.json         # strict; TypeScript 6.0.x (a faixa suportada pelo typescript-eslint)
+│       ├── eslint.config.js      # ESLint 9 flat: typescript-eslint strict, react-hooks, jsx-a11y
+│       ├── .prettierrc.json / .prettierignore / .gitignore
+│       ├── README.md             # runbook: Node 24, NODE_OPTIONS, comandos, o que roda sem Node
 │       ├── src/
-│       │   ├── main.tsx
-│       │   ├── app/              # roteamento (tanstack-router), shell (sidebar, titlebar, command palette)
-│       │   ├── design/           # tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
-│       │   ├── features/         # dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
+│       │   ├── main.tsx / App.tsx / index.css   # casca placeholder; Tailwind com `source("./")` (não varre src-tauri/target)
+│       │   ├── App.test.tsx / test/setup.ts     # vitest + Testing Library
+│       │   ├── app/              # (M2-E1-T10) roteamento (tanstack-router), shell (sidebar, titlebar, command palette)
+│       │   ├── design/           # (M2-E1-T6, T11) tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
+│       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`
-│       │   ├── state/            # stores (zustand), queries (tanstack-query), event bridge
-│       │   └── i18n/             # pt-BR, en (fluent ou i18next)
-│       ├── src-tauri/
-│       │   ├── Cargo.toml
-│       │   ├── tauri.conf.json   # janela, vibrancy, updater, bundle NSIS, identifier dev.forgebox.app
-│       │   ├── capabilities/     # permissões Tauri 2 por janela
+│       │   ├── state/            # (M2-E1-T9) stores, event bridge
+│       │   └── i18n/             # (M2-E1-T17) pt-BR, en
+│       ├── src-tauri/            # crate `forgebox-desktop` (membro do workspace; depende só de forge-ipc, guarda: `cargo xtask arch-guard`)
+│       │   ├── Cargo.toml        # bin `Forgebox` (mainBinaryName), lib `forgebox_desktop`; feature `custom-protocol` embute dist
+│       │   ├── build.rs          # tauri_build::build(); sem a feature, modo dev: compila sem Node e sem apps/desktop/dist
+│       │   ├── tauri.conf.json   # janela `main`, CSP estrita sem origens remotas, identifier dev.forgebox.app (vibrancy/updater/bundle: tarefas seguintes)
+│       │   ├── capabilities/     # main.json: permissões Tauri 2 só da janela `main`
+│       │   ├── app-icon.png      # fonte dos ícones: `pnpm tauri icon src-tauri/app-icon.png`
 │       │   ├── icons/
 │       │   └── src/
 │       │       ├── main.rs / lib.rs
 │       │       ├── commands.rs   # comandos Tauri → forge-ipc client (nunca lógica de domínio aqui)
-│       │       ├── tray.rs       # ícone/menu de bandeja, estados, ações rápidas
-│       │       ├── window.rs     # vibrancy/mica, titlebar custom, lembrar posição
-│       │       └── autostart.rs
-│       └── public/
+│       │       ├── tray.rs       # (M2-E1-T15) ícone/menu de bandeja, estados, ações rápidas
+│       │       ├── window.rs     # (M2-E1-T7) vibrancy/mica, titlebar custom, lembrar posição
+│       │       └── autostart.rs  # (M2-E1-T18)
+│       └── public/               # (quando houver assets estáticos)
 │
 ├── registry/                     # catálogo oficial de manifestos (pode virar repo separado "forgebox-registry")
 │   ├── index.yaml                # lista de tools, versão do schema, assinatura minisign
@@ -318,21 +328,21 @@ Forgebox/
 │   ├── portable/                 # script que monta o zip portátil
 │   └── assets/                   # banners, ícones do instalador
 │
-├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, lint-registry, registry-index, registry-sign, registry-keygen
+├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, arch-guard (grafo de dependências: GUI/CLI/MCP só dependem de forge-ipc; GUI sem windows/windows-sys), lint-registry, registry-index, registry-sign, registry-keygen
 ├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)
 │   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout;
 │       │                         #   registry/ (assinado com a chave dev, 2 tools + 1 stack) e registry-bad-sha/ (sha errado no índice)
 └── .github/
-    └── workflows/                # ci.yml (fmt, clippy, build, test, deny, lint-registry, artefatos gerados, pnpm build), dependabot.yml, PULL_REQUEST_TEMPLATE.md, release.yml (build, sign, latest.json)
+    └── workflows/                # ci.yml (fmt, clippy, build, test, deny, arch-guard, lint-registry, artefatos gerados, pnpm build), dependabot.yml, PULL_REQUEST_TEMPLATE.md, release.yml (build, sign, latest.json)
 ```
 
 ## Regras de organização
 
 1. **Nada de lógica de tool específica fora de `registry/` e `forge-render/templates/`.** Se um agente sentir vontade de escrever `if tool.id == "mysql"` em um crate, a resposta é estender o schema do manifesto.
 2. **Toda chamada Win32 fica em `forge-core/src/platform/windows/`** atrás de um trait. Outros crates só veem o trait.
-3. **GUI e CLI nunca importam crates de domínio.** Só `forge-ipc`. O xtask `gen-ts` gera os tipos TypeScript a partir dos contratos Rust (via `ts-rs` ou `specta`).
+3. **GUI e CLI nunca importam crates de domínio.** Só `forge-ipc`. `cargo xtask arch-guard` (parte de `xtask ci` e do CI) falha se `forge-cli`, `forge-mcp` ou `forgebox-desktop` dependerem de outro crate do workspace, ou se `forgebox-desktop` depender direto de `windows`/`windows-sys`. O xtask `gen-ts` gera os tipos TypeScript a partir dos contratos Rust (via `ts-rs` ou `specta`).
 4. **Templates são dados**, embutidos no binário por `include_dir!`, mas o usuário pode sobrescrever qualquer um colocando o mesmo caminho em `<root>/etc/templates/` (ver [08-release-layout.md](08-release-layout.md)).
 5. **Migrations SQLite são numeradas** (`0001_init.sql`...) e nunca editadas depois de publicadas.
 6. **Cada crate tem `README.md` de 10 linhas** dizendo o que é, o que não é e quem depende dele.

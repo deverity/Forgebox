@@ -1,5 +1,7 @@
 //! Development tasks for Forgebox, run as `cargo xtask <command>`.
 
+mod arch_guard;
+
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
 
@@ -52,7 +54,10 @@ enum Command {
         #[arg(long)]
         public: PathBuf,
     },
-    /// Run fmt-check, clippy, test, deny and lint-registry; stops at the first failure.
+    /// Check the workspace dependency graph: GUI/CLI/MCP depend only on forge-ipc, the GUI has no
+    /// direct windows/windows-sys dependency.
+    ArchGuard,
+    /// Run fmt-check, clippy, test, deny, arch-guard and lint-registry; stops at the first failure.
     Ci,
 }
 
@@ -345,6 +350,8 @@ fn ci(root: &Path) -> Result<()> {
     )?;
     run_step(root, "cargo", &["test", "--workspace"])?;
     run_step(root, "cargo", &["deny", "check"])?;
+    println!("==> arch-guard");
+    arch_guard::run(root)?;
     println!("==> lint-registry");
     if lint_registry(root)? > 0 {
         bail!("lint-registry found issues");
@@ -379,6 +386,7 @@ fn main() -> Result<()> {
         }
         Command::RegistryKeygen { secret, public } => registry_keygen(&secret, &public),
 
+        Command::ArchGuard => arch_guard::run(&root),
         Command::Ci => ci(&root),
     }
 }
@@ -389,7 +397,14 @@ mod tests {
 
     #[test]
     fn parses_all_subcommands() {
-        for arg in ["schema", "gen-ts", "lint-registry", "registry-index", "ci"] {
+        for arg in [
+            "schema",
+            "gen-ts",
+            "lint-registry",
+            "registry-index",
+            "arch-guard",
+            "ci",
+        ] {
             assert!(Cli::try_parse_from(["xtask", arg]).is_ok(), "{arg}");
         }
         assert!(Cli::try_parse_from(["xtask", "registry-sign", "--key", "k"]).is_ok());

@@ -1,0 +1,6 @@
+dist
+node_modules
+src-tauri
+pnpm-lock.yaml
+src/ipc/generated.ts
+src/ipc/methods.ts
