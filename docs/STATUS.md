@@ -40,7 +40,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E1-T2 | Cliente `forge-ipc` para GUIs | todo | — | |
 | M2-E1-T3 | Lacunas de API do shell (updates, port_check, hello, status, sites.open, details) | todo | — | |
 | M2-E1-T4 | Templates do comando `forge` equivalente na tabela de métodos | todo | — | |
-| M2-E1-T5 | Trait `SystemAppearance` (plataforma) | doing | feature/M2-E1-T5-system-appearance | |
+| M2-E1-T5 | Trait `SystemAppearance` (plataforma) | review | feature/M2-E1-T5-system-appearance | `platform::SystemAppearance` + `system_appearance()` → `AppearanceSnapshot` (accent ABGR→#RRGGBB com fallback DwmGetColorizationColor, apps/taskbar light, transparency, high contrast, RDP, `RtlGetVersion`), stub fora do Windows, `process_creation_time(pid)`; via `forge_ipc::base::platform`. Nesta máquina: build 19045, is_win11=false, RDP=true, accent #0078D7; snapshot() mediana 48 µs, frio 1,6 ms. `tests/win32_boundary.rs` falha com Win32 fora de platform/windows. |
 | M2-E1-T6 | Design tokens (JSON, CSS, Tailwind, fontes, motion, lint) | todo | — | |
 | M2-E1-T7 | Casca da janela (titlebar, materiais, estado, instância única, data dir) | todo | — | |
 | M2-E1-T8 | Ponte IPC (comandos Tauri genéricos, canais, contextos, cliente TS, fakeBridge) | todo | — | |
