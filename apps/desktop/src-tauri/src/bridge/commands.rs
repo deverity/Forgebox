@@ -76,7 +76,13 @@ pub async fn ipc_subscribe(
     on_frame: Channel<StreamFrame>,
 ) -> Result<SubscribeAnswer, ApiError> {
     bridge
-        .subscribe(&context, &method, params, Arc::new(on_frame), webview.label())
+        .subscribe(
+            &context,
+            &method,
+            params,
+            Arc::new(on_frame),
+            webview.label(),
+        )
         .await
 }
 

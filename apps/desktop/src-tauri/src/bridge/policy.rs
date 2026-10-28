@@ -296,10 +296,7 @@ mod tests {
         p.on_announced("user", t0 + secs(1));
         p.on_lost(t0 + secs(1));
         for later in [2, 61, 3600] {
-            assert_eq!(
-                p.decide(true, t0 + secs(later)),
-                Decision::StoppedOnPurpose
-            );
+            assert_eq!(p.decide(true, t0 + secs(later)), Decision::StoppedOnPurpose);
         }
         assert_eq!(p.stopped_reason(), Some("user"));
         assert_eq!(p.restarts(), 0);

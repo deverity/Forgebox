@@ -130,7 +130,8 @@ impl Bridge {
     /// The app's bridge: the `local` context with root discovery. Needs a tokio runtime
     /// (Tauri's).
     pub fn new(sink: Arc<dyn ConnectionSink>, options: BridgeOptions) -> Self {
-        let local: Arc<dyn Connector> = Arc::new(LocalConnector::discover(desktop_client_options()));
+        let local: Arc<dyn Connector> =
+            Arc::new(LocalConnector::discover(desktop_client_options()));
         Self::with_connectors(vec![(LOCAL_CONTEXT.to_owned(), local)], sink, options)
     }
 
@@ -160,7 +161,10 @@ impl Bridge {
         }
     }
 
-    async fn ask<R>(&self, make: impl FnOnce(forge_ipc::base::actor::Reply<R>) -> Msg) -> Result<R, ApiError> {
+    async fn ask<R>(
+        &self,
+        make: impl FnOnce(forge_ipc::base::actor::Reply<R>) -> Msg,
+    ) -> Result<R, ApiError> {
         self.inner
             .contexts
             .actor_ref()
@@ -188,7 +192,11 @@ impl Bridge {
 
     /// `ipc_start`: the user wants the daemon of `context` running. Refused on a root that
     /// was never initialized unless `initialize` (onboarding finished).
-    pub async fn start(&self, context: &str, initialize: bool) -> Result<ContextStateDto, ApiError> {
+    pub async fn start(
+        &self,
+        context: &str,
+        initialize: bool,
+    ) -> Result<ContextStateDto, ApiError> {
         let context = context.to_owned();
         let ask = self
             .inner
@@ -213,14 +221,17 @@ impl Bridge {
         let params = object_params(args.params, info.name)?;
         let request_id = match args.request_id.as_deref() {
             Some(text) => RequestId::from_str(text).map_err(|_| {
-                ApiError::new("invalid_input", format!("{text:?} is not a ULID request_id"))
-                    .with_reason("invalid_request_id", json!({ "request_id": text }))
+                ApiError::new(
+                    "invalid_input",
+                    format!("{text:?} is not a ULID request_id"),
+                )
+                .with_reason("invalid_request_id", json!({ "request_id": text }))
             })?,
             None => RequestId::new(),
         };
-        let timeout = args.timeout_ms.map(|ms| {
-            Duration::from_millis(ms.max(1)).min(self.inner.options.max_call_timeout)
-        });
+        let timeout = args
+            .timeout_ms
+            .map(|ms| Duration::from_millis(ms.max(1)).min(self.inner.options.max_call_timeout));
         let client = self.client(&args.context).await?;
         client
             .call_raw(
@@ -280,8 +291,10 @@ impl Bridge {
         if self.inner.streams.close(context, stream_id) {
             Ok(())
         } else {
-            Err(ApiError::new("not_found", format!("no stream {stream_id} in {context}"))
-                .with_reason("unknown_stream", json!({ "stream_id": stream_id })))
+            Err(
+                ApiError::new("not_found", format!("no stream {stream_id} in {context}"))
+                    .with_reason("unknown_stream", json!({ "stream_id": stream_id })),
+            )
         }
     }
 
@@ -313,10 +326,11 @@ impl Bridge {
 pub fn validate_call(method: &str) -> Result<&'static MethodInfo, ApiError> {
     let info = known(method)?;
     if info.kind == MethodKind::Stream {
-        return Err(
-            ApiError::new("invalid_input", format!("{method} is a stream: use ipc_subscribe"))
-                .with_reason("use_subscribe", json!({ "method": method })),
-        );
+        return Err(ApiError::new(
+            "invalid_input",
+            format!("{method} is a stream: use ipc_subscribe"),
+        )
+        .with_reason("use_subscribe", json!({ "method": method })));
     }
     let stream_group = METHODS
         .iter()
@@ -346,8 +360,11 @@ pub fn validate_stream(method: &str) -> Result<&'static MethodInfo, ApiError> {
 fn known(method: &str) -> Result<&'static MethodInfo, ApiError> {
     method_info(method).ok_or_else(|| {
         // Same code the daemon answers for an unknown method.
-        ApiError::new("not_found", format!("{method:?} is not a method of the API"))
-            .with_reason("unknown_method", json!({ "method": method }))
+        ApiError::new(
+            "not_found",
+            format!("{method:?} is not a method of the API"),
+        )
+        .with_reason("unknown_method", json!({ "method": method }))
     })
 }
 
@@ -355,10 +372,11 @@ fn object_params(params: Option<Value>, method: &str) -> Result<Value, ApiError>
     match params {
         None | Some(Value::Null) => Ok(Value::Object(Map::new())),
         Some(params @ Value::Object(_)) => Ok(params),
-        Some(_) => Err(
-            ApiError::new("invalid_input", format!("the params of {method} must be an object"))
-                .with_reason("params_not_object", json!({ "method": method })),
-        ),
+        Some(_) => Err(ApiError::new(
+            "invalid_input",
+            format!("the params of {method} must be an object"),
+        )
+        .with_reason("params_not_object", json!({ "method": method }))),
     }
 }
 
@@ -409,8 +427,8 @@ async fn run_stream(task: StreamTask) {
         )
         .await;
         if end != PumpEnd::SourceEnded {
-            let _ = tokio::time::timeout(options.unsubscribe_timeout, subscription.unsubscribe())
-                .await;
+            let _ =
+                tokio::time::timeout(options.unsubscribe_timeout, subscription.unsubscribe()).await;
         }
     }
     streams.forget(&stream_id);
@@ -429,7 +447,10 @@ async fn subscribe_when_connected(
         loop {
             let now = state.borrow_and_update().clone();
             if now == ConnectionState::Closed {
-                return Err(Some(client_error(&forge_ipc::ClientError::Closed, Some(method))));
+                return Err(Some(client_error(
+                    &forge_ipc::ClientError::Closed,
+                    Some(method),
+                )));
             }
             if now.is_connected() {
                 break;
@@ -463,7 +484,10 @@ mod tests {
     #[test]
     fn calls_are_validated_against_the_method_table() {
         assert_eq!(validate_call("sites.list").unwrap().name, "sites.list");
-        assert_eq!(validate_call("daemon.doctor").unwrap().name, "daemon.doctor");
+        assert_eq!(
+            validate_call("daemon.doctor").unwrap().name,
+            "daemon.doctor"
+        );
         let unknown = validate_call("nope.nope").unwrap_err();
         assert_eq!(
             (unknown.code.as_str(), unknown.reason()),
@@ -471,7 +495,11 @@ mod tests {
         );
         let stream = validate_call("events.subscribe").unwrap_err();
         assert_eq!(stream.reason(), Some("use_subscribe"));
-        for managed in ["events.unsubscribe", "logs.unsubscribe", "metrics.unsubscribe"] {
+        for managed in [
+            "events.unsubscribe",
+            "logs.unsubscribe",
+            "metrics.unsubscribe",
+        ] {
             assert_eq!(
                 validate_call(managed).unwrap_err().reason(),
                 Some("use_unsubscribe"),
@@ -482,7 +510,10 @@ mod tests {
             validate_stream("sites.list").unwrap_err().reason(),
             Some("not_a_stream")
         );
-        assert_eq!(validate_stream("logs.subscribe").unwrap().name, "logs.subscribe");
+        assert_eq!(
+            validate_stream("logs.subscribe").unwrap().name,
+            "logs.subscribe"
+        );
     }
 
     #[test]

@@ -177,7 +177,10 @@ mod tests {
     #[test]
     fn daemon_errors_pass_through_unchanged() {
         let daemon = ApiError::new("unauthorized", "bad token").with_reason("x", json!({"a": 1}));
-        assert_eq!(client_error(&ClientError::Api(daemon.clone()), None), daemon);
+        assert_eq!(
+            client_error(&ClientError::Api(daemon.clone()), None),
+            daemon
+        );
     }
 
     #[test]

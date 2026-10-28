@@ -85,7 +85,10 @@ mod tests {
             }
         }
         let mut found = Vec::new();
-        visit(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
+        visit(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut found,
+        );
         assert!(found.len() >= 8, "{found:?}");
         for (file, signature) in &found {
             assert!(

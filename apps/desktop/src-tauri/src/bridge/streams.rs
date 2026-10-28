@@ -487,7 +487,12 @@ mod tests {
 
     impl Collect {
         fn frames(&self) -> Vec<StreamFrame> {
-            self.0.lock().unwrap().iter().map(|(_, f)| f.clone()).collect()
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(_, f)| f.clone())
+                .collect()
         }
     }
 
@@ -598,7 +603,11 @@ mod tests {
             })
         };
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(sink.frames().len(), 2, "two frames, then the window is full");
+        assert_eq!(
+            sink.frames().len(),
+            2,
+            "two frames, then the window is full"
+        );
         acks.send_replace(1);
         tokio::time::sleep(Duration::from_millis(100)).await;
         assert_eq!(sink.frames().len(), 3);

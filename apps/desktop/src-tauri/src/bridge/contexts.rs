@@ -129,7 +129,10 @@ pub trait Endpoint: Send + Sync + 'static {
     /// Starts the daemon unless one answers; resolves once it answers. With
     /// `require_initialized`, refuses (`not_found`, `root_uninitialized`) a root that was
     /// never initialized.
-    fn start(&self, require_initialized: bool) -> BoxFuture<'static, Result<StartOutcome, ApiError>>;
+    fn start(
+        &self,
+        require_initialized: bool,
+    ) -> BoxFuture<'static, Result<StartOutcome, ApiError>>;
 }
 
 /// What [`Connector::open`] found.
@@ -229,7 +232,10 @@ impl Endpoint for LocalEndpoint {
         .boxed()
     }
 
-    fn start(&self, require_initialized: bool) -> BoxFuture<'static, Result<StartOutcome, ApiError>> {
+    fn start(
+        &self,
+        require_initialized: bool,
+    ) -> BoxFuture<'static, Result<StartOutcome, ApiError>> {
         let root = self.root.clone();
         // A short-lived client: the context's own client reconnects by itself.
         let config = LocalClientConfig::new(self.config.name.clone(), self.config.version.clone());
@@ -313,6 +319,12 @@ pub enum Msg {
         open: u64,
         result: Result<StartOutcome, ApiError>,
     },
+    /// The connection attempt that follows a successful start failed.
+    PokeFailed {
+        context: String,
+        open: u64,
+        error: ClientError,
+    },
 }
 
 /// Who asked for a start.
@@ -346,10 +358,15 @@ struct Live {
     initialized: bool,
     policy: AutoStartPolicy,
     start: Option<StartRun>,
+    /// A start succeeded and the client is connecting to the daemon it found or spawned:
+    /// still `starting` for the UI until connected (no `reconnecting` flash).
+    just_started: bool,
     start_error: Option<ApiError>,
     /// Invalidates scheduled checks.
     check_token: u64,
-    next_check: Option<Instant>,
+    /// When the policy allows the next automatic restart (a `CheckAt` decision; not the
+    /// grace check that follows a loss).
+    next_restart: Option<Instant>,
     timer: Option<AbortHandle>,
     tasks: Vec<AbortHandle>,
     watcher: bool,
@@ -358,7 +375,7 @@ struct Live {
 impl Live {
     fn cancel_check(&mut self) {
         self.check_token += 1;
-        self.next_check = None;
+        self.next_restart = None;
         if let Some(timer) = self.timer.take() {
             timer.abort();
         }
@@ -375,8 +392,13 @@ impl Live {
 
 enum Phase {
     /// Not open: never opened, failed to open, or closed.
-    Closed { error: Option<ApiError>, final_: bool },
-    Opening { waiters: Vec<Waiter> },
+    Closed {
+        error: Option<ApiError>,
+        final_: bool,
+    },
+    Opening {
+        waiters: Vec<Waiter>,
+    },
     Open(Box<Live>),
 }
 
@@ -515,6 +537,11 @@ impl Actor for Contexts {
                 open,
                 result,
             } => self.on_start_done(&context, open, result, &weak),
+            Msg::PokeFailed {
+                context,
+                open,
+                error,
+            } => self.on_poke_failed(&context, open, &error),
         }
     }
 
@@ -681,9 +708,10 @@ impl Contexts {
             initialized: opened.initialized,
             policy: AutoStartPolicy::new(policy_config),
             start: None,
+            just_started: false,
             start_error: None,
             check_token: 0,
-            next_check: None,
+            next_restart: None,
             timer: None,
             tasks: vec![forwarder],
             watcher: false,
@@ -691,7 +719,14 @@ impl Contexts {
         // `keep_connected`: connects now and keeps reconnecting with backoff.
         client.start();
         if live.policy.on_open(live.initialized) == Decision::Start {
-            begin_start(context, open, &mut live, StartKind::Initial, Vec::new(), weak);
+            begin_start(
+                context,
+                open,
+                &mut live,
+                StartKind::Initial,
+                Vec::new(),
+                weak,
+            );
         }
         entry.phase = Phase::Open(live);
         let mut starts = Vec::new();
@@ -771,6 +806,7 @@ impl Contexts {
         if now_connected {
             if !was_connected {
                 live.policy.on_connected(now);
+                live.just_started = false;
                 live.start_error = None;
                 live.initialized = true;
                 live.cancel_check();
@@ -844,13 +880,16 @@ impl Contexts {
             return;
         }
         live.initialized = initialized;
-        live.next_check = None;
+        live.next_restart = None;
         match live.policy.decide(initialized, Instant::now()) {
             Decision::Start => {
                 tracing::info!(context, "restarting the daemon after an unexpected loss");
                 begin_start(context, open, live, StartKind::Restart, Vec::new(), weak);
             }
-            Decision::CheckAt(at) => schedule_check(context, open, live, at, weak),
+            Decision::CheckAt(at) => {
+                schedule_check(context, open, live, at, weak);
+                live.next_restart = Some(at);
+            }
             Decision::Uninitialized | Decision::StoppedOnPurpose => {}
         }
         self.emit(context);
@@ -878,9 +917,21 @@ impl Contexts {
                     live.policy.on_restart_succeeded(*outcome);
                 }
                 // Connect the context's client now instead of at its next backoff tick.
+                live.just_started = true;
                 let client = live.client.clone();
+                let weak = weak.clone();
+                let context = context.to_owned();
                 tokio::spawn(async move {
-                    let _ = client.ping().await;
+                    if let Err(error) = client.ping().await {
+                        tell(
+                            &weak,
+                            Msg::PokeFailed {
+                                context,
+                                open,
+                                error,
+                            },
+                        );
+                    }
                 });
             }
             Err(error) => {
@@ -906,6 +957,18 @@ impl Contexts {
         for waiter in run.waiters {
             let _ = waiter.send(answer.clone());
         }
+        self.emit(context);
+    }
+
+    fn on_poke_failed(&mut self, context: &str, open: u64, error: &ClientError) {
+        let Some(live) = self.live(context, open) else {
+            return;
+        };
+        if live.client_state.is_connected() {
+            return;
+        }
+        tracing::debug!(context, %error, "no connection right after a start");
+        live.just_started = false;
         self.emit(context);
     }
 
@@ -1057,7 +1120,7 @@ fn snapshot(context: &str, entry: &Entry) -> (ContextStateDto, Option<Instant>) 
                 dto.status,
                 ConnectionStatus::Connected | ConnectionStatus::Closed
             ) {
-                if live.start.is_some() {
+                if live.start.is_some() || live.just_started {
                     dto.status = ConnectionStatus::Starting;
                 } else if !live.initialized {
                     dto.status = ConnectionStatus::Uninitialized;
@@ -1068,7 +1131,7 @@ fn snapshot(context: &str, entry: &Entry) -> (ContextStateDto, Option<Instant>) 
             if dto.status != ConnectionStatus::Connected {
                 dto.last_error = live.start_error.clone().or(client_error_now);
             }
-            (dto, live.next_check)
+            (dto, live.next_restart)
         }
     }
 }
@@ -1121,7 +1184,6 @@ fn schedule_check(
 ) {
     live.cancel_check();
     let token = live.check_token;
-    live.next_check = Some(at);
     let weak = weak.clone();
     let context = context.to_owned();
     let timer = tokio::spawn(async move {
