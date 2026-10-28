@@ -69,7 +69,21 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
-$Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+# Native output is decoded with [Console]::OutputEncoding, which defaults to the OEM code
+# page (cp850 here): forge.exe writes UTF-8 (Rust std, no console conversion when piped),
+# so a localized message reached the log mangled ("nao" with accents showed up as box
+# drawing characters). UTF-8 without BOM in both directions; the previous values are
+# restored at the very end. Setting the console encoding throws when the process has no
+# console, which is harmless here.
+$PreviousConsoleEncoding = $null
+$PreviousOutputEncoding = $OutputEncoding
+try {
+    $PreviousConsoleEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch { $PreviousConsoleEncoding = $null }
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+$Repo =(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 if (-not $Root) { $Root = Join-Path ([System.IO.Path]::GetTempPath()) "fb-smoke-$Stamp" }
 $Root = [System.IO.Path]::GetFullPath($Root)
@@ -581,5 +595,10 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
         Write-Log "root kept; log: $($script:LogFile)"
     }
     $code = if ($failedSteps -gt 0) { 1 } else { 0 }
+    # Last thing: give the session its console encodings back.
+    $OutputEncoding = $PreviousOutputEncoding
+    if ($null -ne $PreviousConsoleEncoding) {
+        try { [Console]::OutputEncoding = $PreviousConsoleEncoding } catch { }
+    }
 }
 exit $code
