@@ -8,6 +8,10 @@ O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de 
 
 ## [Não lançado]
 
+### Adicionado
+- Esqueleto do desktop (`apps/desktop`): Vite 8, React 19, TypeScript 6, Tailwind 4, vitest, ESLint 9 e crate Tauri `forgebox-desktop` (`Forgebox.exe`) no workspace Cargo; compila sem Node e sem `dist` (M2-E1-T1).
+- `cargo xtask arch-guard`: falha se `forge-cli`, `forge-mcp` ou `forgebox-desktop` dependerem de outro crate do workspace além de `forge-ipc`, ou se o desktop depender direto de `windows`/`windows-sys` (M2-E1-T1).
+
 ## [0.1.0] — 2026-10-28
 
 Primeira versão: fundação do repositório (M0) e motor sem interface gráfica com a CLI `forge` (M1). Ainda não há GUI nem instalador (M2 e M4).

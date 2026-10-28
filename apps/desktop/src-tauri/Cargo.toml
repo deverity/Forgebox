@@ -1,0 +1,39 @@
+[package]
+name = "forgebox-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox desktop app (Forgebox.exe): Tauri shell over the forgeboxd API."
+publish = false
+
+# Binary name is the product name: `tauri.conf.json` mainBinaryName = "Forgebox".
+[[bin]]
+name = "Forgebox"
+path = "src/main.rs"
+
+[lib]
+name = "forgebox_desktop"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[features]
+# Embeds apps/desktop/dist and serves it from tauri://. Enabled by `tauri build`; off for plain
+# cargo commands so the workspace builds without Node (docs/02, M2-E1-T1).
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+# Architecture rule (CLAUDE.md): GUI depends on forge-ipc only; checked by `cargo xtask arch-guard`.
+forge-ipc = { path = "../../../crates/forge-ipc" }
+tauri = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
