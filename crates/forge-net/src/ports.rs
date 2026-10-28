@@ -325,6 +325,17 @@ impl PortAllocator {
             .await
     }
 
+    /// The reservation holding `port` (any owner), if any: `net.port_check`.
+    pub async fn reservation_of(
+        &self,
+        protocol: PortProtocol,
+        port: u16,
+    ) -> Result<Option<PortReservation>> {
+        self.reader
+            .query(move |conn| PortRepo::new(conn).find_port(protocol, port))
+            .await
+    }
+
     /// Every reservation, by port.
     pub async fn list(&self) -> Result<Vec<PortReservation>> {
         self.reader.query(|conn| PortRepo::new(conn).list()).await

@@ -124,6 +124,11 @@ impl JobState {
 pub struct JobErrorInfo {
     pub code: String,
     pub message: String,
+    /// Structured details (`{reason, args}`, [`ForgeError::details`]); clients localize
+    /// from `code` plus these. Added without bumping `v` (optional, may be missing).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Unknown>))]
+    pub details: Option<serde_json::Value>,
 }
 
 impl From<&ForgeError> for JobErrorInfo {
@@ -131,6 +136,7 @@ impl From<&ForgeError> for JobErrorInfo {
         Self {
             code: err.code().to_owned(),
             message: err.to_string(),
+            details: err.details(),
         }
     }
 }
@@ -270,5 +276,20 @@ mod tests {
         let info = JobErrorInfo::from(&ForgeError::NotFound("php 9".into()));
         assert_eq!(info.code, "not_found");
         assert_eq!(info.message, "not found: php 9");
+        // Failed jobs carry the structured details too (ADR-0039)...
+        assert_eq!(info.details.as_ref().unwrap()["reason"], "not_found");
+        assert_eq!(info.details.unwrap()["args"]["what"], "php 9");
+        let busy = JobErrorInfo::from(&ForgeError::PortInUse {
+            port: 3306,
+            owner: Some("mysqld.exe (PID 4412)".into()),
+        });
+        assert_eq!(busy.details.unwrap()["args"]["port"], 3306);
+        // ...and leave the field out when there are none, so old clients see the same JSON.
+        let plain =
+            serde_json::to_value(JobErrorInfo::from(&ForgeError::Internal("x".into()))).unwrap();
+        assert!(plain.get("details").is_none());
+        let old: JobErrorInfo =
+            serde_json::from_value(serde_json::json!({"code": "io", "message": "m"})).unwrap();
+        assert_eq!(old.details, None);
     }
 }

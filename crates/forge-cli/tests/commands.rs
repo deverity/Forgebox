@@ -121,7 +121,8 @@ fn table() -> Vec<Case> {
         case(&["site", "unsecure", "demo.test"], OK),
         case(&["site", "server", "demo.test", "apache"], OK),
         case(&["site", "alias", "demo.test", "add", "www.demo.test"], OK),
-        case(&["site", "open", "demo.test"], NI),
+        // Plain `site open` would launch a real browser; the editor target stays not_implemented.
+        case(&["site", "open", "demo.test", "--editor"], NI),
         case(&["site", "case-sensitive", "demo.test", "on"], OK),
         case(&["site", "lint-case", "demo.test"], OK),
         case(&["site", "remove", "demo.test"], E("invalid_input")),

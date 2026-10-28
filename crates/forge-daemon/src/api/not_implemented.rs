@@ -24,11 +24,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("php.ext_disable", "M2-E2", "per-version extension toggles"),
     ("php.xdebug", "M2-E2", "Xdebug toggle per PHP version"),
     (
-        "sites.open",
-        "M2-E1",
-        "opening a site in the browser/editor/terminal of the daemon's machine",
-    ),
-    (
         "sites.share",
         "M3-E3",
         "public tunnels (cloudflared, ngrok, expose)",
@@ -83,15 +78,31 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// The error answered by a method of the table.
+/// Roadmap task of the editor and terminal targets of `sites.open` (the browser and the
+/// file manager already work; this is a partial method, so it is not in the table).
+pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
+
+/// The method names of the table, in table order: what `system.hello` reports as
+/// `not_implemented` (API 1.1) so clients can disable the matching controls.
+pub fn methods() -> Vec<String> {
+    NOT_IMPLEMENTED
+        .iter()
+        .map(|(method, _, _)| (*method).to_owned())
+        .collect()
+}
+
+/// The error answered by a method of the table. Its structured details are
+/// `{reason: "not_implemented", args: {method, task, what}}` (ADR-0039).
 pub fn error(method: &str) -> ForgeError {
     let (task, what) = NOT_IMPLEMENTED
         .iter()
         .find(|(name, _, _)| *name == method)
         .map_or(("?", "this method"), |(_, task, what)| (*task, *what));
-    ForgeError::NotImplemented(format!(
-        "{method} is not implemented yet: {what} (roadmap {task})"
-    ))
+    ForgeError::NotImplementedYet {
+        method: method.to_owned(),
+        task: task.to_owned(),
+        what: what.to_owned(),
+    }
 }
 
 /// Registers every method of [`NOT_IMPLEMENTED`] that has no handler yet.
@@ -125,6 +136,26 @@ mod tests {
         let err = error("sites.share");
         assert_eq!(err.code(), "not_implemented");
         assert!(err.to_string().contains("M3-E3"));
+        let details = err.details().unwrap();
+        assert_eq!(details["reason"], "not_implemented");
+        assert_eq!(details["args"]["method"], "sites.share");
+        assert_eq!(details["args"]["task"], "M3-E3");
+    }
+
+    #[test]
+    fn hello_reports_exactly_the_table() {
+        let reported = methods();
+        assert_eq!(reported.len(), NOT_IMPLEMENTED.len());
+        for (method, _, _) in NOT_IMPLEMENTED {
+            assert!(reported.iter().any(|m| m == method), "{method}");
+        }
+        // sites.open works for the browser and the file manager: not "not implemented".
+        assert!(!reported.iter().any(|m| m == "sites.open"));
+        // Sorted names would hide a duplicated row.
+        let mut sorted = reported.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), reported.len(), "duplicated row");
     }
 
     #[test]

@@ -44,6 +44,11 @@ pub struct HelloDto {
     #[specta(type = specta_typescript::Number)]
     pub last_event_seq: u64,
     pub server_time: Timestamp,
+    /// Methods of the contract this daemon answers with `not_implemented` (API 1.1): the
+    /// GUI disables or labels the matching controls without trying them. Missing from
+    /// 1.0 daemons (empty).
+    #[serde(default)]
+    pub not_implemented: Vec<String>,
 }
 
 /// Result of `system.ping` (latency indicator, docs/13 §5).

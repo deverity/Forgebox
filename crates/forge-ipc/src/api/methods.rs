@@ -98,6 +98,7 @@ macro_rules! api_methods {
             job "net.dns_enable" net_dns_enable(NoParams) -> DnsStatusDto [Admin, mutating] "forge dns enable" => "forge dns enable";
             job "net.dns_disable" net_dns_disable(NoParams) -> DnsStatusDto [Admin, mutating] "forge dns disable" => "forge dns disable";
             call "net.dns_test" net_dns_test(DnsTestParams) -> DnsTestDto [Viewer] "forge dns test" => "forge dns test {host}";
+            call "net.port_check" net_port_check(PortCheckParams) -> PortCheckDto [Viewer] "";
             job "net.lan_expose" net_lan_expose(LanSiteParams) -> LanAccessDto [Admin, mutating] "forge lan expose" => "forge lan expose {site}";
             job "net.lan_unexpose" net_lan_unexpose(LanSiteParams) -> Ack [Admin, mutating] "forge lan unexpose" => "forge lan unexpose {site}";
             call "net.lan_qr" net_lan_qr(LanSiteParams) -> LanAccessDto [Viewer] "forge lan qr" => "forge lan qr {site}";

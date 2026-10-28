@@ -4,10 +4,11 @@
 //!
 //! | task | interval | notes |
 //! |---|---|---|
-//! | update checks | per tool: `next_check_at` of the update engine (`check_interval` ± 10 %, quiet hours, metered) | paused while a user job runs; `run_scheduled` applies automatic updates as jobs |
+//! | update checks | per tool: `next_check_at` of the update engine (`check_interval` ± 10 %, quiet hours, metered) | paused while a user job runs; `run_scheduled` applies automatic updates as jobs; each check publishes `tool.updates_available` ([`crate::update_feed`]) |
 //! | registry refresh | 12 h ± 10 % | skipped on a metered connection (`metered = "pause"`) and in quiet hours |
 //! | `tmp/` cleanup | 24 h ± 10 % | `tmp/stage/*` older than 24 h, `tmp/downloads/*` older than 7 days |
 //! | port conflicts | 60 s ± 10 % | `port.conflict` once per new intruder |
+//! | update list | on events | `tool.updated|rollback` → the applied update leaves the list at once, a re-check follows, and `tool.updates_available` is published (ADR-0039) |
 //! | site/TLS reactions | on events | `site.*`, `tool.updated|rollback|current_changed`, `tls.renewed|leaf_issued` → pools + web servers re-rendered (debounced 300 ms); while a TLD is in `hosts` mode, the `hosts` block follows the sites and aliases (single flight, ADR-0033) |
 //!
 //! Certificate renewal (`tls` actor), health probes and process metrics (instance
@@ -25,13 +26,15 @@ use forge_core::event::{EventKind, StreamItem};
 use forge_core::ids::ToolId;
 use forge_core::model::port::OwnerKind;
 use forge_ipc::api::PortConflictPayload;
+use forge_ipc::api::ToolVersionChangePayload;
+use forge_net::ports::PortConflict;
 use jiff::tz::TimeZone;
 use rand::Rng;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use crate::catalog;
 use crate::daemon::Daemon;
+use crate::update_feed::{EngineSource, UpdateFeed, UpdateSource};
 
 /// Registry refresh interval.
 pub const REGISTRY_REFRESH: Duration = Duration::from_secs(12 * 3600);
@@ -77,11 +80,39 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    /// Starts every loop.
+    /// Starts every loop, with the update engine of the daemon as the source of updates.
     pub fn start(daemon: &Daemon) -> Self {
+        Self::start_with(
+            daemon,
+            Arc::new(EngineSource {
+                engine: daemon.updates.clone(),
+                reader: daemon.reader.clone(),
+            }),
+        )
+    }
+
+    /// Starts every loop with `source` answering the update questions (a fake in tests).
+    pub fn start_with(daemon: &Daemon, source: Arc<dyn UpdateSource>) -> Self {
         let stop = CancellationToken::new();
+        let feed = Arc::new(UpdateFeed::new(daemon.bus.clone()));
+        // The feed starts from the last persisted list, before either loop publishes, so
+        // no publication after a restart is partial or empty (ADR-0039 §3).
+        let reader = daemon.reader.clone();
+        let updates_daemon = daemon.clone();
+        let updates_stop = stop.clone();
         let tasks = vec![
-            tokio::spawn(update_loop(daemon.clone(), stop.clone())),
+            tokio::spawn(async move {
+                feed.seed_from_store(&reader).await;
+                tokio::join!(
+                    update_loop(
+                        updates_daemon.clone(),
+                        Arc::clone(&source),
+                        Arc::clone(&feed),
+                        updates_stop.clone(),
+                    ),
+                    update_react_loop(updates_daemon, source, feed, updates_stop),
+                );
+            }),
             tokio::spawn(registry_loop(daemon.clone(), stop.clone())),
             tokio::spawn(tmp_loop(daemon.clone(), stop.clone())),
             tokio::spawn(port_loop(daemon.clone(), stop.clone())),
@@ -127,21 +158,41 @@ fn user_job_running(daemon: &Daemon) -> bool {
         .any(|job| job.request_id.is_some())
 }
 
-async fn update_loop(daemon: Daemon, stop: CancellationToken) {
+/// One due background check of `tool`: runs it, keeps what it found in `feed` and
+/// publishes `tool.updates_available` (after every check that ran, changed or not).
+/// A deferred check (quiet hours, metered) changes nothing.
+pub(crate) async fn run_due_check(source: &dyn UpdateSource, feed: &UpdateFeed, tool: &ToolId) {
+    match source.run_scheduled(tool, Timestamp::now()).await {
+        Ok(run) => {
+            tracing::info!(%tool, deferred = ?run.deferred, updates = run.updates.len(), started = run.started.len(), "scheduled update check");
+            if run.deferred.is_none() {
+                feed.set_tool(tool, &run.updates);
+                feed.publish();
+            }
+        }
+        Err(err) => tracing::warn!(%tool, %err, "scheduled update check failed"),
+    }
+}
+
+async fn update_loop(
+    daemon: Daemon,
+    source: Arc<dyn UpdateSource>,
+    feed: Arc<UpdateFeed>,
+    stop: CancellationToken,
+) {
     let mut next: BTreeMap<ToolId, Option<Timestamp>> = BTreeMap::new();
     loop {
-        let tools: Vec<ToolId> = match catalog::all_installed(&daemon.reader).await {
-            Ok(rows) => {
-                let mut ids: Vec<ToolId> = rows.into_iter().map(|r| r.tool_id).collect();
-                ids.sort();
-                ids.dedup();
-                ids
-            }
+        let tools: Vec<ToolId> = match source.installed_tools().await {
+            Ok(ids) => ids,
             Err(err) => {
                 tracing::warn!(%err, "scheduler: cannot list installed tools");
                 Vec::new()
             }
         };
+        if feed.retain_tools(&tools) {
+            // A tool was removed: its updates leave the list.
+            feed.publish();
+        }
         // `manual` tools (no next check) are asked again: the policy may have changed.
         next.retain(|_, at| at.is_some());
         let now = Timestamp::now();
@@ -149,7 +200,7 @@ async fn update_loop(daemon: Daemon, stop: CancellationToken) {
             if next.contains_key(tool) {
                 continue;
             }
-            match daemon.updates.next_check_at(tool, now).await {
+            match source.next_check_at(tool, now).await {
                 Ok(check) => {
                     next.insert(tool.clone(), check.at);
                 }
@@ -166,12 +217,7 @@ async fn update_loop(daemon: Daemon, stop: CancellationToken) {
             tracing::debug!("scheduler: user job running; update checks deferred");
         } else {
             for tool in due {
-                match daemon.updates.run_scheduled(&tool, Timestamp::now()).await {
-                    Ok(run) => {
-                        tracing::info!(%tool, deferred = ?run.deferred, updates = run.updates.len(), started = run.started.len(), "scheduled update check")
-                    }
-                    Err(err) => tracing::warn!(%tool, %err, "scheduled update check failed"),
-                }
+                run_due_check(source.as_ref(), &feed, &tool).await;
                 next.remove(&tool);
             }
         }
@@ -188,6 +234,62 @@ async fn update_loop(daemon: Daemon, stop: CancellationToken) {
             .min(UPDATE_MAX_SLEEP);
         if !sleep_or_stop(&stop, wait).await {
             return;
+        }
+    }
+}
+
+/// What `tool.updated|rollback` changes in the list of pending updates. The applied
+/// update leaves the list at once (the badge must not wait for a network check); then the
+/// tool is checked again (a newer release may exist, or the rolled-back version becomes
+/// the update to offer) unless the connection is metered or in quiet hours.
+async fn update_react_loop(
+    daemon: Daemon,
+    source: Arc<dyn UpdateSource>,
+    feed: Arc<UpdateFeed>,
+    stop: CancellationToken,
+) {
+    let mut events = daemon.bus.subscribe();
+    loop {
+        let item = tokio::select! {
+            () = stop.cancelled() => return,
+            item = events.recv_item() => item,
+        };
+        let event = match item {
+            Some(StreamItem::Event(event)) => event,
+            Some(StreamItem::Lagged { .. }) => continue,
+            None => return,
+        };
+        if !matches!(event.kind, EventKind::ToolUpdated | EventKind::ToolRollback) {
+            continue;
+        }
+        let Ok(change) = serde_json::from_value::<ToolVersionChangePayload>(event.payload) else {
+            continue;
+        };
+        if event.kind == EventKind::ToolUpdated {
+            feed.remove_series(&change.tool, change.series.as_deref());
+            feed.publish();
+        }
+        let metered = is_metered(&daemon).await;
+        if let Some(why) = background_paused(&daemon.config(), metered) {
+            tracing::debug!(tool = %change.tool, why, "update list: re-check postponed");
+            if event.kind == EventKind::ToolRollback {
+                feed.publish();
+            }
+            continue;
+        }
+        match source.check(&change.tool).await {
+            Ok(found) => {
+                let changed = feed.set_tool(&change.tool, &found);
+                if changed || event.kind == EventKind::ToolRollback {
+                    feed.publish();
+                }
+            }
+            Err(err) => {
+                tracing::debug!(tool = %change.tool, %err, "update list: re-check failed");
+                if event.kind == EventKind::ToolRollback {
+                    feed.publish();
+                }
+            }
         }
     }
 }
@@ -292,6 +394,7 @@ async fn port_loop(daemon: Daemon, stop: CancellationToken) {
             .unwrap_or_default()
         };
         let own_pid = std::process::id();
+        let instances = crate::api::instance_names(&daemon);
         let result = daemon
             .ports
             .conflicts(|_owner, pid| pid == own_pid || ours.contains(&pid))
@@ -299,26 +402,13 @@ async fn port_loop(daemon: Daemon, stop: CancellationToken) {
         match result {
             Ok(conflicts) => {
                 for conflict in conflicts.into_iter().filter(|c| c.newly_detected) {
-                    let r = &conflict.reservation;
-                    let payload = PortConflictPayload {
-                        v: 1,
-                        port: r.port,
-                        protocol: forge_ipc::api::PortProtocol::Tcp,
-                        owner_name: format!("{}/{}", r.owner.kind.as_str(), r.owner.id),
-                        instance_id: (r.owner.kind == OwnerKind::Instance)
-                            .then(|| r.owner.id.parse().ok())
-                            .flatten(),
-                        holder: Some(forge_ipc::api::PortHolderDto {
-                            pid: conflict.holder.pid,
-                            exe: conflict
-                                .holder
-                                .exe_path
-                                .as_deref()
-                                .map(forge_core::paths::posix_string)
-                                .unwrap_or_else(|| "?".into()),
-                        }),
-                    };
-                    tracing::warn!(port = r.port, pid = conflict.holder.pid, "port conflict");
+                    let payload = conflict_payload(&conflict, &instances);
+                    tracing::warn!(
+                        port = payload.port,
+                        pid = conflict.holder.pid,
+                        owner = %payload.owner_name,
+                        "port conflict"
+                    );
                     daemon.bus.publish(
                         EventKind::PortConflict,
                         serde_json::to_value(payload).unwrap_or_default(),
@@ -327,6 +417,33 @@ async fn port_loop(daemon: Daemon, stop: CancellationToken) {
             }
             Err(err) => tracing::debug!(%err, "port conflict check failed"),
         }
+    }
+}
+
+/// The `port.conflict` payload of a conflict. `owner_name` is `<tool>/<instance>`
+/// (`mysql/default`) for an instance, `<kind>/<id>` for any other owner (ADR-0039).
+pub(crate) fn conflict_payload(
+    conflict: &PortConflict,
+    instances: &BTreeMap<String, String>,
+) -> PortConflictPayload {
+    let r = &conflict.reservation;
+    PortConflictPayload {
+        v: 1,
+        port: r.port,
+        protocol: forge_ipc::api::PortProtocol::Tcp,
+        owner_name: crate::api::owner_name(instances, &r.owner),
+        instance_id: (r.owner.kind == OwnerKind::Instance)
+            .then(|| r.owner.id.parse().ok())
+            .flatten(),
+        holder: Some(forge_ipc::api::PortHolderDto {
+            pid: conflict.holder.pid,
+            exe: conflict
+                .holder
+                .exe_path
+                .as_deref()
+                .map(forge_core::paths::posix_string)
+                .unwrap_or_else(|| "?".into()),
+        }),
     }
 }
 
@@ -462,6 +579,7 @@ impl HostsSync {
 mod tests {
     use super::*;
     use forge_core::config::QuietHours;
+    use forge_core::model::port::ReservationOwner;
 
     #[test]
     fn jitter_stays_in_bounds() {
@@ -570,6 +688,78 @@ mod tests {
         assert!(state.request(), "stopped: the next caller starts it");
         state.release();
         assert!(state.request());
+    }
+
+    fn conflict(owner: ReservationOwner) -> PortConflict {
+        use forge_core::model::port::{PortReservation, PortState};
+        use forge_core::platform::{PortOwner, PortProto};
+        let mut reservation = PortReservation::new_tcp(3306, None, owner);
+        reservation.state = PortState::Conflict;
+        PortConflict {
+            reservation,
+            holder: PortOwner {
+                port: 3306,
+                addr: "0.0.0.0".parse().unwrap(),
+                pid: 4412,
+                exe_path: Some(r"C:\xampp\mysql\bin\mysqld.exe".into()),
+                proto: PortProto::Tcp,
+            },
+            newly_detected: true,
+        }
+    }
+
+    #[test]
+    fn port_conflict_names_the_owner_as_tool_slash_instance() {
+        let id = forge_core::ids::InstanceId::new();
+        let owner = ReservationOwner::new(OwnerKind::Instance, id.to_string(), "main").unwrap();
+        let names = BTreeMap::from([(id.to_string(), "mysql/default".to_owned())]);
+        let payload = conflict_payload(&conflict(owner.clone()), &names);
+        assert_eq!(payload.owner_name, "mysql/default");
+        assert_eq!(payload.instance_id, Some(id));
+        assert_eq!(payload.port, 3306);
+        let holder = payload.holder.unwrap();
+        assert_eq!(holder.pid, 4412);
+        assert_eq!(holder.exe, "C:/xampp/mysql/bin/mysqld.exe");
+        // The payload on the wire.
+        let json =
+            serde_json::to_value(conflict_payload(&conflict(owner.clone()), &names)).unwrap();
+        assert_eq!(json["owner_name"], "mysql/default");
+        // An instance that is gone, or another kind of owner, falls back to kind/id.
+        let unknown = conflict_payload(&conflict(owner), &BTreeMap::new());
+        assert_eq!(unknown.owner_name, format!("instance/{id}"));
+        let daemon = ReservationOwner::new(OwnerKind::Daemon, "dns", "main").unwrap();
+        let payload = conflict_payload(&conflict(daemon), &names);
+        assert_eq!(payload.owner_name, "daemon/dns");
+        assert_eq!(payload.instance_id, None);
+    }
+
+    #[tokio::test]
+    async fn a_due_check_publishes_the_whole_list_and_a_deferred_one_nothing() {
+        use crate::update_feed::testing::{FakeSource, update};
+        let bus = forge_core::event::EventBus::new();
+        let mut events = bus.subscribe();
+        let feed = UpdateFeed::new(bus);
+        let php = ToolId::new("php").unwrap();
+        let source = FakeSource::with(vec![
+            update("php", "8.3", "8.3.36", "8.3.37"),
+            update("php", "8.4", "8.4.1", "8.4.2"),
+        ]);
+        run_due_check(&source, &feed, &php).await;
+        let event = events.try_recv().expect("tool.updates_available");
+        assert_eq!(event.kind, EventKind::ToolUpdatesAvailable);
+        assert_eq!(event.payload["count"], 2);
+        // Nothing found any more: the list is published empty (clears the badge).
+        source.found.lock().unwrap().clear();
+        run_due_check(&source, &feed, &php).await;
+        let event = events.try_recv().expect("an empty list is still published");
+        assert_eq!(event.payload["count"], 0);
+        assert_eq!(event.payload["updates"], serde_json::json!([]));
+        assert!(events.try_recv().is_none());
+        // A check deferred (metered connection, quiet hours) did not look: nothing changes
+        // and nothing is published.
+        *source.deferred.lock().unwrap() = Some(forge_provider::update::DeferReason::Metered);
+        run_due_check(&source, &feed, &php).await;
+        assert!(events.try_recv().is_none());
     }
 
     #[test]

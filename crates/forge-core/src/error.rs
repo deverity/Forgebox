@@ -72,6 +72,20 @@ pub enum ForgeError {
     #[error("not implemented: {0}")]
     NotImplemented(String),
 
+    /// An API method (or part of one) that belongs to a later roadmap task. Same code and
+    /// text format as [`ForgeError::NotImplemented`], but keeps the pieces apart so the
+    /// API can send them as structured details (`reason: "not_implemented"`, args
+    /// `{method, task, what}`) and clients name the task without parsing the message.
+    #[error("not implemented: {method} is not implemented yet: {what} (roadmap {task})")]
+    NotImplementedYet {
+        /// `sites.share`.
+        method: String,
+        /// Roadmap task that delivers it (`M3-E3`).
+        task: String,
+        /// What is missing, in English (`public tunnels`).
+        what: String,
+    },
+
     /// The operation was cancelled on request (`job.cancel`, Ctrl+C in the CLI).
     #[error("cancelled: {0}")]
     Cancelled(String),
@@ -173,12 +187,43 @@ impl ForgeError {
             Self::InvalidInput(_) => "invalid_input",
             Self::UnsupportedPlatform(_) => "unsupported_platform",
             Self::Timeout { .. } => "timeout",
-            Self::NotImplemented(_) => "not_implemented",
+            Self::NotImplemented(_) | Self::NotImplementedYet { .. } => "not_implemented",
             Self::Cancelled(_) => "cancelled",
             Self::Internal(_) => "internal",
             Self::Unauthorized(_) => "unauthorized",
             Self::Forbidden(_) => "forbidden",
         }
+    }
+
+    /// Structured details for clients (docs/09 "Detalhes estruturados de erro", ADR-0039):
+    /// `{"reason": <stable snake_case id>, "args": {...}}`. Clients localize from `code`
+    /// plus these, never from the English message. Only the errors a GUI acts on carry
+    /// them: `port_in_use` (`port`, `owner`), `needs_elevation` (`detail`), `not_found`
+    /// (`what`), `not_implemented` (`method`, `task`, `what`) and `timeout`
+    /// (`operation`, `after_ms`).
+    pub fn details(&self) -> Option<serde_json::Value> {
+        use serde_json::json;
+        let (reason, args) = match self {
+            Self::PortInUse { port, owner } => {
+                ("port_in_use", json!({ "port": port, "owner": owner }))
+            }
+            Self::NeedsElevation(detail) => ("needs_elevation", json!({ "detail": detail })),
+            Self::NotFound(what) => ("not_found", json!({ "what": what })),
+            Self::NotImplemented(what) => ("not_implemented", json!({ "what": what })),
+            Self::NotImplementedYet { method, task, what } => (
+                "not_implemented",
+                json!({ "method": method, "task": task, "what": what }),
+            ),
+            Self::Timeout { operation, after } => (
+                "timeout",
+                json!({
+                    "operation": operation,
+                    "after_ms": u64::try_from(after.as_millis()).unwrap_or(u64::MAX),
+                }),
+            ),
+            _ => return None,
+        };
+        Some(json!({ "reason": reason, "args": args }))
     }
 
     /// Process exit code for the CLI (docs/09-cli.md), see [`exit_code_for`].
@@ -246,6 +291,11 @@ mod tests {
                 after: Duration::from_secs(1),
             },
             ForgeError::NotImplemented("x".into()),
+            ForgeError::NotImplementedYet {
+                method: "sites.share".into(),
+                task: "M3-E3".into(),
+                what: "public tunnels".into(),
+            },
             ForgeError::Cancelled("x".into()),
             ForgeError::Internal("x".into()),
             ForgeError::Unauthorized("x".into()),
@@ -314,6 +364,59 @@ mod tests {
             owner: None,
         };
         assert_eq!(err.to_string(), "port 80 is already in use");
+    }
+
+    #[test]
+    fn structured_details_follow_the_reason_args_convention() {
+        let details = |err: ForgeError| err.details().expect("details");
+        let d = details(ForgeError::PortInUse {
+            port: 3306,
+            owner: Some("mysqld.exe (PID 4412)".into()),
+        });
+        assert_eq!(d["reason"], "port_in_use");
+        assert_eq!(d["args"]["port"], 3306);
+        assert_eq!(d["args"]["owner"], "mysqld.exe (PID 4412)");
+        let d = details(ForgeError::PortInUse {
+            port: 80,
+            owner: None,
+        });
+        assert!(d["args"]["owner"].is_null());
+        let d = details(ForgeError::NeedsElevation("nrpt.add".into()));
+        assert_eq!(d["reason"], "needs_elevation");
+        assert_eq!(d["args"]["detail"], "nrpt.add");
+        let d = details(ForgeError::NotFound("site loja.test".into()));
+        assert_eq!(d["reason"], "not_found");
+        assert_eq!(d["args"]["what"], "site loja.test");
+        let d = details(ForgeError::NotImplementedYet {
+            method: "sites.share".into(),
+            task: "M3-E3".into(),
+            what: "public tunnels".into(),
+        });
+        assert_eq!(d["reason"], "not_implemented");
+        assert_eq!(d["args"]["task"], "M3-E3");
+        assert_eq!(d["args"]["method"], "sites.share");
+        let d = details(ForgeError::Timeout {
+            operation: "stop".into(),
+            after: Duration::from_millis(1500),
+        });
+        assert_eq!(d["args"]["after_ms"], 1500);
+        // Errors nobody acts on structurally stay without details.
+        assert!(ForgeError::Internal("x".into()).details().is_none());
+        assert!(ForgeError::Conflict("x".into()).details().is_none());
+    }
+
+    #[test]
+    fn the_not_implemented_variant_keeps_the_table_message() {
+        let err = ForgeError::NotImplementedYet {
+            method: "sites.share".into(),
+            task: "M3-E3".into(),
+            what: "public tunnels".into(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "not implemented: sites.share is not implemented yet: public tunnels (roadmap M3-E3)"
+        );
+        assert_eq!(err.code(), "not_implemented");
     }
 
     #[test]

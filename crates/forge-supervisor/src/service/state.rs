@@ -259,6 +259,7 @@ impl FailureReason {
         JobErrorInfo {
             code: self.code().to_owned(),
             message: self.message(),
+            details: None,
         }
     }
 

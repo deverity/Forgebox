@@ -110,8 +110,25 @@ fn failure_error(reason: &FailureReason) -> ApiError {
     ApiError {
         code: code.to_owned(),
         message: serde_json::to_string(reason).unwrap_or_default(),
-        details: dto.and_then(|d| serde_json::to_value(d).ok()),
+        details: dto.and_then(|d| failure_details(&d)),
     }
+}
+
+/// `details` of a service failure: the `kind`-tagged diagnosis (API 1.0 shape, kept) plus
+/// the `{reason, args}` convention (ADR-0039): `reason` = the kind (`port_in_use`,
+/// `missing_dll`...), `args` = its other fields.
+fn failure_details(dto: &FailureReasonDto) -> Option<serde_json::Value> {
+    let mut value = serde_json::to_value(dto).ok()?;
+    let map = value.as_object_mut()?;
+    let reason = map.get("kind")?.clone();
+    let args: serde_json::Map<String, serde_json::Value> = map
+        .iter()
+        .filter(|(key, _)| key.as_str() != "kind")
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    map.insert("reason".into(), reason);
+    map.insert("args".into(), serde_json::Value::Object(args));
+    Some(value)
 }
 
 pub fn port_owner_kind(kind: OwnerKind) -> PortOwnerKind {
@@ -260,9 +277,14 @@ pub fn site_xdebug(x: DomainXdebug) -> SiteXdebug {
     }
 }
 
-/// A site; `php` = what the daemon resolved for it; `https_port` for the URL.
-pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto {
+/// The URL a site is served at (`https://loja.test`).
+pub fn site_url(site: &Site) -> String {
     let scheme = if site.secure { "https" } else { "http" };
+    format!("{scheme}://{}", site.host)
+}
+
+/// A site; `php` = what the daemon resolved for it.
+pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto {
     SiteDto {
         id: site.id,
         slug: site.slug.clone(),
@@ -291,7 +313,7 @@ pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto
         parked: site.parked,
         enabled: site.enabled,
         case_sensitive: site.case_sensitive,
-        url: format!("{scheme}://{}", site.host),
+        url: site_url(site),
         processes: Vec::new(),
         created_at: site.created_at,
         updated_at: site.updated_at,

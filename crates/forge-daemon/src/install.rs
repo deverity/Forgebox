@@ -101,6 +101,7 @@ async fn wait_layout_job(
                 .unwrap_or_else(|| forge_core::jobs::JobErrorInfo {
                     code: "internal".into(),
                     message: "installation failed".into(),
+                    details: None,
                 });
             Err(match error.code.as_str() {
                 "verification_failed" => ForgeError::VerificationFailed(error.message),

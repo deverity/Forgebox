@@ -41,6 +41,9 @@ impl LockLevel {
     pub const IPC_IDEMPOTENCY: LockLevel = LockLevel::new(10, "ipc.idempotency");
     /// Live connections of the API server.
     pub const IPC_CONNECTIONS: LockLevel = LockLevel::new(10, "ipc.connections");
+    /// Last CPU sample of the daemon process (`daemon.status`, `forge_ipc` server). Leaf
+    /// lock: held only to read and replace one sample.
+    pub const IPC_PROCESS_METER: LockLevel = LockLevel::new(10, "ipc.process_meter");
     /// Connection slot, pending calls, routes and subscriptions of an API client.
     pub const IPC_CLIENT: LockLevel = LockLevel::new(10, "ipc.client");
     /// Configured registries, catalog snapshots and refresh marks of `forge_registry`.

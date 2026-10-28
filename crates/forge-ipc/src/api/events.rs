@@ -268,6 +268,31 @@ pub struct ToolVersionChangePayload {
     pub removed: Vec<String>,
 }
 
+/// One update of `tool.updates_available`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PendingUpdateDto {
+    pub tool: ToolId,
+    /// Series of the active version (`8.3`): the unit of update and rollback.
+    pub series: String,
+    /// Active version (`8.3.36`).
+    pub from: String,
+    /// Version the check found (`8.3.37`).
+    pub to: String,
+}
+
+/// `tool.updates_available`: what the update checks found. The daemon publishes it after
+/// each scheduled check and after `tool.updated|rollback`, always with the **whole** list
+/// of pending updates (so a client replaces what it shows; an empty list clears the
+/// badge). Blocked updates (a build that needs a migration the user must start) are not
+/// listed. Added in API 1.1 (ADR-0039).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ToolUpdatesAvailablePayload {
+    pub v: u32,
+    pub updates: Vec<PendingUpdateDto>,
+    /// `updates.len()`.
+    pub count: u32,
+}
+
 /// `tool.current_changed`: the `bin/<tool>/current` junction was switched (`forge use`).
 ///
 /// Published by `forge_provider::layout::ToolCurrentEventPayload` (same fields).
@@ -499,7 +524,8 @@ pub struct PortConflictPayload {
     pub v: u32,
     pub port: u16,
     pub protocol: PortProtocol,
-    /// Forgebox owner that wanted the port (`mysql/default`).
+    /// Forgebox owner that wanted the port: `<tool>/<instance>` (`mysql/default`) for an
+    /// instance; `<kind>/<id>` for other owners.
     pub owner_name: String,
     pub instance_id: Option<InstanceId>,
     pub holder: Option<PortHolderDto>,
@@ -542,6 +568,7 @@ pub const EVENT_PAYLOADS: &[(&str, &str)] = &[
     ("tool.install.progress", "ToolInstallPayload"),
     ("tool.install.completed", "ToolInstallPayload"),
     ("tool.install.failed", "ToolInstallPayload"),
+    ("tool.updates_available", "ToolUpdatesAvailablePayload"),
     ("tool.updated", "ToolVersionChangePayload"),
     ("tool.rollback", "ToolVersionChangePayload"),
     ("tool.current_changed", "ToolCurrentPayload"),
@@ -583,6 +610,7 @@ pub(crate) fn register_payload_types(types: specta::Types) -> specta::Types {
         .register::<ActorFailedPayload>()
         .register::<FsCaseSensitivityPayload>()
         .register::<ToolInstallPayload>()
+        .register::<ToolUpdatesAvailablePayload>()
         .register::<ToolVersionChangePayload>()
         .register::<ToolCurrentPayload>()
         .register::<ServicePayload>()

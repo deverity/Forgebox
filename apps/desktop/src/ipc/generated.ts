@@ -40,7 +40,12 @@ export type ApiError = {
 	code: string,
 	/**  Human readable message (English, like logs; the CLI/GUI localise by `code`). */
 	message: string,
-	/**  Optional structured details (port owner, offending path...). */
+	/**
+	 *  Structured details, by convention `{"reason": "<stable snake_case id>", "args":
+	 *  {...}}` (docs/09 "Detalhes estruturados de erro", ADR-0039): clients localize from
+	 *  `code` plus these, never from the English `message`. `port_in_use` also repeats
+	 *  `port` and `owner` at the top level (API 1.0 shape, kept for old clients).
+	 */
 	details?: unknown | null,
 };
 
@@ -414,6 +419,14 @@ export type DaemonStatusDto = {
 	last_event_seq: number,
 	active_jobs: number,
 	connections: number,
+	/**
+	 *  CPU of the daemon process, share of the whole machine since the previous
+	 *  `daemon.status` (0-100, like Task Manager; the first call averages over the
+	 *  process lifetime). API 1.1; 0 from 1.0 daemons.
+	 */
+	cpu_pct?: number | null,
+	/**  Working set of the daemon process (API 1.1). */
+	rss_bytes?: number,
 };
 
 /**  Params of `daemon.stop`. */
@@ -889,6 +902,12 @@ export type HelloDto = {
 	/**  Resume point for `events.subscribe`. */
 	last_event_seq: number,
 	server_time: string,
+	/**
+	 *  Methods of the contract this daemon answers with `not_implemented` (API 1.1): the
+	 *  GUI disables or labels the matching controls without trying them. Missing from
+	 *  1.0 daemons (empty).
+	 */
+	not_implemented?: string[],
 };
 
 /**  Params of `system.hello`: the first request of every connection (docs/11 §4). */
@@ -1035,6 +1054,11 @@ export type JobDto = {
 export type JobErrorInfo = {
 	code: string,
 	message: string,
+	/**
+	 *  Structured details (`{reason, args}`, [`ForgeError::details`]); clients localize
+	 *  from `code` plus these. Added without bumping `v` (optional, may be missing).
+	 */
+	details?: unknown | null,
 };
 
 /**  Payload of `job.failed`. */
@@ -1303,6 +1327,17 @@ export type PemDto = {
 	pem: string,
 };
 
+/**  One update of `tool.updates_available`. */
+export type PendingUpdateDto = {
+	tool: ToolId,
+	/**  Series of the active version (`8.3`): the unit of update and rollback. */
+	series: string,
+	/**  Active version (`8.3.36`). */
+	from: string,
+	/**  Version the check found (`8.3.37`). */
+	to: string,
+};
+
 /**  A PHP extension. */
 export type PhpExtDto = {
 	name: string,
@@ -1459,12 +1494,37 @@ export type PoolWorkerRecycledPayload = {
 	replacement_port?: number | null,
 };
 
+/**
+ *  Result of `net.port_check` (API 1.1): the port is `free` when no process listens on it
+ *  and no Forgebox owner has it reserved. The GUI uses it to validate a port field while
+ *  the user types ("Trocar porta").
+ */
+export type PortCheckDto = {
+	free: boolean,
+	/**
+	 *  Forgebox owner that has the port reserved: `<tool>/<instance>` (`mysql/default`)
+	 *  or `<kind>/<id>`. Set even when the owner itself is the one listening.
+	 */
+	reserved_by?: string | null,
+	/**  The process listening on the port, when there is one. */
+	holder?: PortHolderDto | null,
+};
+
+/**  Params of `net.port_check` (API 1.1): is this port usable right now? */
+export type PortCheckParams = {
+	port: number,
+	protocol?: PortProtocol,
+};
+
 /**  `port.conflict`. */
 export type PortConflictPayload = {
 	v: number,
 	port: number,
 	protocol: PortProtocol,
-	/**  Forgebox owner that wanted the port (`mysql/default`). */
+	/**
+	 *  Forgebox owner that wanted the port: `<tool>/<instance>` (`mysql/default`) for an
+	 *  instance; `<kind>/<id>` for other owners.
+	 */
 	owner_name: string,
 	instance_id: InstanceId | null,
 	holder: PortHolderDto | null,
@@ -2313,6 +2373,20 @@ export type ToolUpdateDto = {
 export type ToolUpdateParams = {
 	/**  One tool, or all when `None`. */
 	tool?: ToolId | null,
+};
+
+/**
+ *  `tool.updates_available`: what the update checks found. The daemon publishes it after
+ *  each scheduled check and after `tool.updated|rollback`, always with the **whole** list
+ *  of pending updates (so a client replaces what it shows; an empty list clears the
+ *  badge). Blocked updates (a build that needs a migration the user must start) are not
+ *  listed. Added in API 1.1 (ADR-0039).
+ */
+export type ToolUpdatesAvailablePayload = {
+	v: number,
+	updates: PendingUpdateDto[],
+	/**  `updates.len()`. */
+	count: number,
 };
 
 /**  Result of the `tools.update` and `tools.check_updates` jobs. */

@@ -20,6 +20,7 @@ pub mod events;
 pub mod fs;
 mod idempotency;
 mod outbox;
+mod process_meter;
 mod router;
 
 use std::collections::HashMap;
@@ -33,6 +34,7 @@ use tokio_util::sync::CancellationToken;
 use forge_core::Timestamp;
 use forge_core::jobs::JobRegistry;
 use forge_core::paths::ForgeRoot;
+use forge_core::platform::ProcessStats;
 use forge_core::sync::{LockLevel, OrderedMutex};
 
 pub use self::events::EventSource;
@@ -97,6 +99,10 @@ pub(crate) struct ServerInfo {
     pub(crate) events: Option<EventSource>,
     pub(crate) jobs: Option<JobRegistry>,
     pub(crate) connections: AtomicUsize,
+    /// CPU and memory of the daemon process (`daemon.status`).
+    pub(crate) meter: process_meter::ProcessMeter,
+    /// Methods the daemon answers with `not_implemented` (`system.hello`).
+    pub(crate) not_implemented: Vec<String>,
 }
 
 struct ConnEntry {
@@ -138,6 +144,8 @@ pub struct ServerBuilder {
     events: Option<EventSource>,
     jobs: Option<JobRegistry>,
     fs: Option<FsScope>,
+    process_stats: Arc<dyn ProcessStats>,
+    not_implemented: Vec<String>,
 }
 
 impl ServerBuilder {
@@ -176,6 +184,24 @@ impl ServerBuilder {
         self
     }
 
+    /// Process counters behind `daemon.status` `cpu_pct`/`rss_bytes` (default: the OS's;
+    /// tests and callers without a real daemon process pass a fake).
+    pub fn process_stats(mut self, stats: Arc<dyn ProcessStats>) -> Self {
+        self.process_stats = stats;
+        self
+    }
+
+    /// Methods of the contract the daemon answers with `not_implemented`; reported by
+    /// `system.hello` so clients can disable the matching controls (API 1.1).
+    pub fn not_implemented<I, S>(mut self, methods: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.not_implemented = methods.into_iter().map(Into::into).collect();
+        self
+    }
+
     pub fn build(self) -> Server {
         let info = Arc::new(ServerInfo {
             config: self.config.clone(),
@@ -185,6 +211,8 @@ impl ServerBuilder {
             events: self.events,
             jobs: self.jobs,
             connections: AtomicUsize::new(0),
+            meter: process_meter::ProcessMeter::new(self.process_stats),
+            not_implemented: self.not_implemented,
         });
         let mut router = self.router;
         router.merge_missing(builtin::router(&info, self.fs));
@@ -278,6 +306,8 @@ impl Server {
             events: None,
             jobs: None,
             fs: None,
+            process_stats: forge_core::platform::process_stats(),
+            not_implemented: Vec::new(),
         }
     }
 

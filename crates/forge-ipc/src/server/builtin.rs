@@ -57,6 +57,19 @@ pub(crate) fn router(info: &Arc<ServerInfo>, fs: Option<FsScope>) -> Router {
     router.handle::<daemon_status, _, _>(move |_, _| {
         let info = Arc::clone(&status_info);
         async move {
+            // The process counters are a blocking OS call (docs/03 §7.1).
+            let meter = Arc::clone(&info);
+            let usage = tokio::task::spawn_blocking(move || meter.meter.usage())
+                .await
+                .map_err(|e| ForgeError::Internal(format!("blocking task failed: {e}")))
+                .and_then(|usage| usage);
+            let usage = usage.unwrap_or_else(|err| {
+                tracing::debug!(%err, "daemon.status: process counters unavailable");
+                super::process_meter::Usage {
+                    cpu_pct: 0.0,
+                    rss_bytes: 0,
+                }
+            });
             Ok(DaemonStatusDto {
                 version: info.config.daemon_version.clone(),
                 api_version: API_VERSION,
@@ -77,6 +90,8 @@ pub(crate) fn router(info: &Arc<ServerInfo>, fs: Option<FsScope>) -> Router {
                     .map_or(0, |j| u32::try_from(j.active().len()).unwrap_or(u32::MAX)),
                 connections: u32::try_from(info.connections.load(Ordering::Relaxed))
                     .unwrap_or(u32::MAX),
+                cpu_pct: usage.cpu_pct,
+                rss_bytes: usage.rss_bytes,
             })
         }
     });

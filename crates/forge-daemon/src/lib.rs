@@ -31,6 +31,7 @@ pub mod render;
 pub mod scheduler;
 pub mod services;
 pub mod shutdown;
+pub mod update_feed;
 pub mod vars;
 pub mod web;
 

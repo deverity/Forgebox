@@ -165,8 +165,11 @@ fn finish(job: JobDto) -> CliResult<Value> {
             let error = job.error.unwrap_or(forge_ipc::api::JobErrorInfo {
                 code: "internal".into(),
                 message: format!("{} falhou", job.name),
+                details: None,
             });
-            Err(CliError::new(error.code, error.message))
+            let mut err = CliError::new(error.code, error.message);
+            err.details = error.details;
+            Err(err)
         }
     }
 }
@@ -357,6 +360,7 @@ mod tests {
         failed.error = Some(forge_ipc::api::JobErrorInfo {
             code: "not_found".into(),
             message: "no such tool".into(),
+            details: None,
         });
         let err = finish(failed).unwrap_err();
         assert_eq!((err.code.as_str(), err.exit), ("not_found", 3));
