@@ -29,9 +29,8 @@ C:\Forgebox\
 ├── portable.flag                 # presente só no portátil: força tudo relativo e sem registro/PATH
 ├── VERSION                       # "1.0.0+build.sha"
 │
-├── app\                          # recursos da GUI que não vão embutidos (ícones de tools, fontes, templates de UI)
-│   ├── icons\tools\*.svg
-│   └── fonts\Inter-*.woff2, JetBrainsMono-*.woff2
+├── app\                          # recursos da GUI que não vão embutidos (ícones de tools, templates de UI)
+│   └── icons\tools\*.svg
 │
 ├── bin\                          # TOOLS INSTALADAS — layout versionado, visível, copiável
 │   ├── shims\                    # php.cmd, composer.cmd, node.cmd... → versão do projeto (.php-version, .nvmrc, forgebox.yaml) ou bin\<tool>\current; forgebox-project.ps1 lê o forgebox.yaml (opcional ao PATH; docs/06 §2.3)
@@ -129,6 +128,9 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 
 ### 2.4 Case sensitivity dos diretórios
 `www\`, `etc\`, `data\`, `logs\`, `tmp\` e `backups\` são criados com a flag NTFS `FILE_CS_FLAG_CASE_SENSITIVE_DIR` (herdada por subdiretórios) quando o modo paridade Linux está ligado (padrão). `bin\`, `app\`, `state\`, `certs\` e `manifests\` ficam no modo normal do Windows. Ver [15](15-linux-parity-case-sensitivity.md).
+
+### 2.5 Fontes
+Inter e JetBrains Mono são **embutidas no frontend** (woff2 de `@fontsource/inter` e `@fontsource/jetbrains-mono`, subconjuntos latin e latin-ext, importados em `apps/desktop/src/design/fonts.css`): ficam dentro do bundle da GUI e não existem como arquivos soltos em `apponts\`. São o último fallback das pilhas de `docs/design/tokens.json` (docs/07 §2.1); a GUI prefere as fontes do sistema.
 
 ## 3. O que toca fora da raiz (e como reverter)
 
