@@ -1,0 +1,81 @@
+{
+  "title": "Galeria de componentes",
+  "intro": "Cada primitive com todas as variantes e estados. Apenas desenvolvimento e QA.",
+  "button": {
+    "title": "Button",
+    "primary": "Primário",
+    "secondary": "Secundário",
+    "ghost": "Fantasma",
+    "destructive": "Destrutivo",
+    "disabled": "Desabilitado",
+    "loading": "Carregando",
+    "loadingLabel": "Salvando"
+  },
+  "iconButton": {
+    "title": "IconButton",
+    "label": "Atualizar",
+    "disabled": "Atualizar (desabilitado)",
+    "loading": "Atualizar (carregando)"
+  },
+  "toggle": {
+    "title": "Toggle",
+    "off": "Desligado",
+    "on": "Ligado",
+    "disabled": "Desabilitado",
+    "autoStart": "Iniciar com o Windows"
+  },
+  "select": {
+    "title": "Select",
+    "label": "Versão do PHP",
+    "placeholder": "Escolha uma versão",
+    "disabled": "Versão do PHP (desabilitado)"
+  },
+  "combobox": {
+    "title": "Combobox",
+    "label": "Site",
+    "placeholder": "Buscar sites",
+    "empty": "Nenhum site encontrado",
+    "disabled": "Site (desabilitado)"
+  },
+  "segmented": {
+    "title": "SegmentedControl",
+    "label": "Tema",
+    "light": "Claro",
+    "dark": "Escuro",
+    "system": "Sistema",
+    "disabled": "Tema (desabilitado)"
+  },
+  "slider": {
+    "title": "Slider",
+    "label": "Limite de memória",
+    "disabled": "Limite de memória (desabilitado)"
+  },
+  "textField": {
+    "title": "TextField",
+    "label": "Nome do host",
+    "hint": "Letras minúsculas, dígitos e hífens",
+    "invalid": "Use apenas letras minúsculas, dígitos e hífens",
+    "errorLabel": "Porta",
+    "errorMessage": "Porta já em uso",
+    "disabled": "Desabilitado"
+  },
+  "badge": {
+    "title": "Badge",
+    "neutral": "Neutro",
+    "accent": "Novo",
+    "success": "OK",
+    "warning": "Atenção",
+    "danger": "Erro",
+    "info": "Atualizando"
+  },
+  "statusDot": {
+    "title": "StatusDot"
+  },
+  "kbd": {
+    "title": "Kbd",
+    "palette": "Abrir a paleta de comandos"
+  },
+  "reduced": {
+    "label": "Prévia com movimento reduzido"
+  }
+}

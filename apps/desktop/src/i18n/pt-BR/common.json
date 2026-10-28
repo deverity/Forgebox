@@ -8,7 +8,9 @@
   "status": {
     "running": "Em execução",
     "stopped": "Parado",
-    "starting": "Iniciando"
+    "starting": "Iniciando",
+    "failed": "Falhou",
+    "updating": "Atualizando"
   },
   "language": {
     "label": "Idioma",
