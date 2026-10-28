@@ -83,7 +83,9 @@ export function StatusDot({
             ease: "linear",
           } satisfies Transition,
         }
-      : { initial: false as const, ...ANIMATE[kind] };
+      : // No `initial: false`: that renders the final keyframe and skips the mount animation, so the
+        // loop/shake would never run (the dot remounts on each state change via key={state}).
+        { ...ANIMATE[kind] };
   return (
     <span className="inline-flex items-center gap-2">
       <motion.span

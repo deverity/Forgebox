@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { mockReducedMotion } from "../../test/matchMedia";
 import { SERVICE_STATES, StatusDot, animationFor } from "./StatusDot";
@@ -44,5 +44,19 @@ describe("StatusDot", () => {
       "fade",
     );
     expect(animationFor(state, true)).toBe("fade");
+  });
+
+  it("actually runs the mount animation (not rendered at the final keyframe)", async () => {
+    const { unmount } = render(<StatusDot state="running" />);
+    const dot = screen.getByRole("img");
+    await waitFor(() => { expect(Number(dot.style.opacity || "1")).toBeLessThan(0.99); }, {
+      timeout: 1500,
+    });
+    unmount();
+    render(<StatusDot state="failed" />);
+    const failed = screen.getByRole("img");
+    await waitFor(() => { expect(failed.style.transform).toMatch(/translateX\((?!0px)/); }, {
+      timeout: 1000,
+    });
   });
 });

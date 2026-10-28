@@ -48,8 +48,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         loading && "disabled:cursor-progress disabled:opacity-100",
       )}
     >
-      {/* The label stays in flow (invisible while loading) so the button keeps its width. */}
-      <span className={cx("inline-flex items-center gap-2", loading && "invisible")}>
+      {/* The label stays in flow (transparent, not `invisible`/`hidden`) so the button keeps
+          its width and its accessible name while loading (WCAG 4.1.2). */}
+      <span className={cx("inline-flex items-center gap-2", loading && "opacity-0")}>
         {children}
       </span>
       {loading ? (

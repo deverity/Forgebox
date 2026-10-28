@@ -28,7 +28,7 @@ Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyT
 ### Button / IconButton
 - **Anatomia:** `<button>` 32 px de altura, borda 1 px, `radius-control`; rótulo em `span`; spinner sobreposto em `loading`. IconButton é 32x32, ícone 16 px e `label` obrigatório (`aria-label` + `title`).
 - **Variantes:** `primary` (fundo `accent`, texto `fg-on-accent`), `secondary` (surface + `stroke-strong`), `ghost`, `destructive` (borda e texto `state-failed`).
-- **Estados:** `loading` desabilita cliques, define `aria-busy` e mantém o rótulo no fluxo (invisível), então a largura não muda; `disabled` com opacidade 50 %.
+- **Estados:** `loading` desabilita cliques, define `aria-busy` e mantém o rótulo no fluxo com `opacity-0` (nunca `invisible`/`hidden`: o nome acessível permanece na árvore de acessibilidade, WCAG 4.1.2), então a largura não muda; `disabled` com opacidade 50 %.
 - **Teclado:** Enter e Espaço (nativo).
 
 ### Toggle

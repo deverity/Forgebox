@@ -39,12 +39,13 @@ describe("Button", () => {
         Save changes
       </Button>,
     );
-    const button = screen.getByRole("button");
+    // The label must stay in the accessibility tree (no visibility:hidden).
+    const button = screen.getByRole("button", { name: "Save changes" });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute("aria-busy", "true");
     expect(screen.getByTestId("button-spinner")).toBeInTheDocument();
-    // Still in the DOM (and in layout), only hidden from sight.
-    expect(screen.getByText("Save changes")).toHaveClass("invisible");
+    // Still in the DOM, in layout and in the a11y tree; only transparent.
+    expect(screen.getByText("Save changes")).not.toHaveClass("invisible");
     await userEvent.setup().click(button);
     expect(onClick).not.toHaveBeenCalled();
   });
