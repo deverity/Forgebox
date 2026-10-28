@@ -59,9 +59,12 @@ const REPLAY_LIMIT: u64 = 10_000;
 /// File polling interval of `logs.subscribe`.
 const POLL: Duration = Duration::from_millis(500);
 /// How long a replay waits for an instance's writer to put its lines on disk (it is at
-/// most one queue behind the broadcast), polling every [`DISK_POLL`].
+/// most one queue behind the broadcast), polling from [`DISK_POLL`], doubling up to
+/// [`DISK_POLL_MAX`] (each poll recounts the set: a writer that keeps failing must not
+/// turn a subscribe into a busy loop).
 const DISK_WAIT: Duration = Duration::from_secs(3);
 const DISK_POLL: Duration = Duration::from_millis(25);
+const DISK_POLL_MAX: Duration = Duration::from_millis(400);
 /// How long a replayed line waits for room in the subscriber's queue (ADR-0015 §8).
 const REPLAY_WAIT: Duration = Duration::from_secs(2);
 /// How long `logs.subscribe` waits for an instance's first count of its files; after
@@ -69,10 +72,18 @@ const REPLAY_WAIT: Duration = Duration::from_secs(2);
 const START_WAIT: Duration = Duration::from_millis(600);
 /// Deadline of one blocking read of a set.
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+/// Answer deadline of `logs.read` / `logs.subscribe` (the default 1 s of ADR-0015 §6 is
+/// too short for counting a full set, up to 50 MiB, on a cold disk): the actor ask
+/// ([`QUICK_ASK_TIMEOUT`]), [`START_WAIT`] and one [`IO_TIMEOUT`] read, with slack. Below
+/// the client's 10 s call timeout.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(8);
 
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, logs_read, read);
     route!(router, daemon, logs_subscribe, subscribe);
+    router
+        .timeout::<logs_read>(ANSWER_TIMEOUT)
+        .timeout::<logs_subscribe>(ANSWER_TIMEOUT);
 }
 
 enum Target {
@@ -372,6 +383,7 @@ async fn replay(
         return !sender.is_closed();
     }
     let started = tokio::time::Instant::now();
+    let mut pause = DISK_POLL;
     let found = loop {
         let s = set.clone();
         let found = blocking("replaying a log", move || read_replay(&s, start, upto)).await;
@@ -379,8 +391,9 @@ async fn replay(
             Ok(r) if wait_disk && r.missing > 0 && started.elapsed() < DISK_WAIT => {
                 tokio::select! {
                     () = sender.closed() => return false,
-                    () = tokio::time::sleep(DISK_POLL) => {}
+                    () = tokio::time::sleep(pause) => {}
                 }
+                pause = (pause * 2).min(DISK_POLL_MAX);
             }
             Ok(r) => break r,
             Err(err) => {
