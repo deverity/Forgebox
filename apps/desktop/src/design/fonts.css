@@ -1,0 +1,10 @@
+/* Inter and JetBrains Mono are embedded (woff2 from @fontsource, latin + latin-ext only).
+   They are the last-resort members of the stacks in tokens.json (docs/07 2.1, docs/08 2). */
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-500.css";
+@import "@fontsource/inter/latin-600.css";
+@import "@fontsource/inter/latin-ext-400.css";
+@import "@fontsource/inter/latin-ext-500.css";
+@import "@fontsource/inter/latin-ext-600.css";
+@import "@fontsource/jetbrains-mono/latin-400.css";
+@import "@fontsource/jetbrains-mono/latin-ext-400.css";

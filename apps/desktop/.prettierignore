@@ -4,3 +4,5 @@ src-tauri
 pnpm-lock.yaml
 src/ipc/generated.ts
 src/ipc/methods.ts
+src/design/tokens.css
+src/design/tokens.ts

@@ -16,7 +16,7 @@ Este documento é normativo para `apps/desktop/`. Exemplos de telas (wireframes)
 ## 2. Fundamentos visuais
 
 ### 2.1 Tipografia
-- Família: `"SF Pro Text"` se disponível → `"Segoe UI Variable Text"` (Win11) → `"Segoe UI"` → `Inter` (bundled como fallback). Monoespaçada: `"Cascadia Code"` → `"JetBrains Mono"` (bundled).
+- Família: `"SF Pro Text"` se disponível → `"Segoe UI Variable Text"` (Win11) → `"Segoe UI"` → `Inter` (embutida no bundle via `@fontsource`, latin + latin-ext; ver docs/08 §2.5). Monoespaçada: `"Cascadia Code"` → `"JetBrains Mono"` (embutida).
 - Escala (px / line-height / weight): Display 28/34/600 · Title1 22/28/600 · Title2 17/22/600 · Headline 15/20/600 · Body 13/18/400 · Callout 12/16/400 · Caption 11/14/400 · Mono 12/18.
 - `font-feature-settings: "tnum"` em números (portas, métricas) para alinhamento.
 - Nunca texto abaixo de 11 px. Nunca justificado. Nunca caixa alta para ênfase (exceto labels de seção com tracking +4%).
@@ -27,6 +27,8 @@ Este documento é normativo para `apps/desktop/`. Exemplos de telas (wireframes)
 - Bordas 1 px com cor `--stroke` (alpha), nunca cinza sólido.
 
 ### 2.3 Cor (tokens em `src/design/tokens.css`)
+Fonte única: [`docs/design/tokens.json`](design/tokens.json) (DTCG). `pnpm -C apps/desktop tokens` gera `tokens.css` (temas, `data-vibrancy`, `data-contrast="high"`, `forced-colors`, `@theme` do Tailwind 4) e `tokens.ts`; `pnpm tokens:check` falha em CI se houver drift. Valores light dos estados são mais escuros que os abaixo (dark) para cumprir 3:1. `--stroke` é divisor decorativo (alpha 10%, isento de 3:1); bordas de controles usam `--stroke-strong` (≥ 3:1). Lint: sem literais de cor (ESLint `no-restricted-syntax`, stylelint `color-no-hex`) fora de `tokens.css`/`tokens.ts`, sem fonte < 11 px.
+
 ```
 --bg-canvas        base da janela (transparente quando vibrancy ativa; sólido no fallback)
 --bg-sidebar       material lateral (Acrylic) / sólido

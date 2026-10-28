@@ -4,6 +4,7 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import { colorLiteralConfig } from "./eslint.colors.js";
 import { i18nLiteralConfig } from "./eslint.i18n.js";
 
 export default defineConfig([
@@ -37,6 +38,13 @@ export default defineConfig([
     ...i18nLiteralConfig,
     files: ["src/**/*.tsx"],
     ignores: ["src/**/*.test.tsx"],
+  },
+  {
+    // Design tokens only (docs/07 section 11). tokens.ts is generated from tokens.json and
+    // tests hold literal fixtures, so both are exempt.
+    ...colorLiteralConfig,
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/design/tokens.ts", "src/**/*.test.{ts,tsx}"],
   },
   {
     // Config files are plain JS, outside the TS project.
