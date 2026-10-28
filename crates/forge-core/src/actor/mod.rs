@@ -41,6 +41,7 @@
 //! | 10 | `fs.case_conversions` ([`crate::fs::case`]: folders being converted) | inserting or removing one path; leaf lock |
 //! | 10 | `layout.tools` (`forge_provider::layout`: per-tool turn semaphores) | looking up or inserting a semaphore; the semaphore itself is acquired after the guard is dropped |
 //! | 10 | `daemon.tables` (`forge-daemon`: instance, pool and log-target tables) | looking up, inserting or removing a handle; leaf lock |
+//! | 10 | `desktop.streams` (`forgebox-desktop` bridge: open webview streams) | registering, acknowledging or removing a stream; leaf lock |
 //! | 200 | `event_bus.seq` ([`crate::event::EventBus`]) | numbering an event and handing it to the broadcast channel |
 //!
 //! Rules: no lock is ever held across `.await` (clippy `await_holding_lock` and

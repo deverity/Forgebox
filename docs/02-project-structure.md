@@ -24,7 +24,8 @@ Forgebox/
 │   │       ├── lib.rs
 │   │       ├── ids.rs            # ToolId (slug [a-z0-9-]) + newtypes ULID: VersionId, InstanceId, SiteId, JobId, EventId,
 │   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts)
-│   │       ├── paths.rs          # ForgeRoot + todos os caminhos (bin/, etc/, data/...), discover(), init() com flag CS
+│   │       ├── paths.rs          # ForgeRoot + todos os caminhos (bin/, etc/, data/...), discover(), init() com flag CS;
+│   │       │                     #   daemon_lock_file() (state/locks/forgeboxd.lock: evidência de saída limpa, ADR-0034)
 │   │       ├── error.rs          # ForgeError (thiserror), code() estável para API, exit_code() da CLI (docs/09)
 │   │       ├── event.rs          # Event{id, seq, ts, kind, payload}, EventKind (nomes de docs/03 §8), EventBus (tokio broadcast)
 │   │       ├── actor/            # trait Actor, ActorRef (tell sem espera; ask com timeout obrigatório), ActorSupervisor
@@ -227,7 +228,9 @@ Forgebox/
 │   │       └── client/           # mod.rs: Client tipado (métodos gerados da tabela) + call_raw/subscribe_raw (pontes JSON da GUI),
 │   │                             #   retentativa com mesmo request_id, ConnectionState em watch (Idle/Connecting/Connected/Reconnecting/
 │   │                             #   Closed), ping com RTT, CredentialsProvider (token relido a cada conexão), keep_connected;
-│   │                             #   conn.rs (conexão: leitor/escritor, hello); subscription.rs (cursor, piso, dedupe por seq);
+│   │                             #   conn.rs (conexão: leitor/escritor, hello); subscription.rs (cursor, piso, dedupe por seq;
+│   │                             #   a manutenção não reassina o que ainda está assinando e restaura logo após uma conexão
+│   │                             #   aberta por chamada, ADR-0034);
 │   │                             #   local.rs (daemon local: try_connect Down/Other, find_daemon_exe, spawn_daemon vigiado,
 │   │                             #   wait_ready com saída 4 = outro daemon subindo, connect_or_start; usado por forge e Forgebox.exe)
 │   ├── forge-daemon/             # bin forgeboxd.exe (lib forge_daemon + main.rs), tray-less; ADR-0029
@@ -275,7 +278,12 @@ Forgebox/
 │       │   ├── app/              # (M2-E1-T10) roteamento (tanstack-router), shell (sidebar, titlebar, command palette)
 │       │   ├── design/           # (M2-E1-T6, T11) tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
 │       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
-│       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`
+│       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`;
+│       │   │                     #   ponte (ADR-0034): bridge.ts (interface Bridge, ContextStateDto, StreamFrame), tauriBridge.ts
+│       │   │                     #   (comandos ipc_* + forge://connection, ack por quadro), api.ts (ForgeApi: call<M>, job<M> →
+│       │   │                     #   {job, done}, subscribe<M>; ULID por intenção), errors.ts (ForgeApiError, CLIENT_ERROR_CODES),
+│       │   │                     #   fakeBridge.ts (o fake único de vitest/Playwright: cenários, jobs, streams, quedas),
+│       │   │                     #   fixtures/ (bridge-dtos.json conferido pelo Rust; not-implemented.json conferido contra o daemon)
 │       │   ├── state/            # (M2-E1-T9) stores, event bridge
 │       │   └── i18n/             # (M2-E1-T17) index.ts, format.ts, pseudo.ts, {pt-BR,en-US}/<ns>.json (tray/notifications também embutidos em src-tauri/src/i18n.rs)
 │       ├── src-tauri/            # crate `forgebox-desktop` (membro do workspace; depende só de forge-ipc, guarda: `cargo xtask arch-guard`)
@@ -284,10 +292,20 @@ Forgebox/
 │       │   ├── tauri.conf.json   # janela `main`, CSP estrita sem origens remotas, identifier dev.forgebox.app (vibrancy/updater/bundle: tarefas seguintes)
 │       │   ├── capabilities/     # main.json: permissões Tauri 2 só da janela `main`
 │       │   ├── app-icon.png      # fonte dos ícones: `pnpm tauri icon src-tauri/app-icon.png`
+│       │   ├── tests/            # bridge.rs (Server forge-ipc em memória: validação, retry com o mesmo request_id, 10 000
+│       │   │                     #   eventos em quadros, lag, política com perdas reais), bridge_daemon.rs (forgeboxd real em
+│       │   │                     #   raiz portátil temporária: start, kill → restart, daemon.stop → parado)
 │       │   ├── icons/
 │       │   └── src/
-│       │       ├── main.rs / lib.rs
-│       │       ├── commands.rs   # comandos Tauri → forge-ipc client (nunca lógica de domínio aqui)
+│       │       ├── main.rs / lib.rs  # lib.rs: Builder (Bridge gerenciado, on_page_load fecha streams da página) +
+│       │       │                     #   teste que exige `async` em todo #[tauri::command]
+│       │       ├── commands.rs   # app_info (fatos do build); nunca lógica de domínio aqui
+│       │       ├── bridge/       # ponte IPC (ADR-0034): mod.rs (Bridge: call/subscribe/state/start, validação contra METHODS),
+│       │       │                 #   commands.rs (ipc_state|call|subscribe|ack|unsubscribe|start, evento forge://connection),
+│       │       │                 #   contexts.rs (ator Contexts: um Client por contexto, LocalConnector = discover +
+│       │       │                 #   connect_or_start, vigia de daemon.shutdown, evidência do arquivo de trava), policy.rs
+│       │       │                 #   (política pura de auto-start), streams.rs (bomba: quadros ≤ 16 ms/≤ 256, janela de 4
+│       │       │                 #   confirmados, lagged/reset/end; registro de streams), errors.rs (ClientError → ApiError)
 │       │       ├── tray.rs       # (M2-E1-T15) ícone/menu de bandeja, estados, ações rápidas
 │       │       ├── window.rs     # (M2-E1-T7) vibrancy/mica, titlebar custom, lembrar posição
 │       │       └── autostart.rs  # (M2-E1-T18)
