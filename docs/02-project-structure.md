@@ -277,7 +277,7 @@ Forgebox/
 │       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`
 │       │   ├── state/            # (M2-E1-T9) stores, event bridge
-│       │   └── i18n/             # (M2-E1-T17) pt-BR, en
+│       │   └── i18n/             # (M2-E1-T17) index.ts, format.ts, pseudo.ts, {pt-BR,en-US}/<ns>.json (tray/notifications também embutidos em src-tauri/src/i18n.rs)
 │       ├── src-tauri/            # crate `forgebox-desktop` (membro do workspace; depende só de forge-ipc, guarda: `cargo xtask arch-guard`)
 │       │   ├── Cargo.toml        # bin `Forgebox` (mainBinaryName), lib `forgebox_desktop`; feature `custom-protocol` embute dist
 │       │   ├── build.rs          # tauri_build::build(); sem a feature, modo dev: compila sem Node e sem apps/desktop/dist

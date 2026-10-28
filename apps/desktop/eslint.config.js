@@ -4,6 +4,7 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import { i18nLiteralConfig } from "./eslint.i18n.js";
 
 export default defineConfig([
   // Build output, dependencies, Rust target and generated IPC contracts (cargo xtask gen-ts).
@@ -30,6 +31,12 @@ export default defineConfig([
         tsconfigRootDir: import.meta.dirname,
       },
     },
+  },
+  {
+    // No literal UI text in JSX (docs/07 section 9): strings come from src/i18n via t().
+    ...i18nLiteralConfig,
+    files: ["src/**/*.tsx"],
+    ignores: ["src/**/*.test.tsx"],
   },
   {
     // Config files are plain JS, outside the TS project.

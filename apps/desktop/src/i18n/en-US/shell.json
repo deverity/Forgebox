@@ -1,0 +1,5 @@
+{
+  "title": "Forgebox",
+  "tagline": "Your local development environment",
+  "daemon": { "connecting": "Connecting to the daemon…", "down": "The daemon is not responding" }
+}

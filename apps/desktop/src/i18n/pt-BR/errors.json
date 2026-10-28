@@ -1,0 +1,6 @@
+{
+  "unknown": "Algo deu errado (código {code}).",
+  "not_found": "{what} não foi encontrado.",
+  "timeout": "A operação excedeu o tempo limite de {seconds} s.",
+  "daemon_unreachable": "Não foi possível falar com o daemon do Forgebox."
+}

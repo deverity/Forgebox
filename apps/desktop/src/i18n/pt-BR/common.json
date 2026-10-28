@@ -1,0 +1,21 @@
+{
+  "actions": {
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "close": "Fechar",
+    "retry": "Tentar novamente"
+  },
+  "status": {
+    "running": "Em execução",
+    "stopped": "Parado",
+    "starting": "Iniciando"
+  },
+  "language": {
+    "label": "Idioma",
+    "pt-BR": "Português (Brasil)",
+    "en-US": "English (US)"
+  },
+  "itemCount_one": "{count} item",
+  "itemCount_other": "{count} itens",
+  "itemCount_many": "{count} itens"
+}

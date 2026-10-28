@@ -1,0 +1,5 @@
+{
+  "service_crashed": "{service} stopped unexpectedly",
+  "service_restarted": "{service} was restarted",
+  "update_available": "{tool} {version} is available"
+}
