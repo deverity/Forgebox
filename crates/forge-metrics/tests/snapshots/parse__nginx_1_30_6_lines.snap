@@ -1,0 +1,17 @@
+---
+source: crates/forge-metrics/tests/parse.rs
+expression: "render_fixture(\"nginx-1.30.6.jsonl\", &parser(&nginx()))"
+---
+01 2026-10-28T06:03:00.312Z host=loja.test status=200 dur=0us up=None bytes=3 GET route=/index.html
+02 2026-10-28T06:03:00.374Z host=loja.test status=200 dur=0us up=None bytes=2 GET route=/a.txt
+03 2026-10-28T06:03:00.441Z host=loja.test status=404 dur=0us up=None bytes=153 GET route=/missing/{id}/edit
+04 2026-10-28T06:03:00.503Z host=loja.test status=404 dur=0us up=Some(0) bytes=335 GET route=/api/ok
+05 2026-10-28T06:03:00.582Z host=loja.test status=404 dur=16000us up=Some(16000) bytes=335 GET route=/api/nothere
+06 2026-10-28T06:03:00.642Z host=127.0.0.1 status=404 dur=0us up=None bytes=153 GET route=/café/a"b
+07 2026-10-28T06:03:00.694Z host=_ status=400 dur=0us up=None bytes=157 GET route=/
+08 2026-10-28T06:03:00.781Z host=shop.loja.test status=404 dur=16000us up=Some(16000) bytes=335 GET route=/api/x
+09 2026-10-28T06:02:47.351Z host=127.0.0.1 status=200 dur=0us up=Some(0) bytes=9 GET route=/ok
+10 2026-10-28T06:02:49.515Z host=127.0.0.1 status=200 dur=2100000us up=Some(2100000) bytes=9 GET route=/ok
+11 2026-10-28T06:02:49.588Z host=127.0.0.1 status=200 dur=16000us up=Some(16000) bytes=9 GET route=/ok
+12 2026-10-28T06:02:49.656Z host=127.0.0.1 status=200 dur=16000us up=Some(16000) bytes=9 GET route=/ok
+13 2026-10-28T06:02:49.721Z host=127.0.0.1 status=200 dur=16000us up=Some(16000) bytes=9 GET route=/ok
