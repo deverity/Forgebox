@@ -35,3 +35,12 @@ forge-ipc = { path = "../../../crates/forge-ipc" }
 tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The IPC bridge (src/bridge, ADR-0034): async commands, the Contexts actor, stream pumps.
+# Tauri's async runtime is tokio; forge-ipc clients spawn their tasks on it.
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
