@@ -1,5 +1,15 @@
 {
   "title": "Forgebox",
   "tagline": "Seu ambiente de desenvolvimento local",
-  "daemon": { "connecting": "Conectando ao daemon…", "down": "O daemon não está respondendo" }
+  "daemon": { "connecting": "Conectando ao daemon…", "down": "O daemon não está respondendo" },
+  "titlebar": {
+    "windowControls": "Controles da janela",
+    "search": "Buscar",
+    "searchHint": "Abrir a paleta de comandos (Ctrl+K)",
+    "shortcut": "Ctrl+K",
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "restore": "Restaurar",
+    "close": "Fechar"
+  }
 }
