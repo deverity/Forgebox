@@ -195,6 +195,26 @@ fn garbage_lines() {
             "invalid utf-8",
             b"{\"t\":\"1.5\",\"host\":\"\xff\xfe\"}".to_vec(),
         ),
+        (
+            "raw 0xFF in the uri keeps the request",
+            b"{\"t\":\"1793167336.296\",\"host\":\"a.test\",\"s\":404,\"rt\":0.001,\"ut\":\"-\",\"b\":1,\"m\":\"GET\",\"u\":\"/a/\xff/b\"}".to_vec(),
+        ),
+        (
+            "euro sign across byte 18 of ut",
+            r#"{"t":"1793167336.296","host":"a.test","s":200,"rt":0.1,"ut":"1.12345678901234567€"}"#.as_bytes().to_vec(),
+        ),
+        (
+            "euro sign across byte 18 of t",
+            r#"{"t":"1.12345678901234567€","host":"a.test","s":200,"rt":0.1}"#.as_bytes().to_vec(),
+        ),
+        (
+            "euro sign across byte 18 of rt",
+            r#"{"t":"1793167336.296","host":"a.test","s":200,"rt":"1.12345678901234567€"}"#.as_bytes().to_vec(),
+        ),
+        (
+            "18.18 digit duration overflows u128",
+            br#"{"t":"1793167336.296","host":"a.test","s":200,"rt":"123456789012345678.123456789012345678"}"#.to_vec(),
+        ),
         ("binary", (0u8..=255).collect()),
         ("deeply nested", deep.into_bytes()),
         ("over the line limit", huge.into_bytes()),
@@ -426,6 +446,10 @@ fn fuzz_never_panics() {
                 b"\"\\x41\"",
                 b"\"1, 2 : 3\"",
                 b"\"-\"",
+                "\"1.12345678901234567€\"".as_bytes(),
+                "\"é.€\"".as_bytes(),
+                b"\"123456789012345678.123456789012345678\"",
+                b"\"0.1234567890123456789012345\"",
                 b"null",
                 b"true",
                 b"[]",
@@ -433,7 +457,7 @@ fn fuzz_never_panics() {
                 b"}",
                 b",",
                 b" ",
-            ][rng.below(23)];
+            ][rng.below(27)];
             soup.extend_from_slice(piece);
         }
         run(&parsers, &soup);

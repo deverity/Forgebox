@@ -26,7 +26,12 @@ timestamp is an object: ERR Invalid("ts")
 huge duration: ERR Invalid("duration")
 duplicate keys keep the last: 1970-01-01T00:00:01.5Z host=b.test status=200 dur=250000us up=None bytes=0  route=/q
 bad method and bytes: 1970-01-01T00:00:01.5Z host=a status=200 dur=250000us up=None bytes=0 OTHER route=/
-invalid utf-8: ERR Malformed
+invalid utf-8: ERR Missing("duration")
+raw 0xFF in the uri keeps the request: 2026-10-28T06:02:16.296Z host=a.test status=404 dur=1000us up=None bytes=1 GET route=/a/�/b
+euro sign across byte 18 of ut: 2026-10-28T06:02:16.296Z host=a.test status=200 dur=100000us up=None bytes=0  route=
+euro sign across byte 18 of t: ERR Invalid("ts")
+euro sign across byte 18 of rt: ERR Invalid("duration")
+18.18 digit duration overflows u128: ERR Invalid("duration")
 binary: ERR Malformed
 deeply nested: ERR Malformed
 over the line limit: ERR TooLong { len: 16428 }

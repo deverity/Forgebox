@@ -132,10 +132,20 @@ impl AccessParser {
         if line[0] != b'{' {
             return Err(ParseError::Malformed);
         }
+        // nginx `escape=json` does not validate UTF-8 (a percent-decoded `$uri` can carry a raw
+        // 0xFF) and serde_json rejects invalid UTF-8 in strings: replace it with U+FFFD, for
+        // every format, so such requests are still counted. Allocates only in that case.
+        let line: Cow<'_, [u8]> = match std::str::from_utf8(line) {
+            Ok(_) => Cow::Borrowed(line),
+            Err(_) => Cow::Owned(String::from_utf8_lossy(line).into_owned().into_bytes()),
+        };
         let bytes: Cow<'_, [u8]> = if self.lenient_escapes {
-            fix_lenient_escapes(line)
+            match fix_lenient_escapes(&line) {
+                Cow::Borrowed(_) => line,
+                Cow::Owned(fixed) => Cow::Owned(fixed),
+            }
         } else {
-            Cow::Borrowed(line)
+            line
         };
 
         let mut captured = Captured::default();
@@ -548,15 +558,18 @@ fn decimal_to_micros(s: &str, unit: Unit) -> Option<u64> {
     if int.len() > 18 {
         return None;
     }
+    // Validate BEFORE slicing: `frac` may hold multi-byte characters, and cutting it at an
+    // arbitrary byte index would panic on a char boundary.
+    if !int.bytes().chain(frac.bytes()).all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    // Digits past the 18th are dropped (truncated, not rounded): ASCII only, so the cut is safe.
     let frac = &frac[..frac.len().min(18)];
     let mut mantissa: u128 = 0;
     for b in int.bytes().chain(frac.bytes()) {
-        if !b.is_ascii_digit() {
-            return None;
-        }
+        // At most 36 digits: fits in u128 (max ~3.4e38).
         mantissa = mantissa * 10 + u128::from(b - b'0');
     }
-    // `frac` was cut at an arbitrary byte, but it only holds ASCII digits here.
     let (num, den) = unit_ratio(unit);
     let pow10 = POW10.get(frac.len()).copied()?;
     // u64 arithmetic covers every realistic value (epoch microseconds are ~1.8e15); u128 is
@@ -566,8 +579,11 @@ fn decimal_to_micros(s: &str, unit: Unit) -> Option<u64> {
             return scaled.checked_add(divisor / 2).map(|v| v / divisor);
         }
     }
+    // mantissa < 10^36 and num <= 10^6 can still overflow u128 (~3.4e38): checked, so such
+    // values are rejected instead of panicking (debug) or wrapping (release).
     let divisor = u128::from(pow10) * den;
-    u64::try_from((mantissa * num + divisor / 2) / divisor).ok()
+    let scaled = mantissa.checked_mul(num)?.checked_add(divisor / 2)?;
+    u64::try_from(scaled / divisor).ok()
 }
 
 /// `10^n` for `n` in `0..=18`.
@@ -696,6 +712,31 @@ mod tests {
             assert_eq!(decimal_to_micros(bad, Unit::Seconds), None, "bad={bad:?}");
         }
         assert_eq!(decimal_to_micros(&"9".repeat(19), Unit::Seconds), None);
+    }
+
+    #[test]
+    fn decimal_conversion_never_panics_on_hostile_strings() {
+        // A multi-byte character across byte 18 of the fraction (regression: char boundary).
+        for frac in [
+            "12345678901234567\u{20ac}",
+            "1234567890123456\u{e9}9",
+            "\u{20ac}",
+        ] {
+            for unit in [Unit::Seconds, Unit::Millis, Unit::Micros, Unit::Nanos] {
+                assert_eq!(decimal_to_micros(&format!("1.{frac}"), unit), None);
+                assert_eq!(decimal_to_micros(&format!("{frac}.5"), unit), None);
+            }
+        }
+        // 18 integer + 18 fraction digits: the u128 product overflows (regression).
+        let huge = format!("{}.{}", "123456789012345678", "123456789012345678");
+        for unit in [Unit::Seconds, Unit::Millis] {
+            assert_eq!(decimal_to_micros(&huge, unit), None, "{unit:?}");
+        }
+        // Past 18 fraction digits the rest is dropped.
+        assert_eq!(
+            decimal_to_micros("1.0000005000000000000099", Unit::Seconds),
+            Some(1_000_001)
+        );
     }
 
     #[test]
