@@ -15,9 +15,8 @@
 //! default WebView2 profile under `%LOCALAPPDATA%\dev.forgebox.app`) is redirected here or
 //! not used; `tests/data_dir.rs` and the real-app check assert it.
 //!
-//! In portable mode the GUI may create `<root>/state/gui` before the daemon ever ran, so
-//! "the root is initialized" means `state/` holds something besides `gui/`
-//! ([`root_initialized`]).
+//! In portable mode the GUI may create `<root>/state/gui` before the daemon ever ran, so a
+//! `state/` holding only `gui/` does not make the root "initialized" ([`root_initialized`]).
 //!
 //! Everything here is blocking file I/O: async callers use `spawn_blocking`.
 //!
@@ -150,14 +149,14 @@ fn portable_root(inputs: &DiscoverInputs) -> Option<ForgeRoot> {
     (source == RootSource::Portable || root.is_portable()).then_some(root)
 }
 
-/// Whether the daemon (or `forge init`) has initialized `root`: its `state/` exists and
-/// holds something besides the GUI's own `gui/` folder (portable mode, module docs).
-/// Blocking.
+/// Whether `root` is initialized: it has a `state/` folder (ADR-0034 §3) that is not just
+/// the GUI's own `state/gui` (portable mode, module docs). Blocking.
 pub fn root_initialized(root: &ForgeRoot) -> bool {
     match std::fs::read_dir(root.state()) {
-        Ok(entries) => entries
-            .flatten()
-            .any(|entry| entry.file_name() != GUI_DIR_NAME),
+        Ok(entries) => {
+            let names: Vec<_> = entries.flatten().map(|e| e.file_name()).collect();
+            names.is_empty() || names.iter().any(|name| name != GUI_DIR_NAME)
+        }
         Err(_) => false,
     }
 }
@@ -300,6 +299,10 @@ mod tests {
         let sandbox = tempfile::tempdir().unwrap();
         let root = ForgeRoot::new(sandbox.path()).unwrap();
         std::fs::create_dir_all(root.state()).unwrap();
+        assert!(
+            root_initialized(&root),
+            "an empty state/ still counts (ADR-0034 §3)"
+        );
         std::fs::write(root.db(), b"").unwrap();
         assert!(root_initialized(&root), "state/forgebox.db");
     }

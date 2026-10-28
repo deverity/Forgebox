@@ -199,3 +199,23 @@ fn a_second_session_reads_what_the_first_saved() {
     assert_eq!(state.placements.len(), 1);
     assert_eq!(state.placements[0].rect.width, 1200);
 }
+
+/// The bridge's local connector agrees: a portable root whose `state/` holds only the GUI's
+/// folder is not initialized (no automatic daemon start, the GUI goes to onboarding); the
+/// daemon's own folders make it initialized.
+#[tokio::test]
+async fn the_bridge_does_not_count_state_gui_as_an_initialized_root() {
+    use forgebox_desktop::bridge::{Connector, LocalConnector, desktop_client_options};
+
+    let sandbox = tempfile::tempdir().unwrap();
+    std::fs::write(sandbox.path().join("portable.flag"), b"").unwrap();
+    std::fs::create_dir_all(sandbox.path().join("state").join("gui")).unwrap();
+    let root = ForgeRoot::new(sandbox.path()).unwrap();
+    let connector = LocalConnector::with_root(root.clone(), desktop_client_options());
+    let opened = connector.open().await.unwrap();
+    assert!(!opened.initialized);
+    assert!(!opened.endpoint.initialized().await);
+
+    std::fs::create_dir_all(root.state_locks()).unwrap();
+    assert!(opened.endpoint.initialized().await);
+}
