@@ -23,8 +23,8 @@ use forge_ipc::{ApiError, Client, ClientOptions, Credentials};
 use forgebox_desktop::bridge::errors::root_uninitialized;
 use forgebox_desktop::bridge::{
     Bridge, BridgeOptions, ConnectionSink, ConnectionStatus, Connector, ContextStateDto,
-    ContextsOptions, Endpoint, FrameSink, LOCAL_CONTEXT, Opened, PolicyConfig, SinkClosed,
-    StartOutcome, StreamEntry, StreamFrame, desktop_client_options,
+    ContextsOptions, Endpoint, ExitEvidence, FrameSink, LOCAL_CONTEXT, Opened, PolicyConfig,
+    SinkClosed, StartOutcome, StreamEntry, StreamFrame, desktop_client_options,
 };
 
 pub const WAIT: Duration = Duration::from_secs(10);
@@ -184,6 +184,8 @@ pub struct FakeLocal {
     pub switch: Arc<Switch>,
     pub daemon: Arc<TestDaemon>,
     pub initialized: AtomicBool,
+    /// How the last "daemon" ended: gracefully (lock file removed) or not.
+    pub exited_cleanly: AtomicBool,
     pub opens: AtomicU32,
     /// Daemons "spawned" (starts that found nobody answering).
     pub spawned: AtomicU32,
@@ -202,6 +204,7 @@ impl FakeLocal {
             switch,
             daemon,
             initialized: AtomicBool::new(initialized),
+            exited_cleanly: AtomicBool::new(false),
             opens: AtomicU32::new(0),
             spawned: AtomicU32::new(0),
             starts: AtomicU32::new(0),
@@ -209,7 +212,15 @@ impl FakeLocal {
         })
     }
 
+    /// The daemon dies (crash, kill): its lock file stays behind.
     pub fn kill(&self) {
+        self.exited_cleanly.store(false, Ordering::SeqCst);
+        self.switch.kill(&self.daemon);
+    }
+
+    /// The daemon exits gracefully but its `daemon.shutdown` never reached the client.
+    pub fn exit_quietly(&self) {
+        self.exited_cleanly.store(true, Ordering::SeqCst);
         self.switch.kill(&self.daemon);
     }
 
@@ -277,6 +288,18 @@ impl Endpoint for FakeEndpoint {
     fn initialized(&self) -> BoxFuture<'static, bool> {
         let initialized = self.local.initialized.load(Ordering::SeqCst);
         async move { initialized }.boxed()
+    }
+
+    fn exit_evidence(&self) -> BoxFuture<'static, ExitEvidence> {
+        let clean = self.local.exited_cleanly.load(Ordering::SeqCst);
+        async move {
+            if clean {
+                ExitEvidence::Clean
+            } else {
+                ExitEvidence::Unclean
+            }
+        }
+        .boxed()
     }
 
     fn start(

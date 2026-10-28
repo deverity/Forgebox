@@ -18,6 +18,9 @@
 //!   (`user`: `daemon.stop`, `forge daemon stop`, the tray; `signal`: Ctrl+C, logoff) is a
 //!   deliberate stop and the daemon is never restarted automatically
 //!   ([`Decision::StoppedOnPurpose`]) until the user starts it.
+//! * A graceful exit whose announcement was lost (the local daemon removed its lock file)
+//!   counts as deliberate too (reason [`EXITED`]); a crash or a kill leaves the lock file
+//!   behind and is unexpected.
 //! * A start the user asks for is never rate limited and clears a deliberate stop.
 //!
 //! [ADR-0034]: ../../../../../docs/adr/0034-desktop-shell-architecture.md
@@ -25,6 +28,10 @@
 use std::time::Duration;
 
 use tokio::time::Instant;
+
+/// `stopped_reason` of a daemon that exited gracefully without an announcement reaching
+/// the app ([`AutoStartPolicy::on_clean_exit`]).
+pub const EXITED: &str = "exited";
 
 /// Timings of the policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +150,18 @@ impl AutoStartPolicy {
                 reason: other.to_owned(),
             },
         });
+    }
+
+    /// The daemon that went away exited gracefully, but no announcement arrived (the
+    /// daemon closes its connections without flushing what is still queued): it is
+    /// treated as a deliberate stop, reason [`EXITED`]. An announcement that did arrive
+    /// wins (`restart` keeps waiting for the comeback).
+    pub fn on_clean_exit(&mut self) {
+        if self.announced.is_none() {
+            self.announced = Some(Announced::Stopped {
+                reason: EXITED.to_owned(),
+            });
+        }
     }
 
     /// The authenticated connection was lost.
@@ -303,6 +322,25 @@ mod tests {
         p.on_user_start();
         assert_eq!(p.stopped_reason(), None);
         assert_eq!(p.decide(true, t0 + secs(3601)), Decision::Start);
+    }
+
+    #[test]
+    fn a_clean_exit_without_announcement_is_deliberate_but_a_restart_still_comes_back() {
+        let (mut p, t0) = policy();
+        p.on_connected(t0);
+        p.on_lost(t0);
+        p.on_clean_exit();
+        assert_eq!(p.stopped_reason(), Some(EXITED));
+        assert_eq!(p.decide(true, t0 + secs(1)), Decision::StoppedOnPurpose);
+        let (mut q, t1) = policy();
+        q.on_connected(t1);
+        q.on_announced("restart", t1);
+        q.on_lost(t1);
+        q.on_clean_exit();
+        assert_eq!(
+            q.decide(true, t1 + secs(1)),
+            Decision::CheckAt(t1 + secs(15))
+        );
     }
 
     #[test]

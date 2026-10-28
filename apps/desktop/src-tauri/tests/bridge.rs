@@ -486,6 +486,32 @@ async fn no_restart_after_a_user_shutdown_until_the_user_starts_it() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_graceful_exit_whose_announcement_was_lost_is_not_restarted() {
+    let daemon = plain_daemon().await;
+    let local = FakeLocal::new(Arc::clone(&daemon), true, true);
+    let recorder = Arc::new(Recorder::default());
+    let bridge = bridge_over(&local, &recorder, test_options(Duration::from_millis(100)));
+    bridge.state(LOCAL_CONTEXT).await.unwrap();
+    recorder.wait_status(ConnectionStatus::Connected).await;
+    // `forge daemon stop` under load: the daemon closed its connections before the
+    // queued `daemon.shutdown` was written, but it removed its lock file.
+    local.exit_quietly();
+    recorder.wait_status(ConnectionStatus::Stopped).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        local.starts.load(Ordering::SeqCst),
+        1,
+        "only the initial start"
+    );
+    assert_eq!(local.spawned(), 0);
+    assert_eq!(
+        recorder.last().unwrap().autostart.stopped_reason.as_deref(),
+        Some("exited")
+    );
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn local_only_methods_are_refused_on_remote_connections() {
     let daemon = Arc::new(TestDaemon::spawn_with(Router::new(), InMemoryTransport::remote()).await);
     let local = FakeLocal::new(Arc::clone(&daemon), true, true);

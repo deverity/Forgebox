@@ -133,6 +133,24 @@ pub trait Endpoint: Send + Sync + 'static {
         &self,
         require_initialized: bool,
     ) -> BoxFuture<'static, Result<StartOutcome, ApiError>>;
+    /// How the daemon that just went away ended, when the endpoint can tell. Asked once
+    /// after a loss, so a graceful exit whose `daemon.shutdown` announcement was lost
+    /// (the daemon discards unsent notifications when it closes its connections) is not
+    /// mistaken for a crash.
+    fn exit_evidence(&self) -> BoxFuture<'static, ExitEvidence> {
+        async { ExitEvidence::Unknown }.boxed()
+    }
+}
+
+/// How a daemon that went away ended ([`Endpoint::exit_evidence`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitEvidence {
+    /// It exited gracefully (for `local`: `state/locks/forgeboxd.lock` was removed).
+    Clean,
+    /// It did not (for `local`: its lock file is still there: killed or crashed).
+    Unclean,
+    /// The endpoint cannot tell (remote contexts).
+    Unknown,
 }
 
 /// What [`Connector::open`] found.
@@ -232,6 +250,19 @@ impl Endpoint for LocalEndpoint {
         .boxed()
     }
 
+    fn exit_evidence(&self) -> BoxFuture<'static, ExitEvidence> {
+        // The daemon writes it at boot and removes it on a graceful exit (ADR-0029).
+        let lock = self.root.daemon_lock_file();
+        async move {
+            match tokio::task::spawn_blocking(move || lock.exists()).await {
+                Ok(true) => ExitEvidence::Unclean,
+                Ok(false) => ExitEvidence::Clean,
+                Err(_) => ExitEvidence::Unknown,
+            }
+        }
+        .boxed()
+    }
+
     fn start(
         &self,
         require_initialized: bool,
@@ -313,6 +344,7 @@ pub enum Msg {
         open: u64,
         token: u64,
         initialized: bool,
+        exit: Option<ExitEvidence>,
     },
     StartDone {
         context: String,
@@ -370,6 +402,8 @@ struct Live {
     timer: Option<AbortHandle>,
     tasks: Vec<AbortHandle>,
     watcher: bool,
+    /// A connection was lost and the next check must ask how the daemon ended.
+    evidence_due: bool,
 }
 
 impl Live {
@@ -531,7 +565,8 @@ impl Actor for Contexts {
                 open,
                 token,
                 initialized,
-            } => self.on_checked(&context, open, token, initialized, &weak),
+                exit,
+            } => self.on_checked(&context, open, token, initialized, exit, &weak),
             Msg::StartDone {
                 context,
                 open,
@@ -715,6 +750,7 @@ impl Contexts {
             timer: None,
             tasks: vec![forwarder],
             watcher: false,
+            evidence_due: false,
         });
         // `keep_connected`: connects now and keeps reconnecting with backoff.
         client.start();
@@ -818,6 +854,7 @@ impl Contexts {
             }
         } else if was_connected && !closed {
             live.policy.on_lost(now);
+            live.evidence_due = true;
             let grace = live.policy.config().grace;
             schedule_check(context, open, live, now + grace, weak);
         }
@@ -849,10 +886,15 @@ impl Contexts {
         }
         live.timer = None;
         let initialized = live.endpoint.initialized();
+        let exit = live.evidence_due.then(|| live.endpoint.exit_evidence());
         let weak = weak.clone();
         let context = context.to_owned();
         tokio::spawn(async move {
             let initialized = initialized.await;
+            let exit = match exit {
+                Some(evidence) => Some(evidence.await),
+                None => None,
+            };
             tell(
                 &weak,
                 Msg::Checked {
@@ -860,6 +902,7 @@ impl Contexts {
                     open,
                     token,
                     initialized,
+                    exit,
                 },
             );
         });
@@ -871,6 +914,7 @@ impl Contexts {
         open: u64,
         token: u64,
         initialized: bool,
+        exit: Option<ExitEvidence>,
         weak: &WeakActorRef<Msg>,
     ) {
         let Some(live) = self.live(context, open) else {
@@ -881,6 +925,12 @@ impl Contexts {
         }
         live.initialized = initialized;
         live.next_restart = None;
+        if exit.is_some() {
+            live.evidence_due = false;
+        }
+        if exit == Some(ExitEvidence::Clean) {
+            live.policy.on_clean_exit();
+        }
         match live.policy.decide(initialized, Instant::now()) {
             Decision::Start => {
                 tracing::info!(context, "restarting the daemon after an unexpected loss");

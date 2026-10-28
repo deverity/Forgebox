@@ -12,8 +12,8 @@ use forge_core::paths::{ForgeRoot, write_atomic};
 use forge_core::platform::{InstanceMutex, acquire_instance_mutex, daemon_mutex_name};
 use serde::{Deserialize, Serialize};
 
-/// File name under `state/locks/`.
-pub const LOCK_FILE: &str = "forgeboxd.lock";
+/// File name under `state/locks/` (`ForgeRoot::daemon_lock_file`, read by clients too).
+pub const LOCK_FILE: &str = forge_core::paths::DAEMON_LOCK_FILE;
 
 /// Content of `state/locks/forgeboxd.lock`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
