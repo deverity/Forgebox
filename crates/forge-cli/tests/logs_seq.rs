@@ -142,15 +142,42 @@ fn logs_follow_of_an_instance_sees_live_lines_after_daemon_restarts() {
     );
     assert!(lines.iter().all(|(_, _, text)| text.starts_with("tick ")));
 
-    // The same follower through another restart: it resumes from its last line.
+    // The same follower through another restart: it resumes from its last line. What the
+    // new run wrote before the client reconnected is replayed from the files (as many
+    // lines as the reconnect took, source "file"), then the follower goes on live.
     stop_daemon(&root, second);
     let _third = start_daemon(&root);
-    let more = take(&follow, 25, "through the second restart");
+    let mut more = take(&follow, 1, "through the second restart");
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while more
+        .iter()
+        .filter(|(_, source, _)| source == "stdout")
+        .count()
+        < 10
+    {
+        assert!(
+            Instant::now() < deadline,
+            "never live again after the restart: {more:?}"
+        );
+        more.extend(take(&follow, 1, "through the second restart"));
+    }
     let mut all = lines.clone();
     all.extend(more.iter().cloned());
     assert_contiguous("one follower across a restart", &all);
-    let last_seen = more.last().unwrap();
-    assert_eq!(last_seen.1, "stdout", "still live: {more:?}");
+    let first_live = more
+        .iter()
+        .position(|(_, source, _)| source == "stdout")
+        .unwrap();
+    assert!(
+        more[first_live..]
+            .iter()
+            .all(|(_, source, _)| source == "stdout"),
+        "the replay comes first, then only live lines: {more:?}"
+    );
+    assert!(
+        more.iter().all(|(_, _, text)| text.starts_with("tick ")),
+        "{more:?}"
+    );
     assert!(follow.kill(), "the follower keeps running");
     root.stop_daemon();
 }
