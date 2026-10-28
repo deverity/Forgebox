@@ -562,3 +562,57 @@ async fn a_subscription_opened_during_the_first_connection_is_subscribed_once() 
     assert!(client.state().borrow().is_connected());
     client.close();
 }
+
+/// A connection made by a call (not by the maintenance task, which may be sleeping in its
+/// backoff) restores the open subscriptions right away instead of at the next backoff
+/// tick (M2-E1-T8: the desktop bridge pokes the client after starting a daemon; its
+/// streams must not stay detached for up to `reconnect_max`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_connection_made_by_a_call_restores_subscriptions_at_once() {
+    let bus = bus(1024);
+    let token = IpcToken::generate().unwrap();
+    let server = events_server(InMemoryTransport::new(), token.clone(), &bus).await;
+    let switch = SwitchableTransport::new();
+    switch.point_to(&server);
+    let client = Client::new(
+        Arc::clone(&switch) as Arc<dyn Transport>,
+        Credentials::new(token, "forgebox-desktop", "0.0.0"),
+        ClientOptions {
+            keep_connected: true,
+            reconnect_min: Duration::from_secs(5),
+            reconnect_max: Duration::from_secs(5),
+            ..fast_options()
+        },
+    );
+    let mut sub = client
+        .subscribe_raw("events.subscribe", json!({ "filter": {} }))
+        .await
+        .unwrap();
+    let before = sub.subscription_id().unwrap();
+    // The daemon goes away; the maintenance task fails once and sleeps 5 s.
+    switch.unplug();
+    server.handle.disconnect_all();
+    assert!(
+        eventually(WAIT, || matches!(
+            *client.state().borrow(),
+            ConnectionState::Reconnecting { attempt: 1.., .. }
+        ))
+        .await
+    );
+    // It is back; a call connects long before the maintenance task wakes up.
+    switch.point_to(&server);
+    client.ping().await.unwrap();
+    assert!(
+        eventually(Duration::from_secs(1), || sub
+            .subscription_id()
+            .is_some_and(|id| id != before))
+        .await,
+        "resubscribed at once"
+    );
+    bus.publish(EventKind::ConfigRendered, json!({ "v": 1 }));
+    let item = tokio::time::timeout(Duration::from_secs(1), next_raw(&mut sub))
+        .await
+        .expect("the stream flows again");
+    assert_eq!(item["event"]["kind"], "config.rendered");
+    client.close();
+}

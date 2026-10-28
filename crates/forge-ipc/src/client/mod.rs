@@ -873,7 +873,14 @@ async fn connection(shared: &Arc<Shared>) -> Result<Arc<Conn>, ClientError> {
         return Err(ClientError::Closed);
     }
     match &result {
-        Ok(conn) => shared.state_connected(conn),
+        Ok(conn) => {
+            shared.state_connected(conn);
+            // A call connected (the maintenance task may be asleep in its backoff): the
+            // open subscriptions are restored now, not at its next tick.
+            if started && !shared.subs.lock().is_empty() {
+                shared.wake.notify_one();
+            }
+        }
         Err(err) if installed => shared.state_connect_failed(err),
         Err(_) => {}
     }
@@ -957,6 +964,8 @@ async fn maintain(shared: Weak<Shared>, wake: Arc<Notify>, closed: CancellationT
             tokio::select! {
                 () = closed.cancelled() => return,
                 () = tokio::time::sleep(delay) => {}
+                // A call made the connection meanwhile: restore at once.
+                () = wake.notified() => {}
             }
         }
     }
