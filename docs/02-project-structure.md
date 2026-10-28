@@ -130,7 +130,10 @@ Forgebox/
 │   │   ├── src/
 │   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância; nested() = Job de um pool (workers aninhados)
 │   │   │   ├── process.rs        # SpawnSpec: env mínimo + PATH determinístico, stdio Capture|Discard|File, console oculto
-│   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
+│   │   │   ├── logs.rs           # bombas de pipe → hub por instância (seq continua os arquivos) → .out.log (rotação 10 MiB × 5,
+│   │   │   │                     #   backpressure) + broadcast drop-oldest
+│   │   │   ├── logs/set.rs       # domínio de seq dos logs (ADR-0046): LogSet Rotated (+ sidecar .seq)/Daily, snapshot, tail,
+│   │   │   │                     #   range, Follower (polling que atravessa rotação sem repetir nem recuar)
 │   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
 │   │   │   ├── events.rs         # ServiceEventPayload: payloads service.* (v1), mesma forma de forge_ipc ServicePayload
 │   │   │   ├── health.rs         # probes tcp/http/command/pid, limiares, start_timeout, intervalo com jitter

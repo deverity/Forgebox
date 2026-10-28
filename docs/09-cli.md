@@ -47,6 +47,8 @@ forge service set php@8.3 memory_limit=1G upload_max_filesize=256M   # quick set
 forge service ports                                 # mapa de portas e donos (inclui conflitos externos)
 forge logs <alvo> [-f] [-n N] [--since 10m] [--grep x]    # nginx | nginx.error | php@8.3 | mysql/default | site:loja.test | app:loja.test/web (os dois últimos: M2-E3)
 ```
+- `forge logs` lê os arquivos do alvo **inclusive os rotacionados** (`.out.log.1` … `.4`; o log do daemon, todos os dias guardados). Cada linha tem um `seq` monotônico por alvo ([ADR-0046](adr/0046-logs-seq-domain.md)): o índice absoluto da linha no conjunto de arquivos (log do daemon: `dia << 32 + linha`), o mesmo no backlog, nas linhas ao vivo e depois de reinícios do daemon ou rotações — é o que o `--json` mostra em `seq`.
+- `-f` mostra as últimas `-n` linhas (padrão 50, no máximo 10 000) e segue ao vivo. Se a conexão cai (daemon reiniciado), o `forge` reconecta e retoma do último `seq` recebido: as linhas escritas nesse meio-tempo são reenviadas dos arquivos; as que a rotação já apagou (ou mais de 10 000 atrás) viram o aviso de linhas perdidas (`logs.lagged`), nunca uma lacuna silenciosa.
 
 ### php
 ```

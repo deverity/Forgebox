@@ -42,6 +42,7 @@
 //! | 10 | `layout.tools` (`forge_provider::layout`: per-tool turn semaphores) | looking up or inserting a semaphore; the semaphore itself is acquired after the guard is dropped |
 //! | 10 | `daemon.tables` (`forge-daemon`: instance, pool and log-target tables) | looking up, inserting or removing a handle; leaf lock |
 //! | 200 | `event_bus.seq` ([`crate::event::EventBus`]) | numbering an event and handing it to the broadcast channel |
+//! | 200 | `log_hub.seq` (`forge_supervisor::logs`, one per instance) | numbering a log line and handing it to the broadcast channel; never nested |
 //!
 //! Rules: no lock is ever held across `.await` (clippy `await_holding_lock` and
 //! `await_holding_invalid_type` are errors; the guard is also `!Send`); rank-10 locks
