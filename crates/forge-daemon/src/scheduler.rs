@@ -347,6 +347,8 @@ fn triggers_reconcile(kind: EventKind) -> bool {
 async fn react_loop(daemon: Daemon, stop: CancellationToken) {
     let mut events = daemon.bus.subscribe();
     let hosts_sync = Arc::new(HostsSync::default());
+    // Once at start: hosts mode restored at boot follows the sites as they are now.
+    sync_dns_hosts(&daemon, &hosts_sync);
     loop {
         let item = tokio::select! {
             () = stop.cancelled() => return,
@@ -383,7 +385,8 @@ async fn react_loop(daemon: Daemon, stop: CancellationToken) {
 
 /// While a TLD is in `hosts` mode (docs/06 §5.4, ADR-0033), the block follows the sites
 /// and aliases. Runs apart from the reaction loop (a write waits for a UAC prompt); one
-/// sync at a time, and a change during a sync runs one more.
+/// sync at a time, and a change during a sync runs one more. `DnsPolicyManager` serializes
+/// it with `dns enable/disable`, so a sync never writes the block back after a disable.
 fn sync_dns_hosts(daemon: &Daemon, state: &Arc<HostsSync>) {
     if !daemon.config().dns.enabled || daemon.dns_policy.hosts_mode_tlds().is_empty() {
         return;

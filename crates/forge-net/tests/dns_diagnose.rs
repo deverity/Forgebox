@@ -269,6 +269,43 @@ async fn an_empty_group_policy_table_hides_the_local_rule() {
 }
 
 #[tokio::test]
+async fn an_empty_group_policy_table_without_a_local_rule_gives_the_same_reason() {
+    // `forge dns enable` skips `nrpt.add` under the Group Policy table, so the usual state
+    // of the M1 gate machine has no local rule at all: diagnosis and `dns status` must
+    // still agree on the reason (review of ADR-0033).
+    let (server, addr) = server().await;
+    let sources = Sources {
+        policy: MemoryPolicy::accepting().with_group_policy_table(),
+        system: Err("NXDOMAIN".into()),
+        ..Sources::default()
+    };
+    let d = diagnose(sources, "loja.test", Some(addr)).await;
+    assert!(!d.ok);
+    assert!(d.nrpt_rules.is_empty());
+    assert!(d.group_policy_table);
+    assert_eq!(d.mode, PolicyMode::None);
+    assert_eq!(d.mode_reason, Some(PolicyReason::GroupPolicyTablePresent));
+    assert!(
+        codes(&d).contains(&DnsHintCode::GroupPolicyNrpt),
+        "{:?}",
+        codes(&d)
+    );
+
+    // Same machine with the hosts block: mode hosts, same reason.
+    let sources = Sources {
+        policy: MemoryPolicy::accepting()
+            .with_group_policy_table()
+            .with_hosts_line("127.0.0.1 loja.test\r\n::1 loja.test\r\n"),
+        ..Sources::default()
+    };
+    let d = diagnose(sources, "loja.test", Some(addr)).await;
+    assert!(d.ok);
+    assert_eq!(d.mode, PolicyMode::Hosts);
+    assert_eq!(d.mode_reason, Some(PolicyReason::GroupPolicyTablePresent));
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn a_rule_the_resolver_does_not_follow() {
     // The rule is effective in the registry but a VPN/agent answers DNS itself.
     let (server, addr) = server().await;

@@ -13,12 +13,17 @@
 //!    local rules are then ignored; no `nrpt.add` is attempted) or when the probe fails
 //!    (VPN or security agent intercepting DNS). One line per host and alias, `127.0.0.1`
 //!    and `::1`, no wildcard; kept in step with the sites by [`DnsPolicyManager::sync_sites`].
+//!    The mode is persisted (`state/dns-policy.json`, [`DnsPolicyManager::restore`]) so it
+//!    survives restarts even before the first site.
 //! 3. Nothing: the diagnosis says why.
 //!
 //! Every change is followed by a resolver cache flush and published as
 //! `dns.policy_applied {v, tld, policy, mode, reason, probe_ok}`; every helper call as
 //! `helper.op {v, name, ok, error, effective, reason}` (same shapes as
 //! `forge_ipc::api::events::{DnsPolicyPayload, HelperOpPayload}`).
+//!
+//! `enable`, `disable` and the site sync take turns (one-permit semaphore with a deadline):
+//! a sync waiting for its prompt never writes the block back after a `disable`.
 //!
 //! Blocking calls run in `spawn_blocking` with timeouts: reads within
 //! [`PolicyTimeouts::read`], each probe within [`PolicyTimeouts::probe_attempt`], helper
@@ -28,6 +33,7 @@
 
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -41,6 +47,7 @@ use forge_core::platform::{
 };
 use forge_core::runtime::spawn_blocking_timeout;
 use serde::{Deserialize, Serialize};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Version of the `dns.policy_applied` and `helper.op` payloads (fields added since are
 /// optional, ADR-0033).
@@ -187,6 +194,9 @@ pub struct PolicyTimeouts {
     pub probe_window: Duration,
     /// Pause between two probes.
     pub probe_interval: Duration,
+    /// How long `enable`, `disable` and the site sync wait for each other (one at a time;
+    /// each may hold a UAC prompt or two).
+    pub turn: Duration,
 }
 
 impl Default for PolicyTimeouts {
@@ -197,6 +207,7 @@ impl Default for PolicyTimeouts {
             probe_attempt: Duration::from_secs(3),
             probe_window: Duration::from_secs(8),
             probe_interval: Duration::from_secs(1),
+            turn: Duration::from_secs(31 * 60),
         }
     }
 }
@@ -221,15 +232,79 @@ struct HelperOpEvent<'a> {
     reason: Option<&'static str>,
 }
 
+/// Version of `state/dns-policy.json`.
+const STATE_VERSION: u32 = 1;
+
+/// `state/dns-policy.json`: the `hosts` mode survives restarts even with no site (and so
+/// no block) yet (ADR-0033).
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct SavedState {
+    v: u32,
+    /// TLDs routed by the `hosts` block (`[".test"]`).
+    #[serde(default)]
+    hosts_mode: Vec<String>,
+}
+
+fn read_state(path: &Path) -> Result<SavedState> {
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map_err(|err| ForgeError::InvalidInput(format!("{}: {err}", path.display()))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(SavedState::default()),
+        Err(err) => Err(ForgeError::io_at("reading", path, err)),
+    }
+}
+
+fn write_state(path: &Path, state: &SavedState) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|err| ForgeError::io_at("creating", dir, err))?;
+    }
+    let mut bytes = serde_json::to_vec_pretty(state)
+        .map_err(|err| ForgeError::Internal(format!("dns policy state: {err}")))?;
+    bytes.push(b'\n');
+    forge_core::paths::write_atomic(path, &bytes)
+}
+
+/// Takes the single permit of `turn` within `timeout`.
+async fn acquire(
+    turn: &Arc<Semaphore>,
+    timeout: Duration,
+    what: &str,
+) -> Result<OwnedSemaphorePermit> {
+    tokio::time::timeout(timeout, Arc::clone(turn).acquire_owned())
+        .await
+        .map_err(|_| ForgeError::Timeout {
+            operation: what.to_owned(),
+            after: timeout,
+        })?
+        .map_err(|_| ForgeError::Internal("dns policy turn closed".into()))
+}
+
+/// TLDs in `hosts` mode. `epoch` moves on every `disable`: a `status` that read the block
+/// before a `disable` does not arm the mode again after it.
+#[derive(Debug, Default)]
+struct HostsMode {
+    tlds: BTreeSet<String>,
+    epoch: u64,
+}
+
 /// Async façade over the OS resolver policy. Cheap to clone.
 #[derive(Debug, Clone)]
 pub struct DnsPolicyManager {
     policy: Arc<dyn DnsPolicy>,
     events: Option<EventBus>,
     timeouts: PolicyTimeouts,
-    /// TLDs routed by the `hosts` block: set by `enable` (fallback) and `status` (block
-    /// found), cleared by `disable`. [`Self::sync_sites`] keeps their lines in step.
-    hosts_mode: Arc<Mutex<BTreeSet<String>>>,
+    /// TLDs routed by the `hosts` block: set by `enable` (fallback), by [`Self::restore`]
+    /// and by `status` (block found), cleared by `disable`. [`Self::sync_sites`] keeps
+    /// their lines in step. Never held across `.await`.
+    hosts_mode: Arc<Mutex<HostsMode>>,
+    /// Where `hosts_mode` is persisted (`state/dns-policy.json`); `None` keeps it in
+    /// memory only.
+    state_file: Option<PathBuf>,
+    /// One `enable`/`disable`/site sync at a time (docs/03 §7.2 "fila de vez"): a sync
+    /// waiting for its UAC prompt never writes the block back after a `disable`.
+    turn: Arc<Semaphore>,
+    /// One write of `state_file` at a time, each with the latest set.
+    persist_turn: Arc<Semaphore>,
 }
 
 /// The `hosts` entries for `hosts` under `tlds`: `127.0.0.1` and `::1` for each valid
@@ -297,7 +372,17 @@ impl DnsPolicyManager {
             events: None,
             timeouts: PolicyTimeouts::default(),
             hosts_mode: Arc::default(),
+            state_file: None,
+            turn: Arc::new(Semaphore::new(1)),
+            persist_turn: Arc::new(Semaphore::new(1)),
         }
+    }
+
+    /// Persists the `hosts` mode in `path` (`state/dns-policy.json`); load it with
+    /// [`Self::restore`].
+    pub fn with_state_file(mut self, path: impl Into<PathBuf>) -> Self {
+        self.state_file = Some(path.into());
+        self
     }
 
     /// Publishes `dns.policy_applied` and `helper.op` on `bus`.
@@ -316,20 +401,120 @@ impl DnsPolicyManager {
         self.hosts_mode
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .tlds
             .iter()
             .cloned()
             .collect()
     }
 
-    fn set_hosts_mode(&self, tld: &str, on: bool) {
-        let mut set = self
+    fn hosts_mode_epoch(&self) -> u64 {
+        self.hosts_mode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .epoch
+    }
+
+    /// Arms or clears the `hosts` mode of `tld`; returns whether it changed.
+    fn set_hosts_mode(&self, tld: &str, on: bool) -> bool {
+        let mut mode = self
             .hosts_mode
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
+        let tld = tld.to_ascii_lowercase();
         if on {
-            set.insert(tld.to_ascii_lowercase());
+            mode.tlds.insert(tld)
         } else {
-            set.remove(&tld.to_ascii_lowercase());
+            mode.tlds.remove(&tld)
+        }
+    }
+
+    /// Arms `tld` unless a `disable` ran since `epoch`; returns whether it changed.
+    fn arm_since(&self, tld: &str, epoch: u64) -> bool {
+        let mut mode = self
+            .hosts_mode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        mode.epoch == epoch && mode.tlds.insert(tld.to_ascii_lowercase())
+    }
+
+    /// Clears `tlds` and starts a new epoch (`disable`).
+    fn clear_hosts_mode(&self, tlds: &[String]) {
+        let mut mode = self
+            .hosts_mode
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        for tld in tlds {
+            mode.tlds.remove(&tld.to_ascii_lowercase());
+        }
+        mode.epoch += 1;
+    }
+
+    /// Waits for the turn of `enable`/`disable`/site sync.
+    async fn turn(&self) -> Result<OwnedSemaphorePermit> {
+        acquire(
+            &self.turn,
+            self.timeouts.turn,
+            "waiting for another DNS policy change",
+        )
+        .await
+    }
+
+    /// Loads the `hosts` mode saved by an earlier run (boot, before the first `status`):
+    /// a TLD that fell back to `hosts` keeps following the sites after a restart even when
+    /// no block was written yet (no site) or the last site went away. Returns the TLDs
+    /// armed. No state file (or none configured): nothing.
+    pub async fn restore(&self) -> Result<Vec<String>> {
+        let Some(path) = self.state_file.clone() else {
+            return Ok(Vec::new());
+        };
+        let saved = spawn_blocking_timeout(
+            "reading the DNS policy state",
+            self.timeouts.read,
+            move || read_state(&path),
+        )
+        .await?;
+        let tlds: Vec<String> = saved
+            .hosts_mode
+            .iter()
+            .map(|t| t.to_ascii_lowercase())
+            .collect();
+        for tld in &tlds {
+            self.set_hosts_mode(tld, true);
+        }
+        if !tlds.is_empty() {
+            tracing::info!(?tlds, "dns: hosts mode restored");
+        }
+        Ok(tlds)
+    }
+
+    /// Saves the current `hosts` mode (when a state file is configured); a failure is only
+    /// logged (the mode stays right in memory until the next restart).
+    async fn persist(&self) {
+        let Some(path) = self.state_file.clone() else {
+            return;
+        };
+        let result = async {
+            let _permit = acquire(
+                &self.persist_turn,
+                self.timeouts.read,
+                "saving the DNS policy state",
+            )
+            .await?;
+            // The snapshot is taken inside the turn: the last writer saves the latest set.
+            let state = SavedState {
+                v: STATE_VERSION,
+                hosts_mode: self.hosts_mode_tlds(),
+            };
+            spawn_blocking_timeout(
+                "saving the DNS policy state",
+                self.timeouts.read,
+                move || write_state(&path, &state),
+            )
+            .await
+        }
+        .await;
+        if let Err(err) = result {
+            tracing::warn!(%err, "dns: hosts mode not saved");
         }
     }
 
@@ -469,8 +654,11 @@ impl DnsPolicyManager {
             tracing::warn!(%err, "dns: cannot read hosts");
             None
         });
+        let epoch = self.hosts_mode_epoch();
+        let armed = self.hosts_mode_tlds();
         let table = self.table().await?;
         let mut out = Vec::new();
+        let mut changed = false;
         for tld in tlds {
             let mut policy = TldPolicy::new(tld, PolicyState::NotApplied);
             policy.group_policy_table = table.group_policy_table;
@@ -508,18 +696,30 @@ impl DnsPolicyManager {
             let in_hosts = block.as_ref().is_some_and(|entries| {
                 entries.iter().any(|e| dns_name::is_within(&e.host, suffix))
             });
+            let is_armed = armed.contains(&tld.to_ascii_lowercase());
             policy.state = if nrpt {
                 PolicyState::Applied
-            } else if in_hosts {
-                self.set_hosts_mode(tld, true);
+            } else if is_armed || in_hosts {
+                // A block left by an older daemon (no state file) arms the mode too.
+                if !is_armed {
+                    changed |= self.arm_since(tld, epoch);
+                }
                 PolicyState::HostsFallback
             } else {
                 PolicyState::NotApplied
             };
             if nrpt {
                 policy.reason = None;
+            } else if policy.state == PolicyState::HostsFallback
+                && policy.reason.is_none()
+                && nameserver.is_none()
+            {
+                policy.reason = Some(PolicyReason::ResolverNotOnPort53);
             }
             out.push(policy);
+        }
+        if changed {
+            self.persist().await;
         }
         Ok(out)
     }
@@ -532,6 +732,7 @@ impl DnsPolicyManager {
     /// Errors: `needs_elevation` when the user declines a prompt (nothing else is tried:
     /// the fallback needs the same consent), the helper's refusals, timeouts.
     pub async fn enable(&self, req: EnableRequest) -> Result<Vec<TldPolicy>> {
+        let _turn = self.turn().await?;
         let mut states: Vec<TldPolicy> = Vec::new();
         let mut needs_hosts: Vec<TldPolicy> = Vec::new();
         for tld in &req.tlds {
@@ -587,28 +788,37 @@ impl DnsPolicyManager {
             let ok = probe.ok;
             policy.probe = Some(probe);
             if ok {
-                self.set_hosts_mode(tld, false);
                 states.push(policy);
             } else {
                 policy.reason = Some(PolicyReason::ResolverProbeFailed);
                 needs_hosts.push(policy);
             }
         }
+        let mut changed = false;
+        for routed in &states {
+            changed |= self.set_hosts_mode(&routed.tld, false);
+        }
         if !needs_hosts.is_empty() {
-            let tlds: Vec<String> = needs_hosts.iter().map(|p| p.tld.clone()).collect();
-            let entries = hosts_entries(&req.hosts, &tlds);
-            if entries.is_empty() {
+            // Every TLD that stays in hosts mode, not only the new ones: the block is
+            // rewritten as a whole.
+            let mut tlds: BTreeSet<String> = self.hosts_mode_tlds().into_iter().collect();
+            tlds.extend(needs_hosts.iter().map(|p| p.tld.to_ascii_lowercase()));
+            let tlds: Vec<String> = tlds.into_iter().collect();
+            if hosts_entries(&req.hosts, &tlds).is_empty() {
                 // No site yet: the block is written when the first one arrives
-                // (`sync_sites`).
+                // (`sync_sites`; the mode is persisted, so also after a restart).
                 tracing::info!(?tlds, "dns: hosts mode with no site yet");
-            } else {
-                self.write_block(entries).await?;
             }
+            // Only a different block costs a prompt (running `enable` again does not).
+            self.write_hosts_if_changed(&req.hosts, &tlds).await?;
             for mut policy in needs_hosts {
-                self.set_hosts_mode(&policy.tld, true);
+                changed |= self.set_hosts_mode(&policy.tld, true);
                 policy.state = PolicyState::HostsFallback;
                 states.push(policy);
             }
+        }
+        if changed {
+            self.persist().await;
         }
         self.flush().await;
         for state in &states {
@@ -620,6 +830,7 @@ impl DnsPolicyManager {
     /// Removes the routing (`forge dns disable`): the Forgebox NRPT rules of the TLDs and
     /// the `hosts` block, then flushes the cache.
     pub async fn disable(&self, tlds: &[String]) -> Result<()> {
+        let _turn = self.turn().await?;
         for tld in tlds {
             let table = self.table().await?;
             let wanted = tld.to_ascii_lowercase();
@@ -636,9 +847,10 @@ impl DnsPolicyManager {
             self.helper("hosts.set_block", |p| p.set_hosts_block(&[]))
                 .await?;
         }
+        self.clear_hosts_mode(tlds);
+        self.persist().await;
         self.flush().await;
         for tld in tlds {
-            self.set_hosts_mode(tld, false);
             self.publish_state(&TldPolicy::new(tld, PolicyState::NotApplied));
         }
         Ok(())
@@ -648,16 +860,38 @@ impl DnsPolicyManager {
     /// `hosts` mode; nothing to do (no prompt) when no TLD uses it or the lines did not
     /// change. Returns whether it wrote.
     pub async fn sync_sites(&self, hosts: &[String]) -> Result<bool> {
+        if self.hosts_mode_tlds().is_empty() {
+            return Ok(false);
+        }
+        let _turn = self.turn().await?;
+        // Read again inside the turn: a `disable` that ran meanwhile cleared the mode,
+        // and the block must not come back.
         let tlds = self.hosts_mode_tlds();
         if tlds.is_empty() {
             return Ok(false);
         }
-        self.sync_hosts(hosts, &tlds).await
+        let wrote = self.write_hosts_if_changed(hosts, &tlds).await?;
+        if wrote {
+            self.flush().await;
+        }
+        Ok(wrote)
     }
 
     /// Rewrites the `hosts` block for `hosts` under `tlds` (one prompt) only when the
     /// entries change; no entry left removes the block. Returns whether it wrote.
     pub async fn sync_hosts(&self, hosts: &[String], tlds: &[String]) -> Result<bool> {
+        let _turn = self.turn().await?;
+        let wrote = self.write_hosts_if_changed(hosts, tlds).await?;
+        if wrote {
+            self.flush().await;
+        }
+        Ok(wrote)
+    }
+
+    /// The block for `hosts` under `tlds`, written (one prompt) only when it differs from
+    /// the current one; no entry left removes the block. No flush. Returns whether it
+    /// wrote.
+    async fn write_hosts_if_changed(&self, hosts: &[String], tlds: &[String]) -> Result<bool> {
         let wanted = hosts_entries(hosts, tlds);
         let current = self.current_block().await?.unwrap_or_default();
         let as_set = |v: &[HostsEntry]| v.iter().cloned().collect::<BTreeSet<_>>();
@@ -670,7 +904,6 @@ impl DnsPolicyManager {
         } else {
             self.write_block(wanted).await?;
         }
-        self.flush().await;
         Ok(true)
     }
 

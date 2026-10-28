@@ -542,10 +542,6 @@ impl DnsDiagnostics {
             .effective_rules()
             .iter()
             .any(|r| r.covers(&host) && !r.nameservers.is_empty());
-        let local_rule = table
-            .rules
-            .iter()
-            .any(|r| r.source == NrptSource::Local && r.covers(&host));
         let nrpt_rules: Vec<NrptRule> = table
             .rules
             .into_iter()
@@ -599,9 +595,11 @@ impl DnsDiagnostics {
         } else {
             PolicyMode::None
         };
+        // Same reason as `DnsPolicyManager::status` for the same state: with the Group
+        // Policy table present local rules are ignored, whether or not one exists yet.
         let mode_reason = if mode == PolicyMode::Nrpt {
             None
-        } else if local_rule && (group_policy_table || group_policy_rules > 0) {
+        } else if group_policy_table || group_policy_rules > 0 {
             Some(PolicyReason::GroupPolicyTablePresent)
         } else if nrpt_present && !probe_ok {
             Some(PolicyReason::ResolverProbeFailed)

@@ -517,3 +517,200 @@ async fn disable_removes_rule_and_block() {
     fx.manager.disable(&tlds()).await.unwrap();
     assert_eq!(fx.fake.requests().len(), before);
 }
+
+/// A manager as the daemon builds it at boot: state file, then `restore`.
+async fn restarted(os: &Arc<MemoryPolicy>, state: &std::path::Path) -> DnsPolicyManager {
+    let manager = DnsPolicyManager::new(os.clone())
+        .with_timeouts(timeouts())
+        .with_state_file(state);
+    manager.restore().await.unwrap();
+    manager
+}
+
+#[tokio::test]
+async fn hosts_mode_survives_a_restart_without_a_block() {
+    // Review of ADR-0033: on the GPO machine `forge dns enable` ran before any site
+    // existed (no block written), then the daemon restarted. The first site must still
+    // reach hosts.
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state").join("dns-policy.json");
+    let fake = Arc::new(FakeElevation::accepting());
+    let os = Arc::new(MemoryPolicy::new(fake.clone()).with_group_policy_table());
+    let first = DnsPolicyManager::new(os.clone())
+        .with_timeouts(timeouts())
+        .with_state_file(&state);
+    let states = first.enable(enable_request(&[])).await.unwrap();
+    assert_eq!(states[0].state, PolicyState::HostsFallback);
+    assert!(fake.requests().is_empty(), "no site, no prompt");
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+    assert_eq!(saved, serde_json::json!({"v": 1, "hosts_mode": [".test"]}));
+
+    // (a) Restart, nothing in hosts yet: status still says hosts, with the reason.
+    let second = restarted(&os, &state).await;
+    assert_eq!(second.hosts_mode_tlds(), tlds());
+    let status = second.status(&tlds(), Some(loopback())).await.unwrap();
+    assert_eq!(status[0].state, PolicyState::HostsFallback);
+    assert_eq!(
+        status[0].reason,
+        Some(PolicyReason::GroupPolicyTablePresent)
+    );
+    assert!(second.sync_sites(&["loja.test".into()]).await.unwrap());
+    assert_eq!(hosts_lines(&os), ["127.0.0.1 loja.test", "::1 loja.test"]);
+
+    // (b) The last site goes away (block removed), restart, a new site arrives.
+    assert!(second.sync_sites(&[]).await.unwrap());
+    assert_eq!(*os.hosts.lock().unwrap(), STOCK_HOSTS);
+    let third = restarted(&os, &state).await;
+    assert!(third.sync_sites(&["blog.test".into()]).await.unwrap());
+    assert_eq!(hosts_lines(&os), ["127.0.0.1 blog.test", "::1 blog.test"]);
+
+    // Resolver not on port 53 after a restart: hosts mode, with that reason.
+    let status = third.status(&tlds(), None).await.unwrap();
+    assert_eq!(status[0].state, PolicyState::HostsFallback);
+    assert_eq!(
+        status[0].reason,
+        Some(PolicyReason::GroupPolicyTablePresent),
+        "the table explains it first"
+    );
+
+    // Disable clears the saved mode: after a restart, sites never prompt.
+    third.disable(&tlds()).await.unwrap();
+    assert_eq!(*os.hosts.lock().unwrap(), STOCK_HOSTS);
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+    assert_eq!(saved["hosts_mode"], serde_json::json!([]));
+    let fourth = restarted(&os, &state).await;
+    assert!(fourth.hosts_mode_tlds().is_empty());
+    let before = fake.requests().len();
+    assert!(!fourth.sync_sites(&["loja.test".into()]).await.unwrap());
+    assert_eq!(fake.requests().len(), before);
+    let status = fourth.status(&tlds(), Some(loopback())).await.unwrap();
+    assert_eq!(status[0].state, PolicyState::NotApplied);
+}
+
+#[tokio::test]
+async fn hosts_mode_after_a_restart_without_port_53_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("dns-policy.json");
+    let fx = fixture();
+    let first = DnsPolicyManager::new(fx.os.clone())
+        .with_timeouts(timeouts())
+        .with_state_file(&state);
+    first
+        .enable(EnableRequest {
+            tlds: tlds(),
+            nameserver: None,
+            hosts: vec![],
+        })
+        .await
+        .unwrap();
+    let again = restarted(&fx.os, &state).await;
+    let status = again.status(&tlds(), None).await.unwrap();
+    assert_eq!(status[0].state, PolicyState::HostsFallback);
+    assert_eq!(status[0].reason, Some(PolicyReason::ResolverNotOnPort53));
+}
+
+#[tokio::test]
+async fn a_missing_or_broken_state_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let os = Arc::new(MemoryPolicy::accepting());
+    let none = DnsPolicyManager::new(os.clone()).with_state_file(dir.path().join("none.json"));
+    assert!(none.restore().await.unwrap().is_empty());
+    let broken = dir.path().join("broken.json");
+    std::fs::write(&broken, b"{not json").unwrap();
+    let manager = DnsPolicyManager::new(os).with_state_file(&broken);
+    assert_eq!(manager.restore().await.unwrap_err().code(), "invalid_input");
+    assert!(manager.hosts_mode_tlds().is_empty());
+}
+
+#[tokio::test]
+async fn enable_again_in_hosts_mode_does_not_prompt() {
+    let fake = Arc::new(FakeElevation::accepting());
+    let os = MemoryPolicy::new(fake.clone()).with_group_policy_table();
+    let fx = fixture_os(fake, os);
+    let sites = ["loja.test", "api.loja.test"];
+    fx.manager.enable(enable_request(&sites)).await.unwrap();
+    assert_eq!(fx.fake.requests().len(), 1);
+    let states = fx.manager.enable(enable_request(&sites)).await.unwrap();
+    assert_eq!(states[0].state, PolicyState::HostsFallback);
+    assert_eq!(
+        fx.fake.requests().len(),
+        1,
+        "same block: no second hosts.set_block"
+    );
+    // A different set of sites does prompt.
+    fx.manager
+        .enable(enable_request(&["loja.test"]))
+        .await
+        .unwrap();
+    assert_eq!(fx.fake.requests().len(), 2);
+    assert_eq!(hosts_lines(&fx.os).len(), 2);
+}
+
+/// Every `hosts.set_block` takes `delay` (a UAC prompt the user takes a while to accept).
+fn slow_hosts(delay: Duration) -> Arc<FakeElevation> {
+    Arc::new(FakeElevation::answering(move |req| {
+        if matches!(req.op, HelperOp::HostsSetBlock { .. }) {
+            std::thread::sleep(delay);
+        }
+        Ok(HelperResponse::success(req, "fake helper: done"))
+    }))
+}
+
+async fn wait_requests(fake: &FakeElevation, n: usize) {
+    for _ in 0..400 {
+        if fake.requests().len() >= n {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("the helper never got request #{n}");
+}
+
+#[tokio::test]
+async fn disable_during_a_site_sync_leaves_no_block() {
+    // The sync is waiting for its prompt when `disable` arrives: disable waits for its
+    // turn and then removes what the sync wrote.
+    let fake = slow_hosts(Duration::from_millis(500));
+    let os = MemoryPolicy::new(fake.clone()).with_group_policy_table();
+    let fx = fixture_os(fake, os);
+    fx.manager.enable(enable_request(&[])).await.unwrap();
+    let sync = {
+        let manager = fx.manager.clone();
+        tokio::spawn(async move { manager.sync_sites(&["loja.test".into()]).await })
+    };
+    wait_requests(&fx.fake, 1).await;
+    fx.manager.disable(&tlds()).await.unwrap();
+    assert!(sync.await.unwrap().unwrap(), "the sync finished its write");
+    assert_eq!(*fx.os.hosts.lock().unwrap(), STOCK_HOSTS, "no leftover");
+    assert!(fx.manager.hosts_mode_tlds().is_empty());
+    let names: Vec<&str> = fx.fake.ops().iter().map(HelperOp::name).collect();
+    assert_eq!(names, ["hosts.set_block", "hosts.set_block"]);
+}
+
+#[tokio::test]
+async fn a_site_sync_during_disable_does_not_write_the_block_back() {
+    // `disable` is waiting for its prompt when a site change arrives: the sync waits for
+    // its turn, sees hosts mode cleared and writes nothing.
+    let fake = slow_hosts(Duration::from_millis(500));
+    let os = MemoryPolicy::new(fake.clone()).with_group_policy_table();
+    let fx = fixture_os(fake, os);
+    fx.manager
+        .enable(enable_request(&["loja.test"]))
+        .await
+        .unwrap();
+    assert_eq!(hosts_lines(&fx.os).len(), 2);
+    let disable = {
+        let manager = fx.manager.clone();
+        tokio::spawn(async move { manager.disable(&tlds()).await })
+    };
+    wait_requests(&fx.fake, 2).await;
+    let wrote = fx
+        .manager
+        .sync_sites(&["loja.test".into(), "blog.test".into()])
+        .await
+        .unwrap();
+    assert!(!wrote);
+    disable.await.unwrap().unwrap();
+    assert_eq!(*fx.os.hosts.lock().unwrap(), STOCK_HOSTS);
+    assert_eq!(fx.fake.requests().len(), 2, "no write after disable");
+}
