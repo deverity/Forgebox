@@ -438,11 +438,76 @@ async fn hosts_mode_follows_the_sites() {
     assert!(fx.manager.sync_sites(&sites[..1]).await.unwrap());
     assert_eq!(hosts_lines(&fx.os).len(), 2);
 
-    // A fresh manager (daemon restart) finds hosts mode again through status.
+    // A fresh manager without this root's state file does not take the block over
+    // (it may be another root's): only the state file arms the mode.
     let again = DnsPolicyManager::new(fx.os.clone()).with_timeouts(timeouts());
-    assert!(again.hosts_mode_tlds().is_empty());
     again.status(&tlds(), Some(loopback())).await.unwrap();
-    assert_eq!(again.hosts_mode_tlds(), tlds());
+    assert!(again.hosts_mode_tlds().is_empty());
+}
+
+#[tokio::test]
+async fn a_block_of_another_root_is_never_adopted() {
+    // Review of ADR-0033: the `hosts` file is shared by every root of the machine. A
+    // second root (portable, the smoke) boots with no state file while the block of the
+    // first root is in `hosts`: boot (restore + status) and the first site sync must not
+    // arm hosts mode, prompt, or touch that block.
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state").join("dns-policy.json");
+    let fake = Arc::new(FakeElevation::accepting());
+    let os = Arc::new(MemoryPolicy::new(fake.clone()).with_group_policy_table());
+    let owner = DnsPolicyManager::new(os.clone()).with_timeouts(timeouts());
+    owner.enable(enable_request(&["loja.test"])).await.unwrap();
+    let block = os.hosts.lock().unwrap().clone();
+    let before = fake.requests().len();
+
+    let second = restarted(&os, &state).await;
+    let status = second.status(&tlds(), Some(loopback())).await.unwrap();
+    assert_eq!(status[0].state, PolicyState::NotApplied);
+    assert_eq!(
+        status[0].reason,
+        Some(PolicyReason::GroupPolicyTablePresent)
+    );
+    assert!(second.hosts_mode_tlds().is_empty());
+    assert!(!second.sync_sites(&["blog.test".into()]).await.unwrap());
+    assert!(!second.sync_sites(&[]).await.unwrap());
+    assert_eq!(fake.requests().len(), before, "no helper call");
+    assert_eq!(*os.hosts.lock().unwrap(), block, "block untouched");
+    assert!(!state.exists(), "nothing saved");
+}
+
+#[tokio::test]
+async fn leaving_hosts_mode_for_a_verified_nrpt_removes_the_block() {
+    // A VPN intercepted DNS at the first `enable` (hosts mode); once it is gone, `enable`
+    // verifies NRPT and the now stale block goes away with it.
+    let fake = Arc::new(FakeElevation::accepting());
+    let os = MemoryPolicy::new(fake.clone()).intercepting(Err("NXDOMAIN".into()));
+    let fx = fixture_os(fake, os);
+    let states = fx
+        .manager
+        .enable(enable_request(&["loja.test"]))
+        .await
+        .unwrap();
+    assert_eq!(states[0].state, PolicyState::HostsFallback);
+    assert_eq!(hosts_lines(&fx.os).len(), 2);
+
+    *fx.os.intercept.lock().unwrap() = None;
+    let states = fx
+        .manager
+        .enable(enable_request(&["loja.test"]))
+        .await
+        .unwrap();
+    assert_eq!(states[0].state, PolicyState::Applied);
+    assert!(fx.manager.hosts_mode_tlds().is_empty());
+    assert_eq!(*fx.os.hosts.lock().unwrap(), STOCK_HOSTS);
+    let names: Vec<&str> = fx.fake.ops().iter().map(HelperOp::name).collect();
+    assert_eq!(names, ["nrpt.add", "hosts.set_block", "hosts.set_block"]);
+
+    // Verified again: nothing left to remove, no prompt.
+    fx.manager
+        .enable(enable_request(&["loja.test"]))
+        .await
+        .unwrap();
+    assert_eq!(fx.fake.requests().len(), 3);
 }
 
 #[tokio::test]

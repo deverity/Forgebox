@@ -391,15 +391,15 @@ fn sync_dns_hosts(daemon: &Daemon, state: &Arc<HostsSync>) {
     if !daemon.config().dns.enabled || daemon.dns_policy.hosts_mode_tlds().is_empty() {
         return;
     }
-    state.dirty.store(true, Ordering::SeqCst);
-    if state.running.swap(true, Ordering::SeqCst) {
+    if !state.request() {
         return;
     }
     let daemon = daemon.clone();
     let state = Arc::clone(state);
     tokio::spawn(async move {
-        while state.dirty.swap(false, Ordering::SeqCst) {
+        while state.next() {
             if daemon.shutdown.is_requested() {
+                state.release();
                 break;
             }
             let synced = match crate::api::net::site_hosts(&daemon).await {
@@ -412,15 +412,50 @@ fn sync_dns_hosts(daemon: &Daemon, state: &Arc<HostsSync>) {
                 Err(err) => tracing::warn!(%err, "dns: hosts block not updated"),
             }
         }
-        state.running.store(false, Ordering::SeqCst);
     });
 }
 
-/// Single-flight flag of [`sync_dns_hosts`].
+/// Single-flight flag of [`sync_dns_hosts`]: one worker at a time, and a request that
+/// lands while it runs (even while it is about to stop) gets one more pass.
 #[derive(Debug, Default)]
 struct HostsSync {
     running: AtomicBool,
     dirty: AtomicBool,
+}
+
+impl HostsSync {
+    /// Records a change; `true` when the caller must start the worker (none running).
+    fn request(&self) -> bool {
+        self.dirty.store(true, Ordering::SeqCst);
+        !self.running.swap(true, Ordering::SeqCst)
+    }
+
+    /// Worker side: `true` when there is a change to sync; `false` once the worker has
+    /// stopped. Before stopping it looks again: a request that came after the last check
+    /// but saw `running` still set would otherwise be lost.
+    fn next(&self) -> bool {
+        self.next_with(|| {})
+    }
+
+    /// [`Self::next`] with `window` run between the last empty check and the stop (tests
+    /// put a concurrent request there).
+    fn next_with(&self, window: impl Fn()) -> bool {
+        loop {
+            if self.dirty.swap(false, Ordering::SeqCst) {
+                return true;
+            }
+            window();
+            self.running.store(false, Ordering::SeqCst);
+            if !self.dirty.load(Ordering::SeqCst) || self.running.swap(true, Ordering::SeqCst) {
+                return false;
+            }
+        }
+    }
+
+    /// Worker side: stops without syncing what is pending (shutdown).
+    fn release(&self) {
+        self.running.store(false, Ordering::SeqCst);
+    }
 }
 
 #[cfg(test)]
@@ -471,6 +506,70 @@ mod tests {
             remove_older_than(&dir.path().join("missing"), Duration::ZERO),
             0
         );
+    }
+
+    #[test]
+    fn hosts_sync_never_loses_a_request() {
+        // A burst of requests from several threads, each caller running the worker when
+        // `request` says so: once everything is done no change is left unsynced and no
+        // worker is marked running. The lost wakeup (`dirty` set while the worker was
+        // between its last check and `running = false`) leaves `dirty` true here.
+        for _ in 0..20 {
+            let state = Arc::new(HostsSync::default());
+            let runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let threads: Vec<_> = (0..8)
+                .map(|_| {
+                    let state = Arc::clone(&state);
+                    let runs = Arc::clone(&runs);
+                    std::thread::spawn(move || {
+                        for _ in 0..2_000 {
+                            if state.request() {
+                                while state.next() {
+                                    runs.fetch_add(1, Ordering::SeqCst);
+                                    std::hint::spin_loop();
+                                }
+                            }
+                        }
+                    })
+                })
+                .collect();
+            for t in threads {
+                t.join().unwrap();
+            }
+            assert!(!state.dirty.load(Ordering::SeqCst), "a request was lost");
+            assert!(!state.running.load(Ordering::SeqCst));
+            assert!(runs.load(Ordering::SeqCst) >= 1);
+        }
+        // The race itself: a request lands after the worker found nothing to do but before
+        // it stopped; it sees the worker running and leaves, so the worker must take it.
+        let state = HostsSync::default();
+        assert!(state.request());
+        assert!(state.next());
+        let late = std::cell::Cell::new(None);
+        assert!(state.next_with(|| {
+            if late.get().is_none() {
+                late.set(Some(state.request()));
+            }
+        }));
+        assert_eq!(
+            late.get(),
+            Some(false),
+            "the late caller did not start a worker"
+        );
+        assert!(!state.next());
+        assert!(!state.dirty.load(Ordering::SeqCst));
+        assert!(!state.running.load(Ordering::SeqCst));
+
+        // Sequential: every request is served, a request during a run gets one more.
+        let state = HostsSync::default();
+        assert!(state.request());
+        assert!(state.next());
+        assert!(!state.request(), "worker running");
+        assert!(state.next(), "the request made during the run");
+        assert!(!state.next());
+        assert!(state.request(), "stopped: the next caller starts it");
+        state.release();
+        assert!(state.request());
     }
 
     #[test]

@@ -447,10 +447,14 @@ mod tests {
         // `localhost` is answered by the DNS Client itself on every Windows.
         let ips = query_a("localhost").unwrap();
         assert!(ips.iter().all(IpAddr::is_loopback), "{ips:?}");
-        // A reserved name that no server answers (RFC 6761 `.invalid`): an error that
-        // names the host; never a panic or an empty success.
-        let err = query_a("forgebox-probe.invalid").unwrap_err();
-        assert!(err.to_string().contains("forgebox-probe.invalid"), "{err}");
+        // A reserved name (RFC 6761 `.invalid`): what comes back depends on the network (a
+        // resolver that rewrites NXDOMAIN answers with its own address, a host without DNS
+        // times out), so only "no panic, never loopback" is asserted: the probe counts
+        // anything but loopback as a failure.
+        match query_a("forgebox-probe.invalid") {
+            Ok(ips) => assert!(!ips.iter().any(IpAddr::is_loopback), "{ips:?}"),
+            Err(err) => assert!(err.to_string().contains("forgebox-probe.invalid"), "{err}"),
+        }
     }
 
     #[test]

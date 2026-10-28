@@ -14,7 +14,11 @@
 //!    (VPN or security agent intercepting DNS). One line per host and alias, `127.0.0.1`
 //!    and `::1`, no wildcard; kept in step with the sites by [`DnsPolicyManager::sync_sites`].
 //!    The mode is persisted (`state/dns-policy.json`, [`DnsPolicyManager::restore`]) so it
-//!    survives restarts even before the first site.
+//!    survives restarts even before the first site. That file is the **only** thing that
+//!    arms it: the `hosts` file is shared by every root of the machine and its block does
+//!    not say which root wrote it, so a block found there never arms the mode (a second
+//!    root, a portable one or the smoke, would otherwise rewrite the block of another
+//!    root, with a UAC prompt nobody asked for).
 //! 3. Nothing: the diagnosis says why.
 //!
 //! Every change is followed by a resolver cache flush and published as
@@ -279,24 +283,17 @@ async fn acquire(
         .map_err(|_| ForgeError::Internal("dns policy turn closed".into()))
 }
 
-/// TLDs in `hosts` mode. `epoch` moves on every `disable`: a `status` that read the block
-/// before a `disable` does not arm the mode again after it.
-#[derive(Debug, Default)]
-struct HostsMode {
-    tlds: BTreeSet<String>,
-    epoch: u64,
-}
-
 /// Async façade over the OS resolver policy. Cheap to clone.
 #[derive(Debug, Clone)]
 pub struct DnsPolicyManager {
     policy: Arc<dyn DnsPolicy>,
     events: Option<EventBus>,
     timeouts: PolicyTimeouts,
-    /// TLDs routed by the `hosts` block: set by `enable` (fallback), by [`Self::restore`]
-    /// and by `status` (block found), cleared by `disable`. [`Self::sync_sites`] keeps
-    /// their lines in step. Never held across `.await`.
-    hosts_mode: Arc<Mutex<HostsMode>>,
+    /// TLDs routed by the `hosts` block: set by `enable` (fallback) and by
+    /// [`Self::restore`] (this root's state file), cleared by `disable` and by an `enable`
+    /// that verified NRPT. Never by a block found in `hosts` (it may be another root's).
+    /// [`Self::sync_sites`] keeps their lines in step. Never held across `.await`.
+    hosts_mode: Arc<Mutex<BTreeSet<String>>>,
     /// Where `hosts_mode` is persisted (`state/dns-policy.json`); `None` keeps it in
     /// memory only.
     state_file: Option<PathBuf>,
@@ -401,17 +398,9 @@ impl DnsPolicyManager {
         self.hosts_mode
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .tlds
             .iter()
             .cloned()
             .collect()
-    }
-
-    fn hosts_mode_epoch(&self) -> u64 {
-        self.hosts_mode
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .epoch
     }
 
     /// Arms or clears the `hosts` mode of `tld`; returns whether it changed.
@@ -422,31 +411,21 @@ impl DnsPolicyManager {
             .unwrap_or_else(PoisonError::into_inner);
         let tld = tld.to_ascii_lowercase();
         if on {
-            mode.tlds.insert(tld)
+            mode.insert(tld)
         } else {
-            mode.tlds.remove(&tld)
+            mode.remove(&tld)
         }
     }
 
-    /// Arms `tld` unless a `disable` ran since `epoch`; returns whether it changed.
-    fn arm_since(&self, tld: &str, epoch: u64) -> bool {
-        let mut mode = self
-            .hosts_mode
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        mode.epoch == epoch && mode.tlds.insert(tld.to_ascii_lowercase())
-    }
-
-    /// Clears `tlds` and starts a new epoch (`disable`).
+    /// Clears `tlds` (`disable`).
     fn clear_hosts_mode(&self, tlds: &[String]) {
         let mut mode = self
             .hosts_mode
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         for tld in tlds {
-            mode.tlds.remove(&tld.to_ascii_lowercase());
+            mode.remove(&tld.to_ascii_lowercase());
         }
-        mode.epoch += 1;
     }
 
     /// Waits for the turn of `enable`/`disable`/site sync.
@@ -644,21 +623,17 @@ impl DnsPolicyManager {
     /// State of each TLD. `nameserver` is where the resolver listens now on port 53
     /// (`None`: not running or not on 53, nothing to verify against). A rule that points
     /// elsewhere, that Windows ignores (Group Policy table) or that the OS resolver does
-    /// not follow (one probe) does not count as applied.
+    /// not follow (one probe) does not count as applied. `hosts` is reported only for a
+    /// TLD this root armed (state file or `enable`); read-only: it never arms, writes or
+    /// prompts.
     pub async fn status(
         &self,
         tlds: &[String],
         nameserver: Option<IpAddr>,
     ) -> Result<Vec<TldPolicy>> {
-        let block = self.current_block().await.unwrap_or_else(|err| {
-            tracing::warn!(%err, "dns: cannot read hosts");
-            None
-        });
-        let epoch = self.hosts_mode_epoch();
         let armed = self.hosts_mode_tlds();
         let table = self.table().await?;
         let mut out = Vec::new();
-        let mut changed = false;
         for tld in tlds {
             let mut policy = TldPolicy::new(tld, PolicyState::NotApplied);
             policy.group_policy_table = table.group_policy_table;
@@ -692,18 +667,12 @@ impl DnsPolicyManager {
                     policy.reason = table.local_rules_ignored().map(PolicyReason::from);
                 }
             }
-            let suffix = tld.trim_start_matches('.');
-            let in_hosts = block.as_ref().is_some_and(|entries| {
-                entries.iter().any(|e| dns_name::is_within(&e.host, suffix))
-            });
+            // Only this root's own mode: a block in the shared `hosts` file may belong to
+            // another root and is not ours to follow.
             let is_armed = armed.contains(&tld.to_ascii_lowercase());
             policy.state = if nrpt {
                 PolicyState::Applied
-            } else if is_armed || in_hosts {
-                // A block left by an older daemon (no state file) arms the mode too.
-                if !is_armed {
-                    changed |= self.arm_since(tld, epoch);
-                }
+            } else if is_armed {
                 PolicyState::HostsFallback
             } else {
                 PolicyState::NotApplied
@@ -717,9 +686,6 @@ impl DnsPolicyManager {
                 policy.reason = Some(PolicyReason::ResolverNotOnPort53);
             }
             out.push(policy);
-        }
-        if changed {
-            self.persist().await;
         }
         Ok(out)
     }
@@ -797,6 +763,17 @@ impl DnsPolicyManager {
         let mut changed = false;
         for routed in &states {
             changed |= self.set_hosts_mode(&routed.tld, false);
+        }
+        if changed && needs_hosts.is_empty() && self.hosts_mode_tlds().is_empty() {
+            // This root just left hosts mode for a verified NRPT (the VPN went away): its
+            // block would otherwise stay, stale, until `disable`, since `sync_sites` no
+            // longer touches it. One prompt, only when a block is there. The mode is saved
+            // first: a declined prompt must not bring hosts mode back at the next boot.
+            self.persist().await;
+            changed = false;
+            if self.write_hosts_if_changed(&[], &[]).await? {
+                tracing::info!("dns: NRPT verified; hosts block removed");
+            }
         }
         if !needs_hosts.is_empty() {
             // Every TLD that stays in hosts mode, not only the new ones: the block is
