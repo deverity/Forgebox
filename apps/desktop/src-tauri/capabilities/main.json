@@ -4,5 +4,11 @@
   "description": "Permissions of the main window; no other window exists.",
   "windows": ["main"],
   "platforms": ["windows"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
 }
