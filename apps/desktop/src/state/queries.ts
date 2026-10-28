@@ -66,6 +66,18 @@ const CONFIG: readonly MethodName[] = [
 const DNS: readonly MethodName[] = ["net.dns_status", "net.dns_test"];
 const TLS: readonly MethodName[] = ["tls.ca_status", "sites.info", "sites.list"];
 
+/** The query groups the event rows use, shared with `JOB_EFFECTS` (effects.ts). */
+export const QUERY_GROUPS = {
+  sites: SITES,
+  tools: TOOLS,
+  services: SERVICES,
+  pools: POOLS,
+  jobs: JOBS,
+  config: CONFIG,
+  dns: DNS,
+  tls: TLS,
+} as const;
+
 /**
  * Methods whose cached answers an event makes stale. Every kind has a row (possibly empty),
  * so a new kind forces a decision here too.
@@ -134,7 +146,12 @@ export class Invalidator {
   /** Marks the methods an event of `kind` makes stale. */
   onEvent(kind: string): void {
     const methods = (EVENT_INVALIDATIONS as Record<string, readonly string[] | undefined>)[kind];
-    if (methods === undefined || methods.length === 0) return;
+    if (methods !== undefined) this.invalidate(methods);
+  }
+
+  /** Marks `methods` stale (a finished mutation, `JOB_EFFECTS`); same debounce window. */
+  invalidate(methods: readonly string[]): void {
+    if (methods.length === 0) return;
     for (const method of methods) this.pending.add(method);
     this.timer ??= setTimeout(() => {
       this.flush();

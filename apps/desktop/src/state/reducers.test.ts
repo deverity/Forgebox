@@ -66,16 +66,18 @@ function setup() {
     },
   });
   const refreshed: SliceName[] = [];
+  const invalidated: string[] = [];
   const resyncs: string[] = [];
   const apply = (events: T.EventDto[]) => {
     const tx = openTx(stores, {
       refresh: (slice) => refreshed.push(slice),
+      invalidate: (methods) => invalidated.push(...methods),
       resync: (reason) => resyncs.push(reason),
     });
     reduceEvents(tx, events);
     return commitTx(tx);
   };
-  return { stores, apply, refreshed, resyncs };
+  return { stores, apply, refreshed, invalidated, resyncs };
 }
 
 function service(kind: string, id: string, patch: Partial<T.ServicePayload> = {}): T.EventDto {

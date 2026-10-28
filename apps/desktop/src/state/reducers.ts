@@ -2,10 +2,13 @@
 // stores or explicitly ignored with a reason — the registry's type demands an entry per kind
 // and `reducers.test.ts` checks it at runtime too. Reducers are projections: they copy what
 // the payload says into the stores, or ask for a snapshot refetch when the payload is not
-// enough to build the DTO (`tx.refresh`). Kinds a newer daemon adds are ignored.
+// enough to build the DTO (`tx.refresh`). Kinds a newer daemon adds are ignored. A job that
+// ends also applies the `JOB_EFFECTS` row of its method (effects.ts): many mutations publish
+// no entity event, so the snapshots they touch are refetched and their queries invalidated.
 import { failureCode } from "../ipc/describeError";
 import type * as T from "../ipc/generated";
-import { EVENT_KINDS, type EventKind, type EventPayloads } from "../ipc/methods";
+import { EVENT_KINDS, type EventKind, type EventPayloads, type MethodName } from "../ipc/methods";
+import { applyMutationEffect, jobMethod } from "./effects";
 import {
   Draft,
   type AttentionSlice,
@@ -31,7 +34,16 @@ export interface Tx {
   readonly attention: Draft<AttentionSlice>;
   /** Refetch one snapshot (debounced) when the payload cannot build the entity. */
   refresh(slice: SliceName): void;
+  /** Invalidate the cached queries of `methods` (debounced; `JOB_EFFECTS`). */
+  invalidate(methods: readonly MethodName[]): void;
   /** Refetch every snapshot (debounced). */
+  resync(reason: string): void;
+}
+
+/** What a batch may ask of the runtime besides store writes. */
+export interface TxEffects {
+  refresh(slice: SliceName): void;
+  invalidate(methods: readonly MethodName[]): void;
   resync(reason: string): void;
 }
 
@@ -142,8 +154,12 @@ function finishJob(
   event: T.EventDto,
   patch: Partial<T.JobDto>,
 ): void {
-  const current =
-    tx.jobs.get("jobs", payload.job_id) ?? jobBase(payload.job_id, payload.name, event.ts, null);
+  const stored = tx.jobs.get("jobs", payload.job_id);
+  // Applied even when the safety poll saw the end first: each terminal event arrives once
+  // (the stream drops seq it already saw), and the poll writes only the jobs store.
+  const method = jobMethod(payload.name === "" ? (stored?.name ?? "") : payload.name);
+  if (method !== null) applyMutationEffect(tx, method);
+  const current = stored ?? jobBase(payload.job_id, payload.name, event.ts, null);
   if (current.state !== "running") return; // Terminal states never change.
   tx.jobs.put("jobs", payload.job_id, { ...current, finished_at: event.ts, ...patch });
 }
@@ -350,10 +366,7 @@ export function isEventKind(kind: string): kind is EventKind {
 }
 
 /** Opens the drafts of one batch. */
-export function openTx(
-  stores: ContextStores,
-  effects: { refresh(slice: SliceName): void; resync(reason: string): void },
-): Tx {
+export function openTx(stores: ContextStores, effects: TxEffects): Tx {
   return {
     connection: new Draft(stores.connection),
     services: new Draft(stores.services),
@@ -364,6 +377,9 @@ export function openTx(
     attention: new Draft(stores.attention),
     refresh: (slice) => {
       effects.refresh(slice);
+    },
+    invalidate: (methods) => {
+      effects.invalidate(methods);
     },
     resync: (reason) => {
       effects.resync(reason);

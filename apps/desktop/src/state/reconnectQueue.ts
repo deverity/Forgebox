@@ -8,6 +8,8 @@
 // initialized, or the context closed) nothing would bring it back by itself, so calls fail
 // at once with `disconnected`/`daemon_stopped`.
 // Reads (non-mutating calls) are never held: screens show their disconnected state instead.
+// A mutating *call* that resolves runs `onCallDone` (the runtime applies its `JOB_EFFECTS`
+// row there; jobs apply theirs when `job.done|failed|cancelled` arrives).
 import type { StoreApi } from "zustand/vanilla";
 import {
   ulid,
@@ -43,22 +45,39 @@ interface Held {
   expired: boolean;
 }
 
+function metaOf(method: string): MethodMeta | undefined {
+  return (METHODS as Record<string, MethodMeta | undefined>)[method];
+}
+
 function isMutating(method: string): boolean {
-  return (METHODS as Record<string, MethodMeta | undefined>)[method]?.mutating === true;
+  return metaOf(method)?.mutating === true;
+}
+
+export interface ReconnectQueueOptions {
+  /** How long a call is held (default 30 s). */
+  holdMs?: number;
+  /** A mutating call (not a job) resolved: what it changed may need refetching. */
+  onCallDone?: (method: string) => void;
 }
 
 export class ReconnectQueue {
   private readonly api: ForgeApi;
   private readonly connection: StoreApi<ConnectionSlice>;
   private readonly holdMs: number;
+  private readonly onCallDone: ((method: string) => void) | undefined;
   private readonly held: Held[] = [];
   private draining = false;
   private readonly unsubscribe: () => void;
 
-  constructor(api: ForgeApi, connection: StoreApi<ConnectionSlice>, holdMs = RECONNECT_HOLD_MS) {
+  constructor(
+    api: ForgeApi,
+    connection: StoreApi<ConnectionSlice>,
+    options: ReconnectQueueOptions = {},
+  ) {
     this.api = api;
     this.connection = connection;
-    this.holdMs = holdMs;
+    this.holdMs = options.holdMs ?? RECONNECT_HOLD_MS;
+    this.onCallDone = options.onCallDone;
     this.unsubscribe = connection.subscribe((state, previous) => {
       if (state.status === "connected" && previous.status !== "connected") void this.drain();
     });
@@ -76,9 +95,17 @@ export class ReconnectQueue {
     options: CallOptions = {},
   ): Promise<ResultOf<M>> {
     const requestId = options.requestId ?? options.intent?.requestId ?? ulid();
-    return this.submit(method, requestId, () =>
+    const sent = this.submit(method, requestId, () =>
       this.api.call(method, params, { ...options, requestId }),
     ) as Promise<ResultOf<M>>;
+    const meta = metaOf(method);
+    const onCallDone = this.onCallDone;
+    // A job answers when it starts: its effects wait for `job.done|failed|cancelled`.
+    if (onCallDone === undefined || meta?.kind !== "call" || !meta.mutating) return sent;
+    return sent.then((value) => {
+      onCallDone(method);
+      return value;
+    });
   }
 
   /** A user-triggered job: started now, or held while the daemon comes back. */

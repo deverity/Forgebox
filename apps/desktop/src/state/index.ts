@@ -7,6 +7,13 @@ export {
   type Capability,
   type CapabilityReason,
 } from "./capabilities";
+export {
+  JOB_EFFECTS,
+  applyMutationEffect,
+  jobMethod,
+  type EffectMethod,
+  type MutationEffect,
+} from "./effects";
 export { EventStream, type GapReason } from "./eventStream";
 export {
   FrameBatcher,
@@ -32,7 +39,7 @@ export {
   type ManualPageActivity,
   type PageActivity,
 } from "./page";
-export { EVENT_INVALIDATIONS, Invalidator, forgeQuery, queryKeys } from "./queries";
+export { EVENT_INVALIDATIONS, Invalidator, QUERY_GROUPS, forgeQuery, queryKeys } from "./queries";
 export {
   ForgeStateProvider,
   useAttention,
@@ -62,8 +69,15 @@ export {
   type Capabilities,
   type JobView,
 } from "./react";
-export { RECONNECT_HOLD_MS, ReconnectQueue } from "./reconnectQueue";
-export { EVENT_REDUCERS, isIgnored, type Ignored, type ReducerRegistry, type Tx } from "./reducers";
+export { RECONNECT_HOLD_MS, ReconnectQueue, type ReconnectQueueOptions } from "./reconnectQueue";
+export {
+  EVENT_REDUCERS,
+  isIgnored,
+  type Ignored,
+  type ReducerRegistry,
+  type Tx,
+  type TxEffects,
+} from "./reducers";
 export { ContextRuntime, type RuntimeOptions } from "./runtime";
 export { SNAPSHOTS } from "./snapshots";
 export type * from "./stores";

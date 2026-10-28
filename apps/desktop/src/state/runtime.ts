@@ -11,6 +11,7 @@ import { ForgeApi } from "../ipc/api";
 import type { Bridge, ContextId, ContextStateDto, Unlisten } from "../ipc/bridge";
 import { toForgeApiError } from "../ipc/errors";
 import type * as T from "../ipc/generated";
+import { applyMutationEffect } from "./effects";
 import { EventStream, type GapReason } from "./eventStream";
 import { FrameBatcher, browserFrameClock, type FrameClock } from "./frame";
 import { MetricsPoller } from "./metrics";
@@ -129,11 +130,13 @@ export class ContextRuntime {
       ...(options.metricsSamples === undefined ? {} : { samples: options.metricsSamples }),
       ...(options.now === undefined ? {} : { now: options.now }),
     });
-    this.queue = new ReconnectQueue(
-      this.api,
-      this.stores.connection,
-      options.holdMs ?? RECONNECT_HOLD_MS,
-    );
+    this.queue = new ReconnectQueue(this.api, this.stores.connection, {
+      holdMs: options.holdMs ?? RECONNECT_HOLD_MS,
+      // A mutating call has no `job.done`: its `JOB_EFFECTS` row applies when it resolves.
+      onCallDone: (method) => {
+        this.applyMutationEffect(method);
+      },
+    });
   }
 
   /** Connects the stores to the context (idempotent). */
@@ -154,6 +157,26 @@ export class ContextRuntime {
     this.snapshots.refresh(slice);
   }
 
+  /**
+   * Refetches the snapshots and invalidates the queries a finished mutation of `method`
+   * makes stale (`JOB_EFFECTS`). Jobs get it from their `job.done|failed|cancelled` reducer;
+   * the reconnect queue calls it for mutating calls.
+   */
+  applyMutationEffect(method: string): void {
+    if (this.disposed) return;
+    applyMutationEffect(
+      {
+        refresh: (slice) => {
+          this.refresh(slice);
+        },
+        invalidate: (methods) => {
+          this.invalidator.invalidate(methods);
+        },
+      },
+      method,
+    );
+  }
+
   /** Applies queued events now (tests; the frame clock does it otherwise). */
   flushEvents(): void {
     this.batcher.flush();
@@ -169,6 +192,9 @@ export class ContextRuntime {
     const tx = openTx(this.stores, {
       refresh: (slice) => {
         this.refresh(slice);
+      },
+      invalidate: (methods) => {
+        this.invalidator.invalidate(methods);
       },
       resync: (reason) => {
         this.resync(reason);
