@@ -104,11 +104,15 @@ pub fn status(cs: &dyn CaseSensitiveFs, dir: &Path) -> Result<CaseStatus> {
 pub enum DataDirCase {
     Sensitive,
     /// `dir` is the folder that was checked (the data folder or its closest existing
-    /// parent); `reason` is the pt-BR text, `code` its stable code.
+    /// parent); `reason` is the pt-BR text of the fallback to case-insensitive table names
+    /// (`fs.case.reason.data_dir_fallback`), `detail` only why the folder is not
+    /// case-sensitive, `code` its stable code. `code: error` means the flag could not be
+    /// read, not that the folder is insensitive.
     Insensitive {
         dir: PathBuf,
         code: CaseReasonCode,
         reason: String,
+        detail: String,
     },
 }
 
@@ -122,6 +126,7 @@ pub fn data_dir_case(cs: &dyn CaseSensitiveFs, data_dir: &Path) -> DataDirCase {
         dir: dir.to_path_buf(),
         code,
         reason: messages::data_dir_fallback(&detail).1,
+        detail,
     };
     let Some(dir) = data_dir
         .ancestors()
@@ -242,7 +247,10 @@ mod tests {
         // Flag missing (init could not set it): the data folder, not created yet, would
         // inherit nothing.
         let cs = FakeCs::default();
-        let DataDirCase::Insensitive { dir, code, reason } = data_dir_case(&cs, &instance) else {
+        let DataDirCase::Insensitive {
+            dir, code, reason, ..
+        } = data_dir_case(&cs, &instance)
+        else {
             panic!("no flag must not count as case-sensitive");
         };
         assert_eq!(dir, data);

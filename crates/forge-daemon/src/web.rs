@@ -16,11 +16,12 @@
 //! Secure sites get their certificate from the `tls` actor before rendering; when that
 //! fails the site is served over plain HTTP and the failure is logged.
 //!
-//! `instance.case_sensitive` comes from the **real** flag of the instance's data folder
-//! (docs/15 §5), not from `forgebox.toml` alone: where `ForgeRoot::init` could not set it
-//! (no `FILE_DELETE_CHILD` under `C:\` on managed machines) the database gets
+//! `instance.case_sensitive` comes from [`crate::instance_case`] (docs/15 §5): for a data
+//! folder not initialized yet, the **real** flag (where `ForgeRoot::init` could not set it,
+//! e.g. no `FILE_DELETE_CHILD` under `C:\` on managed machines, the database gets
 //! `lower_case_table_names=2` and `fs.case_sensitivity_unavailable` is published, instead
-//! of a server that refuses to initialize.
+//! of a server that refuses to initialize); for an initialized one, the value recorded
+//! when it was initialized, whatever the flag reads now.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -30,11 +31,10 @@ use std::time::Duration;
 use forge_core::config::ForgeConfig;
 use forge_core::error::{ForgeError, Result};
 use forge_core::event::{EventBus, EventKind};
-use forge_core::fs::case::{DataDirCase, case_event_payload, data_dir_case};
 use forge_core::ids::{SiteId, VersionId};
-use forge_core::paths::{ForgeRoot, posix_string};
+use forge_core::paths::ForgeRoot;
 use forge_core::platform::CaseSensitiveFs;
-use forge_core::store::{Site, SiteKind, StoreReader, ToolVersionRow};
+use forge_core::store::{CASE_SENSITIVE_KEY, Site, SiteKind, StoreReader, ToolVersionRow};
 use forge_fcgi::{PoolState, UpstreamChange, UpstreamFuture, UpstreamListener};
 use forge_registry::Registry;
 use forge_render::{
@@ -46,6 +46,7 @@ use futures::future::BoxFuture;
 use tokio::sync::Semaphore;
 
 use crate::catalog;
+use crate::instance_case::{self, DataDirProbe};
 use crate::pools::PoolManager;
 use crate::render;
 use crate::services::{ConfigRenderer, Entry, ServiceManager};
@@ -458,8 +459,8 @@ impl WebManager {
         let mut ctx = render::base_context(&self.inner.root, &config, manifest, version);
         let data_dir = entry.row.data_dir.clone().unwrap_or_default();
         let case_sensitive = self
-            .data_dir_case_sensitive(config.case_sensitive, &data_dir, &entry.label())
-            .await;
+            .instance_case_sensitive(entry, config.case_sensitive, &data_dir)
+            .await?;
         ctx.instance = InstanceModel {
             name: entry.row.name.clone(),
             ports: entry.ports.clone(),
@@ -498,36 +499,55 @@ impl WebManager {
         Ok(Some(ctx))
     }
 
-    /// `instance.case_sensitive` of an instance: on only when `forgebox.toml` asks for it
-    /// **and** its data folder (or the closest existing parent, whose flag the folder
-    /// created on the first start inherits) carries the flag. Otherwise
-    /// `fs.case_sensitivity_unavailable` is published with the reason. A check that fails
-    /// or times out counts as insensitive (an `=0` server on an insensitive folder never
-    /// initializes).
-    async fn data_dir_case_sensitive(&self, wanted: bool, data_dir: &str, owner: &str) -> bool {
-        if !wanted {
-            return false;
-        }
+    /// `instance.case_sensitive` of an instance ([`crate::instance_case`]): for a data
+    /// folder not initialized yet, on only when `forgebox.toml` asks for it **and** the
+    /// folder (or the closest existing parent, whose flag the folder created on the first
+    /// start inherits) carries the flag, and the choice is recorded before `data.init`
+    /// uses it; for an initialized folder, the recorded value. Publishes
+    /// `fs.case_sensitivity_unavailable` when there is something to say.
+    async fn instance_case_sensitive(
+        &self,
+        entry: &Entry,
+        wanted: bool,
+        data_dir: &str,
+    ) -> Result<bool> {
         if data_dir.is_empty() {
             // No data folder: nothing in the configuration depends on it.
-            return true;
+            return Ok(wanted);
         }
-        let cs = Arc::clone(&self.inner.case_fs);
-        let path = std::path::PathBuf::from(data_dir);
-        let checked = forge_core::runtime::spawn_blocking_timeout(
-            "checking the data folder case sensitivity",
+        let owner = entry.label();
+        // The table may already hold a value recorded after `entry` was cloned.
+        let recorded = self.inner.services.get(entry.row.id).map_or_else(
+            || entry.row.recorded_case_sensitive(),
+            |e| e.row.recorded_case_sensitive(),
+        );
+        let path = Path::new(data_dir);
+        let probe = DataDirProbe::run(
+            Arc::clone(&self.inner.case_fs),
+            path,
             forge_core::fs::case::STATUS_TIMEOUT,
-            move || Ok(data_dir_case(cs.as_ref(), &path)),
         )
         .await;
-        let (sensitive, payload) = case_decision(checked, Path::new(data_dir));
-        if let Some(payload) = payload {
-            tracing::warn!(instance = %owner, %data_dir, reason = %payload["reason"], "data folder not case-sensitive; lower_case_table_names falls back to 2");
+        let outcome = instance_case::decide(wanted, recorded, probe, path).inspect_err(|err| {
+            tracing::warn!(instance = %owner, %data_dir, %err, "data folder state unknown and no recorded case sensitivity; not rendering");
+        })?;
+        if let Some(value) = outcome.record {
+            self.inner
+                .services
+                .record_setting(entry.row.id, CASE_SENSITIVE_KEY, &value.to_string())
+                .await?;
+            tracing::info!(instance = %owner, %data_dir, case_sensitive = value, "case sensitivity of the data folder recorded");
+        }
+        if let Some(note) = &outcome.note {
+            tracing::warn!(instance = %owner, %data_dir, case_sensitive = outcome.sensitive, "{note}");
+        }
+        if let Some(payload) = outcome.event {
+            tracing::warn!(instance = %owner, %data_dir, case_sensitive = outcome.sensitive, reason = %payload["reason"], "data folder case sensitivity unavailable");
             self.inner
                 .bus
                 .publish(EventKind::FsCaseSensitivityUnavailable, payload);
         }
-        sensitive
+        Ok(outcome.sensitive)
     }
 
     async fn render_entry(
@@ -622,36 +642,6 @@ impl UpstreamListener for WebManager {
     }
 }
 
-/// Outcome of the data folder check: whether it is case-sensitive and, when not, the
-/// `fs.case_sensitivity_unavailable` payload.
-fn case_decision(
-    checked: Result<DataDirCase>,
-    data_dir: &Path,
-) -> (bool, Option<serde_json::Value>) {
-    match checked {
-        Ok(DataDirCase::Sensitive) => (true, None),
-        Ok(DataDirCase::Insensitive { dir, code, reason }) => (
-            false,
-            Some(case_event_payload(
-                &posix_string(&dir),
-                None,
-                Some((code, &reason)),
-            )),
-        ),
-        Err(err) => {
-            let (_, reason) = forge_core::fs::case::messages::data_dir_fallback(&err.to_string());
-            (
-                false,
-                Some(case_event_payload(
-                    &posix_string(data_dir),
-                    None,
-                    Some((forge_core::fs::case::CaseReasonCode::Error, &reason)),
-                )),
-            )
-        }
-    }
-}
-
 /// Whether the render target of `tool` writes per-site files (a web server).
 pub fn serves_sites(tool: &str) -> bool {
     forge_render::targets::by_id(tool).is_some_and(|target| {
@@ -678,80 +668,5 @@ impl UpstreamListener for LateListener {
             Some(web) => web.upstream_changed(change),
             None => Box::pin(async { Ok(()) }),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use forge_core::paths::InitOptions;
-    use forge_core::platform::CaseSensitivitySupport;
-
-    /// NTFS where the user lacks `FILE_DELETE_CHILD` (a root under `C:\` on a managed
-    /// machine): reading works, every `set` is refused.
-    struct RefusingCs;
-
-    impl CaseSensitiveFs for RefusingCs {
-        fn support(&self, _dir: &Path) -> CaseSensitivitySupport {
-            CaseSensitivitySupport::Supported
-        }
-        fn get(&self, _dir: &Path) -> Result<bool> {
-            Ok(false)
-        }
-        fn set(&self, _dir: &Path, _enabled: bool) -> Result<()> {
-            Err(ForgeError::NeedsElevation("fs.set_case_sensitive".into()))
-        }
-    }
-
-    #[test]
-    fn a_data_folder_without_the_flag_falls_back_to_insensitive_tables() {
-        // Regression (M1 gate review): `case_sensitive = true` in forgebox.toml, init could
-        // not set the flag, and the instance was still rendered with
-        // lower_case_table_names=0, so `mysqld --initialize` aborted.
-        let base = tempfile::tempdir().unwrap();
-        let root = ForgeRoot::new(base.path().join("Forgebox")).unwrap();
-        let report = root.init_with(InitOptions::default(), &RefusingCs).unwrap();
-        assert!(
-            report
-                .case_sensitive_failed
-                .iter()
-                .any(|(dir, _)| *dir == root.data()),
-            "init only records the failure"
-        );
-        let data_dir = root.data().join("mysql").join("default");
-        let (sensitive, payload) =
-            case_decision(Ok(data_dir_case(&RefusingCs, &data_dir)), &data_dir);
-        assert!(!sensitive, "lower_case_table_names must be 2");
-        let payload = payload.expect("fs.case_sensitivity_unavailable");
-        assert_eq!(payload["reason_code"], "insensitive");
-        assert!(
-            payload["reason"]
-                .as_str()
-                .unwrap()
-                .contains("lower_case_table_names=2"),
-            "{payload}"
-        );
-        let checked = payload["dir"].as_str().unwrap();
-        assert!(!checked.contains('\\'), "{checked}");
-        assert!(
-            checked.starts_with(&posix_string(&root.data())),
-            "{checked}"
-        );
-
-        // A failed or timed-out check counts as insensitive too.
-        let (sensitive, payload) = case_decision(
-            Err(ForgeError::Timeout {
-                operation: "checking".into(),
-                after: std::time::Duration::from_secs(10),
-            }),
-            &data_dir,
-        );
-        assert!(!sensitive);
-        assert_eq!(payload.unwrap()["reason_code"], "error");
-
-        assert_eq!(
-            case_decision(Ok(DataDirCase::Sensitive), &data_dir),
-            (true, None)
-        );
     }
 }

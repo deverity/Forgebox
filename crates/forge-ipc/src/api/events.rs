@@ -207,7 +207,12 @@ pub struct FsCaseSensitivityPayload {
     /// Why it is unavailable (pt-BR text).
     pub reason: Option<String>,
     /// Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
-    /// `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+    /// `missing`, `error`, `initialized`, `kept_sensitive`
+    /// (`forge_core::fs::case::CaseReasonCode`). For a database data folder (docs/15 §5)
+    /// `insensitive`/`unsupported`/`missing`/`error` mean the fallback to
+    /// case-insensitive table names; `initialized` that the instance keeps them;
+    /// `kept_sensitive` that it keeps case-sensitive ones on a folder that now reads as
+    /// not case-sensitive (the server may refuse to start).
     pub reason_code: Option<String>,
 }
 

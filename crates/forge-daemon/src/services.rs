@@ -817,6 +817,20 @@ impl ServiceManager {
         }
     }
 
+    /// Records one daemon-owned key of `instances.settings` (`forgebox.*`) in the store and
+    /// in the cached entry, so the next render sees it.
+    pub async fn record_setting(&self, id: InstanceId, key: &str, value: &str) -> Result<()> {
+        let (k, v) = (key.to_owned(), value.to_owned());
+        self.inner
+            .writer
+            .execute(move |conn| InstanceRepo::new(conn).set_setting(id, &k, &v))
+            .await?;
+        if let Some(entry) = self.inner.table.lock().get_mut(&id) {
+            entry.row.settings.insert(key.to_owned(), value.to_owned());
+        }
+        Ok(())
+    }
+
     async fn set_desired(&self, id: InstanceId, state: DesiredState) {
         let result = self
             .inner
