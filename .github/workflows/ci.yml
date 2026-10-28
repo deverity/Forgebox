@@ -47,6 +47,9 @@ jobs:
       - name: deny
         run: cargo deny check
 
+      - name: arch-guard
+        run: cargo xtask arch-guard
+
       - name: lint-registry
         run: cargo xtask lint-registry
 
