@@ -8,6 +8,7 @@
 //! Every DTO is re-exported at this level (`forge_ipc::api::SiteDto`); names are unique
 //! across groups because TypeScript has a single namespace.
 
+pub mod cli_template;
 pub mod common;
 pub mod contracts;
 pub mod daemon;
