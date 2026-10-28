@@ -29,6 +29,7 @@ use forge_ipc::api::{
 use forge_ipc::client::Subscription;
 use forge_ipc::transport::local_transport;
 use forge_ipc::{CallOptions, Client, Credentials};
+use forge_provider::update::DeferReason;
 use futures::StreamExt;
 use serde_json::json;
 
@@ -234,10 +235,20 @@ async fn the_scheduler_publishes_updates_persisted_and_replayable() {
 
     // The events table has them: after a restart (empty ring, a fresh bus seeded from the
     // table) `resume_from` and `events.list` still deliver the last published list.
+    // The tools are still installed but their checks are deferred (metered), so only the
+    // seeded list is known to the feed.
+    let deferred_source = Arc::new(FakeSource::default());
+    {
+        let mut tools = deferred_source.tools.lock().unwrap();
+        for id in ["php", "nginx"] {
+            tools.push(forge_core::ids::ToolId::new(id).unwrap());
+        }
+    }
+    *deferred_source.deferred.lock().unwrap() = Some(DeferReason::Metered);
     let restarted = Running::start(
         &root,
         BootOptions {
-            update_source: Some(Arc::new(FakeSource::default())),
+            update_source: Some(deferred_source),
             ..BootOptions::default()
         },
     )
@@ -265,6 +276,33 @@ async fn the_scheduler_publishes_updates_persisted_and_replayable() {
         .unwrap();
     let first = next_update(&mut from_store).await;
     assert!(first.count >= 1);
+
+    // After the restart, with the checks deferred, an applied update publishes the whole
+    // remaining list (2 pending - 1 applied), never a partial or empty one.
+    let mut live = restarted
+        .client
+        .subscribe_events(
+            EventFilter::kinds(["tool.updates_available"]),
+            Some(restarted.daemon().bus.last_seq()),
+        )
+        .await
+        .unwrap();
+    restarted.daemon().bus.publish(
+        forge_core::event::EventKind::ToolUpdated,
+        json!({
+            "v": 1, "tool": "php", "from": "8.4.1", "to": "8.4.2", "series": "8.4",
+            "version_id": forge_core::ids::VersionId::new().to_string(),
+        }),
+    );
+    let after_restart = next_update(&mut live).await;
+    assert_eq!(after_restart.count, 1, "{after_restart:?}");
+    assert_eq!(after_restart.updates[0].tool.as_str(), "nginx");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(500), live.next())
+            .await
+            .is_err(),
+        "no further (partial or empty) publication"
+    );
     restarted.stop().await;
 }
 

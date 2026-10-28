@@ -76,6 +76,24 @@ impl<'c> EventRepo<'c> {
         Ok(events)
     }
 
+    /// Payload of the most recent stored event of `kind` (`None` when there is none).
+    pub fn latest_payload(
+        &self,
+        kind: crate::event::EventKind,
+    ) -> Result<Option<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT payload FROM events WHERE kind = ?1 ORDER BY seq DESC LIMIT 1")?;
+        let mut rows = stmt.query(params![kind.as_str()])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+        let text: String = row.get(0)?;
+        serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|e| ForgeError::Schema(format!("events payload of {}: {e}", kind.as_str())))
+    }
+
     /// Highest stored `seq` (0 when empty). Seeds `EventBus::starting_at`.
     pub fn max_seq(&self) -> Result<u64> {
         let max: i64 =

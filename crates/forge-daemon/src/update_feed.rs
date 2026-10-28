@@ -116,6 +116,37 @@ impl UpdateFeed {
         }
     }
 
+    /// Replaces the whole state with `updates` (the last persisted list, at boot), so the
+    /// first publication after a restart still carries what was pending (ADR-0039 §3).
+    pub fn seed(&self, updates: Vec<PendingUpdateDto>) {
+        let mut map: BTreeMap<ToolId, Vec<PendingUpdateDto>> = BTreeMap::new();
+        for u in updates {
+            map.entry(u.tool.clone()).or_default().push(u);
+        }
+        for list in map.values_mut() {
+            list.sort_by(|a, b| a.series.cmp(&b.series));
+        }
+        *self.pending.lock() = map;
+    }
+
+    /// Reads the last persisted `tool.updates_available` and seeds the feed with it.
+    pub async fn seed_from_store(&self, reader: &StoreReader) {
+        let stored = reader
+            .query(|conn| {
+                forge_core::store::EventRepo::new(conn)
+                    .latest_payload(EventKind::ToolUpdatesAvailable)
+            })
+            .await;
+        match stored {
+            Ok(Some(value)) => match serde_json::from_value::<ToolUpdatesAvailablePayload>(value) {
+                Ok(payload) => self.seed(payload.updates),
+                Err(err) => tracing::warn!(%err, "stored tool.updates_available is unreadable"),
+            },
+            Ok(None) => {}
+            Err(err) => tracing::warn!(%err, "cannot read the last tool.updates_available"),
+        }
+    }
+
     /// Replaces what a check found for `tool`. Returns whether the list changed.
     pub fn set_tool(&self, tool: &ToolId, found: &[AvailableUpdate]) -> bool {
         let mut list: Vec<PendingUpdateDto> = found.iter().filter_map(pending).collect();
@@ -350,6 +381,23 @@ mod tests {
         assert_eq!(event.payload["count"], 3);
         assert_eq!(event.payload["updates"][0]["from"], "1.28.0");
         assert_eq!(event.payload["updates"][0]["to"], "1.28.1");
+    }
+
+    #[test]
+    fn a_seeded_feed_keeps_the_other_tools_when_one_is_applied() {
+        let feed = UpdateFeed::new(EventBus::new());
+        feed.seed(
+            [
+                update("php", "8.4", "8.4.1", "8.4.2"),
+                update("nginx", "1.28", "1.28.0", "1.28.1"),
+                update("mysql", "8.4", "8.4.1", "8.4.2"),
+            ]
+            .iter()
+            .filter_map(pending)
+            .collect(),
+        );
+        assert!(feed.remove_series(&tool("mysql"), Some("8.4")));
+        assert_eq!(feed.publish().count, 2);
     }
 
     #[test]

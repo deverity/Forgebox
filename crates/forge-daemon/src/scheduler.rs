@@ -95,19 +95,24 @@ impl Scheduler {
     pub fn start_with(daemon: &Daemon, source: Arc<dyn UpdateSource>) -> Self {
         let stop = CancellationToken::new();
         let feed = Arc::new(UpdateFeed::new(daemon.bus.clone()));
+        // The feed starts from the last persisted list, before either loop publishes, so
+        // no publication after a restart is partial or empty (ADR-0039 §3).
+        let reader = daemon.reader.clone();
+        let updates_daemon = daemon.clone();
+        let updates_stop = stop.clone();
         let tasks = vec![
-            tokio::spawn(update_loop(
-                daemon.clone(),
-                Arc::clone(&source),
-                Arc::clone(&feed),
-                stop.clone(),
-            )),
-            tokio::spawn(update_react_loop(
-                daemon.clone(),
-                source,
-                feed,
-                stop.clone(),
-            )),
+            tokio::spawn(async move {
+                feed.seed_from_store(&reader).await;
+                tokio::join!(
+                    update_loop(
+                        updates_daemon.clone(),
+                        Arc::clone(&source),
+                        Arc::clone(&feed),
+                        updates_stop.clone(),
+                    ),
+                    update_react_loop(updates_daemon, source, feed, updates_stop),
+                );
+            }),
             tokio::spawn(registry_loop(daemon.clone(), stop.clone())),
             tokio::spawn(tmp_loop(daemon.clone(), stop.clone())),
             tokio::spawn(port_loop(daemon.clone(), stop.clone())),
