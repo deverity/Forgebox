@@ -1,5 +1,6 @@
 //! Windows implementations of the platform traits. The only place with Win32 calls.
 
+mod appearance;
 mod authenticode;
 mod case_sensitive_fs;
 mod cert_info;
@@ -26,6 +27,7 @@ mod vcredist;
 mod window_close;
 mod wmi;
 
+pub use appearance::WindowsSystemAppearance;
 pub use authenticode::WindowsCodeSign;
 pub use case_sensitive_fs::{WindowsCaseSensitiveFs, is_reparse_point};
 pub use dns_policy::WindowsDnsPolicy;

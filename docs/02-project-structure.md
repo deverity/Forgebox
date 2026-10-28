@@ -50,6 +50,12 @@ Forgebox/
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts; apply_hosts_block_bytes preserva bytes fora do bloco),
 │   │       │                     #   client.rs (HelperClient, FakeElevation), trust.rs (CA aceita em LocalMachine\Root, ADR-0024)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, UserEnv) + current();
+│   │                             #   appearance.rs: SystemAppearance + system_appearance() → AppearanceSnapshot (accent #RRGGBB,
+│   │                             #   apps_light, taskbar_light, transparency, high_contrast, remote_session, os_build, is_win11;
+│   │                             #   defaults documentados, stub fora do Windows); impl em windows/appearance.rs (HKCU Personalize/DWM,
+│   │                             #   DwmGetColorizationColor, SPI_GETHIGHCONTRAST, SM_REMOTESESSION, RtlGetVersion). A GUI lê por
+│   │                             #   forge_ipc::base::platform (sem Win32 em src-tauri); tests/win32_boundary.rs falha com Win32 fora
+│   │                             #   de platform/windows (só código Rust: comentários e literais são ignorados);
 │   │                             #   user_env.rs: UserEnv (PATH persistente do usuário), PathValue (lista crua, sem duplicatas),
 │   │                             #   MemoryUserEnv (fake em memória); probe.rs também tem run_probe_with_env (ações run);
 │   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
@@ -63,7 +69,8 @@ Forgebox/
 │   │                             #   (conexão medida), spawn_detached (daemon.restart); impl em windows/host.rs (CreateMutexW,
 │   │                             #   INetworkCostManager);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
-│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
+│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
+│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
 │   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
 │   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;

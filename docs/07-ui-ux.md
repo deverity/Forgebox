@@ -33,12 +33,12 @@ Este documento é normativo para `apps/desktop/`. Exemplos de telas (wireframes)
 --bg-surface       cards, listas            --bg-surface-2  surfaces elevadas
 --fg-primary       texto principal          --fg-secondary  texto secundário  --fg-tertiary labels
 --stroke           divisores (alpha 8–12%)
---accent           cor do sistema Windows (via `accent-color`/tauri) com fallback #0A84FF
+--accent           cor do sistema Windows (`SystemAppearance.accent` do forge-core; o `AccentColor` do CSS não é confiável no WebView2) com fallback #0A84FF
 --state-running    #30D158   --state-starting #FFD60A   --state-stopped #8E8E93   --state-failed #FF453A   --state-updating #64D2FF
 --tool-*           cor por tool do manifesto (ui.color), usada só em ícone/acento, nunca em fundo grande
 ```
 - Light e dark completos. Dark é o padrão quando o sistema é dark. Contraste mínimo WCAG AA (4.5:1 texto, 3:1 UI).
-- **Materiais**: Sidebar com Acrylic (Win10 1809+) ou Mica (Win11) via `window-vibrancy`; conteúdo principal **opaco** (`--bg-canvas` sólido) para legibilidade e performance. Fallback opaco automático em RDP/VM/`prefers-reduced-transparency`.
+- **Materiais**: Sidebar com Acrylic (Win10 1809+) ou Mica (Win11) via `window-vibrancy`; conteúdo principal **opaco** (`--bg-canvas` sólido) para legibilidade e performance. Fallback opaco automático em RDP/VM/`prefers-reduced-transparency`. Os fatos do SO vêm de `forge_core::platform::SystemAppearance` (via `forge_ipc::base::platform`): `os_build`/`is_win11` (≥ 22000 → Mica), `remote_session` (RDP), `transparency` ("Efeitos de transparência"), `high_contrast`, e `apps_light`/`taskbar_light` (tema dos apps e da barra de tarefas, que escolhe a variante dos ícones da bandeja, §7).
 
 ### 2.4 Iconografia
 - Set único (Lucide, stroke 1.5) para UI; logos das tools em SVG monocromático + colorido (do registry).
