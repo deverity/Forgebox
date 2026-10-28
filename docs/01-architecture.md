@@ -88,7 +88,7 @@ forge-core ← forge-render ← forge-sites
 forge-core ← forge-net, forge-tls
 forge-ipc ← (todos os de domínio, só pelos tipos)
 forge-daemon → todos
-forge-cli, forge-mcp, apps/desktop → forge-ipc apenas (nunca importar crates de domínio diretamente; os tipos base — ids, paths, códigos de erro, Timestamp — vêm do re-export `forge_ipc::base`)
+forge-cli, forge-mcp, apps/desktop → forge-ipc apenas (nunca importar crates de domínio diretamente; os tipos base — ids, paths, códigos de erro, Timestamp — vêm do re-export `forge_ipc::base`) — verificado por `cargo xtask arch-guard`
 ```
 
 Essa regra força que **toda** funcionalidade passe pela API, logo GUI e CLI têm paridade por construção.
