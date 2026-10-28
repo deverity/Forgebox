@@ -1,0 +1,192 @@
+[
+  {
+    "method": "tools.add_local",
+    "task": "M3-E1",
+    "what": "installing a local zip or folder as a tool version"
+  },
+  {
+    "method": "services.set",
+    "task": "M2-E2",
+    "what": "quick settings written into the managed config files"
+  },
+  {
+    "method": "php.ext_enable",
+    "task": "M2-E2",
+    "what": "per-version extension toggles"
+  },
+  {
+    "method": "php.ext_disable",
+    "task": "M2-E2",
+    "what": "per-version extension toggles"
+  },
+  {
+    "method": "php.xdebug",
+    "task": "M2-E2",
+    "what": "Xdebug toggle per PHP version"
+  },
+  {
+    "method": "sites.share",
+    "task": "M3-E3",
+    "what": "public tunnels (cloudflared, ngrok, expose)"
+  },
+  {
+    "method": "sites.new",
+    "task": "M3-E2",
+    "what": "project scaffolding from a stack"
+  },
+  {
+    "method": "db.list",
+    "task": "M2-E3",
+    "what": "database management"
+  },
+  {
+    "method": "db.create",
+    "task": "M2-E3",
+    "what": "database management"
+  },
+  {
+    "method": "db.drop",
+    "task": "M2-E3",
+    "what": "database management"
+  },
+  {
+    "method": "db.export",
+    "task": "M2-E3",
+    "what": "database export"
+  },
+  {
+    "method": "db.import",
+    "task": "M2-E3",
+    "what": "database import"
+  },
+  {
+    "method": "db.shell",
+    "task": "M2-E3",
+    "what": "database shell"
+  },
+  {
+    "method": "db.url",
+    "task": "M2-E3",
+    "what": "database URLs"
+  },
+  {
+    "method": "db.open",
+    "task": "M2-E3",
+    "what": "database GUI launch"
+  },
+  {
+    "method": "net.lan_expose",
+    "task": "M3-E3",
+    "what": "LAN exposure with firewall rules"
+  },
+  {
+    "method": "net.lan_unexpose",
+    "task": "M3-E3",
+    "what": "LAN exposure with firewall rules"
+  },
+  {
+    "method": "net.lan_qr",
+    "task": "M3-E3",
+    "what": "LAN QR codes"
+  },
+  {
+    "method": "mail.status",
+    "task": "M2-E3",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.open",
+    "task": "M2-E3",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.list",
+    "task": "M2-E3",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.show",
+    "task": "M2-E3",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.clear",
+    "task": "M2-E3",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.env",
+    "task": "M2-E3",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "shell.open",
+    "task": "M2-E3",
+    "what": "integrated terminal"
+  },
+  {
+    "method": "stats.get",
+    "task": "M2-E5",
+    "what": "per-site metrics (forge-metrics)"
+  },
+  {
+    "method": "stats.top",
+    "task": "M2-E5",
+    "what": "per-site metrics (forge-metrics)"
+  },
+  {
+    "method": "stats.export",
+    "task": "M2-E5",
+    "what": "per-site metrics (forge-metrics)"
+  },
+  {
+    "method": "metrics.subscribe",
+    "task": "M2-E5",
+    "what": "per-site metrics stream (forge-metrics)"
+  },
+  {
+    "method": "remote.pair",
+    "task": "M6-E3",
+    "what": "remote mode pairing"
+  },
+  {
+    "method": "remote.listen",
+    "task": "M6-E3",
+    "what": "remote mode listener"
+  },
+  {
+    "method": "remote.clients",
+    "task": "M6-E3",
+    "what": "remote mode clients"
+  },
+  {
+    "method": "remote.revoke",
+    "task": "M6-E3",
+    "what": "remote mode clients"
+  },
+  {
+    "method": "system.bundle_export",
+    "task": "M3-E3",
+    "what": "offline bundles"
+  },
+  {
+    "method": "system.bundle_import",
+    "task": "M3-E3",
+    "what": "offline bundles"
+  },
+  {
+    "method": "system.backup_now",
+    "task": "M3-E3",
+    "what": "database backups"
+  },
+  {
+    "method": "system.backup_schedule",
+    "task": "M3-E3",
+    "what": "scheduled backups"
+  },
+  {
+    "method": "system.self_update",
+    "task": "M4-E1",
+    "what": "signed self-update of the app"
+  }
+]

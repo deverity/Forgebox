@@ -144,13 +144,18 @@ pub fn t(ns: Namespace, key: &str, vars: &[(&str, &str)]) -> String {
     translate(current_language(), ns, key, vars)
 }
 
-/// Keeps Rust in sync with the UI language. Rejects tags that are not shipped locales.
-#[tauri::command]
-pub fn set_language(language: String) -> Result<(), String> {
+/// Sets the current language from a BCP 47 tag. Rejects tags that are not shipped locales.
+pub fn apply_language(language: &str) -> Result<(), String> {
     let lang =
-        Language::parse(&language).ok_or_else(|| format!("unsupported language: {language}"))?;
+        Language::parse(language).ok_or_else(|| format!("unsupported language: {language}"))?;
     set_current_language(lang);
     Ok(())
+}
+
+/// Keeps Rust in sync with the UI language (async like every command, docs/03 §7.5).
+#[tauri::command]
+pub async fn set_language(language: String) -> Result<(), String> {
+    apply_language(&language)
 }
 
 #[cfg(test)]
@@ -233,11 +238,11 @@ mod tests {
 
     #[test]
     fn set_language_switches_and_rejects_unknown_tags() {
-        assert!(set_language("fr-FR".into()).is_err());
-        set_language("en-US".into()).unwrap();
+        assert!(apply_language("fr-FR").is_err());
+        apply_language("en-US").unwrap();
         assert_eq!(current_language(), Language::EnUs);
         assert_eq!(t(Namespace::Tray, "quit", &[]), "Quit");
-        set_language("pt-BR".into()).unwrap();
+        apply_language("pt-BR").unwrap();
         assert_eq!(t(Namespace::Tray, "quit", &[]), "Sair");
     }
 

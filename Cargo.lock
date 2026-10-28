@@ -2150,10 +2150,15 @@ name = "forgebox-desktop"
 version = "0.1.0"
 dependencies = [
  "forge-ipc",
+ "futures",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-//! Tauri commands exposed to the frontend. Generic daemon bridging arrives in M2-E1-T8.
+//! App-level Tauri commands (build facts). Daemon commands live in `bridge::commands`.
 
 use serde::Serialize;
 
@@ -23,7 +23,7 @@ pub fn build_info() -> AppInfo {
 }
 
 #[tauri::command]
-pub fn app_info() -> AppInfo {
+pub async fn app_info() -> AppInfo {
     build_info()
 }
 
@@ -41,7 +41,7 @@ mod tests {
 
     #[test]
     fn app_info_serializes_with_snake_case_fields() {
-        let json = serde_json::to_value(app_info()).unwrap();
+        let json = serde_json::to_value(build_info()).unwrap();
         assert_eq!(json["name"], "Forgebox");
         assert!(json["api_version"].as_str().unwrap().contains('.'));
     }

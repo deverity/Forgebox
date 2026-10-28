@@ -498,3 +498,121 @@ async fn a_provider_closure_is_asked_on_every_connection_attempt() {
     client.system_ping(NoParams {}).await.unwrap();
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
+
+/// A subscription opened while a `keep_connected` client makes its first connection is
+/// subscribed once. The maintenance task restores subscriptions that are not attached to
+/// the new connection; one whose own subscribe call is still in flight is not attached
+/// yet and must be left to that call (M2-E1-T8: the desktop bridge saw every such stream
+/// twice on the daemon, double traffic and phantom `lagged` counts).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_subscription_opened_during_the_first_connection_is_subscribed_once() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use forge_ipc::api::SubscriptionDto;
+    use forge_ipc::api::methods::metrics_subscribe;
+    use forge_ipc::server::Router;
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut router = Router::new();
+    let counter = Arc::clone(&calls);
+    router.handle::<metrics_subscribe, _, _>(move |_params, ctx| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        async move {
+            // A slow answer keeps the first subscribe call in flight while the
+            // maintenance task restores.
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            let sender = ctx.open_stream(None)?;
+            Ok(SubscriptionDto {
+                subscription_id: sender.id(),
+                stream: "metrics".into(),
+                last_seq: 0,
+            })
+        }
+    });
+    let token = IpcToken::generate().unwrap();
+    let server = spawn_with_token(InMemoryTransport::new(), token.clone(), |b| {
+        b.router(router)
+    })
+    .await;
+    let switch = SwitchableTransport::new();
+    switch.point_to(&server);
+    switch.set_gate(false);
+    let client = Client::new(
+        Arc::clone(&switch) as Arc<dyn Transport>,
+        Credentials::new(token, "forgebox-desktop", "0.0.0"),
+        gui_options(),
+    );
+    // The subscribe call waits for the first connection...
+    let opening = {
+        let client = client.clone();
+        tokio::spawn(async move {
+            client
+                .subscribe_raw("metrics.subscribe", json!({ "site": null }))
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    // ...which the maintenance task makes too.
+    client.start();
+    switch.set_gate(true);
+    let sub = opening.await.unwrap().unwrap();
+    assert!(sub.subscription_id().is_some());
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "subscribed once");
+    assert!(client.state().borrow().is_connected());
+    client.close();
+}
+
+/// A connection made by a call (not by the maintenance task, which may be sleeping in its
+/// backoff) restores the open subscriptions right away instead of at the next backoff
+/// tick (M2-E1-T8: the desktop bridge pokes the client after starting a daemon; its
+/// streams must not stay detached for up to `reconnect_max`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_connection_made_by_a_call_restores_subscriptions_at_once() {
+    let bus = bus(1024);
+    let token = IpcToken::generate().unwrap();
+    let server = events_server(InMemoryTransport::new(), token.clone(), &bus).await;
+    let switch = SwitchableTransport::new();
+    switch.point_to(&server);
+    let client = Client::new(
+        Arc::clone(&switch) as Arc<dyn Transport>,
+        Credentials::new(token, "forgebox-desktop", "0.0.0"),
+        ClientOptions {
+            keep_connected: true,
+            reconnect_min: Duration::from_secs(5),
+            reconnect_max: Duration::from_secs(5),
+            ..fast_options()
+        },
+    );
+    let mut sub = client
+        .subscribe_raw("events.subscribe", json!({ "filter": {} }))
+        .await
+        .unwrap();
+    let before = sub.subscription_id().unwrap();
+    // The daemon goes away; the maintenance task fails once and sleeps 5 s.
+    switch.unplug();
+    server.handle.disconnect_all();
+    assert!(
+        eventually(WAIT, || matches!(
+            *client.state().borrow(),
+            ConnectionState::Reconnecting { attempt: 1.., .. }
+        ))
+        .await
+    );
+    // It is back; a call connects long before the maintenance task wakes up.
+    switch.point_to(&server);
+    client.ping().await.unwrap();
+    assert!(
+        eventually(Duration::from_secs(1), || sub
+            .subscription_id()
+            .is_some_and(|id| id != before))
+        .await,
+        "resubscribed at once"
+    );
+    bus.publish(EventKind::ConfigRendered, json!({ "v": 1 }));
+    let item = tokio::time::timeout(Duration::from_secs(1), next_raw(&mut sub))
+        .await
+        .expect("the stream flows again");
+    assert_eq!(item["event"]["kind"], "config.rendered");
+    client.close();
+}

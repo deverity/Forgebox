@@ -21,6 +21,8 @@ pub const ROOT_ENV: &str = "FORGEBOX_ROOT";
 pub const PORTABLE_FLAG: &str = "portable.flag";
 /// Name of the junction that points at the active CLI version (ADR-0005).
 pub const CURRENT_LINK: &str = "current";
+/// File name of the daemon's description under `state/locks/` ([`ForgeRoot::daemon_lock_file`]).
+pub const DAEMON_LOCK_FILE: &str = "forgeboxd.lock";
 
 /// Top-level directories that get the NTFS case-sensitive flag (docs/08 §2.4).
 pub const CASE_SENSITIVE_DIRS: &[&str] = &["www", "etc", "data", "logs", "tmp", "backups"];
@@ -242,6 +244,12 @@ impl ForgeRoot {
     /// `state/locks/`.
     pub fn state_locks(&self) -> PathBuf {
         self.join(&["state", "locks"])
+    }
+    /// `state/locks/forgeboxd.lock`: written by a running daemon, removed when it exits
+    /// gracefully (ADR-0029). Clients read it as evidence: still there after the daemon
+    /// went away means it did not exit cleanly (ADR-0034).
+    pub fn daemon_lock_file(&self) -> PathBuf {
+        self.join(&["state", "locks", DAEMON_LOCK_FILE])
     }
     /// `state/dns-policy.json`: TLDs routed by the `hosts` block (ADR-0033).
     pub fn state_dns_policy(&self) -> PathBuf {

@@ -200,7 +200,9 @@ async fn write_loop(
         if let Err(err) = written {
             tracing::debug!(%err, "API client write failed");
             closed.cancel();
-            break;
+            // A failed sink is not closed: its error mapper (`SinkMapErr`) runs once and
+            // panics if the close fails too.
+            return;
         }
     }
     let _ = tokio::time::timeout(Duration::from_millis(200), sink.close()).await;

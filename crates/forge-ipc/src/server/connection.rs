@@ -495,7 +495,9 @@ async fn write_loop(mut sink: FrameSink, outbox: Arc<Outbox>, cancel: Cancellati
         if let Err(err) = written {
             tracing::debug!(%err, "API connection write failed");
             cancel.cancel();
-            break;
+            // A failed sink is not closed: its error mapper (`SinkMapErr`) runs once and
+            // panics if the close fails too (peer gone mid-write).
+            return;
         }
         drop(batch.permits);
         outbox.batch_written();
