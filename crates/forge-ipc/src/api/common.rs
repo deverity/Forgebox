@@ -112,6 +112,9 @@ pub struct MethodInfo {
     pub mutating: bool,
     /// The `forge` commands served by this method (docs/09), `; `-separated.
     pub cli: &'static str,
+    /// Template of the equivalent `forge` command ([`super::cli_template`], ADR-0037);
+    /// `None` when the method has no CLI command.
+    pub cli_template: Option<&'static str>,
     /// Name of the params type (in `generated.ts`).
     pub params: &'static str,
     /// Name of the result type (`JobDto` for jobs, `SubscriptionDto` for streams).
@@ -142,6 +145,7 @@ impl MethodInfo {
             long_running: matches!(kind, MethodKind::Job),
             mutating: false,
             cli,
+            cli_template: None,
             params,
             result,
             job_result: None,
@@ -149,6 +153,12 @@ impl MethodInfo {
             item: None,
             lagged_notification: None,
         }
+    }
+
+    /// Sets the template of the equivalent `forge` command.
+    pub const fn cli_template(mut self, template: &'static str) -> Self {
+        self.cli_template = Some(template);
+        self
     }
 
     /// Marks the method as client-OS dependent.
@@ -180,6 +190,14 @@ impl MethodInfo {
     pub const fn item(mut self, ty: &'static str) -> Self {
         self.item = Some(ty);
         self
+    }
+
+    /// The `forge` command equivalent to calling this method with `params`, as the user
+    /// would type it in PowerShell or `cmd.exe` (ADR-0037). `None` when the method has no
+    /// template, no alternative of the template applies, or a value has no portable
+    /// quoting.
+    pub fn render_cli(&self, params: &serde_json::Value) -> Option<String> {
+        super::cli_template::render(self.cli_template?, params)
     }
 
     /// `group` part of the name (`"sites"` for `"sites.add"`).

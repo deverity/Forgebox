@@ -1,0 +1,1347 @@
+[
+  {
+    "method": "daemon.status",
+    "params": {},
+    "expected": "forge daemon status"
+  },
+  {
+    "method": "daemon.stop",
+    "params": {
+      "keep_services": true
+    },
+    "expected": "forge daemon stop",
+    "note": "keep_services has no CLI flag"
+  },
+  {
+    "method": "daemon.restart",
+    "params": {},
+    "expected": "forge daemon restart"
+  },
+  {
+    "method": "daemon.doctor",
+    "params": {
+      "checks": []
+    },
+    "expected": "forge doctor"
+  },
+  {
+    "method": "tools.search",
+    "params": {
+      "text": "",
+      "category": null
+    },
+    "expected": "forge search",
+    "note": "empty text and null optional are omitted"
+  },
+  {
+    "method": "tools.search",
+    "params": {
+      "text": "mysql",
+      "category": "db"
+    },
+    "expected": "forge search mysql --category db"
+  },
+  {
+    "method": "tools.search",
+    "params": {
+      "text": "my sql"
+    },
+    "expected": "forge search \"my sql\"",
+    "note": "absent optional field"
+  },
+  {
+    "method": "tools.list",
+    "params": {
+      "installed": true,
+      "updates": false
+    },
+    "expected": "forge tool list --installed",
+    "note": "false bool is omitted"
+  },
+  {
+    "method": "tools.list",
+    "params": {},
+    "expected": "forge tool list"
+  },
+  {
+    "method": "tools.info",
+    "params": {
+      "tool": "php"
+    },
+    "expected": "forge tool info php"
+  },
+  {
+    "method": "tools.install",
+    "params": {
+      "specs": [
+        "php@8.3",
+        "nginx"
+      ],
+      "variant": "nts",
+      "yes": true
+    },
+    "expected": "forge tool install php@8.3 nginx --variant nts",
+    "note": "yes is never rendered"
+  },
+  {
+    "method": "tools.remove",
+    "params": {
+      "spec": "php@8.2.1",
+      "keep_config": true,
+      "confirm": true
+    },
+    "expected": "forge tool remove php@8.2.1 --keep-config",
+    "note": "confirm is never rendered"
+  },
+  {
+    "method": "tools.update",
+    "params": {
+      "tool": "php"
+    },
+    "expected": "forge tool update php"
+  },
+  {
+    "method": "tools.update",
+    "params": {
+      "tool": null
+    },
+    "expected": "forge tool update --all",
+    "note": "rule: no tool means all"
+  },
+  {
+    "method": "tools.check_updates",
+    "params": {
+      "tool": "node"
+    },
+    "expected": "forge tool update node --check"
+  },
+  {
+    "method": "tools.check_updates",
+    "params": {
+      "tool": null
+    },
+    "expected": "forge tool update --check"
+  },
+  {
+    "method": "tools.rollback",
+    "params": {
+      "spec": "php@8.3"
+    },
+    "expected": "forge tool rollback php@8.3"
+  },
+  {
+    "method": "tools.policy",
+    "params": {
+      "tool": "php",
+      "policy": "auto-patch"
+    },
+    "expected": "forge tool policy php auto-patch"
+  },
+  {
+    "method": "tools.add_local",
+    "params": {
+      "source": "C:\\Users\\Ana Maria\\Downloads\\php 8.3.zip"
+    },
+    "expected": "forge tool add-local \"C:\\Users\\Ana Maria\\Downloads\\php 8.3.zip\"",
+    "note": "path with spaces and backslashes"
+  },
+  {
+    "method": "tools.discover",
+    "params": {},
+    "expected": "forge tool discover"
+  },
+  {
+    "method": "tools.use",
+    "params": {
+      "tool": "php",
+      "version": "8.4"
+    },
+    "expected": "forge use php 8.4"
+  },
+  {
+    "method": "tools.which",
+    "params": {
+      "tool": "node",
+      "project_dir": "C:\\www\\loja"
+    },
+    "expected": "forge which node"
+  },
+  {
+    "method": "services.start",
+    "params": {
+      "targets": []
+    },
+    "expected": "forge start",
+    "note": "empty list = all"
+  },
+  {
+    "method": "services.start",
+    "params": {
+      "targets": [
+        "nginx",
+        "mysql/default",
+        "php@8.3"
+      ]
+    },
+    "expected": "forge start nginx mysql/default php@8.3"
+  },
+  {
+    "method": "services.stop",
+    "params": {
+      "targets": [
+        "all"
+      ]
+    },
+    "expected": "forge stop all"
+  },
+  {
+    "method": "services.restart",
+    "params": {
+      "targets": [
+        "php@8.3"
+      ]
+    },
+    "expected": "forge restart php@8.3"
+  },
+  {
+    "method": "services.reload",
+    "params": {
+      "target": "nginx"
+    },
+    "expected": "forge reload nginx"
+  },
+  {
+    "method": "services.status",
+    "params": {},
+    "expected": "forge status"
+  },
+  {
+    "method": "services.create",
+    "params": {
+      "tool": "mysql@8.4",
+      "name": "legacy",
+      "port": 3307,
+      "autostart": true
+    },
+    "expected": "forge service create mysql@8.4 legacy --port 3307 --autostart",
+    "note": "number option"
+  },
+  {
+    "method": "services.create",
+    "params": {
+      "tool": "redis",
+      "name": "cache",
+      "port": null,
+      "autostart": false
+    },
+    "expected": "forge service create redis cache"
+  },
+  {
+    "method": "services.remove",
+    "params": {
+      "instance": "mysql/legacy",
+      "delete_data": true,
+      "confirm": true
+    },
+    "expected": "forge service remove mysql/legacy --delete-data"
+  },
+  {
+    "method": "services.config",
+    "params": {
+      "target": "nginx"
+    },
+    "expected": "forge service config nginx"
+  },
+  {
+    "method": "services.set",
+    "params": {
+      "target": "php@8.3",
+      "settings": {
+        "memory_limit": "1G",
+        "max_execution_time": "60"
+      }
+    },
+    "expected": "forge service set php@8.3 max_execution_time=60 memory_limit=1G",
+    "note": "map entries sorted by key"
+  },
+  {
+    "method": "services.set",
+    "params": {
+      "target": "php@8.3",
+      "settings": {
+        "error_log": "C:\\My Logs\\php.log"
+      }
+    },
+    "expected": "forge service set php@8.3 \"error_log=C:\\My Logs\\php.log\"",
+    "note": "key=value token quoted as a whole"
+  },
+  {
+    "method": "services.ports",
+    "params": {},
+    "expected": "forge service ports"
+  },
+  {
+    "method": "logs.read",
+    "params": {
+      "target": "nginx.error",
+      "since_secs": 600,
+      "grep": "upstream timed out",
+      "limit": 100
+    },
+    "expected": "forge logs nginx.error --since 600 --grep \"upstream timed out\" -n 100"
+  },
+  {
+    "method": "logs.read",
+    "params": {
+      "target": "daemon",
+      "since_secs": null,
+      "grep": null,
+      "limit": null
+    },
+    "expected": "forge logs daemon"
+  },
+  {
+    "method": "logs.subscribe",
+    "params": {
+      "target": "site:loja.test",
+      "grep": null,
+      "tail": 50,
+      "resume_from": null
+    },
+    "expected": "forge logs site:loja.test -f -n 50"
+  },
+  {
+    "method": "php.list",
+    "params": {},
+    "expected": "forge php list"
+  },
+  {
+    "method": "php.pool_status",
+    "params": {
+      "version": "8.3"
+    },
+    "expected": "forge php pool status 8.3"
+  },
+  {
+    "method": "php.pool_status",
+    "params": {
+      "version": null
+    },
+    "expected": "forge php pool status"
+  },
+  {
+    "method": "php.ext_list",
+    "params": {
+      "version": "8.3"
+    },
+    "expected": "forge php ext list 8.3"
+  },
+  {
+    "method": "php.ext_enable",
+    "params": {
+      "version": "8.3",
+      "extension": "xdebug"
+    },
+    "expected": "forge php ext enable 8.3 xdebug"
+  },
+  {
+    "method": "php.ext_disable",
+    "params": {
+      "version": "8.3",
+      "extension": "gd"
+    },
+    "expected": "forge php ext disable 8.3 gd"
+  },
+  {
+    "method": "php.xdebug",
+    "params": {
+      "version": "8.3",
+      "mode": "trigger",
+      "port": 9003
+    },
+    "expected": "forge php xdebug 8.3 trigger --port 9003"
+  },
+  {
+    "method": "php.xdebug",
+    "params": {
+      "version": "8.3",
+      "mode": "off"
+    },
+    "expected": "forge php xdebug 8.3 off"
+  },
+  {
+    "method": "php.ini",
+    "params": {
+      "version": "8.4"
+    },
+    "expected": "forge php ini 8.4"
+  },
+  {
+    "method": "php.ini_open",
+    "params": {
+      "version": "8.4"
+    },
+    "expected": "forge php ini 8.4 --open"
+  },
+  {
+    "method": "sites.list",
+    "params": {},
+    "expected": "forge site list"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\www\\loja",
+      "host": "loja.test",
+      "php": "8.3",
+      "server": "nginx",
+      "secure": true,
+      "driver": "laravel"
+    },
+    "expected": "forge site add C:\\www\\loja --host loja.test --php 8.3 --server nginx --secure --driver laravel"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\Meus Projetos\\loja virtual",
+      "host": null,
+      "php": null,
+      "server": null,
+      "secure": false,
+      "driver": null
+    },
+    "expected": "forge site add \"C:\\Meus Projetos\\loja virtual\"",
+    "note": "path with spaces; false bool and nulls omitted"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "D:\\sites\\app\\"
+    },
+    "expected": "forge site add D:\\sites\\app\\",
+    "note": "trailing backslash without spaces stays bare"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "D:\\meus sites\\"
+    },
+    "expected": "forge site add \"D:\\meus sites\\\\\"",
+    "note": "trailing backslash inside quotes is doubled"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\Users\\José\\www"
+    },
+    "expected": "forge site add \"C:\\Users\\José\\www\"",
+    "note": "non-ASCII is quoted"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\www\\a&b"
+    },
+    "expected": "forge site add \"C:\\www\\a&b\"",
+    "note": "cmd metacharacter inside quotes"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\www\\$HOME"
+    },
+    "expected": null,
+    "note": "no portable quoting for $"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\www\\100%"
+    },
+    "expected": null,
+    "note": "no portable quoting for %"
+  },
+  {
+    "method": "sites.add",
+    "params": {
+      "dir": "C:\\www\\say \"hi\""
+    },
+    "expected": null,
+    "note": "no portable quoting for a double quote"
+  },
+  {
+    "method": "sites.remove",
+    "params": {
+      "site": "loja.test",
+      "confirm": true
+    },
+    "expected": "forge site remove loja.test"
+  },
+  {
+    "method": "sites.remove",
+    "params": {
+      "site": "01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+    },
+    "expected": "forge site remove 01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+  },
+  {
+    "method": "sites.php",
+    "params": {
+      "site": "loja.test",
+      "php": "8.2"
+    },
+    "expected": "forge site php loja.test 8.2"
+  },
+  {
+    "method": "sites.secure",
+    "params": {
+      "site": "loja.test",
+      "secure": true
+    },
+    "expected": "forge site secure loja.test",
+    "note": "choice true"
+  },
+  {
+    "method": "sites.secure",
+    "params": {
+      "site": "loja.test",
+      "secure": false
+    },
+    "expected": "forge site unsecure loja.test",
+    "note": "choice false"
+  },
+  {
+    "method": "sites.server",
+    "params": {
+      "site": "loja.test",
+      "server": "apache"
+    },
+    "expected": "forge site server loja.test apache"
+  },
+  {
+    "method": "sites.alias",
+    "params": {
+      "site": "loja.test",
+      "action": "add",
+      "alias": "www.loja.test"
+    },
+    "expected": "forge site alias loja.test add www.loja.test"
+  },
+  {
+    "method": "sites.alias",
+    "params": {
+      "site": "loja.test",
+      "action": "remove",
+      "alias": "www.loja.test"
+    },
+    "expected": "forge site alias loja.test remove www.loja.test"
+  },
+  {
+    "method": "sites.open",
+    "params": {
+      "site": "loja.test",
+      "with": "browser"
+    },
+    "expected": "forge site open loja.test",
+    "note": "rule default"
+  },
+  {
+    "method": "sites.open",
+    "params": {
+      "site": "loja.test",
+      "with": "editor"
+    },
+    "expected": "forge site open loja.test --editor"
+  },
+  {
+    "method": "sites.open",
+    "params": {
+      "site": "loja.test",
+      "with": "terminal"
+    },
+    "expected": "forge site open loja.test --terminal"
+  },
+  {
+    "method": "sites.open",
+    "params": {
+      "site": "loja.test",
+      "with": "explorer"
+    },
+    "expected": "forge site open loja.test --explorer"
+  },
+  {
+    "method": "sites.info",
+    "params": {
+      "site": "loja.test"
+    },
+    "expected": "forge site info loja.test"
+  },
+  {
+    "method": "sites.park",
+    "params": {
+      "dir": "C:\\www",
+      "tld": "test"
+    },
+    "expected": "forge park C:\\www --tld test"
+  },
+  {
+    "method": "sites.park",
+    "params": {
+      "dir": "C:\\Meus Sites",
+      "tld": null
+    },
+    "expected": "forge park \"C:\\Meus Sites\""
+  },
+  {
+    "method": "sites.unpark",
+    "params": {
+      "dir": "C:\\www"
+    },
+    "expected": "forge unpark C:\\www"
+  },
+  {
+    "method": "sites.parked",
+    "params": {},
+    "expected": "forge parked"
+  },
+  {
+    "method": "sites.proxy_add",
+    "params": {
+      "host": "api.test",
+      "upstream": "http://127.0.0.1:3000",
+      "websocket": true,
+      "secure": null
+    },
+    "expected": "forge proxy add api.test http://127.0.0.1:3000 --ws"
+  },
+  {
+    "method": "sites.proxy_add",
+    "params": {
+      "host": "api.test",
+      "upstream": "127.0.0.1:3000",
+      "websocket": false,
+      "secure": true
+    },
+    "expected": "forge proxy add api.test 127.0.0.1:3000 --secure"
+  },
+  {
+    "method": "sites.up",
+    "params": {
+      "dir": "C:\\www\\loja"
+    },
+    "expected": "forge up C:\\www\\loja"
+  },
+  {
+    "method": "sites.down",
+    "params": {
+      "dir": "C:\\www\\loja"
+    },
+    "expected": "forge down C:\\www\\loja"
+  },
+  {
+    "method": "sites.ps",
+    "params": {
+      "site": null
+    },
+    "expected": "forge ps"
+  },
+  {
+    "method": "sites.ps",
+    "params": {
+      "site": "loja.test"
+    },
+    "expected": "forge ps loja.test"
+  },
+  {
+    "method": "sites.run",
+    "params": {
+      "site": "loja.test",
+      "process": "queue",
+      "action": "restart"
+    },
+    "expected": "forge run loja.test queue restart"
+  },
+  {
+    "method": "sites.share",
+    "params": {
+      "site": "loja.test",
+      "provider": "cloudflared",
+      "stop": false
+    },
+    "expected": "forge share loja.test --provider cloudflared"
+  },
+  {
+    "method": "sites.share",
+    "params": {
+      "site": "loja.test",
+      "stop": true
+    },
+    "expected": "forge share loja.test --stop"
+  },
+  {
+    "method": "sites.new",
+    "params": {
+      "stack": "laravel",
+      "name": "loja",
+      "php": "8.4",
+      "db": "mysql",
+      "dir": "C:\\www"
+    },
+    "expected": "forge new laravel loja --php 8.4 --db mysql --dir C:\\www"
+  },
+  {
+    "method": "db.list",
+    "params": {
+      "instance": null
+    },
+    "expected": "forge db list"
+  },
+  {
+    "method": "db.list",
+    "params": {
+      "instance": "mysql/default"
+    },
+    "expected": "forge db list mysql/default"
+  },
+  {
+    "method": "db.create",
+    "params": {
+      "name": "loja",
+      "instance": "mysql/default",
+      "charset": "utf8mb4"
+    },
+    "expected": "forge db create loja --on mysql/default --charset utf8mb4"
+  },
+  {
+    "method": "db.drop",
+    "params": {
+      "name": "loja",
+      "instance": null,
+      "confirm": true
+    },
+    "expected": "forge db drop loja"
+  },
+  {
+    "method": "db.export",
+    "params": {
+      "name": "loja",
+      "instance": "mysql/default",
+      "output": "C:\\Backups\\loja 2026.sql.zst"
+    },
+    "expected": "forge db export loja --on mysql/default --output \"C:\\Backups\\loja 2026.sql.zst\""
+  },
+  {
+    "method": "db.import",
+    "params": {
+      "name": "loja",
+      "instance": null,
+      "file": "C:\\Backups\\loja.sql"
+    },
+    "expected": "forge db import loja C:\\Backups\\loja.sql"
+  },
+  {
+    "method": "db.shell",
+    "params": {
+      "instance": "mysql/default",
+      "database": "loja"
+    },
+    "expected": "forge db shell mysql/default loja"
+  },
+  {
+    "method": "db.shell",
+    "params": {
+      "instance": "mysql",
+      "database": null
+    },
+    "expected": "forge db shell mysql"
+  },
+  {
+    "method": "db.url",
+    "params": {
+      "instance": "mysql/default",
+      "database": "loja"
+    },
+    "expected": "forge db url mysql/default loja"
+  },
+  {
+    "method": "db.open",
+    "params": {
+      "instance": "mysql/default",
+      "with": "heidisql",
+      "database": "loja"
+    },
+    "expected": "forge db open mysql/default --with heidisql loja"
+  },
+  {
+    "method": "net.dns_status",
+    "params": {},
+    "expected": "forge dns status"
+  },
+  {
+    "method": "net.dns_enable",
+    "params": {},
+    "expected": "forge dns enable"
+  },
+  {
+    "method": "net.dns_disable",
+    "params": {},
+    "expected": "forge dns disable"
+  },
+  {
+    "method": "net.dns_test",
+    "params": {
+      "host": "loja.test"
+    },
+    "expected": "forge dns test loja.test"
+  },
+  {
+    "method": "net.lan_expose",
+    "params": {
+      "site": "loja.test"
+    },
+    "expected": "forge lan expose loja.test"
+  },
+  {
+    "method": "net.lan_unexpose",
+    "params": {
+      "site": "loja.test"
+    },
+    "expected": "forge lan unexpose loja.test"
+  },
+  {
+    "method": "net.lan_qr",
+    "params": {
+      "site": "loja.test"
+    },
+    "expected": "forge lan qr loja.test"
+  },
+  {
+    "method": "tls.ca_status",
+    "params": {},
+    "expected": "forge tls ca status"
+  },
+  {
+    "method": "tls.ca_install",
+    "params": {
+      "scope": "current_user"
+    },
+    "expected": "forge tls ca install --scope user"
+  },
+  {
+    "method": "tls.ca_install",
+    "params": {
+      "scope": "local_machine"
+    },
+    "expected": "forge tls ca install --scope machine"
+  },
+  {
+    "method": "tls.ca_export",
+    "params": {},
+    "expected": "forge tls ca export"
+  },
+  {
+    "method": "tls.ca_rotate",
+    "params": {
+      "confirm": true
+    },
+    "expected": "forge tls ca rotate"
+  },
+  {
+    "method": "tls.issue",
+    "params": {
+      "host": "loja.test"
+    },
+    "expected": "forge tls issue loja.test"
+  },
+  {
+    "method": "tls.renew",
+    "params": {
+      "host": null,
+      "all": true
+    },
+    "expected": "forge tls renew --all"
+  },
+  {
+    "method": "tls.renew",
+    "params": {
+      "host": "loja.test",
+      "all": false
+    },
+    "expected": "forge tls renew loja.test"
+  },
+  {
+    "method": "tls.export",
+    "params": {
+      "host": "loja.test",
+      "format": "pem"
+    },
+    "expected": "forge tls export loja.test"
+  },
+  {
+    "method": "tls.export",
+    "params": {
+      "host": "loja.test",
+      "format": "pfx",
+      "password": "s3cret"
+    },
+    "expected": "forge tls export loja.test --pfx",
+    "note": "the password is never rendered"
+  },
+  {
+    "method": "mail.status",
+    "params": {},
+    "expected": "forge mail status"
+  },
+  {
+    "method": "mail.open",
+    "params": {},
+    "expected": "forge mail open"
+  },
+  {
+    "method": "mail.list",
+    "params": {
+      "unread": true,
+      "limit": 20
+    },
+    "expected": "forge mail list --unread --limit 20"
+  },
+  {
+    "method": "mail.list",
+    "params": {
+      "unread": false,
+      "limit": null
+    },
+    "expected": "forge mail list"
+  },
+  {
+    "method": "mail.show",
+    "params": {
+      "id": "abc123"
+    },
+    "expected": "forge mail show abc123"
+  },
+  {
+    "method": "mail.clear",
+    "params": {
+      "confirm": true
+    },
+    "expected": "forge mail clear"
+  },
+  {
+    "method": "mail.env",
+    "params": {},
+    "expected": "forge mail env"
+  },
+  {
+    "method": "shell.open",
+    "params": {
+      "dir": "C:\\www\\loja"
+    },
+    "expected": "forge shell C:\\www\\loja"
+  },
+  {
+    "method": "shell.open",
+    "params": {
+      "dir": null
+    },
+    "expected": "forge shell"
+  },
+  {
+    "method": "shell.env",
+    "params": {
+      "dir": "C:\\www\\loja",
+      "format": "powershell",
+      "versions": {}
+    },
+    "expected": "forge env C:\\www\\loja --powershell"
+  },
+  {
+    "method": "shell.env",
+    "params": {
+      "dir": null,
+      "format": "cmd"
+    },
+    "expected": "forge env --cmd"
+  },
+  {
+    "method": "shell.env",
+    "params": {
+      "dir": "C:\\www\\loja",
+      "format": "bash"
+    },
+    "expected": "forge env C:\\www\\loja --bash"
+  },
+  {
+    "method": "shell.env",
+    "params": {
+      "dir": "C:\\www\\loja",
+      "format": "json"
+    },
+    "expected": "forge env C:\\www\\loja --json"
+  },
+  {
+    "method": "shell.path_show",
+    "params": {},
+    "expected": "forge path show"
+  },
+  {
+    "method": "shell.path_add",
+    "params": {},
+    "expected": "forge path add"
+  },
+  {
+    "method": "shell.path_remove",
+    "params": {},
+    "expected": "forge path remove"
+  },
+  {
+    "method": "fs_parity.case_status",
+    "params": {
+      "dir": "C:\\www"
+    },
+    "expected": "forge fs case-sensitive status C:\\www"
+  },
+  {
+    "method": "fs_parity.case_enable",
+    "params": {
+      "dir": "C:\\www\\novo"
+    },
+    "expected": "forge fs case-sensitive enable C:\\www\\novo"
+  },
+  {
+    "method": "fs_parity.case_disable",
+    "params": {
+      "dir": "C:\\www\\novo"
+    },
+    "expected": "forge fs case-sensitive disable C:\\www\\novo"
+  },
+  {
+    "method": "fs_parity.case_convert",
+    "params": {
+      "dir": "C:\\www\\loja",
+      "revert": true
+    },
+    "expected": "forge fs case-sensitive convert C:\\www\\loja --revert"
+  },
+  {
+    "method": "fs_parity.case_convert",
+    "params": {
+      "dir": "C:\\www\\loja",
+      "revert": false
+    },
+    "expected": "forge fs case-sensitive convert C:\\www\\loja"
+  },
+  {
+    "method": "fs_parity.site_case",
+    "params": {
+      "site": "loja.test",
+      "enabled": true
+    },
+    "expected": "forge site case-sensitive loja.test on"
+  },
+  {
+    "method": "fs_parity.site_case",
+    "params": {
+      "site": "loja.test",
+      "enabled": false
+    },
+    "expected": "forge site case-sensitive loja.test off"
+  },
+  {
+    "method": "fs_parity.lint_case",
+    "params": {
+      "site": "loja.test",
+      "fix": true,
+      "dry_run": true,
+      "strategy": "rename",
+      "overrides": {},
+      "only": null
+    },
+    "expected": "forge site lint-case loja.test --fix --dry-run --strategy rename"
+  },
+  {
+    "method": "fs_parity.lint_case",
+    "params": {
+      "site": "loja.test",
+      "fix": false,
+      "dry_run": false,
+      "strategy": "auto",
+      "only": null
+    },
+    "expected": "forge site lint-case loja.test --strategy auto"
+  },
+  {
+    "method": "jobs.list",
+    "params": {
+      "active": true
+    },
+    "expected": "forge jobs --active"
+  },
+  {
+    "method": "jobs.list",
+    "params": {
+      "active": false
+    },
+    "expected": "forge jobs"
+  },
+  {
+    "method": "jobs.get",
+    "params": {
+      "job_id": "01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+    },
+    "expected": "forge jobs watch 01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+  },
+  {
+    "method": "jobs.cancel",
+    "params": {
+      "job_id": "01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+    },
+    "expected": "forge jobs cancel 01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+  },
+  {
+    "method": "stats.get",
+    "params": {
+      "site": null,
+      "window": "5m"
+    },
+    "expected": "forge stats --window 5m"
+  },
+  {
+    "method": "stats.get",
+    "params": {
+      "site": "loja.test",
+      "window": "24h"
+    },
+    "expected": "forge stats loja.test --window 24h"
+  },
+  {
+    "method": "stats.top",
+    "params": {},
+    "expected": "forge top"
+  },
+  {
+    "method": "stats.export",
+    "params": {
+      "site": "loja.test",
+      "from": "2026-10-27T12:00:00Z",
+      "to": "2026-10-28T12:00:00Z",
+      "format": "csv"
+    },
+    "expected": "forge stats export loja.test --from 2026-10-27T12:00:00Z --to 2026-10-28T12:00:00Z --output csv"
+  },
+  {
+    "method": "metrics.subscribe",
+    "params": {
+      "site": "loja.test",
+      "window": "1h",
+      "resume_from": null
+    },
+    "expected": "forge stats loja.test --window 1h --watch"
+  },
+  {
+    "method": "metrics.subscribe",
+    "params": {
+      "window": "5m"
+    },
+    "expected": "forge stats --window 5m --watch"
+  },
+  {
+    "method": "remote.pair",
+    "params": {},
+    "expected": "forge remote pair"
+  },
+  {
+    "method": "remote.listen",
+    "params": {
+      "addr": "0.0.0.0:7788",
+      "tls": "auto"
+    },
+    "expected": "forge remote listen --addr 0.0.0.0:7788"
+  },
+  {
+    "method": "remote.clients",
+    "params": {},
+    "expected": "forge remote clients"
+  },
+  {
+    "method": "remote.revoke",
+    "params": {
+      "client_id": "01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+    },
+    "expected": "forge remote revoke 01J9Z3Y6F8K2V4W5X7C0D1E2F3"
+  },
+  {
+    "method": "registry.list",
+    "params": {},
+    "expected": "forge registry list"
+  },
+  {
+    "method": "registry.add",
+    "params": {
+      "url": "https://example.com/registry",
+      "name": "empresa"
+    },
+    "expected": "forge registry add https://example.com/registry --name empresa"
+  },
+  {
+    "method": "registry.add",
+    "params": {
+      "url": "https://example.com/registry",
+      "name": null
+    },
+    "expected": "forge registry add https://example.com/registry"
+  },
+  {
+    "method": "registry.remove",
+    "params": {
+      "name": "empresa"
+    },
+    "expected": "forge registry remove empresa"
+  },
+  {
+    "method": "registry.update",
+    "params": {},
+    "expected": "forge registry update"
+  },
+  {
+    "method": "system.import_laragon",
+    "params": {
+      "path": "C:\\laragon",
+      "dry_run": true,
+      "copy_tools": false,
+      "move_data": false,
+      "convert_case_sensitive": true
+    },
+    "expected": "forge import laragon C:\\laragon --dry-run --convert-case"
+  },
+  {
+    "method": "system.bundle_export",
+    "params": {
+      "specs": [
+        "php@8.3",
+        "nginx"
+      ],
+      "output": "C:\\Temp\\stack.fbx"
+    },
+    "expected": "forge bundle export php@8.3 nginx --output C:\\Temp\\stack.fbx"
+  },
+  {
+    "method": "system.bundle_import",
+    "params": {
+      "file": "C:\\Temp\\my stack.fbx"
+    },
+    "expected": "forge bundle import \"C:\\Temp\\my stack.fbx\""
+  },
+  {
+    "method": "system.backup_now",
+    "params": {
+      "instance": null
+    },
+    "expected": "forge backup now"
+  },
+  {
+    "method": "system.backup_now",
+    "params": {
+      "instance": "mysql/default"
+    },
+    "expected": "forge backup now mysql/default"
+  },
+  {
+    "method": "system.backup_schedule",
+    "params": {
+      "frequency": "daily",
+      "at": "02:00"
+    },
+    "expected": "forge backup schedule daily 02:00"
+  },
+  {
+    "method": "system.backup_schedule",
+    "params": {
+      "frequency": "off",
+      "at": null
+    },
+    "expected": "forge backup schedule off"
+  },
+  {
+    "method": "system.config_get",
+    "params": {
+      "key": "ports.http"
+    },
+    "expected": "forge config get ports.http"
+  },
+  {
+    "method": "system.config_set",
+    "params": {
+      "key": "ports.http",
+      "value": 8080
+    },
+    "expected": "forge config set ports.http 8080"
+  },
+  {
+    "method": "system.config_set",
+    "params": {
+      "key": "dns.enabled",
+      "value": true
+    },
+    "expected": "forge config set dns.enabled true"
+  },
+  {
+    "method": "system.config_set",
+    "params": {
+      "key": "general.editor",
+      "value": "C:\\Program Files\\Code\\code.exe"
+    },
+    "expected": "forge config set general.editor \"C:\\Program Files\\Code\\code.exe\""
+  },
+  {
+    "method": "system.config_set",
+    "params": {
+      "key": "ports.range",
+      "value": {
+        "min": 1,
+        "max": 2
+      }
+    },
+    "expected": null,
+    "note": "objects are not representable"
+  },
+  {
+    "method": "system.config_set",
+    "params": {
+      "key": "ratio",
+      "value": 1.5
+    },
+    "expected": null,
+    "note": "non-integer numbers are not representable"
+  },
+  {
+    "method": "system.self_update",
+    "params": {
+      "check": true,
+      "channel": "beta"
+    },
+    "expected": "forge self-update --check --channel beta"
+  },
+  {
+    "method": "events.subscribe",
+    "params": {
+      "filter": {},
+      "resume_from": null
+    },
+    "expected": "forge status --watch"
+  },
+  {
+    "method": "system.ping",
+    "params": {},
+    "expected": null,
+    "note": "no CLI command"
+  },
+  {
+    "method": "fs.read",
+    "params": {
+      "path": "etc/php/8.3/php.ini"
+    },
+    "expected": null,
+    "note": "no CLI command"
+  }
+]
