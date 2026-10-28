@@ -40,7 +40,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E1-T2 | Cliente `forge-ipc` para GUIs | todo | — | |
 | M2-E1-T3 | Lacunas de API do shell (updates, port_check, hello, status, sites.open, details) | todo | — | |
 | M2-E1-T4 | Templates do comando `forge` equivalente na tabela de métodos | todo | — | |
-| M2-E1-T5 | Trait `SystemAppearance` (plataforma) | todo | — | |
+| M2-E1-T5 | Trait `SystemAppearance` (plataforma) | doing | feature/M2-E1-T5-system-appearance | |
 | M2-E1-T6 | Design tokens (JSON, CSS, Tailwind, fontes, motion, lint) | todo | — | |
 | M2-E1-T7 | Casca da janela (titlebar, materiais, estado, instância única, data dir) | todo | — | |
 | M2-E1-T8 | Ponte IPC (comandos Tauri genéricos, canais, contextos, cliente TS, fakeBridge) | todo | — | |
