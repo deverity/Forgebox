@@ -9,9 +9,9 @@ use forge_ipc::api::methods::{
 };
 use forge_ipc::api::{
     Ack, CaInstallParams, CaRotateParams, CaStatusDto, CertFormat, CertificateDto,
-    CertificateListDto, DnsPolicyState, DnsStatusDto, DnsTestParams, LanAccessDto, LanSiteParams,
-    MailClearParams, MailListParams, MailShowParams, NoParams, SiteRef, TlsExportParams,
-    TlsHostParams, TlsRenewParams, TrustScopeDto,
+    CertificateListDto, DnsMode, DnsPolicyReason, DnsPolicyState, DnsProbeDto, DnsStatusDto,
+    DnsTestParams, LanAccessDto, LanSiteParams, MailClearParams, MailListParams, MailShowParams,
+    NoParams, SiteRef, TlsExportParams, TlsHostParams, TlsRenewParams, TrustScopeDto,
 };
 
 use crate::cli::{DnsCmd, LanCmd, MailCmd, ScopeArg, TlsCaCmd, TlsCmd};
@@ -23,22 +23,100 @@ use crate::render;
 
 // --- dns ----------------------------------------------------------------------------
 
+fn dns_reason(out: &Output, reason: DnsPolicyReason) -> &'static str {
+    out.t(match reason {
+        DnsPolicyReason::GroupPolicyTablePresent => Msg::DnsReasonGroupPolicy,
+        DnsPolicyReason::ResolverProbeFailed => Msg::DnsReasonProbeFailed,
+        DnsPolicyReason::ResolverNotOnPort53 => Msg::DnsReasonNotOn53,
+        DnsPolicyReason::NrptUnsupported => Msg::DnsReasonNrptUnsupported,
+        DnsPolicyReason::NrptPointsElsewhere => Msg::DnsReasonPointsElsewhere,
+    })
+}
+
+/// Effective mode, reason and probe of `tld` (`dns status`, `dns test`).
+fn mode_rows(
+    out: &Output,
+    tld: &str,
+    mode: DnsMode,
+    reason: Option<DnsPolicyReason>,
+    probe: Option<&DnsProbeDto>,
+) -> Vec<(String, String)> {
+    let mut rows = Vec::new();
+    let mode = match mode {
+        DnsMode::Nrpt => paint(GREEN, out.t(Msg::DnsModeNrpt)),
+        DnsMode::Hosts => paint(YELLOW, out.t(Msg::DnsModeHosts)),
+        DnsMode::None => paint(RED, out.t(Msg::DnsModeNone)),
+    };
+    rows.push((out.tf(Msg::HDnsMode, &[&tld]), mode));
+    if let Some(reason) = reason {
+        rows.push((
+            out.tf(Msg::HDnsReason, &[&tld]),
+            dns_reason(out, reason).to_owned(),
+        ));
+    }
+    if let Some(probe) = probe {
+        let text = if probe.ok {
+            let text = out.tf(
+                Msg::DnsProbeOk,
+                &[
+                    &probe.host,
+                    &probe.resolved.join(", "),
+                    &probe.attempts,
+                    &probe.elapsed_ms,
+                ],
+            );
+            paint(GREEN, text)
+        } else {
+            let text = out.tf(
+                Msg::DnsProbeFailed,
+                &[
+                    &probe.host,
+                    &probe.error.as_deref().unwrap_or("-"),
+                    &probe.attempts,
+                    &probe.elapsed_ms,
+                ],
+            );
+            paint(RED, text)
+        };
+        rows.push((out.tf(Msg::HDnsProbe, &[&tld]), text));
+    }
+    rows
+}
+
 fn dns_status_lines(out: &Output, status: &DnsStatusDto) {
     let policy = match status.policy {
         DnsPolicyState::Applied => paint(GREEN, out.t(Msg::DnsApplied)),
         DnsPolicyState::HostsFallback => paint(YELLOW, out.t(Msg::DnsHostsFallback)),
         DnsPolicyState::NotApplied => paint(DIM, out.t(Msg::DnsNotApplied)),
     };
-    out.pairs(&[
-        (out.t(Msg::HEnabled), render::yes_no(out, status.enabled)),
-        (out.t(Msg::HResolver), or_dash(status.listen.as_deref())),
+    let mut rows: Vec<(String, String)> = vec![
         (
-            out.t(Msg::HResolverRunning),
+            out.t(Msg::HEnabled).to_owned(),
+            render::yes_no(out, status.enabled),
+        ),
+        (
+            out.t(Msg::HResolver).to_owned(),
+            or_dash(status.listen.as_deref()),
+        ),
+        (
+            out.t(Msg::HResolverRunning).to_owned(),
             render::yes_no(out, status.server_running),
         ),
-        ("TLDs", status.tlds.join(", ")),
-        (out.t(Msg::HPolicy), policy),
-    ]);
+        ("TLDs".to_owned(), status.tlds.join(", ")),
+        (out.t(Msg::HPolicy).to_owned(), policy),
+    ];
+    // Effective mode, reason and verification of each TLD (ADR-0033).
+    for tld in &status.tld_policies {
+        rows.extend(mode_rows(
+            out,
+            &tld.tld,
+            tld.mode,
+            tld.reason,
+            tld.probe.as_ref(),
+        ));
+    }
+    let pairs: Vec<(&str, String)> = rows.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+    out.pairs(&pairs);
 }
 
 pub async fn dns(ctx: &Context, command: DnsCmd) -> CliResult<()> {
@@ -72,11 +150,27 @@ pub async fn dns(ctx: &Context, command: DnsCmd) -> CliResult<()> {
                     paint(RED, out.t(Msg::DnsDoesNotResolve))
                 };
                 out.line(format!("{}  {}", test.host, verdict));
-                out.pairs(&[
-                    (out.t(Msg::HResolved), test.resolved.join(", ")),
-                    (out.t(Msg::HExpected), test.expected.join(", ")),
-                    (out.t(Msg::HVia), test.via.clone()),
-                ]);
+                let mut rows = vec![
+                    (out.t(Msg::HResolved).to_owned(), test.resolved.join(", ")),
+                    (out.t(Msg::HExpected).to_owned(), test.expected.join(", ")),
+                    (out.t(Msg::HVia).to_owned(), test.via.clone()),
+                ];
+                let tld = test
+                    .probe
+                    .as_ref()
+                    .and_then(|p| p.host.split_once('.'))
+                    .map(|(_, tld)| format!(".{tld}"))
+                    .unwrap_or_default();
+                rows.extend(mode_rows(
+                    out,
+                    &tld,
+                    test.mode,
+                    test.reason,
+                    test.probe.as_ref(),
+                ));
+                let pairs: Vec<(&str, String)> =
+                    rows.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+                out.pairs(&pairs);
             });
             if !test.ok {
                 return Err(CliError::exit_silently(1));

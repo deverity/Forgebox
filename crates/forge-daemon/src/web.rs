@@ -15,17 +15,26 @@
 //! holding the turn, so a pool calling the listener during its start cannot deadlock.
 //! Secure sites get their certificate from the `tls` actor before rendering; when that
 //! fails the site is served over plain HTTP and the failure is logged.
+//!
+//! `instance.case_sensitive` comes from [`crate::instance_case`] (docs/15 §5): for a data
+//! folder not initialized yet, the **real** flag (where `ForgeRoot::init` could not set it,
+//! e.g. no `FILE_DELETE_CHILD` under `C:\` on managed machines, the database gets
+//! `lower_case_table_names=2` and `fs.case_sensitivity_unavailable` is published, instead
+//! of a server that refuses to initialize); for an initialized one, the value recorded
+//! when it was initialized, whatever the flag reads now.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use forge_core::config::ForgeConfig;
 use forge_core::error::{ForgeError, Result};
-use forge_core::event::EventBus;
+use forge_core::event::{EventBus, EventKind};
 use forge_core::ids::{SiteId, VersionId};
 use forge_core::paths::ForgeRoot;
-use forge_core::store::{Site, SiteKind, StoreReader, ToolVersionRow};
+use forge_core::platform::CaseSensitiveFs;
+use forge_core::store::{CASE_SENSITIVE_KEY, Site, SiteKind, StoreReader, ToolVersionRow};
 use forge_fcgi::{PoolState, UpstreamChange, UpstreamFuture, UpstreamListener};
 use forge_registry::Registry;
 use forge_render::{
@@ -37,6 +46,7 @@ use futures::future::BoxFuture;
 use tokio::sync::Semaphore;
 
 use crate::catalog;
+use crate::instance_case::{self, DataDirProbe};
 use crate::pools::PoolManager;
 use crate::render;
 use crate::services::{ConfigRenderer, Entry, ServiceManager};
@@ -64,6 +74,8 @@ struct Inner {
     services: ServiceManager,
     tls: TlsManager,
     config: Arc<dyn Fn() -> Arc<ForgeConfig> + Send + Sync>,
+    /// Reads the flag of the instances' data folders.
+    case_fs: Arc<dyn CaseSensitiveFs>,
     turn: Arc<Semaphore>,
     /// Port of the daemon's internal endpoint (`prefs.internal_port`); 0 = not running.
     internal_port: std::sync::atomic::AtomicU16,
@@ -102,6 +114,7 @@ impl WebManager {
         services: ServiceManager,
         tls: TlsManager,
         config: Arc<dyn Fn() -> Arc<ForgeConfig> + Send + Sync>,
+        case_fs: Arc<dyn CaseSensitiveFs>,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -115,6 +128,7 @@ impl WebManager {
                 services,
                 tls,
                 config,
+                case_fs,
                 turn: Arc::new(Semaphore::new(1)),
                 internal_port: std::sync::atomic::AtomicU16::new(0),
             }),
@@ -443,11 +457,15 @@ impl WebManager {
         }
         let config = (self.inner.config)();
         let mut ctx = render::base_context(&self.inner.root, &config, manifest, version);
+        let data_dir = entry.row.data_dir.clone().unwrap_or_default();
+        let case_sensitive = self
+            .instance_case_sensitive(entry, config.case_sensitive, &data_dir)
+            .await?;
         ctx.instance = InstanceModel {
             name: entry.row.name.clone(),
             ports: entry.ports.clone(),
-            data_dir: entry.row.data_dir.clone().unwrap_or_default(),
-            case_sensitive: config.case_sensitive,
+            data_dir,
+            case_sensitive,
             settings: entry.row.settings.clone(),
         };
         if let Some(port) = entry.ports.get("http") {
@@ -479,6 +497,57 @@ impl WebManager {
             ctx.pools = upstreams;
         }
         Ok(Some(ctx))
+    }
+
+    /// `instance.case_sensitive` of an instance ([`crate::instance_case`]): for a data
+    /// folder not initialized yet, on only when `forgebox.toml` asks for it **and** the
+    /// folder (or the closest existing parent, whose flag the folder created on the first
+    /// start inherits) carries the flag, and the choice is recorded before `data.init`
+    /// uses it; for an initialized folder, the recorded value. Publishes
+    /// `fs.case_sensitivity_unavailable` when there is something to say.
+    async fn instance_case_sensitive(
+        &self,
+        entry: &Entry,
+        wanted: bool,
+        data_dir: &str,
+    ) -> Result<bool> {
+        if data_dir.is_empty() {
+            // No data folder: nothing in the configuration depends on it.
+            return Ok(wanted);
+        }
+        let owner = entry.label();
+        // The table may already hold a value recorded after `entry` was cloned.
+        let recorded = self.inner.services.get(entry.row.id).map_or_else(
+            || entry.row.recorded_case_sensitive(),
+            |e| e.row.recorded_case_sensitive(),
+        );
+        let path = Path::new(data_dir);
+        let probe = DataDirProbe::run(
+            Arc::clone(&self.inner.case_fs),
+            path,
+            forge_core::fs::case::STATUS_TIMEOUT,
+        )
+        .await;
+        let outcome = instance_case::decide(wanted, recorded, probe, path).inspect_err(|err| {
+            tracing::warn!(instance = %owner, %data_dir, %err, "data folder state unknown and no recorded case sensitivity; not rendering");
+        })?;
+        if let Some(value) = outcome.record {
+            self.inner
+                .services
+                .record_setting(entry.row.id, CASE_SENSITIVE_KEY, &value.to_string())
+                .await?;
+            tracing::info!(instance = %owner, %data_dir, case_sensitive = value, "case sensitivity of the data folder recorded");
+        }
+        if let Some(note) = &outcome.note {
+            tracing::warn!(instance = %owner, %data_dir, case_sensitive = outcome.sensitive, "{note}");
+        }
+        if let Some(payload) = outcome.event {
+            tracing::warn!(instance = %owner, %data_dir, case_sensitive = outcome.sensitive, reason = %payload["reason"], "data folder case sensitivity unavailable");
+            self.inner
+                .bus
+                .publish(EventKind::FsCaseSensitivityUnavailable, payload);
+        }
+        Ok(outcome.sensitive)
     }
 
     async fn render_entry(

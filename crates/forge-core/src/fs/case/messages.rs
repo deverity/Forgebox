@@ -67,6 +67,46 @@ pub fn unsupported(detail: &str) -> (&'static str, String) {
     )
 }
 
+/// Reason when a database data folder is not case-sensitive (`detail`: why): the
+/// instance falls back to case-insensitive table names (docs/15 §5).
+pub fn data_dir_fallback(detail: &str) -> (&'static str, String) {
+    (
+        "fs.case.reason.data_dir_fallback",
+        format!(
+            "{detail} O banco desta instância usa nomes de tabela sem diferenciar \
+             maiúsculas de minúsculas (lower_case_table_names=2)."
+        ),
+    )
+}
+
+/// Reason when an initialized database instance keeps case-insensitive table names while
+/// `forgebox.toml` asks for parity (docs/15 §5).
+pub fn data_dir_initialized_insensitive() -> (&'static str, &'static str) {
+    (
+        "fs.case.reason.data_dir_initialized_insensitive",
+        "O banco desta instância foi inicializado com nomes de tabela sem diferenciar \
+         maiúsculas de minúsculas (lower_case_table_names=2) e mantém esse valor: mudá-lo \
+         num data dir já inicializado o quebra. Para ter paridade com Linux, crie uma \
+         instância nova numa pasta case-sensitive.",
+    )
+}
+
+/// Reason when an instance initialized with case-sensitive table names now sits on a
+/// folder that reads as not case-sensitive (`detail`: why). The value is kept, because
+/// changing it breaks the data folder (docs/15 §5).
+pub fn data_dir_kept_sensitive(detail: &str) -> (&'static str, String) {
+    (
+        "fs.case.reason.data_dir_kept_sensitive",
+        format!(
+            "{detail} O banco desta instância foi inicializado com nomes de tabela que \
+             diferenciam maiúsculas de minúsculas (lower_case_table_names=0) e mantém esse \
+             valor, porque mudá-lo num data dir já inicializado o quebra; o servidor pode \
+             recusar a subir até a pasta voltar a ser case-sensitive \
+             (forge fs case-sensitive enable)."
+        ),
+    )
+}
+
 /// Error text: an entry could not be moved because a process holds it open.
 pub fn in_use(path: &str, detail: &str) -> String {
     format!(

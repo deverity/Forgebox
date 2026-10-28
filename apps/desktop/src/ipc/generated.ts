@@ -510,12 +510,44 @@ export type DbUrlParams = {
 	database: string,
 };
 
+/**  Which path really takes the OS resolver to the sites of a TLD (docs/06 §5.4). */
+export type DnsMode = 
+/**  An NRPT rule Windows follows (verified by asking the OS resolver). */
+"nrpt" | 
+/**  The `hosts` managed block. */
+"hosts" | 
+/**  Nothing routes the TLD. */
+"none";
+
 /**  `dns.policy_applied`. */
 export type DnsPolicyPayload = {
 	v: number,
 	tld: string,
 	policy: DnsPolicyState,
+	/**  Effective mode (`nrpt`, `hosts`, `none`); additive (ADR-0033). */
+	mode?: DnsMode,
+	/**  Why the TLD is not routed by NRPT. */
+	reason?: DnsPolicyReason | null,
+	/**  Result of the verification through the OS resolver, when one ran. */
+	probe_ok?: boolean | null,
 };
+
+/**  Why a TLD is not (or not only) routed by NRPT. Stable codes; the UI translates them. */
+export type DnsPolicyReason = 
+/**  The Group Policy NRPT table exists, even empty: Windows ignores local rules. */
+"group_policy_table_present" | 
+/**
+ *  The rule is in the registry, but the OS resolver did not answer a probe name of
+ *  the TLD with loopback (VPN or security agent intercepting DNS, rule not yet
+ *  followed).
+ */
+"resolver_probe_failed" | 
+/**  The Forgebox resolver is not on port 53 (NRPT cannot name a port). */
+"resolver_not_on_port53" | 
+/**  The OS has no NRPT. */
+"nrpt_unsupported" | 
+/**  An effective rule sends the TLD to another server. */
+"nrpt_points_elsewhere";
 
 /**  How the OS routes the Forgebox TLDs. */
 export type DnsPolicyState = 
@@ -523,6 +555,21 @@ export type DnsPolicyState =
 "applied" | 
 /**  Entries in the `hosts` managed block (fallback). */
 "hosts_fallback" | "not_applied";
+
+/**
+ *  Verification of a TLD through the OS resolver: a random name under it
+ *  (`forgebox-probe-<ulid>.test`), which only the Forgebox resolver answers.
+ */
+export type DnsProbeDto = {
+	host: string,
+	/**  Resolved, and only to loopback. */
+	ok: boolean,
+	resolved: string[],
+	/**  Last error of the OS resolver (`NXDOMAIN`, timeout...). */
+	error: string | null,
+	attempts: number,
+	elapsed_ms: number,
+};
 
 /**  Result of `net.dns_status`. */
 export type DnsStatusDto = {
@@ -533,6 +580,14 @@ export type DnsStatusDto = {
 	/**  `[".test"]`. */
 	tlds: string[],
 	policy: DnsPolicyState,
+	/**
+	 *  Effective mode over every TLD: `nrpt` only when all follow NRPT, `hosts` when any
+	 *  uses the `hosts` block.
+	 */
+	mode?: DnsMode,
+	/**  First reason a TLD is not routed by NRPT. */
+	reason?: DnsPolicyReason | null,
+	tld_policies?: DnsTldPolicyDto[],
 };
 
 /**  Result of `net.dns_test`. */
@@ -543,11 +598,32 @@ export type DnsTestDto = {
 	ok: boolean,
 	/**  Which path answered (`forgebox-dns`, `hosts`, `system`). */
 	via: string,
+	/**  Which path really routes the host (`nrpt`, `hosts`, `none`). */
+	mode?: DnsMode,
+	/**  Why the host is not answered through NRPT, when known. */
+	reason?: DnsPolicyReason | null,
+	/**  A probe name of the TLD through the OS resolver (one try). */
+	probe?: DnsProbeDto | null,
 };
 
 /**  Params of `net.dns_test`. */
 export type DnsTestParams = {
 	host: string,
+};
+
+/**  Routing of one TLD. */
+export type DnsTldPolicyDto = {
+	/**  `.test`. */
+	tld: string,
+	mode: DnsMode,
+	policy: DnsPolicyState,
+	/**  Where the Forgebox NRPT rule points, when there is one (effective or not). */
+	nameserver: string | null,
+	reason: DnsPolicyReason | null,
+	/**  The Group Policy NRPT table exists on the machine. */
+	group_policy_table: boolean,
+	/**  Last verification through the OS resolver, when there was an NRPT rule to verify. */
+	probe: DnsProbeDto | null,
 };
 
 /**  Params of `daemon.doctor`. */
@@ -701,7 +777,12 @@ export type FsCaseSensitivityPayload = {
 	reason: string | null,
 	/**
 	 *  Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
-	 *  `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+	 *  `missing`, `error`, `initialized`, `kept_sensitive`
+	 *  (`forge_core::fs::case::CaseReasonCode`). For a database data folder (docs/15 §5)
+	 *  `insensitive`/`unsupported`/`missing`/`error` mean the fallback to
+	 *  case-insensitive table names; `initialized` that the instance keeps them;
+	 *  `kept_sensitive` that it keeps case-sensitive ones on a folder that now reads as
+	 *  not case-sensitive (the server may refuse to start).
 	 */
 	reason_code: string | null,
 };
@@ -825,6 +906,13 @@ export type HelperOpPayload = {
 	name: string,
 	ok: boolean,
 	error: string | null,
+	/**
+	 *  `nrpt.add`: whether Windows follows the local rule (`false` while the Group Policy
+	 *  NRPT table exists); additive (ADR-0033).
+	 */
+	effective?: boolean | null,
+	/**  `nrpt.add`: why the rule is not effective (`group_policy_table_present`). */
+	reason?: string | null,
 };
 
 /**  One imported item. */

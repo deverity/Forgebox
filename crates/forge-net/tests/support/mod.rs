@@ -1,17 +1,23 @@
 //! Fakes shared by the DNS tests: the OS resolver policy in memory (writes through the
 //! real `HelperClient` + `FakeElevation`), port table, adapters and OS resolver.
+//!
+//! The in-memory OS resolver answers like Windows with the Forgebox resolver running:
+//! a name covered by an **effective** NRPT rule resolves to `127.0.0.1`; anything else is
+//! NXDOMAIN (the corporate DNS). `intercept` simulates a VPN/security agent that answers
+//! every query itself, whatever the NRPT says.
 #![allow(dead_code)]
 
 use std::net::IpAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use forge_core::error::{ForgeError, Result};
 use forge_core::helper::hosts::{apply_hosts_block, read_hosts_block};
 use forge_core::helper::{FakeElevation, HelperClient, HelperOp, HelperPolicy, HostsEntry};
 use forge_core::platform::{
-    DnsPolicy, NetAdapter, NetAdapters, NrptRule, NrptSource, PortOwner, PortTable,
+    DnsPolicy, NetAdapter, NetAdapters, NrptApplied, NrptRule, NrptSource, NrptTable, PortOwner,
+    PortTable,
 };
 use forge_net::dns::SystemResolver;
 
@@ -22,6 +28,12 @@ pub const STOCK_HOSTS: &str = "# Copyright (c) 1993-2009 Microsoft Corp.\r\n#\r\
 pub struct MemoryPolicy {
     helper: HelperClient,
     pub rules: Mutex<Vec<NrptRule>>,
+    /// The Group Policy NRPT key exists (even empty).
+    pub group_policy_table: AtomicBool,
+    /// Every OS resolver answer is replaced by this one (VPN/agent intercepting DNS).
+    pub intercept: Mutex<Option<Result<Vec<IpAddr>, String>>>,
+    /// Names asked to the OS resolver.
+    pub queries: Mutex<Vec<String>>,
     pub hosts: Mutex<String>,
     pub flushes: AtomicUsize,
     /// Reads fail (diagnosis must survive it).
@@ -34,6 +46,9 @@ impl MemoryPolicy {
         Self {
             helper: HelperClient::new(elevation, r"C:\Forgebox\forgebox-helper.exe", policy),
             rules: Mutex::new(Vec::new()),
+            group_policy_table: AtomicBool::new(false),
+            intercept: Mutex::new(None),
+            queries: Mutex::new(Vec::new()),
             hosts: Mutex::new(STOCK_HOSTS.to_owned()),
             flushes: AtomicUsize::new(0),
             broken: false,
@@ -53,6 +68,28 @@ impl MemoryPolicy {
             comment: None,
         });
         self
+    }
+
+    /// The corporate case of the M1 gate: the Group Policy key exists with no rule.
+    pub fn with_group_policy_table(self) -> Self {
+        self.group_policy_table.store(true, Ordering::Relaxed);
+        self
+    }
+
+    /// Every OS resolver query gets `answer` (a VPN or security agent answering DNS).
+    pub fn intercepting(self, answer: Result<Vec<IpAddr>, String>) -> Self {
+        *self.intercept.lock().unwrap() = Some(answer);
+        self
+    }
+
+    fn table(&self) -> NrptTable {
+        let rules = self.rules.lock().unwrap().clone();
+        let group_policy_table = self.group_policy_table.load(Ordering::Relaxed)
+            || rules.iter().any(|r| r.source == NrptSource::GroupPolicy);
+        NrptTable {
+            rules,
+            group_policy_table,
+        }
     }
 
     pub fn with_hosts_line(self, line: &str) -> Self {
@@ -79,13 +116,30 @@ impl MemoryPolicy {
 }
 
 impl DnsPolicy for MemoryPolicy {
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
+    fn nrpt_table(&self) -> Result<NrptTable> {
         self.check()?;
-        Ok(self.rules.lock().unwrap().clone())
+        Ok(self.table())
     }
 
-    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<()> {
-        self.helper.run(HelperOp::NrptAdd {
+    fn query_system(&self, host: &str) -> Result<Vec<IpAddr>> {
+        self.queries.lock().unwrap().push(host.to_owned());
+        if let Some(answer) = self.intercept.lock().unwrap().clone() {
+            return answer.map_err(|e| ForgeError::NotFound(format!("{host}: {e}")));
+        }
+        let table = self.table();
+        if table
+            .effective_rules()
+            .iter()
+            .any(|r| r.covers(host) && !r.nameservers.is_empty())
+        {
+            Ok(vec![IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)])
+        } else {
+            Err(ForgeError::NotFound(format!("{host}: NXDOMAIN")))
+        }
+    }
+
+    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<NrptApplied> {
+        let response = self.helper.run(HelperOp::NrptAdd {
             namespace: tld.into(),
             nameserver,
         })?;
@@ -98,7 +152,16 @@ impl DnsPolicy for MemoryPolicy {
             source: NrptSource::Local,
             comment: Some("Forgebox".into()),
         });
-        Ok(())
+        drop(rules);
+        // What the real helper reports (forge-helper `nrpt_add`); the fake elevation
+        // answers without details, so they are derived from the table here.
+        let mut applied = NrptApplied::from_details(&response.details);
+        if applied.effective.is_none() {
+            let ignored = self.table().local_rules_ignored();
+            applied.effective = Some(ignored.is_none());
+            applied.reason = ignored;
+        }
+        Ok(applied)
     }
 
     fn remove(&self, tld: &str) -> Result<()> {

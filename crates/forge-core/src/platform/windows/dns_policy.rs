@@ -6,8 +6,11 @@
 //!   Group Policy one `HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\DnsPolicyConfig`.
 //!   Each rule is a subkey with `Name` (`REG_MULTI_SZ`, the namespaces),
 //!   `GenericDNSServers` (`REG_SZ`, `;`-separated) and optional `Comment`/`DisplayName`.
-//!   While any Group Policy rule exists Windows ignores the local ones
-//!   ([`crate::platform::effective_nrpt_rules`]).
+//!   While the Group Policy key exists, **even with no rule in it**, Windows ignores the
+//!   local ones ([`crate::platform::NrptTable::group_policy_table`], ADR-0033).
+//! * The OS resolver is asked with `DnsQuery_W` (type `A`, through the DNS Client service:
+//!   NRPT, cache and `hosts` apply as for any application), to verify that a rule is
+//!   really followed.
 //! * `hosts` lives in `DataBasePath` of `HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters`
 //!   (normally `%SystemRoot%\System32\drivers\etc`).
 //! * Changes go through `forgebox-helper` ([`HelperClient`]): `nrpt.add`, `nrpt.remove`,
@@ -15,12 +18,16 @@
 //! * The resolver cache is flushed with `DnsFlushResolverCache` (exported by `dnsapi.dll`,
 //!   what `ipconfig /flushdns` calls, no elevation), loaded from System32 at run time.
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 
 use ::windows::Win32::Foundation::{
     ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_SUCCESS, FreeLibrary,
     WIN32_ERROR,
+};
+use ::windows::Win32::NetworkManagement::Dns::{
+    DNS_QUERY_STANDARD, DNS_QUERY_TREAT_AS_FQDN, DNS_RECORDA, DNS_TYPE_A, DnsFree,
+    DnsFreeRecordList, DnsQuery_W,
 };
 use ::windows::Win32::System::LibraryLoader::{
     GetProcAddress, LOAD_LIBRARY_SEARCH_SYSTEM32, LoadLibraryExW,
@@ -34,7 +41,7 @@ use ::windows::core::{BOOL, PCWSTR, PWSTR, s, w};
 use super::process::{os_error, system_directory};
 use crate::error::{ForgeError, Result};
 use crate::helper::{HelperClient, HelperOp, HostsEntry};
-use crate::platform::{DnsPolicy, NrptRule, NrptSource};
+use crate::platform::{DnsPolicy, NrptApplied, NrptRule, NrptSource, NrptTable};
 
 const LOCAL_RULES: PCWSTR =
     w!(r"SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig");
@@ -184,9 +191,10 @@ fn parse_servers(text: &str) -> Vec<IpAddr> {
         .collect()
 }
 
-fn read_rules(path: PCWSTR, source: NrptSource) -> Result<Vec<NrptRule>> {
+/// The rules under `HKLM\<path>`; `None` when the key does not exist.
+fn read_rules(path: PCWSTR, source: NrptSource) -> Result<Option<Vec<NrptRule>>> {
     let Some(key) = Key::open(path)? else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
     let mut rules = Vec::new();
     for subkey in key.subkeys()? {
@@ -208,7 +216,7 @@ fn read_rules(path: PCWSTR, source: NrptSource) -> Result<Vec<NrptRule>> {
             comment,
         });
     }
-    Ok(rules)
+    Ok(Some(rules))
 }
 
 /// Expands `%VAR%` with the process environment (unknown variables are kept).
@@ -244,11 +252,62 @@ fn expand_env(text: &str) -> String {
 /// `DnsFlushResolverCache` signature (dnsapi.dll, undocumented but stable since XP).
 type FlushFn = unsafe extern "system" fn() -> BOOL;
 
-/// Every NRPT rule: the local table, then the Group Policy one. No elevation.
-pub(crate) fn read_nrpt_rules() -> Result<Vec<NrptRule>> {
-    let mut rules = read_rules(LOCAL_RULES, NrptSource::Local)?;
-    rules.extend(read_rules(GPO_RULES, NrptSource::GroupPolicy)?);
-    Ok(rules)
+/// The NRPT table: the local rules, then the Group Policy ones, and whether the Group
+/// Policy key exists (an empty one still disables the local table). No elevation.
+pub(crate) fn read_nrpt_table() -> Result<NrptTable> {
+    let mut rules = read_rules(LOCAL_RULES, NrptSource::Local)?.unwrap_or_default();
+    let group_policy = read_rules(GPO_RULES, NrptSource::GroupPolicy)?;
+    let group_policy_table = group_policy.is_some();
+    rules.extend(group_policy.unwrap_or_default());
+    Ok(NrptTable {
+        rules,
+        group_policy_table,
+    })
+}
+
+/// IPv4 addresses of `host` from `DnsQuery_W` (type `A`, standard options: the DNS Client
+/// service, NRPT, cache and `hosts`). `host` is taken as a full name (no suffix search).
+/// Errors keep the Windows code (`9003` = `DNS_ERROR_RCODE_NAME_ERROR`, NXDOMAIN).
+pub(crate) fn query_a(host: &str) -> Result<Vec<IpAddr>> {
+    let name: Vec<u16> = host.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut records: *mut DNS_RECORDA = std::ptr::null_mut();
+    // SAFETY: NUL-terminated name; `records` receives a list freed below with DnsFree.
+    let status = unsafe {
+        DnsQuery_W(
+            PCWSTR(name.as_ptr()),
+            DNS_TYPE_A,
+            DNS_QUERY_STANDARD | DNS_QUERY_TREAT_AS_FQDN,
+            None,
+            &mut records,
+            None,
+        )
+    };
+    let mut out = Vec::new();
+    let mut current = records;
+    while !current.is_null() {
+        // SAFETY: a node of the list returned by DnsQuery_W, alive until DnsFree.
+        let record = unsafe { &*current };
+        if record.wType == DNS_TYPE_A.0 {
+            // SAFETY: type A records carry DNS_A_DATA; the address is in network order.
+            let ip = unsafe { record.Data.A.IpAddress };
+            let ip = IpAddr::V4(Ipv4Addr::from(ip.to_ne_bytes()));
+            if !out.contains(&ip) {
+                out.push(ip);
+            }
+        }
+        current = record.pNext;
+    }
+    if !records.is_null() {
+        // SAFETY: frees the whole list once.
+        unsafe { DnsFree(Some(records as *const _), DnsFreeRecordList) };
+    }
+    if status != ERROR_SUCCESS {
+        return Err(ForgeError::io(
+            format!("resolving {host} through the OS resolver"),
+            std::io::Error::from_raw_os_error(status.0 as i32),
+        ));
+    }
+    Ok(out)
 }
 
 /// The system `hosts` file: `DataBasePath` of `Tcpip\Parameters` (normally
@@ -301,17 +360,21 @@ pub(crate) fn flush_resolver_cache() -> Result<()> {
 }
 
 impl DnsPolicy for WindowsDnsPolicy {
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
-        read_nrpt_rules()
+    fn nrpt_table(&self) -> Result<NrptTable> {
+        read_nrpt_table()
     }
 
-    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<()> {
+    fn query_system(&self, host: &str) -> Result<Vec<IpAddr>> {
+        query_a(host)
+    }
+
+    fn apply(&self, tld: &str, nameserver: IpAddr) -> Result<NrptApplied> {
         self.helper
             .run(HelperOp::NrptAdd {
                 namespace: tld.to_owned(),
                 nameserver,
             })
-            .map(drop)
+            .map(|response| NrptApplied::from_details(&response.details))
     }
 
     fn remove(&self, tld: &str) -> Result<()> {
@@ -359,8 +422,8 @@ mod tests {
     #[test]
     fn reads_the_real_tables_without_elevation() {
         let policy = policy_with(Arc::new(FakeElevation::accepting()));
-        let rules = policy.nrpt_rules().unwrap();
-        for rule in &rules {
+        let table = policy.nrpt_table().unwrap();
+        for rule in &table.rules {
             assert!(!rule.id.is_empty());
             assert!(
                 rule.namespaces.iter().all(|n| *n == n.to_ascii_lowercase()),
@@ -370,6 +433,28 @@ mod tests {
         // Whatever the machine has, the status call works.
         let status = policy.status(".forgebox-never-configured").unwrap();
         assert_eq!(status, DnsPolicyStatus::NotApplied);
+        // The table flag agrees with the registry, whatever this machine has (empty
+        // corporate key on the M1 gate machine, nothing on a home PC).
+        let key_exists = Key::open(GPO_RULES).unwrap().is_some();
+        assert_eq!(table.group_policy_table, key_exists);
+        if key_exists {
+            assert!(table.local_rules_ignored().is_some());
+        }
+    }
+
+    #[test]
+    fn asks_the_os_resolver() {
+        // `localhost` is answered by the DNS Client itself on every Windows.
+        let ips = query_a("localhost").unwrap();
+        assert!(ips.iter().all(IpAddr::is_loopback), "{ips:?}");
+        // A reserved name (RFC 6761 `.invalid`): what comes back depends on the network (a
+        // resolver that rewrites NXDOMAIN answers with its own address, a host without DNS
+        // times out), so only "no panic, never loopback" is asserted: the probe counts
+        // anything but loopback as a failure.
+        match query_a("forgebox-probe.invalid") {
+            Ok(ips) => assert!(!ips.iter().any(IpAddr::is_loopback), "{ips:?}"),
+            Err(err) => assert!(err.to_string().contains("forgebox-probe.invalid"), "{err}"),
+        }
     }
 
     #[test]

@@ -21,6 +21,7 @@ pub mod catalog;
 pub mod daemon;
 pub mod event_log;
 pub mod install;
+pub mod instance_case;
 pub mod instance_lock;
 pub mod internal;
 pub mod logging;

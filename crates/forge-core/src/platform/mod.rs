@@ -55,8 +55,8 @@ pub mod user_env;
 pub mod windows;
 
 pub use dns_policy::{
-    DnsPolicy, DnsPolicyStatus, FORGEBOX_NRPT_COMMENT, NrptRule, NrptSource, dns_policy,
-    effective_nrpt_rules,
+    DnsPolicy, DnsPolicyStatus, FORGEBOX_NRPT_COMMENT, NrptApplied, NrptIneffective, NrptRule,
+    NrptSource, NrptTable, dns_policy, effective_nrpt_rules, policy_status,
 };
 pub use elevation::{Elevation, elevation};
 pub use host::{

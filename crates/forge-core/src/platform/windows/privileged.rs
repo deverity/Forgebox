@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 
 use super::cert_info;
 use super::com::ComArg;
-use super::dns_policy::{flush_resolver_cache, hosts_file_path, read_nrpt_rules};
+use super::dns_policy::{flush_resolver_cache, hosts_file_path, read_nrpt_table};
 use super::firewall;
 use super::process::{os_error, win32_code};
 use super::security::{OwnedDescriptor, process_is_elevated};
@@ -39,7 +39,7 @@ use crate::ids::RequestId;
 use crate::paths::plain_path;
 use crate::platform::privileged::{CertificateInfo, FirewallRuleSpec, PrivilegedOps, StagedFile};
 use crate::platform::secure_file::{NoFollow, open_no_follow};
-use crate::platform::{CertThumbprint, NrptRule, TrustScope, TrustStore};
+use crate::platform::{CertThumbprint, NrptTable, TrustScope, TrustStore};
 
 /// WMI namespace of the DNS client cmdlets.
 pub(crate) const NRPT_NAMESPACE: &str = "root/Microsoft/Windows/DNS";
@@ -170,8 +170,8 @@ impl PrivilegedOps for WindowsPrivilegedOps {
         process_is_elevated()
     }
 
-    fn nrpt_rules(&self) -> Result<Vec<NrptRule>> {
-        read_nrpt_rules()
+    fn nrpt_table(&self) -> Result<NrptTable> {
+        read_nrpt_table()
     }
 
     fn nrpt_add(&self, namespace: &str, nameserver: IpAddr, comment: &str) -> Result<()> {
@@ -444,7 +444,7 @@ mod tests {
     fn read_only_queries_work_without_elevation() {
         let ops = WindowsPrivilegedOps;
         ops.is_elevated().unwrap();
-        ops.nrpt_rules().unwrap();
+        ops.nrpt_table().unwrap();
         assert!(ops.hosts_path().is_file());
         assert_eq!(ops.firewall_rule_count("Forgebox-never-0123").unwrap(), 0);
         let nobody = CertThumbprint::from_bytes([0xAB; 20]);

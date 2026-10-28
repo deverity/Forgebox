@@ -6,10 +6,15 @@ use std::sync::Arc;
 
 use forge_core::error::Result;
 use forge_ipc::api::methods::{net_dns_disable, net_dns_enable, net_dns_status, net_dns_test};
-use forge_ipc::api::{DnsPolicyState, DnsStatusDto, DnsTestDto, DnsTestParams, JobDto, NoParams};
+use forge_ipc::api::{
+    DnsMode, DnsPolicyReason, DnsPolicyState, DnsProbeDto, DnsStatusDto, DnsTestDto, DnsTestParams,
+    DnsTldPolicyDto, JobDto, NoParams,
+};
 use forge_ipc::server::{Ctx, Router};
 use forge_net::dns::{DnsDiagnostics, ZoneSet};
-use forge_net::policy::{EnableRequest, PolicyState};
+use forge_net::policy::{
+    EnableRequest, PolicyMode, PolicyReason, PolicyState, ProbeResult, TldPolicy,
+};
 
 use super::route;
 use crate::daemon::Daemon;
@@ -21,7 +26,67 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, net_dns_test, test);
 }
 
-fn policy_state(states: &[forge_net::policy::TldPolicy]) -> DnsPolicyState {
+fn state_dto(state: PolicyState) -> DnsPolicyState {
+    match state {
+        PolicyState::Applied => DnsPolicyState::Applied,
+        PolicyState::HostsFallback => DnsPolicyState::HostsFallback,
+        PolicyState::NotApplied => DnsPolicyState::NotApplied,
+    }
+}
+
+pub(crate) fn mode_dto(mode: PolicyMode) -> DnsMode {
+    match mode {
+        PolicyMode::Nrpt => DnsMode::Nrpt,
+        PolicyMode::Hosts => DnsMode::Hosts,
+        PolicyMode::None => DnsMode::None,
+    }
+}
+
+pub(crate) fn reason_dto(reason: PolicyReason) -> DnsPolicyReason {
+    match reason {
+        PolicyReason::GroupPolicyTablePresent => DnsPolicyReason::GroupPolicyTablePresent,
+        PolicyReason::ResolverProbeFailed => DnsPolicyReason::ResolverProbeFailed,
+        PolicyReason::ResolverNotOnPort53 => DnsPolicyReason::ResolverNotOnPort53,
+        PolicyReason::NrptUnsupported => DnsPolicyReason::NrptUnsupported,
+        PolicyReason::NrptPointsElsewhere => DnsPolicyReason::NrptPointsElsewhere,
+    }
+}
+
+fn probe_dto(probe: &ProbeResult) -> DnsProbeDto {
+    DnsProbeDto {
+        host: probe.host.clone(),
+        ok: probe.ok,
+        resolved: probe.resolved.iter().map(IpAddr::to_string).collect(),
+        error: probe.error.clone(),
+        attempts: probe.attempts,
+        elapsed_ms: u32::try_from(probe.elapsed.as_millis()).unwrap_or(u32::MAX),
+    }
+}
+
+fn tld_dto(policy: &TldPolicy) -> DnsTldPolicyDto {
+    DnsTldPolicyDto {
+        tld: policy.tld.clone(),
+        mode: mode_dto(policy.state.mode()),
+        policy: state_dto(policy.state),
+        nameserver: policy.nameserver.map(|ip| ip.to_string()),
+        reason: policy.reason.map(reason_dto),
+        group_policy_table: policy.group_policy_table,
+        probe: policy.probe.as_ref().map(probe_dto),
+    }
+}
+
+/// Effective mode over every TLD: `nrpt` only when all follow NRPT.
+fn overall_mode(states: &[TldPolicy]) -> DnsMode {
+    if !states.is_empty() && states.iter().all(|s| s.state == PolicyState::Applied) {
+        DnsMode::Nrpt
+    } else if states.iter().any(|s| s.state == PolicyState::HostsFallback) {
+        DnsMode::Hosts
+    } else {
+        DnsMode::None
+    }
+}
+
+fn policy_state(states: &[TldPolicy]) -> DnsPolicyState {
     if !states.is_empty() && states.iter().all(|s| s.state == PolicyState::Applied) {
         DnsPolicyState::Applied
     } else if states
@@ -45,22 +110,48 @@ async fn nameserver(daemon: &Daemon) -> (bool, Option<String>, Option<IpAddr>) {
     }
 }
 
-async fn snapshot(daemon: &Daemon) -> Result<DnsStatusDto> {
+/// The status DTO for `states` (from `status` or, right after `enable`, its own result:
+/// it carries the verification of the whole probe window).
+fn status_dto(
+    daemon: &Daemon,
+    running: bool,
+    listen: Option<String>,
+    states: &[TldPolicy],
+) -> DnsStatusDto {
     let config = daemon.config();
+    DnsStatusDto {
+        enabled: config.dns.enabled,
+        server_running: running,
+        listen,
+        tlds: config.tlds(),
+        policy: policy_state(states),
+        mode: overall_mode(states),
+        reason: states.iter().find_map(|s| s.reason).map(reason_dto),
+        tld_policies: states.iter().map(tld_dto).collect(),
+    }
+}
+
+async fn snapshot(daemon: &Daemon) -> Result<DnsStatusDto> {
     let (running, listen, ns) = nameserver(daemon).await;
-    let tlds = config.tlds();
+    let tlds = daemon.config().tlds();
     let states = daemon
         .dns_policy
         .status(&tlds, ns)
         .await
         .unwrap_or_default();
-    Ok(DnsStatusDto {
-        enabled: config.dns.enabled,
-        server_running: running,
-        listen,
-        tlds,
-        policy: policy_state(&states),
-    })
+    Ok(status_dto(daemon, running, listen, &states))
+}
+
+/// Every name (host and aliases) of the enabled sites: what the `hosts` block must hold.
+pub(crate) async fn site_hosts(daemon: &Daemon) -> Result<Vec<String>> {
+    Ok(daemon
+        .sites
+        .list()
+        .await?
+        .iter()
+        .filter(|s| s.enabled)
+        .flat_map(|s| s.names().map(str::to_owned).collect::<Vec<_>>())
+        .collect())
 }
 
 async fn status(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<DnsStatusDto> {
@@ -91,22 +182,20 @@ async fn enable(daemon: Daemon, _params: NoParams, ctx: Ctx) -> Result<JobDto> {
         set_enabled(&d, true).await?;
         let addr = d.dns.start().await?;
         let ns = (addr.port() == 53).then_some(addr.ip());
-        let hosts: Vec<String> = d
-            .sites
-            .list()
-            .await?
-            .iter()
-            .filter(|s| s.enabled)
-            .flat_map(|s| s.names().map(str::to_owned).collect::<Vec<_>>())
-            .collect();
-        d.dns_policy
+        let hosts = site_hosts(&d).await?;
+        let states = d
+            .dns_policy
             .enable(EnableRequest {
                 tlds: d.config().tlds(),
                 nameserver: ns,
                 hosts,
             })
             .await?;
-        snapshot(&d).await
+        for state in &states {
+            tracing::info!(tld = %state.tld, mode = ?state.state.mode(), reason = ?state.reason, probe_ok = ?state.probe.as_ref().map(|p| p.ok), "dns: enabled");
+        }
+        let (running, listen, _) = nameserver(&d).await;
+        Ok(status_dto(&d, running, listen, &states))
     })
 }
 
@@ -130,12 +219,10 @@ async fn test(daemon: Daemon, params: DnsTestParams, _ctx: Ctx) -> Result<DnsTes
         Arc::clone(daemon.platform.net_adapters()),
     );
     let diagnosis = diagnostics.diagnose(&params.host, &zones, server).await;
-    let via = if diagnosis.nrpt_present {
-        "forgebox-dns"
-    } else if !diagnosis.hosts_entries.is_empty() {
-        "hosts"
-    } else {
-        "system"
+    let via = match diagnosis.mode {
+        PolicyMode::Hosts => "hosts",
+        PolicyMode::Nrpt => "forgebox-dns",
+        PolicyMode::None => "system",
     };
     Ok(DnsTestDto {
         host: diagnosis.host.clone(),
@@ -147,5 +234,8 @@ async fn test(daemon: Daemon, params: DnsTestParams, _ctx: Ctx) -> Result<DnsTes
         expected: diagnosis.expected.iter().map(IpAddr::to_string).collect(),
         ok: diagnosis.ok,
         via: via.to_owned(),
+        mode: mode_dto(diagnosis.mode),
+        reason: diagnosis.mode_reason.map(reason_dto),
+        probe: diagnosis.probe.as_ref().map(probe_dto),
     })
 }

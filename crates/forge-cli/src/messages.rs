@@ -311,6 +311,37 @@ messages! {
     DnsApplied => ("aplicada", "applied"),
     DnsHostsFallback => ("arquivo hosts (alternativa)", "hosts file (fallback)"),
     DnsNotApplied => ("não aplicada", "not applied"),
+    HDnsMode => ("Modo efetivo {0}", "Effective mode {0}"),
+    HDnsReason => ("Motivo {0}", "Reason {0}"),
+    HDnsProbe => ("Verificação {0}", "Probe {0}"),
+    DnsModeNrpt => ("NRPT (resolvedor do Forgebox)", "NRPT (Forgebox resolver)"),
+    DnsModeHosts => ("arquivo hosts", "hosts file"),
+    DnsModeNone => ("nenhum (o TLD não chega ao Forgebox)", "none (the TLD does not reach Forgebox)"),
+    DnsReasonGroupPolicy => (
+        "group_policy_table_present: a tabela NRPT de política de grupo existe (mesmo vazia) e o Windows ignora as regras locais",
+        "group_policy_table_present: the Group Policy NRPT table exists (even empty) and Windows ignores local rules"
+    ),
+    DnsReasonProbeFailed => (
+        "resolver_probe_failed: a regra está no registro, mas o resolvedor do Windows não a segue (VPN ou agente de segurança?)",
+        "resolver_probe_failed: the rule is in the registry, but the Windows resolver does not follow it (VPN or security agent?)"
+    ),
+    DnsReasonNotOn53 => (
+        "resolver_not_on_port53: o resolvedor do Forgebox não está na porta 53",
+        "resolver_not_on_port53: the Forgebox resolver is not on port 53"
+    ),
+    DnsReasonNrptUnsupported => (
+        "nrpt_unsupported: o sistema não tem NRPT",
+        "nrpt_unsupported: the system has no NRPT"
+    ),
+    DnsReasonPointsElsewhere => (
+        "nrpt_points_elsewhere: a regra NRPT aponta para outro servidor",
+        "nrpt_points_elsewhere: the NRPT rule points to another server"
+    ),
+    DnsProbeOk => ("{0} → {1} ({2} tentativa(s), {3} ms)", "{0} → {1} ({2} attempt(s), {3} ms)"),
+    DnsProbeFailed => (
+        "{0} não resolveu para loopback: {1} ({2} tentativa(s), {3} ms)",
+        "{0} did not resolve to loopback: {1} ({2} attempt(s), {3} ms)"
+    ),
     DnsResolves => ("resolve", "resolves"),
     DnsDoesNotResolve => ("NÃO resolve como esperado", "does NOT resolve as expected"),
     CaMissing => (

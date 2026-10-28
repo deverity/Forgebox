@@ -107,8 +107,9 @@ fn own_rules<'r>(rules: &'r [NrptRule], namespace: &str) -> Vec<&'r NrptRule> {
 }
 
 fn nrpt_add(env: &Env<'_>, namespace: &str, nameserver: IpAddr) -> Result<Outcome> {
-    let rules = env.sys.nrpt_rules()?;
-    let ours = own_rules(&rules, namespace);
+    let table = env.sys.nrpt_table()?;
+    let rules = &table.rules;
+    let ours = own_rules(rules, namespace);
     let up_to_date = ours.len() == 1 && ours[0].nameservers == [nameserver];
     let replace: Vec<&str> = if up_to_date {
         Vec::new()
@@ -124,10 +125,7 @@ fn nrpt_add(env: &Env<'_>, namespace: &str, nameserver: IpAddr) -> Result<Outcom
         })
         .map(|r| r.id.as_str())
         .collect();
-    let group_policy = rules
-        .iter()
-        .filter(|r| r.source == NrptSource::GroupPolicy)
-        .count();
+    let ignored = table.local_rules_ignored();
     let mut details = json!({
         "namespace": namespace,
         "nameserver": nameserver.to_string(),
@@ -135,10 +133,12 @@ fn nrpt_add(env: &Env<'_>, namespace: &str, nameserver: IpAddr) -> Result<Outcom
         "already_present": up_to_date,
         "replace_rules": replace,
         "foreign_rules": foreign,
-        "group_policy_rules": group_policy,
-        // Windows ignores local rules while any Group Policy rule exists: the daemon
-        // falls back to the hosts block (docs/06 §5.4).
-        "effective": group_policy == 0,
+        "group_policy_rules": table.group_policy_rules(),
+        "group_policy_table": table.group_policy_table,
+        // Windows ignores local rules while the Group Policy table exists, even empty:
+        // the daemon falls back to the hosts block (docs/06 §5.4, ADR-0033).
+        "effective": ignored.is_none(),
+        "reason": ignored.map(|r| r.as_str()),
     });
     if env.dry_run {
         let plan = if up_to_date {
@@ -161,8 +161,8 @@ fn nrpt_add(env: &Env<'_>, namespace: &str, nameserver: IpAddr) -> Result<Outcom
     }
     env.sys
         .nrpt_add(namespace, nameserver, FORGEBOX_NRPT_COMMENT)?;
-    let after = env.sys.nrpt_rules()?;
-    let created = own_rules(&after, namespace)
+    let after = env.sys.nrpt_table()?;
+    let created = own_rules(&after.rules, namespace)
         .into_iter()
         .find(|r| r.nameservers.contains(&nameserver))
         .map(|r| r.id.clone());
@@ -175,8 +175,8 @@ fn nrpt_add(env: &Env<'_>, namespace: &str, nameserver: IpAddr) -> Result<Outcom
 }
 
 fn nrpt_remove(env: &Env<'_>, namespace: &str) -> Result<Outcome> {
-    let rules = env.sys.nrpt_rules()?;
-    let ids: Vec<String> = own_rules(&rules, namespace)
+    let table = env.sys.nrpt_table()?;
+    let ids: Vec<String> = own_rules(&table.rules, namespace)
         .into_iter()
         .map(|r| r.id.clone())
         .collect();

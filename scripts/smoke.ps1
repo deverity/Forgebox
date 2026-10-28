@@ -22,10 +22,14 @@
     other than through `forge`. curl.exe and .NET are used only to VERIFY (HTTPS, Mailpit
     API, the DNS server). Ports are chosen through `forge config set ports.ranges.*`.
 
-    Interactive mode (default): `forge dns enable` (UAC for the NRPT rule) and
-    `forge tls ca install` (Windows confirmation dialog), then https://loja.test is fetched
-    through the OS resolver and trust store. The root is a regular (non-portable) root,
-    because portable mode never touches the OS trust store (docs/08 section 2.2); the
+    Interactive mode (default): `forge dns enable` (UAC for the NRPT rule, or for the
+    hosts block when Windows ignores local NRPT rules or does not follow them, ADR-0033) and
+    `forge tls ca install` (Windows confirmation dialog); the effective DNS mode (nrpt or
+    hosts) and its reason are logged, the OS resolver must resolve loja.test to loopback
+    within 15 s (cache flushed between tries; on failure the step shows `forge dns status`),
+    then https://loja.test is fetched through the OS resolver and trust store. The root is
+    a regular (non-portable) root, because portable mode never touches the OS trust store
+    (docs/08 section 2.2); the
     script never runs `forge path add`, so the user PATH is untouched.
 
     -NonInteractive: nothing elevates or opens a dialog. The root is portable
@@ -49,7 +53,8 @@ param(
     [int]$MysqlPort = 3306,
     [int]$MailpitSmtpPort = 1025,
     [int]$MailpitHttpPort = 8025,
-    # Full log. Default: <root>\logs\smoke.log (copied next to the root when it is removed).
+    # Full log. Default: <root>\logs\smoke.log (copied next to the root when it is removed,
+    # or to %LOCALAPPDATA%\Forgebox\smoke when that folder takes no files).
     [string]$LogPath,
     # Use the binaries already built in target\debug (no cargo build).
     [switch]$NoBuild,
@@ -64,6 +69,25 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
+# Native output is decoded with [Console]::OutputEncoding, which defaults to the OEM code
+# page (cp850 here): forge.exe writes UTF-8 (Rust std, no console conversion when piped),
+# so a localized message reached the log mangled ("nao" with accents showed up as box
+# drawing characters). UTF-8 without BOM in both directions; the previous values are
+# restored at the very end. Setting the console encoding throws when the process has no
+# console, which is harmless here. Everything after the switch runs inside an outer
+# try/finally (not indented, to keep the body readable) whose only job is to restore them,
+# so a throw anywhere, including in the main finally, never leaves the session in UTF-8.
+$PreviousConsoleEncoding = $null
+$PreviousOutputEncoding = $OutputEncoding
+try {
+    $PreviousConsoleEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+} catch { $PreviousConsoleEncoding = $null }
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+
+$code = 1
+try {
+
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 if (-not $Root) { $Root = Join-Path ([System.IO.Path]::GetTempPath()) "fb-smoke-$Stamp" }
@@ -73,6 +97,7 @@ $Project = Join-Path $Root 'projects\loja'
 $Database = 'loja'
 $Subject = "forgebox-smoke-$Stamp-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
 $Results = [System.Collections.Generic.List[object]]::new()
+$script:DnsMode = 'unknown'
 $Failed = $false
 $Daemon = $false
 $Forge = Join-Path $Root 'forge.exe'
@@ -341,10 +366,18 @@ try {
 
     if (-not $NonInteractive) {
         Invoke-Step 'interactive: forge dns enable + forge tls ca install (UAC, CA dialog)' {
+            # Human output (the UAC notice goes to stderr); the mode is read back as JSON.
             Invoke-Forge @('dns', 'enable') | Out-Null
+            $dns = Invoke-ForgeJson @('dns', 'status')
+            $script:DnsMode = "$($dns.mode)"
+            $modes = @($dns.tld_policies | ForEach-Object {
+                    $probe = if ($_.probe) { " probe=$($_.probe.ok) ($($_.probe.attempts) tries, $($_.probe.elapsed_ms) ms)" } else { '' }
+                    "$($_.tld)=$($_.mode)$(if ($_.reason) { " reason=$($_.reason)" })$probe"
+                }) -join '; '
+            Write-Log "dns effective mode: $($dns.mode) [$modes]"
             Invoke-Forge @('tls', 'ca', 'install', '--scope', 'user') | Out-Null
             $ca = Invoke-ForgeJson @('tls', 'ca', 'status')
-            "dns enabled; CA trusted for the user: $($ca | ConvertTo-Json -Compress -Depth 4)"
+            "dns mode=$($dns.mode) [$modes]; CA trusted for the user: $($ca | ConvertTo-Json -Compress -Depth 4)"
         }
     }
 
@@ -378,6 +411,35 @@ try {
         if ($tables.Output.Trim() -ne '1') { throw "no migrations table in $Database" }
         $migrated = Invoke-Forge -WorkDir $Project -Arguments @('exec', '--', 'mysql', '--protocol=tcp', '-h', '127.0.0.1', '-P', "$($script:MysqlPort)", '-u', 'root', '-N', '-e', "SELECT COUNT(*) FROM $Database.migrations")
         "migrations applied: $($migrated.Output.Trim())"
+    }
+
+    if (-not $NonInteractive) {
+        # The OS resolver (getaddrinfo, what curl and browsers use: hosts file, NRPT, cache)
+        # must answer loopback before HTTPS is tried; NRPT can take a moment to be followed.
+        Invoke-Step '5a. OS resolver resolves loja.test (NRPT or hosts)' {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $last = ''
+            $tries = 0
+            while ($true) {
+                $tries++
+                try {
+                    $ips = @([System.Net.Dns]::GetHostAddresses($Site) | ForEach-Object { $_.ToString() })
+                    if ($ips.Count -gt 0 -and -not ($ips | Where-Object { $_ -notin @('127.0.0.1', '::1') })) {
+                        return "$Site -> $($ips -join ', ') after $tries tries ($([math]::Round($sw.Elapsed.TotalSeconds, 1)) s), mode=$($script:DnsMode)"
+                    }
+                    $last = "resolved to $($ips -join ', ')"
+                } catch {
+                    $e = $_.Exception
+                    if ($e.InnerException) { $e = $e.InnerException }
+                    $last = $e.Message
+                }
+                if ($sw.Elapsed.TotalSeconds -ge 15) { break }
+                Clear-DnsClientCache -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 1
+            }
+            $status = (Invoke-Forge -AllowFail @('dns', 'status')).Output
+            throw "the OS resolver does not resolve $Site to loopback after 15 s ($tries tries, last: $last; mode=$($script:DnsMode)). forge dns status:`n$status"
+        }
     }
 
     Invoke-Step '5. HTTPS GET loja.test (Forgebox CA)' {
@@ -507,10 +569,27 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
     Write-Log ("TOTAL {0:N1} s, {1} step(s), {2} failed. Root: {3}" -f $Total.Elapsed.TotalSeconds, $Results.Count, $failedSteps, $Root)
 
     if (-not $Keep -and (Test-Path -LiteralPath $Root)) {
-        $saved = Join-Path (Split-Path -Parent $Root) "$(Split-Path -Leaf $Root).smoke.log"
         if ($script:LogFile -and (Test-Path -LiteralPath $script:LogFile) -and -not $LogPath) {
-            Copy-Item -LiteralPath $script:LogFile -Destination $saved -Force
-            $script:LogFile = $saved
+            # Next to the root first; a parent where the user may create folders but not
+            # files (C:\ on a managed machine) falls back to %LOCALAPPDATA%\Forgebox\smoke.
+            # Never fatal: the root is removed either way.
+            $leaf = "$(Split-Path -Leaf $Root).smoke.log"
+            $targets = @((Join-Path (Split-Path -Parent $Root) $leaf))
+            if ($env:LOCALAPPDATA) { $targets += Join-Path $env:LOCALAPPDATA "Forgebox\smoke\$leaf" }
+            $kept = $false
+            foreach ($saved in $targets) {
+                try {
+                    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $saved) -ErrorAction Stop | Out-Null
+                    Copy-Item -LiteralPath $script:LogFile -Destination $saved -Force -ErrorAction Stop
+                    $script:LogFile = $saved
+                    $kept = $true
+                    break
+                } catch {
+                    Write-Log "WARNING: could not save the log to ${saved}: $($_.Exception.Message)" 'Yellow'
+                }
+            }
+            # The log inside the root is about to go: keep writing to the console only.
+            if (-not $kept) { $script:LogFile = $null }
         }
         for ($i = 0; $i -lt 5; $i++) {
             try { Remove-Item -LiteralPath $Root -Recurse -Force -ErrorAction Stop; break }
@@ -521,5 +600,14 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
         Write-Log "root kept; log: $($script:LogFile)"
     }
     $code = if ($failedSteps -gt 0) { 1 } else { 0 }
+}
+
+} finally {
+    # Outer finally (see the encoding switch at the top): give the session its console
+    # encodings back, whatever happened above.
+    $OutputEncoding = $PreviousOutputEncoding
+    if ($null -ne $PreviousConsoleEncoding) {
+        try { [Console]::OutputEncoding = $PreviousConsoleEncoding } catch { }
+    }
 }
 exit $code

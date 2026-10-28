@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::common::{ApiVersion, Resumable};
-use super::net::DnsPolicyState;
+use super::net::{DnsMode, DnsPolicyReason, DnsPolicyState};
 use super::services::{FailureReasonDto, PortHolderDto, PortProtocol, ServiceState};
 use forge_core::Timestamp;
 pub use forge_core::actor::{ACTOR_EVENT_VERSION, ActorFailedPayload, ActorRestartedPayload};
@@ -207,7 +207,12 @@ pub struct FsCaseSensitivityPayload {
     /// Why it is unavailable (pt-BR text).
     pub reason: Option<String>,
     /// Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
-    /// `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+    /// `missing`, `error`, `initialized`, `kept_sensitive`
+    /// (`forge_core::fs::case::CaseReasonCode`). For a database data folder (docs/15 §5)
+    /// `insensitive`/`unsupported`/`missing`/`error` mean the fallback to
+    /// case-insensitive table names; `initialized` that the instance keeps them;
+    /// `kept_sensitive` that it keeps case-sensitive ones on a folder that now reads as
+    /// not case-sensitive (the server may refuse to start).
     pub reason_code: Option<String>,
 }
 
@@ -466,6 +471,15 @@ pub struct DnsPolicyPayload {
     pub v: u32,
     pub tld: String,
     pub policy: DnsPolicyState,
+    /// Effective mode (`nrpt`, `hosts`, `none`); additive (ADR-0033).
+    #[serde(default)]
+    pub mode: DnsMode,
+    /// Why the TLD is not routed by NRPT.
+    #[serde(default)]
+    pub reason: Option<DnsPolicyReason>,
+    /// Result of the verification through the OS resolver, when one ran.
+    #[serde(default)]
+    pub probe_ok: Option<bool>,
 }
 
 /// `tls.ca_created|leaf_issued|renewed`.
@@ -499,6 +513,13 @@ pub struct HelperOpPayload {
     pub name: String,
     pub ok: bool,
     pub error: Option<String>,
+    /// `nrpt.add`: whether Windows follows the local rule (`false` while the Group Policy
+    /// NRPT table exists); additive (ADR-0033).
+    #[serde(default)]
+    pub effective: Option<bool>,
+    /// `nrpt.add`: why the rule is not effective (`group_policy_table_present`).
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// Payload type of every canonical event kind (docs/03 §8), for `methods.ts`.
