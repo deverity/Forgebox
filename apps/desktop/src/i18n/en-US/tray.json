@@ -1,0 +1,7 @@
+{
+  "open": "Open Forgebox",
+  "start_all": "Start all services",
+  "stop_all": "Stop all services",
+  "services_running": "{running} of {total} services running",
+  "quit": "Quit"
+}

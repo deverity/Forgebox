@@ -150,6 +150,12 @@ Button (primary/secondary/ghost/destructive, com loading), IconButton, Toggle, S
 ## 9. Acessibilidade e i18n
 - Navegação completa por teclado; `aria-*` via Radix; foco visível com anel `--accent`; textos alternativos em ícones de status (não só cor).
 - pt-BR e en-US no lançamento; strings em `src/i18n/`; formatos de data/número via `Intl`.
+- i18next + react-i18next; um namespace por feature em `src/i18n/{pt-BR,en-US}/<ns>.json` (`common`, `shell`, `errors`, `tray`, `notifications`, `palette`, + um por feature), carregados sob demanda, chaves tipadas (`src/i18n/i18next.d.ts`: **todo namespace novo entra em `Resources`**). Interpolação `{var}` (mesma sintaxe no Rust).
+- Idioma: preferência do usuário > idioma do SO (`navigator.language`, que no WebView2 segue o idioma do Windows) > pt-BR. A troca em runtime re-renderiza sem reload e chama o comando Tauri `set_language`, que mantém `src-tauri/src/i18n.rs` (bandeja e notificações, `include_str!` dos namespaces `tray` e `notifications`) em sincronia.
+- Formatadores (`src/i18n/format.ts`): bytes (`410 MB`), duração (`2h 14m`), relativo (`há 2 min`), percentual, número e data via `Intl`; números na UI usam a classe `tabular-nums` (`TNUM_CLASS`).
+- Mensagens da API nunca são traduzidas: a UI localiza a partir de `code` e `details` (namespace `errors`).
+- Lint: `eslint-plugin-i18next/no-literal-string` em JSX (`eslint.i18n.js`; allowlist de marcas e comandos `forge`). Teste de paridade (`src/i18n/i18n.test.ts`) cobre toda chave/placeholder de todos os namespaces automaticamente.
+- Pseudo-locale `pseudo` (acentos, +40 % de comprimento, placeholders preservados) só para QA: aceito apenas fora do modo `production`.
 - Escala de fonte do sistema respeitada; testar em 100/125/150/200%.
 
 ## 10. Performance (orçamentos)

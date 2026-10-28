@@ -1,0 +1,5 @@
+{
+  "placeholder": "Type a command or search…",
+  "empty": "No results for “{query}”",
+  "hint": "Press {key} to open the command palette"
+}

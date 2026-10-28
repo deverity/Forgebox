@@ -34,6 +34,4 @@ tauri-build = { workspace = true }
 forge-ipc = { path = "../../../crates/forge-ipc" }
 tauri = { workspace = true }
 serde = { workspace = true }
-
-[dev-dependencies]
 serde_json = { workspace = true }

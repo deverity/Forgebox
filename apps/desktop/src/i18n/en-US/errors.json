@@ -1,0 +1,6 @@
+{
+  "unknown": "Something went wrong (code {code}).",
+  "not_found": "{what} was not found.",
+  "timeout": "The operation timed out after {seconds} s.",
+  "daemon_unreachable": "Could not reach the Forgebox daemon."
+}
