@@ -1975,6 +1975,11 @@ name = "forge-metrics"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "insta",
+ "jiff",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -50,6 +50,12 @@ Forgebox/
 │   │       │                     #   hosts.rs (bloco gerenciado do hosts; apply_hosts_block_bytes preserva bytes fora do bloco),
 │   │       │                     #   client.rs (HelperClient, FakeElevation), trust.rs (CA aceita em LocalMachine\Root, ADR-0024)
 │   │       └── platform/         # traits (LinkFs, CaseSensitiveFs, CodeSign, FileAcl, TrustStore, UserEnv) + current();
+│   │                             #   appearance.rs: SystemAppearance + system_appearance() → AppearanceSnapshot (accent #RRGGBB,
+│   │                             #   apps_light, taskbar_light, transparency, high_contrast, remote_session, os_build, is_win11;
+│   │                             #   defaults documentados, stub fora do Windows); impl em windows/appearance.rs (HKCU Personalize/DWM,
+│   │                             #   DwmGetColorizationColor, SPI_GETHIGHCONTRAST, SM_REMOTESESSION, RtlGetVersion). A GUI lê por
+│   │                             #   forge_ipc::base::platform (sem Win32 em src-tauri); tests/win32_boundary.rs falha com Win32 fora
+│   │                             #   de platform/windows (só código Rust: comentários e literais são ignorados);
 │   │                             #   user_env.rs: UserEnv (PATH persistente do usuário), PathValue (lista crua, sem duplicatas),
 │   │                             #   MemoryUserEnv (fake em memória); probe.rs também tem run_probe_with_env (ações run);
 │   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
@@ -63,7 +69,8 @@ Forgebox/
 │   │                             #   (conexão medida), spawn_detached (daemon.restart); impl em windows/host.rs (CreateMutexW,
 │   │                             #   INetworkCostManager);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
-│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID);
+│   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
+│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
 │   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
 │   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;
@@ -217,7 +224,12 @@ Forgebox/
 │   │       ├── stream_queue.rs   # fila drop-oldest com marcadores de lag (servidor e cliente)
 │   │       ├── server/           # dispatcher (Router/Ctx), conexão (leitor/escritor/outbox), idempotência por request_id,
 │   │       │                     #   events.rs (subscribe + resume_from: anel do EventBus + tabela events), fs.rs (FsScope), builtins
-│   │       └── client/           # Client tipado (métodos gerados da tabela), retentativa com mesmo request_id, Subscription com reassinatura
+│   │       └── client/           # mod.rs: Client tipado (métodos gerados da tabela) + call_raw/subscribe_raw (pontes JSON da GUI),
+│   │                             #   retentativa com mesmo request_id, ConnectionState em watch (Idle/Connecting/Connected/Reconnecting/
+│   │                             #   Closed), ping com RTT, CredentialsProvider (token relido a cada conexão), keep_connected;
+│   │                             #   conn.rs (conexão: leitor/escritor, hello); subscription.rs (cursor, piso, dedupe por seq);
+│   │                             #   local.rs (daemon local: try_connect Down/Other, find_daemon_exe, spawn_daemon vigiado,
+│   │                             #   wait_ready com saída 4 = outro daemon subindo, connect_or_start; usado por forge e Forgebox.exe)
 │   ├── forge-daemon/             # bin forgeboxd.exe (lib forge_daemon + main.rs), tray-less; ADR-0029
 │   │   ├── src/                  # args.rs (clap), instance_lock.rs (mutex + state/locks/forgeboxd.lock), logging.rs (JSON lines
 │   │   │                         #   diários em logs/forgeboxd.log.<data>), boot.rs (docs/01 §5.1), daemon.rs (componentes),
@@ -233,7 +245,8 @@ Forgebox/
 │   │                             #   web_nginx_php_online.rs, mailpit_service_online.rs; concurrency.rs (orçamentos de
 │   │                             #   docs/03 §7.6 com fixtures/fake_mailpit.rs: serviço travado, cliente lento, download + start)
 │   ├── forge-cli/                # bin forge.exe (lib forge_cli + main.rs): cli.rs (árvore clap com todos os comandos de docs/09),
-│   │   │                         #   commands/*.rs (um por grupo), context.rs (flags globais + cliente), connect.rs (daemon automático),
+│   │   │                         #   commands/*.rs (um por grupo), context.rs (flags globais + cliente), connect.rs (mensagens do daemon automático
+│   │   │                         #   de forge_ipc::client::local),
 │   │   │                         #   jobs.rs (acompanha jobs: eventos + poll, barras), output.rs (tabelas, cores, --json), render.rs
 │   │   │                         #   (DTO → texto), messages.rs (pt-BR/en-US), error.rs (códigos → saída), remotes.rs, open.rs, parse.rs
 │   │   └── tests/                # processo real contra forgeboxd real em raiz temporária: commands.rs (tabela de TODOS os comandos,

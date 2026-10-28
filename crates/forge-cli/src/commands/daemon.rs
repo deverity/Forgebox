@@ -99,8 +99,14 @@ async fn start(ctx: &Context) -> CliResult<()> {
         ctx.out
             .tf(Msg::StartingDaemon, &[&ctx.root.to_posix_string()]),
     );
-    connect::spawn_daemon(&ctx.root)?;
-    let client = connect::wait_ready(&ctx.root, connect::AUTOSTART_TIMEOUT).await?;
+    let spawned = connect::spawn_daemon(&ctx.root, &ctx.out).await?;
+    let client = connect::wait_ready(
+        &ctx.root,
+        connect::AUTOSTART_TIMEOUT,
+        Some(spawned),
+        &ctx.out,
+    )
+    .await?;
     let status = client.daemon_status(NoParams {}).await?;
     ctx.out.emit(&status, |out| {
         out.success(out.tf(Msg::DaemonStarted, &[&status.pid]));

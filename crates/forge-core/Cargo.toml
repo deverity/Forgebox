@@ -64,12 +64,16 @@ ulid = { workspace = true }
 # (M1-E5-T4, ADR-0024): WMI static methods (Wmi, Variant, Ole SAFEARRAYs), the firewall COM
 # API (WindowsFirewall), LocalMachine\Root, ReplaceFileW and the embedded manifest reader;
 # the daemon host (M1-E5-T2): single-instance mutex (CreateMutexW), connection cost
-# (INetworkCostManager) and detached start of a new daemon (daemon.restart).
+# (INetworkCostManager) and detached start of a new daemon (daemon.restart); the desktop
+# shell's system appearance (M2-E1-T5): HKCU Personalize/DWM values, DwmGetColorizationColor,
+# SystemParametersInfoW(SPI_GETHIGHCONTRAST), GetSystemMetrics(SM_REMOTESESSION) and
+# RtlGetVersion (declared locally in windows/appearance.rs).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_NetworkManagement_Dns",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",

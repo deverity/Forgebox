@@ -98,6 +98,19 @@ messages! {
         "o daemon não está rodando na raiz {0} (e --no-daemon impede iniciá-lo)",
         "the daemon is not running on root {0} (and --no-daemon prevents starting it)"
     ),
+    DaemonExeNotFound => (
+        "{0} não encontrado (esperado em FORGE_DAEMON_EXE, ao lado de forge.exe ou no PATH)",
+        "{0} not found (expected in FORGE_DAEMON_EXE, next to forge.exe or on PATH)"
+    ),
+    DaemonSpawnFailed => ("não foi possível iniciar {0}: {1}", "could not start {0}: {1}"),
+    DaemonExitedEarly => (
+        "o daemon terminou com o código {0} antes de responder (veja os logs em {1})",
+        "the daemon exited with code {0} before answering (see the logs in {1})"
+    ),
+    DaemonStartTimeout => (
+        "o daemon não respondeu em {0} s ({1})",
+        "the daemon did not answer within {0} s ({1})"
+    ),
     RemoteNotAvailable => (
         "O perfil remoto {0} não pode ser usado ainda: o modo remoto chega no roadmap M6-E3.",
         "Remote profile {0} cannot be used yet: remote mode arrives with roadmap M6-E3."

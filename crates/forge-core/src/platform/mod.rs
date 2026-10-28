@@ -24,8 +24,11 @@
 //! machine-wide changes behind the elevated helper's allowlist (WMI, firewall COM API,
 //! `LocalMachine\Root`, staging of installers) and [`secure_file`] the link-safe file
 //! access the helper uses inside the root. M1-E2-T4 added [`UserEnv`] (the persistent user
-//! `PATH`, `HKCU\Environment\Path` + `WM_SETTINGCHANGE`). M2-E1-T3 added [`ShellOpener`] (a URL in the default browser, a
-//! folder in Explorer; `ShellExecuteExW`).
+//! `PATH`, `HKCU\Environment\Path` + `WM_SETTINGCHANGE`). M2-E1-T5 added
+//! [`SystemAppearance`] (accent, light/dark, transparency, high contrast, RDP, OS build for
+//! the desktop shell's materials) and [`process_creation_time`] (cold-start measurement);
+//! the GUI reaches both through `forge_ipc::base::platform`. M2-E1-T3 added
+//! [`ShellOpener`] (a URL in the default browser, a folder in Explorer; `ShellExecuteExW`).
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -39,6 +42,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::ForgeError;
 use crate::error::Result;
 
+pub mod appearance;
 pub mod dns_policy;
 pub mod elevation;
 pub mod host;
@@ -56,6 +60,10 @@ pub mod user_env;
 #[cfg(windows)]
 pub mod windows;
 
+pub use appearance::{
+    AppearanceSnapshot, DEFAULT_ACCENT, FixedAppearance, RawAppearance, SystemAppearance,
+    WIN11_FIRST_BUILD, system_appearance,
+};
 pub use dns_policy::{
     DnsPolicy, DnsPolicyStatus, FORGEBOX_NRPT_COMMENT, NrptApplied, NrptIneffective, NrptRule,
     NrptSource, NrptTable, dns_policy, effective_nrpt_rules, policy_status,
@@ -63,7 +71,7 @@ pub use dns_policy::{
 pub use elevation::{Elevation, elevation};
 pub use host::{
     DAEMON_MUTEX_PREFIX, InstanceMutex, NetworkCost, NeverMetered, acquire_instance_mutex,
-    daemon_mutex_name, long_path, network_cost, spawn_detached,
+    daemon_mutex_name, long_path, network_cost, spawn_detached, spawn_detached_watched,
 };
 pub use net_adapters::{NetAdapter, NetAdapters, net_adapters};
 pub use net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState, port_table};
@@ -79,7 +87,7 @@ pub use process::{
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
     SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
 };
-pub use process_stats::{ProcStats, ProcessStats, process_stats};
+pub use process_stats::{ProcStats, ProcessStats, process_creation_time, process_stats};
 pub use runtime_deps::{
     RuntimeDep, RuntimeDeps, VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, VCREDIST_X64_URL,
     VcRedistFlavor, VcRuntimeVersion, runtime_deps,

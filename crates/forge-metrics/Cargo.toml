@@ -14,3 +14,12 @@ workspace = true
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+# End timestamp of an access record (same jiff features as the rest of the workspace).
+jiff = { workspace = true }
+# Borrowed, pointer-driven decoding of access log lines (parse.rs).
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
