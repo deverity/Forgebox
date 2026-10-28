@@ -12,6 +12,8 @@
 //!   `line <n>` on stdout at ~10 000 lines/s and write the count it reached to
 //!   `progress.txt` (next to the executable) every 500 lines: if the daemon stops reading
 //!   its stdout, the count stalls. Otherwise it prints `tick <n>` every 200 ms.
+//! * `fake-mode.txt` containing `polite` (the log tests): `tick <n>` every 50 ms, and
+//!   console events are not ignored, so a stop (and a daemon restart) is quick.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -39,9 +41,14 @@ fn main() {
         println!("mailpit v1.32.0 compiled with go1.25.0 on windows/amd64");
         return;
     }
-    // SAFETY: registers a handler that only returns TRUE.
-    unsafe {
-        SetConsoleCtrlHandler(Some(ignore), 1);
+    let exe = std::env::current_exe().expect("current exe");
+    let mode = std::fs::read_to_string(exe.with_file_name("fake-mode.txt")).unwrap_or_default();
+    let (flood, polite) = (mode.trim() == "flood", mode.trim() == "polite");
+    if !polite {
+        // SAFETY: registers a handler that only returns TRUE.
+        unsafe {
+            SetConsoleCtrlHandler(Some(ignore), 1);
+        }
     }
     let listen = arg(&args, "--listen").expect("--listen");
     let smtp = arg(&args, "--smtp").expect("--smtp");
@@ -63,9 +70,6 @@ fn main() {
         }
     });
 
-    let exe = std::env::current_exe().expect("current exe");
-    let flood = std::fs::read_to_string(exe.with_file_name("fake-mode.txt"))
-        .is_ok_and(|m| m.trim() == "flood");
     let progress = exe.with_file_name("progress.txt");
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -89,7 +93,7 @@ fn main() {
             n += 1;
             let _ = writeln!(out, "tick {n}");
             let _ = out.flush();
-            std::thread::sleep(Duration::from_millis(200));
+            std::thread::sleep(Duration::from_millis(if polite { 50 } else { 200 }));
         }
     }
 }
