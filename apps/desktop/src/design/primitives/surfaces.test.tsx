@@ -127,6 +127,30 @@ describe("Menu", () => {
     });
   });
 
+  it("traps focus inside the menu while open", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">before</button>
+        <Menu entries={[{ id: "a", label: "Restart", onSelect: vi.fn() }]}>
+          <span>row</span>
+        </Menu>
+        <button type="button">after</button>
+      </>,
+    );
+    fireEvent.contextMenu(screen.getByText("row"));
+    const menu = await screen.findByRole("menu");
+    await waitFor(() => {
+      expect(menu.contains(document.activeElement)).toBe(true);
+    });
+    for (let i = 0; i < 4; i += 1) {
+      await user.tab();
+      expect(screen.getByRole("menu").contains(document.activeElement)).toBe(true);
+    }
+    await user.tab({ shift: true });
+    expect(screen.getByRole("menu").contains(document.activeElement)).toBe(true);
+  });
+
   it("closes on Escape and returns focus to its trigger", async () => {
     const user = userEvent.setup();
     setup();
