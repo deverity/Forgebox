@@ -87,6 +87,10 @@ event_kinds! {
     ToolInstallProgress => "tool.install.progress",
     ToolInstallCompleted => "tool.install.completed",
     ToolInstallFailed => "tool.install.failed",
+    /// The update checks found (or no longer find) updates; payload `{updates: [{tool,
+    /// series, from, to}], count}` is the full list of what is pending (docs/03 §8,
+    /// ADR-0039).
+    ToolUpdatesAvailable => "tool.updates_available",
     ToolUpdated => "tool.updated",
     ToolRollback => "tool.rollback",
     /// `bin/<tool>/current` now points at another version (`forge use`, ADR-0005).

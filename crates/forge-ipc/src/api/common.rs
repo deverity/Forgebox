@@ -30,8 +30,12 @@ impl fmt::Display for ApiVersion {
     }
 }
 
-/// The API version implemented by this crate.
-pub const API_VERSION: ApiVersion = ApiVersion { major: 1, minor: 0 };
+/// The API version implemented by this crate. 1.1 (M2, ADR-0039) added, all additive:
+/// `tool.updates_available`, `net.port_check`, `HelloDto.not_implemented`,
+/// `DaemonStatusDto.cpu_pct|rss_bytes`, `sites.open` for browser/explorer and the
+/// `{reason, args}` convention of [`ApiError::details`]. Peers accept any `minor` of the
+/// same `major`.
+pub const API_VERSION: ApiVersion = ApiVersion { major: 1, minor: 1 };
 
 /// Authorization profile of a connection (ADR-0009, rule 7; docs/13 §3.3). Ordered:
 /// `viewer < operator < admin`. Local connections are always `admin`.
@@ -265,7 +269,10 @@ pub struct ApiError {
     pub code: String,
     /// Human readable message (English, like logs; the CLI/GUI localise by `code`).
     pub message: String,
-    /// Optional structured details (port owner, offending path...).
+    /// Structured details, by convention `{"reason": "<stable snake_case id>", "args":
+    /// {...}}` (docs/09 "Detalhes estruturados de erro", ADR-0039): clients localize from
+    /// `code` plus these, never from the English `message`. `port_in_use` also repeats
+    /// `port` and `owner` at the top level (API 1.0 shape, kept for old clients).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(type = Option<specta_typescript::Unknown>)]
     pub details: Option<serde_json::Value>,
@@ -278,6 +285,23 @@ impl ApiError {
             message: message.into(),
             details: None,
         }
+    }
+
+    /// Adds `details = {"reason": reason, "args": args}` (the convention of
+    /// [`ApiError::details`]).
+    pub fn with_reason(mut self, reason: &str, args: serde_json::Value) -> Self {
+        self.details = Some(serde_json::json!({ "reason": reason, "args": args }));
+        self
+    }
+
+    /// `details.reason`, when the error carries structured details.
+    pub fn reason(&self) -> Option<&str> {
+        self.details.as_ref()?.get("reason")?.as_str()
+    }
+
+    /// `details.args`, when the error carries structured details.
+    pub fn args(&self) -> Option<&serde_json::Value> {
+        self.details.as_ref()?.get("args")
     }
 
     /// CLI exit code of this error (docs/09).
@@ -296,12 +320,16 @@ impl std::error::Error for ApiError {}
 
 impl From<&forge_core::ForgeError> for ApiError {
     fn from(err: &forge_core::ForgeError) -> Self {
-        let details = match err {
-            forge_core::ForgeError::PortInUse { port, owner } => {
-                Some(serde_json::json!({ "port": port, "owner": owner }))
-            }
-            _ => None,
-        };
+        let mut details = err.details();
+        if let (
+            forge_core::ForgeError::PortInUse { port, owner },
+            Some(serde_json::Value::Object(map)),
+        ) = (err, details.as_mut())
+        {
+            // API 1.0 clients read the top-level fields.
+            map.insert("port".into(), (*port).into());
+            map.insert("owner".into(), serde_json::json!(owner));
+        }
         Self {
             code: err.code().to_owned(),
             message: err.to_string(),
@@ -547,7 +575,51 @@ mod tests {
         });
         assert_eq!(err.code, "port_in_use");
         assert_eq!(err.exit_code(), 4);
-        assert_eq!(err.details.unwrap()["port"], 80);
+        let details = err.details.unwrap();
+        assert_eq!(details["port"], 80);
+        assert_eq!(details["reason"], "port_in_use");
+        assert_eq!(details["args"]["owner"], "httpd.exe");
+    }
+
+    #[test]
+    fn structured_details_reach_the_wire_for_the_errors_a_gui_acts_on() {
+        use forge_core::ForgeError;
+        for (err, reason) in [
+            (
+                ForgeError::PortInUse {
+                    port: 3306,
+                    owner: None,
+                },
+                "port_in_use",
+            ),
+            (
+                ForgeError::NeedsElevation("nrpt.add".into()),
+                "needs_elevation",
+            ),
+            (ForgeError::NotFound("site a.test".into()), "not_found"),
+            (ForgeError::NotImplemented("x".into()), "not_implemented"),
+        ] {
+            let wire = serde_json::to_value(ApiError::from(&err)).unwrap();
+            assert_eq!(wire["code"], err.code());
+            assert_eq!(wire["details"]["reason"], reason, "{err}");
+            assert!(wire["details"]["args"].is_object(), "{err}");
+        }
+        let api = ApiError::from(&ForgeError::NotFound("site a.test".into()));
+        assert_eq!(api.reason(), Some("not_found"));
+        assert_eq!(api.args().unwrap()["what"], "site a.test");
+        // Errors without structure stay without details (and without the field).
+        let plain = serde_json::to_value(ApiError::from(&ForgeError::Internal("x".into())));
+        assert!(plain.unwrap().get("details").is_none());
+        let custom = ApiError::new("conflict", "x")
+            .with_reason("host_taken", serde_json::json!({"host": "a.test"}));
+        assert_eq!(custom.reason(), Some("host_taken"));
+    }
+
+    #[test]
+    fn api_1_0_peers_are_still_compatible() {
+        assert_eq!(API_VERSION, ApiVersion { major: 1, minor: 1 });
+        assert!(API_VERSION.is_compatible_with(ApiVersion { major: 1, minor: 0 }));
+        assert!(!API_VERSION.is_compatible_with(ApiVersion { major: 2, minor: 0 }));
     }
 
     #[test]

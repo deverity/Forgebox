@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use super::common::SiteRef;
+use super::services::{PortHolderDto, PortProtocol};
 use forge_core::ids::SiteId;
 
 /// How the OS routes the Forgebox TLDs.
@@ -139,4 +140,31 @@ pub struct LanAccessDto {
     pub urls: Vec<String>,
     /// QR code of the first URL as SVG (only `net.lan_qr`).
     pub qr_svg: Option<String>,
+}
+
+/// Params of `net.port_check` (API 1.1): is this port usable right now?
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PortCheckParams {
+    pub port: u16,
+    #[serde(default = "tcp")]
+    pub protocol: PortProtocol,
+}
+
+fn tcp() -> PortProtocol {
+    PortProtocol::Tcp
+}
+
+/// Result of `net.port_check` (API 1.1): the port is `free` when no process listens on it
+/// and no Forgebox owner has it reserved. The GUI uses it to validate a port field while
+/// the user types ("Trocar porta").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PortCheckDto {
+    pub free: bool,
+    /// Forgebox owner that has the port reserved: `<tool>/<instance>` (`mysql/default`)
+    /// or `<kind>/<id>`. Set even when the owner itself is the one listening.
+    #[serde(default)]
+    pub reserved_by: Option<String>,
+    /// The process listening on the port, when there is one.
+    #[serde(default)]
+    pub holder: Option<PortHolderDto>,
 }

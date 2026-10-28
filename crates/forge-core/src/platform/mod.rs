@@ -24,7 +24,8 @@
 //! machine-wide changes behind the elevated helper's allowlist (WMI, firewall COM API,
 //! `LocalMachine\Root`, staging of installers) and [`secure_file`] the link-safe file
 //! access the helper uses inside the root. M1-E2-T4 added [`UserEnv`] (the persistent user
-//! `PATH`, `HKCU\Environment\Path` + `WM_SETTINGCHANGE`).
+//! `PATH`, `HKCU\Environment\Path` + `WM_SETTINGCHANGE`). M2-E1-T3 added [`ShellOpener`] (a URL in the default browser, a
+//! folder in Explorer; `ShellExecuteExW`).
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -49,6 +50,7 @@ pub mod process;
 pub mod process_stats;
 pub mod runtime_deps;
 pub mod secure_file;
+pub mod shell_open;
 pub mod trust_store;
 pub mod user_env;
 #[cfg(windows)]
@@ -83,6 +85,9 @@ pub use runtime_deps::{
     VcRedistFlavor, VcRuntimeVersion, runtime_deps,
 };
 pub use secure_file::{NoFollow, NoFollowFile, final_path, open_no_follow};
+pub use shell_open::{
+    RecordingShellOpener, ShellOpen, ShellOpener, is_executable_extension, shell_opener,
+};
 pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
 pub use user_env::{
     MemoryUserEnv, PathValue, UserEnv, expand_env_refs, normalize_path_entry, user_env,
@@ -264,6 +269,7 @@ pub struct Platform {
     elevation: Arc<dyn Elevation>,
     net_adapters: Arc<dyn NetAdapters>,
     user_env: Arc<dyn UserEnv>,
+    shell_opener: Arc<dyn ShellOpener>,
 }
 
 impl fmt::Debug for Platform {
@@ -302,6 +308,7 @@ impl Platform {
             elevation: elevation(),
             net_adapters: net_adapters(),
             user_env: user_env(),
+            shell_opener: shell_opener(),
         }
     }
 
@@ -356,6 +363,12 @@ impl Platform {
     /// Replaces the user environment ([`MemoryUserEnv`] in tests).
     pub fn with_user_env(mut self, user_env: Arc<dyn UserEnv>) -> Self {
         self.user_env = user_env;
+        self
+    }
+
+    /// Replaces the shell opener ([`RecordingShellOpener`] in tests).
+    pub fn with_shell_opener(mut self, shell_opener: Arc<dyn ShellOpener>) -> Self {
+        self.shell_opener = shell_opener;
         self
     }
 
@@ -431,6 +444,12 @@ impl Platform {
     /// `spawn_blocking`.
     pub fn user_env(&self) -> &Arc<dyn UserEnv> {
         &self.user_env
+    }
+
+    /// Opens URLs and folders with the user's default programs (shared, so it can move
+    /// into `spawn_blocking`).
+    pub fn shell_opener(&self) -> &Arc<dyn ShellOpener> {
+        &self.shell_opener
     }
 }
 

@@ -721,6 +721,13 @@ async fn protocol_rules_hello_first_request_id_required_bad_token_closes() {
     let answer = exchange(&mut conn, hello_frame(server.token.secret())).await;
     assert_eq!(answer["result"]["role"], "admin");
     assert_eq!(answer["result"]["local"], true);
+    // A 1.0 client (hello_frame says minor 0) is accepted by a 1.1 daemon, which answers
+    // with its own version and the additive field.
+    assert_eq!(
+        answer["result"]["api_version"],
+        json!({"major": 1, "minor": 1})
+    );
+    assert_eq!(answer["result"]["not_implemented"], json!([]));
 
     // request_id is mandatory and must be a ULID.
     let answer = exchange(
@@ -846,9 +853,22 @@ async fn roles_and_local_only_are_enforced_for_remote_connections() {
         site: SiteRef::from("loja.test"),
         with: SiteOpenTarget::Editor,
     };
-    let err = client.sites_open(params.clone()).await.unwrap_err();
-    assert_eq!(err.code(), "forbidden");
-    assert!(err.to_string().contains("local_only"), "{err}");
+    for with in [
+        SiteOpenTarget::Editor,
+        SiteOpenTarget::Browser,
+        SiteOpenTarget::Explorer,
+        SiteOpenTarget::Terminal,
+    ] {
+        let err = client
+            .sites_open(SiteOpenParams {
+                with,
+                ..params.clone()
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "forbidden", "{with:?}");
+        assert!(err.to_string().contains("local_only"), "{err}");
+    }
     handle.shutdown();
 
     // Locally the same call works.
@@ -1006,4 +1026,117 @@ async fn stream_answers_precede_their_notifications_and_unsubscribe_stops_them()
             == 1)
         .await
     );
+}
+
+/// Process counters with fixed figures.
+#[derive(Debug)]
+struct FixedStats;
+
+impl forge_core::platform::ProcessStats for FixedStats {
+    fn sample(&self, pid: u32) -> forge_core::Result<forge_core::platform::ProcStats> {
+        Ok(forge_core::platform::ProcStats {
+            pid,
+            cpu_total: Duration::from_secs(5),
+            rss_bytes: 123_456_789,
+            private_bytes: 0,
+            handles: 0,
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+            uptime: Duration::from_secs(100),
+        })
+    }
+    fn logical_cpus(&self) -> u32 {
+        5
+    }
+}
+
+#[tokio::test]
+async fn hello_lists_not_implemented_and_status_reports_the_daemon_process() {
+    let server = spawn_on(InMemoryTransport::new(), |b| {
+        b.process_stats(Arc::new(FixedStats))
+            .not_implemented(["db.list", "stats.get"])
+    })
+    .await;
+    let client = server.client();
+    let hello = client.hello().await.unwrap();
+    assert_eq!(hello.api_version, API_VERSION);
+    assert_eq!(hello.not_implemented, ["db.list", "stats.get"]);
+    // 5 s of CPU in 100 s on 5 logical processors: 1 % of the machine.
+    let status = client.daemon_status(NoParams {}).await.unwrap();
+    assert_eq!(status.cpu_pct, 1.0);
+    assert_eq!(status.rss_bytes, 123_456_789);
+
+    // The wire fields exist, and a 1.0 daemon (without them) still deserializes.
+    let wire = serde_json::to_value(&status).unwrap();
+    assert_eq!(wire["rss_bytes"], 123_456_789);
+    let mut old = wire.clone();
+    old.as_object_mut().unwrap().remove("cpu_pct");
+    old.as_object_mut().unwrap().remove("rss_bytes");
+    let old: DaemonStatusDto = serde_json::from_value(old).unwrap();
+    assert_eq!((old.cpu_pct, old.rss_bytes), (0.0, 0));
+    let mut hello_wire = serde_json::to_value(&hello).unwrap();
+    hello_wire
+        .as_object_mut()
+        .unwrap()
+        .remove("not_implemented");
+    let old: HelloDto = serde_json::from_value(hello_wire).unwrap();
+    assert!(old.not_implemented.is_empty());
+}
+
+#[tokio::test]
+async fn port_check_and_updates_event_round_trip() {
+    let mut router = Router::new();
+    router.handle::<net_port_check, _, _>(|params, _| async move {
+        Ok(PortCheckDto {
+            free: params.port == 8080,
+            reserved_by: (params.port == 3306).then(|| "mysql/default".to_owned()),
+            holder: (params.port == 80).then(|| PortHolderDto {
+                pid: 4,
+                exe: "C:/Windows/System32/ntoskrnl.exe".into(),
+            }),
+        })
+    });
+    let server = spawn(router).await;
+    let client = server.client();
+    // Viewer role is enough, and the protocol defaults to TCP on the wire.
+    let method = method_info("net.port_check").unwrap();
+    assert_eq!(method.min_role, Role::Viewer);
+    assert!(!method.local_only && !method.mutating);
+    let raw = client
+        .call_raw(
+            "net.port_check",
+            json!({ "port": 3306 }),
+            CallOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(raw["reserved_by"], "mysql/default");
+    assert_eq!(raw["free"], false);
+    let held = client
+        .net_port_check(PortCheckParams {
+            port: 80,
+            protocol: PortProtocol::Tcp,
+        })
+        .await
+        .unwrap();
+    assert_eq!(held.holder.unwrap().pid, 4);
+
+    let payload = ToolUpdatesAvailablePayload {
+        v: 1,
+        count: 1,
+        updates: vec![PendingUpdateDto {
+            tool: tool("php"),
+            series: "8.3".into(),
+            from: "8.3.36".into(),
+            to: "8.3.37".into(),
+        }],
+    };
+    let wire = serde_json::to_value(&payload).unwrap();
+    assert_eq!(wire["updates"][0]["to"], "8.3.37");
+    assert_eq!(
+        serde_json::from_value::<ToolUpdatesAvailablePayload>(wire).unwrap(),
+        payload
+    );
+    assert!(EVENT_PAYLOADS.iter().any(
+        |(kind, ty)| *kind == "tool.updates_available" && *ty == "ToolUpdatesAvailablePayload"
+    ));
 }

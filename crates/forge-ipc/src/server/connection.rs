@@ -273,6 +273,7 @@ fn hello_dto(shared: &ServerShared, session: &Session) -> HelloDto {
             .as_ref()
             .map_or(0, |events| events.bus().last_seq()),
         server_time: Timestamp::now(),
+        not_implemented: shared.info.not_implemented.clone(),
     }
 }
 

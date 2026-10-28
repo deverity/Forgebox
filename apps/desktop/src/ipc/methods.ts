@@ -2,7 +2,7 @@
 // Method table of the Forgebox API (forge_ipc::api::methods::METHODS).
 import type * as T from "./generated";
 
-export const API_VERSION = { major: 1, minor: 0 } as const;
+export const API_VERSION = { major: 1, minor: 1 } as const;
 
 export type MethodKind = "call" | "job" | "stream";
 
@@ -91,6 +91,7 @@ export const METHODS = {
   "net.dns_enable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge dns enable"], cli_template: "forge dns enable", notification: null, lagged_notification: null },
   "net.dns_disable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge dns disable"], cli_template: "forge dns disable", notification: null, lagged_notification: null },
   "net.dns_test": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge dns test"], cli_template: "forge dns test {host}", notification: null, lagged_notification: null },
+  "net.port_check": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
   "net.lan_expose": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge lan expose"], cli_template: "forge lan expose {site}", notification: null, lagged_notification: null },
   "net.lan_unexpose": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge lan unexpose"], cli_template: "forge lan unexpose {site}", notification: null, lagged_notification: null },
   "net.lan_qr": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge lan qr"], cli_template: "forge lan qr {site}", notification: null, lagged_notification: null },
@@ -227,6 +228,7 @@ export interface ApiMethods {
   "net.dns_enable": { params: T.NoParams; result: T.JobDto; job_result: T.DnsStatusDto };
   "net.dns_disable": { params: T.NoParams; result: T.JobDto; job_result: T.DnsStatusDto };
   "net.dns_test": { params: T.DnsTestParams; result: T.DnsTestDto };
+  "net.port_check": { params: T.PortCheckParams; result: T.PortCheckDto };
   "net.lan_expose": { params: T.LanSiteParams; result: T.JobDto; job_result: T.LanAccessDto };
   "net.lan_unexpose": { params: T.LanSiteParams; result: T.JobDto; job_result: T.Ack };
   "net.lan_qr": { params: T.LanSiteParams; result: T.LanAccessDto };
@@ -299,7 +301,7 @@ export interface ApiNotifications {
   "events.lagged": T.LaggedDto;
 }
 
-export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
+export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updates_available", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** Payload type of each event kind (`EventDto.payload`). */
@@ -319,6 +321,7 @@ export interface EventPayloads {
   "tool.install.progress": T.ToolInstallPayload;
   "tool.install.completed": T.ToolInstallPayload;
   "tool.install.failed": T.ToolInstallPayload;
+  "tool.updates_available": T.ToolUpdatesAvailablePayload;
   "tool.updated": T.ToolVersionChangePayload;
   "tool.rollback": T.ToolVersionChangePayload;
   "tool.current_changed": T.ToolCurrentPayload;
