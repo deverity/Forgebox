@@ -22,7 +22,8 @@ pub struct AccessRecord {
     pub upstream_us: Option<u64>,
     /// Response body bytes (0 when the format does not log them).
     pub bytes: u64,
-    /// Uppercase request method, or `OTHER` for anything that is not a plain token.
+    /// Uppercase request method; `OTHER` for anything that is not a short alphabetic token;
+    /// empty when the format does not map a method.
     pub method: String,
     /// Normalized route (see [`crate::UriNormalizer`]); empty when the format has no URI.
     pub route: String,

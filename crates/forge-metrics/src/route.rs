@@ -173,7 +173,7 @@ mod tests {
         let route = n(&long);
         assert_eq!(route.len(), 256);
         assert!(route.starts_with("/xxx"));
-        let many = format!("/{}", vec!["abcdefghij"; 8].join("/"));
+        let many = format!("/{}", ["abcdefghij"; 8].join("/"));
         assert!(n(&many).len() <= 256);
         // Cut on a char boundary.
         let wide = format!("/{}", "é".repeat(300));
