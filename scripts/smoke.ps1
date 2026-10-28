@@ -74,7 +74,9 @@ $PSNativeCommandUseErrorActionPreference = $false
 # so a localized message reached the log mangled ("nao" with accents showed up as box
 # drawing characters). UTF-8 without BOM in both directions; the previous values are
 # restored at the very end. Setting the console encoding throws when the process has no
-# console, which is harmless here.
+# console, which is harmless here. Everything after the switch runs inside an outer
+# try/finally (not indented, to keep the body readable) whose only job is to restore them,
+# so a throw anywhere, including in the main finally, never leaves the session in UTF-8.
 $PreviousConsoleEncoding = $null
 $PreviousOutputEncoding = $OutputEncoding
 try {
@@ -83,7 +85,10 @@ try {
 } catch { $PreviousConsoleEncoding = $null }
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
-$Repo =(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$code = 1
+try {
+
+$Repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 if (-not $Root) { $Root = Join-Path ([System.IO.Path]::GetTempPath()) "fb-smoke-$Stamp" }
 $Root = [System.IO.Path]::GetFullPath($Root)
@@ -595,7 +600,11 @@ Illuminate\Support\Facades\Artisan::command('smoke:mail {subject}', function (st
         Write-Log "root kept; log: $($script:LogFile)"
     }
     $code = if ($failedSteps -gt 0) { 1 } else { 0 }
-    # Last thing: give the session its console encodings back.
+}
+
+} finally {
+    # Outer finally (see the encoding switch at the top): give the session its console
+    # encodings back, whatever happened above.
     $OutputEncoding = $PreviousOutputEncoding
     if ($null -ne $PreviousConsoleEncoding) {
         try { [Console]::OutputEncoding = $PreviousConsoleEncoding } catch { }
