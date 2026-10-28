@@ -10,10 +10,19 @@ if (!container) {
 }
 
 // Core namespaces load before first paint (tiny JSON); the daemon connection comes later (T8).
-void initI18n({ allowPseudo: import.meta.env.MODE !== "production" }).then(() => {
-  createRoot(container).render(
+function render(root: HTMLElement) {
+  createRoot(root).render(
     <StrictMode>
       <App />
     </StrictMode>,
   );
-});
+}
+
+// Render even if i18n init fails: the UI must never stay blank because of it.
+initI18n({ allowPseudo: import.meta.env.MODE !== "production" })
+  .catch((error: unknown) => {
+    console.warn("i18n init failed", error);
+  })
+  .finally(() => {
+    render(container);
+  });

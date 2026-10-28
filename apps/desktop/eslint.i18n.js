@@ -22,7 +22,7 @@ export const i18nLiteralConfig = {
   rules: {
     "i18next/no-literal-string": [
       "error",
-      { mode: "jsx-text-only", words: { exclude: I18N_LITERAL_ALLOWLIST } },
+      { mode: "jsx-only", words: { exclude: I18N_LITERAL_ALLOWLIST } },
     ],
   },
 };

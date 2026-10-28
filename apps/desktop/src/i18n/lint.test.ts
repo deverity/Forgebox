@@ -37,4 +37,24 @@ describe("no-literal-string lint", () => {
     );
     expect(messages).toEqual([]);
   });
+
+  it.each([
+    ["aria-label", `<button aria-label="Fechar janela" />`],
+    ["title", `<button title="Copiar comando" />`],
+    ["placeholder", `<input placeholder="Pesquisar sites" />`],
+    ["expression literal", `<p>{"Salvar alteracoes"}</p>`],
+    ["ternary literal", `<p>{ok ? "Pronto" : "Falhou"}</p>`],
+  ])("fails on a user-visible literal: %s", async (_name, jsx) => {
+    const messages = await lint(`export function Screen({ ok }: { ok: boolean }) { return ${jsx}; }`);
+    expect(messages.map((m) => m.ruleId)).toContain("i18next/no-literal-string");
+  });
+
+  it("accepts className and data-* attributes with allowlisted words", async () => {
+    const messages = await lint(
+      `export function Screen() {
+        return <div className="flex gap-2" data-testid="card" data-state="open"><b>Forgebox</b><code>forge up</code></div>;
+      }`,
+    );
+    expect(messages).toEqual([]);
+  });
 });

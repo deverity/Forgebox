@@ -84,7 +84,7 @@ function pick(options: InitOptions): AnyLocale {
   return resolveLocale(options.override, osLocale);
 }
 
-/** Initializes the shared i18next instance (idempotent) and syncs Rust with the chosen locale. */
+/** Initializes the shared i18next instance (idempotent) and syncs Rust (best-effort, off the render path). */
 export async function initI18n(options: InitOptions = {}): Promise<I18n> {
   if (options.setLanguage) bridge = options.setLanguage;
   const lng = pick(options);
@@ -104,19 +104,30 @@ export async function initI18n(options: InitOptions = {}): Promise<I18n> {
         interpolation: { escapeValue: false, prefix: "{", suffix: "}" },
       });
   }
-  await notifyRust(lng);
+  notifyRust(lng);
   return i18next;
 }
 
 /** Switches language at runtime: React re-renders via react-i18next, Rust via `set_language`. */
 export async function setLanguage(lng: AnyLocale): Promise<void> {
   await i18next.changeLanguage(lng);
-  await notifyRust(lng);
+  notifyRust(lng);
 }
 
-async function notifyRust(lng: AnyLocale): Promise<void> {
+/**
+ * Best-effort, fire-and-forget Rust sync: never rejects and never blocks first paint or the
+ * UI switch. A failing bridge (IPC error, ACL change) is only logged.
+ */
+function notifyRust(lng: AnyLocale): void {
   // Rust only knows shipped locales; the pseudo-locale keeps the en-US strings there.
-  await bridge(lng === PSEUDO_LOCALE ? "en-US" : lng);
+  const target = lng === PSEUDO_LOCALE ? "en-US" : lng;
+  try {
+    bridge(target).catch((error: unknown) => {
+      console.warn("i18n: set_language sync failed", error);
+    });
+  } catch (error) {
+    console.warn("i18n: set_language sync failed", error);
+  }
 }
 
 export function currentLocale(): AnyLocale {
