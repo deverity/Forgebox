@@ -155,6 +155,9 @@ pub enum EffectReason {
     Forced,
     /// `window-vibrancy` refused the effect.
     ApplyFailed,
+    /// A material became possible but the window was created opaque (no material at
+    /// start): it applies on the next start.
+    RestartRequired,
 }
 
 /// The material preferences ([`GuiPrefs`] subset).
@@ -329,6 +332,39 @@ pub fn show_on_ready(launch: LaunchArgs, focus_requested: bool) -> bool {
     !launch.minimized || focus_requested
 }
 
+/// Whether the window is created transparent: only when a material is expected at start.
+/// An opaque window paints the canvas colour from its first frame; a transparent one with
+/// no material shows black until WebView2 presents (measured in M2-E1-T7: 3 of 8 launches
+/// on this RDP machine showed a black first frame, ADR-0035).
+pub fn transparent_at_start(predicted: Effect) -> bool {
+    predicted != Effect::None
+}
+
+/// The choice actually possible in this window: an opaque window cannot show a material
+/// until the next start.
+pub fn effective_choice(wanted: EffectChoice, transparent_window: bool) -> EffectChoice {
+    if wanted.effect != Effect::None && !transparent_window {
+        EffectChoice::new(Effect::None, EffectReason::RestartRequired)
+    } else {
+        wanted
+    }
+}
+
+/// The opaque canvas colour (`bg-canvas` of `docs/design/tokens.json`) the window paints
+/// before and around the page when no material is in effect.
+pub fn canvas_color(theme: ThemeName, high_contrast: bool) -> (u8, u8, u8) {
+    match (high_contrast, theme) {
+        (true, _) => (0x00, 0x00, 0x00),
+        (false, ThemeName::Light) => (0xF5, 0xF5, 0xF7),
+        (false, ThemeName::Dark) => (0x1C, 0x1C, 0x1E),
+    }
+}
+
+fn opaque_background(theme: ThemeName, high_contrast: bool) -> tauri::window::Color {
+    let (r, g, b) = canvas_color(theme, high_contrast);
+    tauri::window::Color(r, g, b, 0xFF)
+}
+
 /// Acrylic tint (RGBA) per theme: the opaque sidebar colours of `docs/design/tokens.json`
 /// (`bg-sidebar`) at ~63 % so the blur shows through.
 fn acrylic_tint(theme: ThemeName) -> (u8, u8, u8, u8) {
@@ -402,6 +438,10 @@ struct Inner {
     applied: Effect,
     /// Theme the material was applied for (Mica/Acrylic tint).
     applied_theme: Option<ThemeName>,
+    /// The window was created transparent ([`transparent_at_start`]).
+    transparent: bool,
+    /// Background painted by an opaque window: (theme, high contrast).
+    background: Option<(ThemeName, bool)>,
     state: AppearanceState,
     generation: u64,
     focus_requested: bool,
@@ -434,6 +474,8 @@ impl WindowShell {
                 snapshot: boot.snapshot,
                 applied: Effect::None,
                 applied_theme: None,
+                transparent: true,
+                background: None,
                 state,
                 generation: 0,
                 focus_requested: false,
@@ -520,7 +562,15 @@ impl WindowShell {
             return;
         }
         let theme = resolve_theme(prefs.theme, &snapshot);
-        let wanted = predicted_choice(&snapshot, &prefs, self.forced);
+        let wanted = effective_choice(
+            predicted_choice(&snapshot, &prefs, self.forced),
+            inner.transparent,
+        );
+        if !inner.transparent && inner.background != Some((theme, snapshot.high_contrast)) {
+            let _ =
+                window.set_background_color(Some(opaque_background(theme, snapshot.high_contrast)));
+            inner.background = Some((theme, snapshot.high_contrast));
+        }
         let changed = wanted.effect != inner.applied
             || (wanted.effect != Effect::None && inner.applied_theme != Some(theme));
         let applied = if changed {
@@ -735,19 +785,33 @@ pub fn create_main_window<R: Runtime>(
         None => (960.0, 600.0, DEFAULT_SIZE.0, DEFAULT_SIZE.1),
     };
     let prefs = shell.prefs.get();
+    let (transparent, background) = {
+        let mut inner = shell.lock();
+        inner.transparent = transparent_at_start(inner.state.effect);
+        let theme = inner.state.theme;
+        let high_contrast = inner.snapshot.high_contrast;
+        if !inner.transparent {
+            inner.background = Some((theme, high_contrast));
+        }
+        (inner.transparent, opaque_background(theme, high_contrast))
+    };
 
     let mut builder = WebviewWindowBuilder::new(app, MAIN_LABEL, WebviewUrl::default())
         .title("Forgebox")
         .inner_size(width, height)
         .min_inner_size(min_w, min_h)
         .decorations(false)
-        .transparent(true)
+        .transparent(transparent)
         .shadow(true)
         .resizable(true)
         .visible(false)
         .theme(window_theme(prefs.theme))
         .data_directory(shell.data_dir.webview_dir())
         .initialization_script(shell.boot_script());
+    if !transparent {
+        // Painted from the first frame: no black until WebView2 presents.
+        builder = builder.background_color(background);
+    }
     if restore.is_none() {
         builder = builder.center();
     }
@@ -855,16 +919,29 @@ pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>, argv: &[String]) {
         return;
     };
     let args = LaunchArgs::parse(argv.iter().skip(1));
-    match second_instance_action(args, shell.clock.is_ready()) {
-        SecondInstance::Ignore => {}
-        SecondInstance::FocusOnReady => shell.lock().focus_requested = true,
+    if second_instance_action(args, shell.clock.is_ready()) != SecondInstance::Ignore {
+        show_main_window(app);
+    }
+    tracing::info!(?args, "second launch handled by the running instance");
+}
+
+/// Shows, restores and focuses the main window — now, or on `ready` if the first frame is
+/// not there yet (no white flash). For the second launch and the tray (M2-E1-T15).
+pub fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    let Some(shell) = app
+        .try_state::<Arc<WindowShell>>()
+        .map(|s| s.inner().clone())
+    else {
+        return;
+    };
+    match second_instance_action(LaunchArgs::default(), shell.clock.is_ready()) {
         SecondInstance::Focus => {
             if let Some(window) = app.get_webview_window(MAIN_LABEL) {
                 shell.show(&window);
             }
         }
+        _ => shell.lock().focus_requested = true,
     }
-    tracing::info!(?args, "second launch handled by the running instance");
 }
 
 /// Shows the window if `ready` never came (broken page, slow dev server).
@@ -1242,6 +1319,41 @@ mod tests {
         assert!(show_on_ready(plain, false));
         assert!(!show_on_ready(minimized, false));
         assert!(show_on_ready(minimized, true));
+    }
+
+    #[test]
+    fn the_window_is_transparent_only_for_a_material() {
+        assert!(!transparent_at_start(Effect::None));
+        assert!(transparent_at_start(Effect::Mica));
+        assert!(transparent_at_start(Effect::Acrylic));
+        let mica = EffectChoice::new(Effect::Mica, EffectReason::Win11);
+        assert_eq!(effective_choice(mica, true), mica);
+        assert_eq!(
+            effective_choice(mica, false),
+            EffectChoice::new(Effect::None, EffectReason::RestartRequired)
+        );
+        let opaque = EffectChoice::new(Effect::None, EffectReason::RemoteSession);
+        assert_eq!(effective_choice(opaque, false), opaque);
+        assert_eq!(effective_choice(opaque, true), opaque);
+    }
+
+    /// The colours painted by an opaque window are the `bg-canvas` tokens.
+    #[test]
+    fn canvas_colors_match_the_design_tokens() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../docs/design/tokens.json");
+        let tokens: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let hex = |group: &str| {
+            let value = tokens["color"][group]["bg-canvas"]["$value"]
+                .as_str()
+                .unwrap();
+            forge_ipc::base::platform::appearance::parse_hex_color(value).unwrap()
+        };
+        assert_eq!(canvas_color(ThemeName::Light, false), hex("light"));
+        assert_eq!(canvas_color(ThemeName::Dark, false), hex("dark"));
+        assert_eq!(canvas_color(ThemeName::Light, true), hex("high-contrast"));
+        assert_eq!(canvas_color(ThemeName::Dark, true), hex("high-contrast"));
     }
 
     #[test]
