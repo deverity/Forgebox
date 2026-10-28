@@ -1,7 +1,59 @@
 {
-  "actions": { "save": "Save", "cancel": "Cancel", "close": "Close", "retry": "Try again" },
-  "status": { "running": "Running", "stopped": "Stopped", "starting": "Starting" },
-  "language": { "label": "Language", "pt-BR": "Português (Brasil)", "en-US": "English (US)" },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "retry": "Try again"
+  },
+  "status": {
+    "running": "Running",
+    "stopped": "Stopped",
+    "starting": "Starting"
+  },
+  "language": {
+    "label": "Language",
+    "pt-BR": "Português (Brasil)",
+    "en-US": "English (US)"
+  },
   "itemCount_one": "{count} item",
-  "itemCount_other": "{count} items"
+  "itemCount_other": "{count} items",
+  "ui": {
+    "toastRegion": "Notifications",
+    "toastDismiss": "Dismiss",
+    "toastUndo": "Undo",
+    "sheetClose": "Close panel",
+    "progressDone": "Done",
+    "progressSpeed": "{speed}/s",
+    "progressEta": "{eta} left",
+    "sparklineLabel": "Last {count} samples, latest {latest}, peak {max}"
+  },
+  "gallery": {
+    "surfacesTitle": "Surfaces and feedback",
+    "card": "Card",
+    "cardBody": "Border and surface, no shadow.",
+    "list": "ListRow in a VirtualList (500 items)",
+    "row": "Site {index}",
+    "rowSub": "Last request a moment ago",
+    "sheetOpen": "Open sheet",
+    "sheetTitle": "Service details",
+    "popoverOpen": "Open popover",
+    "popoverLabel": "Quick filters",
+    "popoverBody": "Popover content",
+    "menuHint": "Right click this row",
+    "menuRestart": "Restart",
+    "menuRemove": "Remove",
+    "toastInfo": "Show toast",
+    "toastUndo": "Show toast with undo",
+    "toastError": "Show error",
+    "toastMessage": "Site removed",
+    "tooltipTrigger": "Hover or focus me",
+    "tooltipContent": "Restarts the service",
+    "progress": "Downloading PHP 8.4",
+    "sparkline": "CPU, last 60 s",
+    "emptyTitle": "No sites yet",
+    "emptyBody": "Create your first site to see it here.",
+    "emptyAction": "New site",
+    "skeleton": "Loading",
+    "skeletonToggle": "Toggle loading"
+  }
 }

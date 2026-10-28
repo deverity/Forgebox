@@ -47,7 +47,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E1-T9 | Camada de estado do frontend (reducers, stores, jobs, capacidades, resync) | todo | — | |
 | M2-E1-T10 | Layout do app e roteamento | todo | — | |
 | M2-E1-T11 | Primitivas parte 1 (controles) + `/__gallery` | todo | — | |
-| M2-E1-T12 | Primitivas parte 2 (superfícies e feedback) | todo | — | |
+| M2-E1-T12 | Primitivas parte 2 (superfícies e feedback) | review | feature/M2-E1-T12-primitives-surfaces | Card, ListRow, VirtualList (500 itens -> ~20 linhas montadas), Sheet 420 px, Popover, Menu (Radix ContextMenu), Toast (aria-live + desfazer), Tooltip com slot de comando, Progress (linear/circular, velocidade/ETA, check), Sparkline (memo por valor), EmptyState, Skeleton/SkeletonSlot; reduced-motion = fade 100 ms; galeria `SurfacesGallery` (rota `/__gallery` no T11); 33 testes vitest novos; deps radix-ui, motion, @tanstack/react-virtual. fps real: M2-E4-T4. |
 | M2-E1-T13 | Primitivas ligadas ao daemon (CliCommand, ActionButton, AsyncView, PathField, PortField) | todo | — | |
 | M2-E1-T14 | Paleta de comandos (Ctrl+K) e registro de atalhos | todo | — | |
 | M2-E1-T15 | Bandeja do sistema (Rust) | todo | — | |
