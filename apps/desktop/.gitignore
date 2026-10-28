@@ -1,0 +1,9 @@
+node_modules
+dist
+# Playwright / QA artifacts (M2-E1-T19)
+qa/out
+test-results
+playwright-report
+# Tauri build output lives in the root /target; generated schemas stay local.
+src-tauri/gen
+*.tsbuildinfo

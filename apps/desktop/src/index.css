@@ -1,0 +1,14 @@
+/* `source("./")` limits class scanning to this folder: the default would also walk
+   src-tauri/target (hundreds of thousands of files). */
+@import "tailwindcss" source("./");
+
+html,
+body,
+#root {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
