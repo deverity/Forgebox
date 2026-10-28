@@ -157,6 +157,6 @@ Implementação: `forge_provider::update::UpdateEngine` ([05 §4.1](05-providers
 - Health de cada Instance: `tcp`, `http`, `command`, `pid`. Resultados alimentam o estado exibido.
 
 ## 7. Portabilidade e modo remoto
-- Todo acesso a Win32 fica em módulos `platform::windows::*` com traits (`ProcessGroup`, `TrustStore`, `DnsPolicy`, `LinkFs`). Em Linux/macOS as implementações são cgroups/systemd-user ou launchd, `update-ca-certificates`/Keychain, `systemd-resolved`/`/etc/resolver`, symlinks.
+- Todo acesso a Win32 fica em módulos `platform::windows::*` com traits (`ProcessGroup`, `TrustStore`, `DnsPolicy`, `LinkFs`, `SystemAppearance`). Clientes (CLI, GUI) que precisam de fatos do SO (iniciar o daemon desanexado, cor de destaque/tema/RDP/build para os materiais da janela, hora de criação do processo) os obtêm de `forge_ipc::base::platform` (re-export de `forge-core`), nunca chamando Win32 diretamente; `crates/forge-core/tests/win32_boundary.rs` verifica isso. Em Linux/macOS as implementações são cgroups/systemd-user ou launchd, `update-ca-certificates`/Keychain, `systemd-resolved`/`/etc/resolver`, symlinks.
 - O daemon pode rodar **headless em Linux** e ser controlado pela GUI/CLI do Windows (e vice-versa). A API já nasce "remote-ready" ([ADR-0009](adr/0009-remote-ready-ipc.md)); detalhes em [13-remote-mode.md](13-remote-mode.md).
 - Métricas por vhost (req/s, p50/p90/p99, CPU/RAM atribuídos) são produzidas pelo daemon a partir de access logs JSON e do sampler de processos; ver [14-observability-metrics.md](14-observability-metrics.md).

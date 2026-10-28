@@ -109,6 +109,31 @@ impl ProcessStats for WindowsProcessStats {
         })
     }
 
+    fn creation_time(&self, pid: u32) -> Result<SystemTime> {
+        let process = open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        // SAFETY: valid handle with query access; the four out-pointers are writable.
+        unsafe {
+            GetProcessTimes(
+                raw(&process),
+                &mut creation,
+                &mut exit,
+                &mut kernel,
+                &mut user,
+            )
+        }
+        .map_err(|e| {
+            ForgeError::io(
+                format!("reading the creation time of process {pid}"),
+                os_error(&e),
+            )
+        })?;
+        Ok(system_time(creation))
+    }
+
     fn logical_cpus(&self) -> u32 {
         // SAFETY: plain query.
         let count = unsafe { GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) };

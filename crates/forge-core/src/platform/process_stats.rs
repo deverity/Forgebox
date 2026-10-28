@@ -40,6 +40,12 @@ pub trait ProcessStats: Send + Sync + fmt::Debug {
     /// was released). Blocking.
     fn sample(&self, pid: u32) -> Result<ProcStats>;
 
+    /// When `pid` was created, without the other counters (cheaper than
+    /// [`ProcessStats::sample`]). `NotFound` when no such process exists. Blocking.
+    fn creation_time(&self, pid: u32) -> Result<SystemTime> {
+        self.sample(pid).map(|stats| stats.started_at)
+    }
+
     /// Logical processors of the machine, every processor group included: the divisor
     /// that turns CPU time per wall time into a share of the whole machine (0–100 %).
     fn logical_cpus(&self) -> u32;
@@ -49,6 +55,14 @@ pub trait ProcessStats: Send + Sync + fmt::Debug {
 #[cfg(windows)]
 pub fn process_stats() -> Arc<dyn ProcessStats> {
     Arc::new(super::windows::WindowsProcessStats)
+}
+
+/// When the process `pid` of the running OS was created: the start of the desktop shell's
+/// cold-start measurement (`Forgebox.exe` reads its own pid, M2-E1-T7). `NotFound` when no
+/// such process exists; `UnsupportedPlatform` until the Linux/macOS ports. Blocking (one
+/// process open and one kernel query).
+pub fn process_creation_time(pid: u32) -> Result<SystemTime> {
+    process_stats().creation_time(pid)
 }
 
 /// Process counters for the running OS (stubs until the Linux/macOS ports).
@@ -106,6 +120,13 @@ mod tests {
         assert!(second.uptime >= first.uptime);
         assert_eq!(second.started_at, first.started_at);
         assert!(stats.logical_cpus() >= 1);
+        let created = process_creation_time(pid).unwrap();
+        assert_eq!(created, first.started_at);
+        assert!(created <= SystemTime::now());
+        assert_eq!(
+            process_creation_time(u32::MAX - 3).unwrap_err().code(),
+            "not_found"
+        );
         assert_eq!(
             stats.sample(u32::MAX - 3).unwrap_err().code(),
             "not_found",
