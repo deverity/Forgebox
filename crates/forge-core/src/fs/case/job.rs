@@ -56,6 +56,9 @@ pub enum CaseReasonCode {
     Missing,
     /// The state could not be read.
     Error,
+    /// A database instance keeps the table name case it was initialized with
+    /// (`lower_case_table_names` cannot change on an initialized data folder, docs/15 §5).
+    Initialized,
 }
 
 impl CaseReasonCode {
@@ -68,6 +71,7 @@ impl CaseReasonCode {
             Self::Partial => "partial",
             Self::Missing => "missing",
             Self::Error => "error",
+            Self::Initialized => "initialized",
         }
     }
 }

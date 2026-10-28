@@ -207,7 +207,7 @@ pub struct FsCaseSensitivityPayload {
     /// Why it is unavailable (pt-BR text).
     pub reason: Option<String>,
     /// Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
-    /// `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+    /// `missing`, `error`, `initialized` (`forge_core::fs::case::CaseReasonCode`).
     pub reason_code: Option<String>,
 }
 

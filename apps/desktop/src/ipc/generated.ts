@@ -777,7 +777,7 @@ export type FsCaseSensitivityPayload = {
 	reason: string | null,
 	/**
 	 *  Stable code of `reason`: `unsupported`, `disabled`, `insensitive`, `partial`,
-	 *  `missing`, `error` (`forge_core::fs::case::CaseReasonCode`).
+	 *  `missing`, `error`, `initialized` (`forge_core::fs::case::CaseReasonCode`).
 	 */
 	reason_code: string | null,
 };
