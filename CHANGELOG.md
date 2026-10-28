@@ -8,7 +8,7 @@ O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de 
 
 ## [Não lançado]
 
-## [0.1.0] — 2026-10-27
+## [0.1.0] — 2026-10-28
 
 Primeira versão: fundação do repositório (M0) e motor sem interface gráfica com a CLI `forge` (M1). Ainda não há GUI nem instalador (M2 e M4).
 
@@ -78,5 +78,5 @@ Primeira versão: fundação do repositório (M0) e motor sem interface gráfica
 - Ainda não há interface gráfica (GUI em M2), instalador nem build portátil (M4).
 
 ### Verificação
-- Gate M1: `scripts/smoke.ps1 -NonInteractive` passa de ponta a ponta (ver docs/16).
-- Smoke interativo (UAC do `forge dns enable` e diálogo de `forge tls ca install`): <!-- interactive-smoke -->
+- Gate M1: `scripts/smoke.ps1 -NonInteractive` passa de ponta a ponta (ver docs/16). Na última rodada do gate da release: PASS na rodada 3; as rodadas 1 e 2 foram bloqueadas por um falso positivo do Windows Defender, não pelo código. Comando: `scripts/smoke.ps1 -NonInteractive -Root %LOCALAPPDATA%\fb-smoke-rel`. Resumo da rodada 3: `TOTAL 121,8 s, 13 step(s), 0 failed`, saída 0. Passos aprovados: `tool install` (composer@2.10.3, mailpit@1.32.0, mysql@8.4.13, nginx@1.31.8, php@8.4.27+1-nts-vs17-x64); `start all`; Laravel Framework 13.39.0; `site add` (driver=laravel, secure=True); 3 migrations aplicadas; HTTPS GET em `loja.test` com HTTP 200 e emissor `CN=Forgebox Local CA ...`; mensagem capturada pelo Mailpit; `Resolve-DnsName -Server 127.0.0.1 loja.test` → `127.0.0.1`; teardown `leftovers killed: 0`. Portas usadas: 80/443/3306/1025/8025. Log do smoke: `C:\Users\gustavo_assis\AppData\Local\fb-smoke-rel.smoke.log`; logs das rodadas que falharam: `C:\Users\gustavo_assis\AppData\Local\fb-smoke-rel.run1-defender.smoke.log` e `C:\Users\gustavo_assis\AppData\Local\fb-smoke-rel.run2-defender.smoke.log`. Depois disso não havia processos `forgeboxd`, `nginx`, `mysqld`, `php-cgi` nem `mailpit` em execução, e a raiz `C:\Users\gustavo_assis\AppData\Local\fb-smoke-rel` não existia mais.
+- Smoke interativo (UAC do `forge dns enable` e diálogo de `forge tls ca install`): rodado pelo usuário em 2026-10-28 nesta máquina de desenvolvimento (Windows 10 Enterprise 19045, ingressada em domínio, GPO corporativa com a chave NRPT de Group Policy vazia, inspeção TLS corporativa, Laragon pausado). `pwsh -NoProfile -File scripts/smoke.ps1 -Root C:\fb-smoke2` passou 15/15 passos em 150 s: `tool install php@8.4 nginx mysql@8.4 mailpit composer`; `start all`; Laravel 13.39.0 via `composer create-project`; `site add --driver laravel --secure`; `forge dns enable` caiu para o modo hosts (motivo `group_policy_table_present`, ADR-0033) com UAC; `forge tls ca install` em `CurrentUser\Root` (diálogo); banco + `.env`; `artisan migrate` (3 migrations); o resolvedor do SO resolveu `loja.test` na primeira tentativa (hosts); HTTPS GET em `https://loja.test` retornou 200 com a cadeia da CA do Forgebox (sem `-k`); e-mail do Laravel capturado pelo Mailpit; `forge dns test` pelo hosts; o teardown não deixou bloco no hosts, regra NRPT nem processos.
