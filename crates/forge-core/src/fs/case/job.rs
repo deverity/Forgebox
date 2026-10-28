@@ -40,7 +40,11 @@ pub const CASE_EVENT_VERSION: u32 = 1;
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stable code of why a folder or site is not case-sensitive (`reason_code` of
-/// `fs.case_sensitivity_unavailable`; also the i18n key suffix `fs.case.reason.<code>`).
+/// `fs.case_sensitivity_unavailable`). For folders and sites it is also the i18n key
+/// suffix `fs.case.reason.<code>`; the data folder events of database instances
+/// (docs/15 §5) use their own text keys (`fs.case.reason.data_dir_*`), and a translation
+/// keyed by the code alone tells their cases apart through `initialized` and
+/// `kept_sensitive`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CaseReasonCode {
@@ -59,6 +63,10 @@ pub enum CaseReasonCode {
     /// A database instance keeps the table name case it was initialized with
     /// (`lower_case_table_names` cannot change on an initialized data folder, docs/15 §5).
     Initialized,
+    /// A database instance initialized with case-sensitive table names keeps them although
+    /// its data folder now reads as not case-sensitive: the server may refuse to start
+    /// (docs/15 §5).
+    KeptSensitive,
 }
 
 impl CaseReasonCode {
@@ -72,6 +80,7 @@ impl CaseReasonCode {
             Self::Missing => "missing",
             Self::Error => "error",
             Self::Initialized => "initialized",
+            Self::KeptSensitive => "kept_sensitive",
         }
     }
 }

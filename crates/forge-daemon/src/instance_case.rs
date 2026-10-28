@@ -11,17 +11,25 @@
 //!   server never initializes on an insensitive folder). The value is recorded in
 //!   `instances.settings` ([`CASE_SENSITIVE_KEY`]) before `data.init` uses it.
 //! * **Initialized**: the recorded value wins over the flag and over `forgebox.toml`. A
-//!   failed or timed-out read changes nothing. A folder that now reads as insensitive
-//!   while the instance was initialized case-sensitive keeps `=0` and publishes
-//!   `fs.case_sensitivity_unavailable` (`fs.case.reason.data_dir_kept_sensitive`); an
-//!   instance initialized insensitive while `forgebox.toml` asks for parity keeps `=2`
-//!   and says so (`reason_code: initialized` when the folder itself is case-sensitive).
-//! * **Initialized before the value was recorded** (daemons older than this module): the
-//!   first affirmative read decides and is recorded, as for a new folder. Until then a
-//!   failed read keeps what those daemons rendered, `forgebox.toml`'s `case_sensitive`.
+//!   failed or timed-out read changes nothing (it is only logged). A folder that now
+//!   reads as insensitive while the instance was initialized case-sensitive keeps `=0`
+//!   and publishes `fs.case_sensitivity_unavailable` (`reason_code: kept_sensitive`, text
+//!   `fs.case.reason.data_dir_kept_sensitive`); an instance initialized insensitive while
+//!   `forgebox.toml` asks for parity keeps `=2` and says so (`reason_code: initialized`)
+//!   only when the folder itself reads as case-sensitive.
+//! * **Initialized before the value was recorded** (instances created by pre-release
+//!   daemons): the first affirmative read decides and is recorded, as for a new folder.
+//!   Until then a failed read keeps `forgebox.toml`'s `case_sensitive`, which is what
+//!   daemons older than 90c0300 rendered. The adoption is best-effort: it can disagree
+//!   with what really initialized the folder (a 90c0300-era daemon that fell back to `=2`
+//!   on a failed read, on a folder that now reads case-sensitive; an older daemon that
+//!   rendered `=0` on an insensitive folder). The fix for such a mismatch: `forge stop`
+//!   the instance and edit or remove its `forgebox.case_sensitive` key (no API sets it in
+//!   M1: with `forge daemon stop`, in `instances.settings` of `state/forgebox.db`).
 //! * **Unknown whether initialized** (the existence check failed or timed out): the
-//!   record when there is one; without it the render fails (start again), because
-//!   guessing could break an initialized data folder.
+//!   record when there is one; without it the render fails, because guessing could break
+//!   an initialized data folder (a timeout: start again; a persistent I/O error such as
+//!   access denied on an external data folder: fix the folder's permissions).
 //!
 //! Every filesystem access runs in `spawn_blocking` with a timeout (docs/03 §7).
 
@@ -127,17 +135,14 @@ pub fn decide(
         // Initialized (or unknown, where the record is the safe bet): the record wins.
         (initialized, Some(kept)) => {
             let event = match (kept, read) {
-                (
-                    true,
-                    Some(DataDirCase::Insensitive {
-                        dir, code, detail, ..
-                    }),
-                ) => {
+                // Its own code: the code of the read (`insensitive`, `unsupported`,
+                // `missing`) would read as the fallback to `=2`.
+                (true, Some(DataDirCase::Insensitive { dir, detail, .. })) => {
                     let reason = forge_core::fs::case::messages::data_dir_kept_sensitive(&detail).1;
                     Some(case_event_payload(
                         &posix_string(&dir),
                         None,
-                        Some((code, &reason)),
+                        Some((CaseReasonCode::KeptSensitive, &reason)),
                     ))
                 }
                 (
@@ -150,7 +155,9 @@ pub fn decide(
                     None,
                     Some((code, &reason)),
                 )),
-                (false, _) if wanted => {
+                // Only when the folder itself reads as case-sensitive; a failed read says
+                // nothing new (the note logs it).
+                (false, Some(DataDirCase::Sensitive)) if wanted => {
                     let reason =
                         forge_core::fs::case::messages::data_dir_initialized_insensitive().1;
                     Some(case_event_payload(
@@ -368,6 +375,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn initialized_insensitive_and_a_failing_check_keep_the_value_without_an_event() {
+        // `reason_code: initialized` only when the folder itself reads case-sensitive
+        // (docs/15 §5); a failed or timed-out read is only logged.
+        let (_base, dir) = layout();
+        std::fs::create_dir(&dir).unwrap();
+        for checked in [
+            probe(FailingCs, &dir, QUICK).await,
+            probe(SlowCs, &dir, SHORT).await,
+        ] {
+            let outcome = decide(true, Some(false), checked, &dir).unwrap();
+            assert!(!outcome.sensitive, "lower_case_table_names must stay 2");
+            assert_eq!(outcome.record, None);
+            assert_eq!(outcome.event, None);
+            assert!(outcome.note.is_some());
+        }
+    }
+
+    #[tokio::test]
     async fn a_fresh_data_folder_and_a_failing_check_get_insensitive_tables() {
         let (_base, dir) = layout();
         let checked = probe(FailingCs, &dir, QUICK).await;
@@ -467,7 +492,7 @@ mod tests {
         assert!(outcome.sensitive, "lower_case_table_names must stay 0");
         assert_eq!(outcome.record, None);
         let event = outcome.event.expect("warning");
-        assert_eq!(event["reason_code"], "insensitive");
+        assert_eq!(event["reason_code"], "kept_sensitive");
         let reason = event["reason"].as_str().unwrap();
         assert!(reason.contains("lower_case_table_names=0"), "{reason}");
         assert!(!reason.contains("=2"), "{reason}");
