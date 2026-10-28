@@ -292,7 +292,8 @@ Forgebox/
 │       │   ├── state/            # camada de dados (M2-E1-T9, ADR-0034 adendo): layer.ts (StateLayer: um ContextRuntime por contexto,
 │       │   │                     #   QueryClient compartilhado), runtime.ts (stores + stream + snapshots + métricas + fila + RTT),
 │       │   │                     #   stores.ts (stores Zustand por assunto, Draft copy-on-write, reconcile), reducers.ts (EVENT_REDUCERS:
-│       │   │                     #   um reducer ou ignore por EventKind), frame.ts (lote por rAF, timer oculto, teto), eventStream.ts
+│       │   │                     #   um reducer ou ignore por EventKind), effects.ts (JOB_EFFECTS: snapshots e queries a recarregar quando
+│       │   │                     #   um job ou uma chamada mutável termina), frame.ts (lote por rAF, timer oculto, teto), eventStream.ts
 │       │   │                     #   (events.subscribe: lagged/reset/end), snapshots.ts (SNAPSHOTS + resync com debounce), queries.ts
 │       │   │                     #   (chaves [contexto, método, params], EVENT_INVALIDATIONS), jobs.ts (watchJob: poll de 1 s), metrics.ts
 │       │   │                     #   (MetricsPoller: services.status a cada 2 s com consumidor visível e focado, anel de 30, req/s),
