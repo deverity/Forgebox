@@ -550,6 +550,8 @@ impl WindowShell {
 
     /// Applies `snapshot` (on the main thread): picks and applies the material, updates
     /// the state and emits it when it changed. Results of an older refresh are dropped.
+    /// The lock is never held across a native call (a Win32 call may dispatch window
+    /// messages, and the event handlers take the same lock).
     fn apply_snapshot<R: Runtime>(
         &self,
         window: &WebviewWindow<R>,
@@ -557,24 +559,33 @@ impl WindowShell {
         generation: u64,
     ) {
         let prefs = self.prefs.get();
-        let mut inner = self.lock();
-        if generation < inner.generation {
-            return;
-        }
+        let (transparent, applied, applied_theme, background) = {
+            let inner = self.lock();
+            if generation < inner.generation {
+                return;
+            }
+            (
+                inner.transparent,
+                inner.applied,
+                inner.applied_theme,
+                inner.background,
+            )
+        };
         let theme = resolve_theme(prefs.theme, &snapshot);
         let wanted = effective_choice(
             predicted_choice(&snapshot, &prefs, self.forced),
-            inner.transparent,
+            transparent,
         );
-        if !inner.transparent && inner.background != Some((theme, snapshot.high_contrast)) {
+
+        let wanted_background = (!transparent).then_some((theme, snapshot.high_contrast));
+        if wanted_background.is_some() && wanted_background != background {
             let _ =
                 window.set_background_color(Some(opaque_background(theme, snapshot.high_contrast)));
-            inner.background = Some((theme, snapshot.high_contrast));
         }
-        let changed = wanted.effect != inner.applied
-            || (wanted.effect != Effect::None && inner.applied_theme != Some(theme));
-        let applied = if changed {
-            match apply_native(window, inner.applied, wanted.effect, theme) {
+        let changed = wanted.effect != applied
+            || (wanted.effect != Effect::None && applied_theme != Some(theme));
+        let result = if changed {
+            match apply_native(window, applied, wanted.effect, theme) {
                 Ok(()) => wanted,
                 Err(err) => {
                     tracing::warn!(effect = wanted.effect.as_str(), %err, "window material refused; opaque");
@@ -583,15 +594,25 @@ impl WindowShell {
                 }
             }
         } else {
-            EffectChoice::new(inner.applied, wanted.reason)
+            EffectChoice::new(applied, wanted.reason)
         };
-        inner.applied = applied.effect;
-        inner.applied_theme = Some(theme);
-        let state = appearance_state(&snapshot, &prefs, applied);
-        inner.snapshot = snapshot;
-        if state != inner.state {
-            inner.state = state.clone();
-            drop(inner);
+
+        let state = appearance_state(&snapshot, &prefs, result);
+        let emit = {
+            let mut inner = self.lock();
+            inner.applied = result.effect;
+            inner.applied_theme = Some(theme);
+            if wanted_background.is_some() {
+                inner.background = wanted_background;
+            }
+            inner.snapshot = snapshot;
+            let emit = state != inner.state;
+            if emit {
+                inner.state = state.clone();
+            }
+            emit
+        };
+        if emit {
             if let Err(err) = window.emit_to(MAIN_LABEL, APPEARANCE_EVENT, &state) {
                 tracing::debug!(%err, "appearance event not delivered");
             }

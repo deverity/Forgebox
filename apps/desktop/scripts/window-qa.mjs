@@ -1,8 +1,8 @@
 // Real-window checks of the shell (M2-E1-T7, ADR-0035) against a built Forgebox.exe
 // (`pnpm tauri build`, embeds dist/). Dev script; the Win32 side is scripts/qa/window-probe.ps1.
 //
-//   node scripts/window-qa.mjs [--exe <path>] [--checks perf,startup,single,placement,flash,pacing]
-//                              [--runs N]
+//   node scripts/window-qa.mjs [--exe <path>] [--runs N] [--checks perf,startup,single,
+//                              placement,minimized,flash,pacing]   (default: all but pacing)
 //
 // * perf    `Forgebox.exe --perf-startup` N times: valid JSON on stdout, exit 0 (informative
 //           numbers; the formal cold start is the quiet-slot gate, ADR-0036).
@@ -11,7 +11,8 @@
 //           visible time is compared with `ready_unix_ms` (perf_startup); data-theme/vibrancy
 //           are read over CDP.
 // * single  a second launch exits 0 and restores + shows the first window (minimized first).
-// * placement maximize, close (without a tray the GUI exits), reopen: comes back maximized.
+// * placement double-click on the titlebar maximizes; close (without a tray the GUI exits);
+//           reopen: comes back maximized.
 // * minimized `--minimized` stays hidden (6 s, well past `ready` and the watchdog); a plain
 //           second launch shows it.
 // * flash   N launches alternating the system and the dark theme: how the first visible frame
@@ -140,23 +141,32 @@ async function cdp(port) {
             waiting.delete(data.id);
         }
     };
-    async function evaluate(expression) {
+    function send(method, params) {
         const n = ++id;
         const answer = new Promise((ok) => waiting.set(n, ok));
-        ws.send(
-            JSON.stringify({
-                id: n,
-                method: "Runtime.evaluate",
-                params: { expression, awaitPromise: true, returnByValue: true },
-            }),
-        );
-        const res = await answer;
+        ws.send(JSON.stringify({ id: n, method, params }));
+        return answer;
+    }
+    async function evaluate(expression) {
+        const res = await send("Runtime.evaluate", {
+            expression,
+            awaitPromise: true,
+            returnByValue: true,
+        });
         if (res.result?.exceptionDetails) {
             throw new Error(JSON.stringify(res.result.exceptionDetails));
         }
         return res.result?.result?.value;
     }
-    return { evaluate, close: () => ws.close() };
+    /** A real double-click (two press/release pairs) at a page point. */
+    async function doubleClick(x, y) {
+        for (const clickCount of [1, 2]) {
+            for (const type of ["mousePressed", "mouseReleased"]) {
+                await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount });
+            }
+        }
+    }
+    return { evaluate, doubleClick, close: () => ws.close() };
 }
 
 function kill(pid) {
@@ -186,6 +196,14 @@ async function launchWithProbe(tag, extraEnv = {}, prefs = null) {
     pids.add(res.pid);
     const page = await cdp(port);
     return { res, page, port, dataDir, png, childEnv };
+}
+
+/**
+ * A frame that flashes: black (unpainted transparent window) or white (unpainted WebView2).
+ * An empty canvas (the page's own background a frame before its content) is not a flash.
+ */
+function isFlash(kind) {
+    return kind === "black" || kind === "white";
 }
 
 /** What the first visible frame looked like (probe stats). */
@@ -279,7 +297,11 @@ async function checkStartupAndSingle() {
     };
     dark.page.close();
     kill(dark.res.pid);
-    if (darkHtml.theme !== "dark" || report.startup_dark.first_frame_flash !== "none") {
+    if (
+        darkHtml.theme !== "dark" ||
+        isFlash(report.startup_dark.first_frame_flash) ||
+        report.startup_dark.after_100ms !== "none"
+    ) {
         throw new Error(`dark start: ${JSON.stringify(report.startup_dark)}`);
     }
     await sleep(1000);
@@ -305,8 +327,8 @@ async function checkStartupAndSingle() {
         first_frame_png: res.capture ? keepPng("first-visible", state.theme) : null,
     };
     if (!shownAfterReady) throw new Error("window visible before ready");
-    if (report.startup.first_frame_flash !== "none") {
-        throw new Error(`the first visible frame is ${report.startup.first_frame_flash}`);
+    if (isFlash(report.startup.first_frame_flash) || report.startup.after_100ms !== "none") {
+        throw new Error(`first visible frames: ${JSON.stringify(report.startup)}`);
     }
 
     if (checks.has("single")) {
@@ -335,13 +357,15 @@ async function checkStartupAndSingle() {
     kill(res.pid);
 }
 
-/** Maximize, close (no tray yet: the GUI exits), reopen with the same data dir: maximized. */
+/**
+ * Double-click on the titlebar's drag region (maximizes), close (no tray yet: the GUI exits),
+ * reopen with the same data dir: maximized again.
+ */
 async function checkPlacement() {
     const first = await launchWithProbe("placement");
-    await first.page.evaluate(
-        `window.__TAURI_INTERNALS__.invoke("plugin:window|toggle_maximize", { label: "main" })`,
-    );
-    await sleep(500);
+    // An empty spot of the titlebar (x=300 is past the product name, y=16 mid-height).
+    await first.page.doubleClick(300, 16);
+    await sleep(700);
     const maximized = runProbe(
         ["-Action", "Info", "-ProcessId", String(first.res.pid)],
         first.childEnv,
@@ -432,6 +456,7 @@ async function checkFlash() {
     }
     const count = (k) => frames.filter((f) => f.first === k).length;
     report.flash = {
+        flashes: frames.filter((f) => isFlash(f.first)).length,
         runs: frames,
         first_frame: {
             none: count("none"),
@@ -440,6 +465,11 @@ async function checkFlash() {
             empty: count("empty-canvas"),
         },
     };
+    if (report.flash.flashes > 0) {
+        throw new Error(
+            `${report.flash.flashes} of ${runs} launches showed a black/white first frame`,
+        );
+    }
 }
 
 async function checkPacing() {

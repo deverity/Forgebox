@@ -10,7 +10,7 @@ Este documento é normativo para `apps/desktop/`. Exemplos de telas (wireframes)
 3. **Direto, sem modais desnecessários.** Edição inline, popovers, sheets laterais. Modal só para destrutivo.
 4. **Teclado em primeiro lugar.** Command palette (`Ctrl+K`), atalhos globais, navegação por Tab com foco visível.
 5. **Motion com significado.** Animações informam origem/destino; springs (não ease-in-out lineares); respeitam `prefers-reduced-motion`.
-6. **Nativo onde importa.** Titlebar custom integrada, Mica/Acrylic, menu de contexto nativo, notificações do Windows, snap layouts funcionando, DPI por monitor.
+6. **Nativo onde importa.** Titlebar custom integrada, Mica/Acrylic, menu de contexto nativo, notificações do Windows, snap layouts funcionando (Aero Snap e `Win+setas` já; o menu do Windows 11 no hover do maximizar fica para o gate M2, [ADR-0035](adr/0035-window-chrome-materials.md) §6), DPI por monitor.
 7. **Paridade GUI = CLI.** Toda ação mostra o comando `forge` equivalente no tooltip/rodapé ("Copiar comando"). O texto vem do `cli_template` da linha do método em `methods.ts` ([ADR-0037](adr/0037-cli-equivalent-templates.md)), nunca de string escrita à mão na tela.
 
 ## 2. Fundamentos visuais
