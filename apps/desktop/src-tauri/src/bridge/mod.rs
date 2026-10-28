@@ -516,6 +516,23 @@ mod tests {
         );
     }
 
+    /// The DTOs the webview reads, against the JSON fixture that `src/ipc/bridge.test.ts`
+    /// checks against the TypeScript types: a serde round trip must give it back unchanged.
+    #[test]
+    fn dtos_match_the_shared_fixture() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../src/ipc/fixtures/bridge-dtos.json"))
+                .unwrap();
+        let state: ContextStateDto = serde_json::from_value(fixture["state"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(&state).unwrap(), fixture["state"]);
+        assert_eq!(state.status, ConnectionStatus::Reconnecting);
+        let frame: StreamFrame = serde_json::from_value(fixture["frame"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(&frame).unwrap(), fixture["frame"]);
+        assert_eq!(frame.entries[2], StreamEntry::Reset);
+        let answer: SubscribeAnswer = serde_json::from_value(fixture["subscribe"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(&answer).unwrap(), fixture["subscribe"]);
+    }
+
     #[test]
     fn params_must_be_objects() {
         assert_eq!(object_params(None, "x").unwrap(), json!({}));

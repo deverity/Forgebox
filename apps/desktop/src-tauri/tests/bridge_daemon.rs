@@ -188,7 +188,22 @@ fn a_real_daemon_is_started_restarted_after_a_kill_and_left_alone_after_a_user_s
             "{statuses:?}"
         );
         let connected = recorder.last().unwrap();
-        assert!(connected.hello.as_ref().unwrap().local);
+        let hello = connected.hello.as_ref().unwrap();
+        assert!(hello.local);
+        // The fakeBridge's default not-implemented table mirrors the real daemon's.
+        let fixture: Vec<Value> = serde_json::from_str(include_str!(
+            "../../src/ipc/fixtures/not-implemented.json"
+        ))
+        .unwrap();
+        let mirrored: Vec<String> = fixture
+            .iter()
+            .map(|row| row["method"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            hello.not_implemented.clone(),
+            mirrored,
+            "update apps/desktop/src/ipc/fixtures/not-implemented.json (fakeBridge) to match              forge_daemon::api::not_implemented::NOT_IMPLEMENTED"
+        );
         assert!(connected.autostart.initialized);
         let pid = daemon_pid(&bridge).await;
         assert_eq!(cleanup.daemon_pid(), Some(pid));
