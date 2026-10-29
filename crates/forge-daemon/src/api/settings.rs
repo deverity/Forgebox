@@ -473,14 +473,16 @@ fn range_of(manifest: &ToolManifest, name: &str) -> Option<String> {
         .map(|p| p.range.clone())
 }
 
-/// Puts back the reservations moved by a failed set (best effort: the old port may be in
-/// use by the instance itself, then the new reservation stays and the rebuild follows it).
+/// Puts back the reservations moved by a failed set. Best effort: the old port may be in
+/// use by the instance itself; then the new reservation stays and the instance is rebuilt
+/// on it, so the actor always follows the reservations.
 async fn undo_ports(
     daemon: &Daemon,
     manifest: &ToolManifest,
     id: InstanceId,
     moved: &[(String, Option<u16>)],
 ) {
+    let mut restored = true;
     for (name, old) in moved.iter().rev() {
         let Ok(owner) = instance_owner(id, name) else {
             continue;
@@ -495,6 +497,12 @@ async fn undo_ports(
         };
         if let Err(err) = result {
             tracing::warn!(%id, port = %name, %err, "moved port not put back");
+            restored = false;
+        }
+    }
+    if !restored {
+        if let Err(err) = daemon.services.rebuild(id).await {
+            tracing::warn!(%id, %err, "instance not rebuilt on its moved port");
         }
     }
 }
@@ -526,9 +534,6 @@ async fn set_instance(
             .await
         {
             undo_ports(d, manifest, id, &moved).await;
-            if !moved.is_empty() {
-                let _ = d.services.rebuild(id).await;
-            }
             return Err(err);
         }
         moved.push((name.clone(), old));

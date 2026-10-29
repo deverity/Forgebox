@@ -110,12 +110,24 @@ impl FailureReason {
                 owner,
                 pid,
                 exe,
-            } => Self::PortInUse {
-                port: *port,
-                pid: *pid,
-                // Without the executable, the owner text (`mysqld.exe (PID 1)`) says more
-                // than nothing.
-                exe: exe.clone().or_else(|| owner.clone()),
+            } => match (exe, owner) {
+                (Some(exe), _) => Self::PortInUse {
+                    port: *port,
+                    pid: *pid,
+                    exe: Some(exe.clone()),
+                },
+                // Without the executable, the owner text (`mysqld.exe (PID 1)`, which
+                // already names the pid) says more than nothing.
+                (None, Some(owner)) => Self::PortInUse {
+                    port: *port,
+                    pid: None,
+                    exe: Some(owner.clone()),
+                },
+                (None, None) => Self::PortInUse {
+                    port: *port,
+                    pid: *pid,
+                    exe: None,
+                },
             },
             ForgeError::ConfigInvalid(stderr) => Self::ConfigInvalid {
                 stderr: stderr.clone(),
