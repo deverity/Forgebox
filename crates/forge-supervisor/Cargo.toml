@@ -18,6 +18,10 @@ workspace = true
 name = "forgebox-ctrl"
 path = "src/bin/forgebox-ctrl.rs"
 
+# Forgebox icon resource (build.rs, docs/design/brand).
+[build-dependencies]
+embed-resource = { workspace = true }
+
 [dependencies]
 forge-core = { path = "../forge-core" }
 # HTTP health probes (docs/03 §1.4): rustls only, proxies disabled per client.

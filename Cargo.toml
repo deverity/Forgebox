@@ -113,6 +113,11 @@ async-trait = "0.1.89"
 # Embeds the application manifest (requireAdministrator) of forgebox-helper.exe from its
 # build.rs: MIT, no dependencies, no rc.exe/mt.exe needed (ADR-0024).
 embed-manifest = "1.5.1"
+# Embeds the Forgebox icon (apps/desktop/src-tauri/icons/icon.ico, docs/design/brand) in forge,
+# forgeboxd, forgebox-helper, forge-mcp and forgebox-ctrl from their build.rs. MIT; the same
+# version tauri-build already uses through tauri-winres. Needs rc.exe from the Windows SDK, like
+# the Forgebox.exe resource (README "Desenvolvimento"); a no-op on non-Windows targets.
+embed-resource = "3.0.12"
 
 # Desktop shell (apps/desktop/src-tauri, ADR-0002). Tauri 2 stable line; never the 3.x alphas.
 # Default features: wry/WebView2, common-controls-v6 (manifest), compression of embedded assets.
