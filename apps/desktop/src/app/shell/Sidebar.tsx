@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { cx } from "../../design/primitives/shared";
+import { cx, FOCUS_RING } from "../../design/primitives/shared";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import { useHello } from "../../state";
 import { FEATURES, type FeatureDef, type FeatureId } from "../features";
@@ -59,7 +59,7 @@ function useNavBadges(): Partial<Record<FeatureId, NavBadge>> {
 }
 
 const ROW =
-  "relative flex h-8 items-center gap-3 rounded-control px-3 text-body text-fg-primary outline-hidden hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent aria-[current=page]:bg-surface-2 aria-[current=page]:font-semibold";
+  `relative flex h-8 items-center gap-3 rounded-control px-3 text-body text-fg-primary ${FOCUS_RING} hover:bg-surface-2 aria-[current=page]:bg-surface-2 aria-[current=page]:font-semibold`;
 
 function NavRow({
   feature,

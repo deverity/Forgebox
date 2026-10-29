@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { FOCUS_RING } from "../../design/primitives/shared";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import type { ConnectionStatus } from "../../ipc/bridge";
 import { useConnectionStatus, useStatusTotals, useSystem } from "../../state";
@@ -30,7 +31,7 @@ const DNS_TESTID = "status-dns";
 const CA_TESTID = "status-ca";
 
 const CHIP =
-  "rounded-control px-1 text-fg-secondary outline-hidden hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-accent";
+  `rounded-control px-1 text-fg-secondary ${FOCUS_RING} hover:bg-surface-2`;
 
 /**
  * Bottom bar: daemon connection, CPU · RAM (the daemon plus the stack it runs, docs/07

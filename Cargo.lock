@@ -1999,6 +1999,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "clap_complete",
+ "embed-resource",
  "forge-ipc",
  "futures",
  "indicatif",
@@ -2045,6 +2046,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
+ "embed-resource",
  "forge-core",
  "forge-fcgi",
  "forge-ipc",
@@ -2097,6 +2099,7 @@ name = "forge-helper"
 version = "0.1.0"
 dependencies = [
  "embed-manifest",
+ "embed-resource",
  "forge-core",
  "forge-tls",
  "jiff",
@@ -2156,6 +2159,7 @@ dependencies = [
 name = "forge-mcp"
 version = "0.1.0"
 dependencies = [
+ "embed-resource",
  "forge-ipc",
 ]
 
@@ -2164,6 +2168,7 @@ name = "forge-metrics"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "hdrhistogram",
  "insta",
  "jiff",
  "serde",
@@ -2300,6 +2305,7 @@ dependencies = [
 name = "forge-supervisor"
 version = "0.1.0"
 dependencies = [
+ "embed-resource",
  "forge-core",
  "forge-ipc",
  "pretty_assertions",

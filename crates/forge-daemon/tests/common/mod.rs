@@ -25,26 +25,46 @@ pub fn repo_registry() -> PathBuf {
 }
 
 /// Compiles `tests/fixtures/<name>.rs` (no dependencies) with rustc into
-/// `CARGO_TARGET_TMPDIR/<name>/<name>.exe` and returns the executable.
+/// `CARGO_TARGET_TMPDIR/<name>/<name>-<source hash>.exe` and returns the executable.
+///
+/// Safe across processes (cargo nextest runs every test in its own process): one
+/// executable per source content, linked under a per-process name and published by
+/// rename, so no process links over an executable that another one is running.
 pub fn compile_fixture(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     std::fs::create_dir_all(&dir).unwrap();
-    let exe = dir.join(format!("{name}.exe"));
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures")
         .join(format!("{name}.rs"));
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let output = Command::new(rustc)
-        .args(["--edition", "2024", "-O", "-o"])
-        .arg(&exe)
-        .arg(&source)
-        .output()
-        .expect("running rustc");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    // FNV-1a of the source: a new executable whenever the fixture changes.
+    let hash = std::fs::read(&source)
+        .unwrap()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    let exe = dir.join(format!("{name}-{hash:016x}.exe"));
+    if !exe.exists() {
+        let partial = dir.join(format!("{name}-{hash:016x}-{}.exe", std::process::id()));
+        let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+        let output = Command::new(rustc)
+            .args(["--edition", "2024", "-O", "-o"])
+            .arg(&partial)
+            .arg(&source)
+            .output()
+            .expect("running rustc");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // Another process may have published the same executable meanwhile and may be
+        // running it, so it cannot be replaced: keep theirs.
+        if let Err(e) = std::fs::rename(&partial, &exe) {
+            assert!(exe.exists(), "publishing {}: {e}", exe.display());
+            let _ = std::fs::remove_file(&partial);
+        }
+    }
     exe
 }
 

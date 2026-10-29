@@ -60,14 +60,54 @@ pnpm -C apps/desktop build         # tsc + vite build -> dist/
 
 pnpm -C apps/desktop tauri dev                      # Vite on :1420 + window "Forgebox"
 pnpm -C apps/desktop tauri build --debug --no-bundle  # target/debug/Forgebox.exe (dist embedded)
-pnpm -C apps/desktop tauri icon src-tauri/app-icon.png # regenerate icons (delete icons/android and icons/ios)
+pnpm -C apps/desktop icons          # regenerate src-tauri/icons (app + tray) from docs/design/brand
+pnpm -C apps/desktop icons:check    # fail if a committed icon differs from the brand sources
 ```
+
+Icons: never edit `src-tauri/icons/**` or run `tauri icon` by hand. `scripts/gen-icons.mjs` renders
+the master SVG and the hand-pixeled grids of `docs/design/brand` (see its README), runs the pinned
+`tauri icon` for the platform set, composes `icon.ico` and the tray icons and writes the contact
+sheet. The Rust EXEs pick the new `icon.ico` up on the next `cargo build`.
 
 The cold debug build of `src-tauri` takes about 3 minutes (2-4x more while other worktrees compile).
 The binary lands in the workspace `target/`, not in `src-tauri/target`.
 
 `src/ipc/generated.ts` and `src/ipc/methods.ts` are written by `cargo xtask gen-ts`; never edit
 them (ESLint and Prettier skip them).
+
+## Test harness (ADR-0036)
+
+```powershell
+pnpm -C apps/desktop test            # vitest (unit; includes the production-bundle sentinel scan)
+pnpm -C apps/desktop e2e             # Playwright on system Edge against `vite build --mode qa` (headless)
+pnpm -C apps/desktop dev:qa          # qa-mode dev server on :1421
+powershell -NoProfile -File scripts/e2e-desktop.ps1     # real Forgebox.exe + forgeboxd over CDP (kill: starting on auto-restart, reconnecting on a 2nd kill within 60 s)
+powershell -NoProfile -File scripts/qa/capture-window.ps1 -ProcessId <pid> -Png out.png
+pnpm -C apps/desktop perf:startup    # release cold start: 1 discarded + 10 runs, exit 1 if median >= 800 ms
+```
+
+- `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`: the tests use the installed Edge (`channel: "msedge"`);
+  nothing is downloaded. Fallback: `chromium-headless-shell` with `PLAYWRIGHT_BROWSERS_PATH` set to
+  a project-local folder.
+- qa mode (`?scenario=empty|populated|heavy|errors|not-implemented|daemon-down|slow|remote`,
+  `&theme=light|dark&vibrancy=on|off&motion=reduced&locale=pt-BR|en-US|pseudo&latency=<ms>`) builds
+  into `dist-qa/` and is removed from production builds; `src/qa/sentinel.test.ts` proves it.
+  Scenarios live in `qa/fixtures/scenarios` (typed with `satisfies` against `generated.ts`); the bridge
+  is on `window.__FORGEBOX_QA__`.
+- Helpers (`e2e/fixtures.ts`): `qaUrl`, `emulate` (scale factor, color scheme, reduced motion and
+  transparency via CDP), `axeViolations`, `tabOrder`, `trackCls`, and an automatic fixture that fails
+  any test whose page logs a console error.
+- The real-app run opens the WebView2 debugging port through
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` in the test's own environment only (never in code or release
+  config), on a temp portable root with DNS off and a fake Mailpit. It leaves no process or file
+  outside the temp folder (the script fails otherwise).
+- `perf:startup` options: `--exe`, `--runs`, `--budget-ms`, `--budget-factor` (CI uses 1.5), `--daemon
+both|running|stopped`. Run it only on a quiet machine; the session type (rdp/console) is part of
+  the output. Screenshots and captures go to `qa/out/` (gitignored); there is no pixel-diff gate in M2.
+
+- Wiring point of the fake bridge: in `qa` mode `main.tsx` passes `handle.bridge` (also
+  `window.__FORGEBOX_QA__.bridge`) to `<App bridge={...}/>`; the state layer (M2-E1-T10) must use that
+  bridge instead of `createTauriBridge()` whenever the prop is set. Without it `?scenario=` changes nothing.
 
 ## Version pins
 
@@ -76,6 +116,9 @@ them (ESLint and Prettier skip them).
 - `eslint` 9.x: `eslint-plugin-jsx-a11y` supports up to 9. Revisit when it supports 10.
 - `tauri` 2.12.x / `tauri-build` 2.7 (Rust) and `@tauri-apps/cli`/`@tauri-apps/api` 2.12.4. Never
   Tauri 3 alpha.
+- `@resvg/resvg-js` 2.6.x (devDependency of `scripts/gen-icons.mjs`): prebuilt per-platform binary,
+  no install script. Its PNG encoder makes the icon files byte-stable, so a bump means running
+  `pnpm icons` and committing the result.
 
 ## Notes
 

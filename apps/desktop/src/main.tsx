@@ -19,10 +19,12 @@ bootAppearance();
 if (isTauri()) void import("@tauri-apps/api/core");
 
 /**
- * The Tauri bridge in the app. Outside Tauri (vite dev/preview, tests, the qa mode) the scripted
- * fakeBridge stands in, picked by `?scenario=`; the production build drops that branch.
+ * One bridge-selection path: the qa-mode scenario bridge (bootQa, `window.__FORGEBOX_QA__`),
+ * else the Tauri bridge, else (plain dev outside Tauri) the scripted fakeBridge picked by
+ * `?scenario=`. The production build drops the fake branch.
  */
-async function createBridge(): Promise<Bridge> {
+async function pickBridge(qaBridge: Bridge | undefined): Promise<Bridge> {
+  if (qaBridge !== undefined) return qaBridge;
   if (!isTauri() && import.meta.env.MODE !== "production") {
     const { createFakeBridge, scenarioFromSearch } = await import("./ipc/fakeBridge");
     return createFakeBridge(scenarioFromSearch(window.location.search));
@@ -42,12 +44,24 @@ function render(root: HTMLElement, bridge: Bridge) {
   void followAppearance();
 }
 
+// QA builds (`vite build --mode qa`, ADR-0036) install the scenario-driven fake bridge first.
+// `MODE` is a build-time constant: production builds drop the branch and the whole src/qa tree.
+const qa =
+  import.meta.env.MODE === "qa"
+    ? import("./qa/bootstrap").then((m) => m.bootQa())
+    : Promise.resolve(null);
+
 // Render even if i18n init fails: the UI must never stay blank because of it.
-initI18n({ allowPseudo: import.meta.env.MODE !== "production" })
+qa.then((handle) =>
+  initI18n({
+    allowPseudo: import.meta.env.MODE !== "production",
+    ...(handle?.locale ? { override: handle.locale } : {}),
+  }),
+)
   .catch((error: unknown) => {
     console.warn("i18n init failed", error);
   })
-  .then(createBridge)
+  .then(async () => pickBridge((await qa)?.bridge))
   .then((bridge) => {
     render(container, bridge);
   })

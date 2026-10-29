@@ -102,6 +102,10 @@ camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"
 insta = "1.49.0"
+# Latency histograms of forge-metrics (docs/14, ADR-0048): the HDR layout and the V2 encoding
+# of the persisted minute/hour blobs. Only `serialization` (V2 + base64/flate2/nom); not
+# `sync` (crossbeam), the aggregator is single-owner. MIT OR Apache-2.0.
+hdrhistogram = { version = "7.5.4", default-features = false, features = ["serialization"] }
 # Filesystem watcher of parked directories (forge-sites). CC0-1.0, allowed by deny.toml.
 notify = { version = "8.2.0", default-features = false }
 # DNS server for the local zones (forge-net::dns, ADR-0004). No default features: plain UDP/TCP
@@ -113,6 +117,11 @@ async-trait = "0.1.89"
 # Embeds the application manifest (requireAdministrator) of forgebox-helper.exe from its
 # build.rs: MIT, no dependencies, no rc.exe/mt.exe needed (ADR-0024).
 embed-manifest = "1.5.1"
+# Embeds the Forgebox icon (apps/desktop/src-tauri/icons/icon.ico, docs/design/brand) in forge,
+# forgeboxd, forgebox-helper, forge-mcp and forgebox-ctrl from their build.rs. MIT; the same
+# version tauri-build already uses through tauri-winres. Needs rc.exe from the Windows SDK, like
+# the Forgebox.exe resource (README "Desenvolvimento"); a no-op on non-Windows targets.
+embed-resource = "3.0.12"
 
 # Desktop shell (apps/desktop/src-tauri, ADR-0002). Tauri 2 stable line; never the 3.x alphas.
 # Default features: wry/WebView2, common-controls-v6 (manifest), compression of embedded assets.

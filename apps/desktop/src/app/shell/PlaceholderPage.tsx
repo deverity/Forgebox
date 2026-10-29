@@ -15,6 +15,7 @@ export function PlaceholderPage({ id, children }: { id: FeatureId; children?: Re
   const feature = featureOf(id);
   return (
     <div data-testid={`page-${id}`} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <h1 className="px-4 pt-4 text-title-1">{t(`nav.${id}`)}</h1>
       <EmptyState
         title={t("placeholder.title", { feature: t(`nav.${id}`) })}
         description={

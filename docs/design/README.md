@@ -8,6 +8,7 @@ Conteúdo esperado (a produzir em M2-E1 / M2-E4):
 - `screens/` — wireframes/mockups por tela (`onboarding.png`, `dashboard.png`, `services.png`, `services-detail.png`, `sites.png`, `site-detail.png`, `php.png`, `databases.png`, `mail.png`, `logs.png`, `catalog.png`, `catalog-tool.png`, `terminal.png`, `settings.png`, `tray.png`), em light e dark.
 - `components.md` — anatomia e estados de cada primitive (Button, Toggle, StatusDot, Sheet, Toast…).
 - `motion.md` — tabela de springs/durações por interação, com GIFs de referência.
+- `brand/` — ícone do Forgebox (app/EXEs) e ícones de estado da bandeja: arte de referência do usuário, master SVG, grades pixel a pixel de 16–32 px, paleta, folha de contato; ver [brand/README.md](brand/README.md) (M2-E1-T22).
 - `icons/` — ícones de tools em SVG (mono + color), 24 px grid, nomes = `metadata.id` do manifesto.
 
 Regra: nenhum valor visual novo entra em código sem estar aqui primeiro.

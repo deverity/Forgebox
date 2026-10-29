@@ -5,6 +5,7 @@
 import { Tabs } from "radix-ui";
 import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { FOCUS_RING } from "../design/primitives/shared";
 import { dashboardSections, siteTabs, useSlot, type SlotLabel } from "./slots";
 
 class SlotBoundary extends Component<{ id: string; children: ReactNode }, { failed: boolean }> {
@@ -63,7 +64,7 @@ export function SiteTabsHost({ siteId }: { siteId: string }) {
           <Tabs.Trigger
             key={tab.id}
             value={tab.id}
-            className="h-8 px-3 text-body text-fg-secondary outline-hidden focus-visible:outline-2 focus-visible:outline-accent data-[state=active]:font-semibold data-[state=active]:text-fg-primary"
+            className={`h-8 px-3 text-body text-fg-secondary ${FOCUS_RING} data-[state=active]:font-semibold data-[state=active]:text-fg-primary`}
           >
             <Suspense fallback={null}>
               <SlotLabelText label={tab.label} />

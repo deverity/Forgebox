@@ -30,7 +30,8 @@ C:\Forgebox\
 ├── VERSION                       # "1.0.0+build.sha"
 │
 ├── app\                          # recursos da GUI que não vão embutidos (ícones de tools, templates de UI)
-│   └── icons\tools\*.svg
+│   └── icons\tools\*.svg         # o ícone do Forgebox e os da bandeja NÃO ficam aqui: vão embutidos nos EXEs
+│                                 #   (recurso 32512 de todos os .exe acima; bandeja dentro do Forgebox.exe), docs/design/brand
 │
 ├── bin\                          # TOOLS INSTALADAS — layout versionado, visível, copiável
 │   ├── shims\                    # php.cmd, composer.cmd, node.cmd... → versão do projeto (.php-version, .nvmrc, forgebox.yaml) ou bin\<tool>\current; forgebox-project.ps1 lê o forgebox.yaml (opcional ao PATH; docs/06 §2.3)
