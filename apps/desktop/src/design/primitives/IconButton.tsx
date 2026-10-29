@@ -33,8 +33,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         "relative inline-flex size-8 items-center justify-center rounded-control border transition-colors duration-(--duration-micro)",
         BUTTON_VARIANT_CLASS[variant],
         FOCUS_RING,
-        DISABLED,
-        loading && "disabled:cursor-progress disabled:opacity-100",
+        loading ? "disabled:cursor-progress" : DISABLED,
       )}
     >
       <span aria-hidden="true" className={cx("inline-flex size-4", loading && "invisible")}>

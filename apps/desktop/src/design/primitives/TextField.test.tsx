@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { conflictingColorClasses } from "./shared";
 import { TextField } from "./TextField";
 
 const validate = (v: string) => (/^[a-z0-9-]+$/.test(v) ? undefined : "Invalid host");
@@ -43,5 +44,25 @@ describe("TextField", () => {
     await userEvent.setup().type(screen.getByRole("textbox"), "x");
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.getByRole("textbox")).toHaveValue("app");
+  });
+
+  it("paints the error border: state-failed and NOT stroke-strong", () => {
+    render(<TextField label="Port" error="In use" />);
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveClass("border-state-failed");
+    expect(input).not.toHaveClass("border-stroke-strong");
+    expect(conflictingColorClasses(input.className)).toEqual([]);
+  });
+
+  it("uses the neutral border without error and has no conflicting colours", () => {
+    render(<TextField label="Port" />);
+    const input = screen.getByRole("textbox");
+    expect(input).toHaveClass("border-stroke-strong");
+    expect(input).not.toHaveClass("border-state-failed");
+  });
+
+  it("sizes by width token", () => {
+    const { container } = render(<TextField label="Port" width="sm" />);
+    expect(container.firstElementChild).toHaveClass("w-40");
   });
 });

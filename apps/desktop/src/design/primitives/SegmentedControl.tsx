@@ -64,11 +64,15 @@ export function SegmentedControl({
           >
             {isOn ? (
               <motion.span
-                layoutId={pillId}
+                // Reduced motion: no shared layout animation (it would slide); the pill fades in
+                // with the reduced preset from useMotionPreset.
+                {...(reduced
+                  ? { initial: { opacity: 0 }, animate: { opacity: 1 } }
+                  : { layoutId: pillId })}
                 aria-hidden="true"
                 data-testid={SEGMENT_PILL_TESTID}
                 className="absolute inset-0 rounded-control border border-stroke bg-surface"
-                transition={reduced ? { duration: 0.1, ease: "linear" } : transition}
+                transition={transition}
               />
             ) : null}
             <span className="relative">{option.label}</span>

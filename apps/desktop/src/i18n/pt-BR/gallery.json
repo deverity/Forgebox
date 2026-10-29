@@ -8,7 +8,6 @@
     "ghost": "Fantasma",
     "destructive": "Destrutivo",
     "disabled": "Desabilitado",
-    "loading": "Carregando",
     "loadingLabel": "Salvando"
   },
   "iconButton": {
@@ -20,7 +19,6 @@
   "toggle": {
     "title": "Toggle",
     "off": "Desligado",
-    "on": "Ligado",
     "disabled": "Desabilitado",
     "autoStart": "Iniciar com o Windows"
   },
@@ -74,8 +72,5 @@
   "kbd": {
     "title": "Kbd",
     "palette": "Abrir a paleta de comandos"
-  },
-  "reduced": {
-    "label": "Prévia com movimento reduzido"
   }
 }

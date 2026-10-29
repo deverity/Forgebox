@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { DISABLED, FOCUS_RING, SPINNER, cx } from "./shared";
+import { DISABLED, FOCUS_RING, SPINNER_INLINE, cx } from "./shared";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
 
@@ -22,13 +22,23 @@ export const BUTTON_VARIANT_CLASS: Record<ButtonVariant, string> = {
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> {
   variant?: ButtonVariant;
-  /** Shows a spinner and blocks clicks; the width does not change (no layout shift, docs/07 section 11). */
+  /** Shows a spinner plus text and blocks clicks; the width does not change (docs/07 sections 1.2, 11). */
   loading?: boolean;
+  /** Localized text shown while loading (e.g. "Saving"); defaults to the normal children. */
+  loadingLabel?: string;
   children: ReactNode;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", loading = false, disabled, type = "button", children, ...rest },
+  {
+    variant = "secondary",
+    loading = false,
+    loadingLabel,
+    disabled,
+    type = "button",
+    children,
+    ...rest
+  },
   ref,
 ) {
   return (
@@ -44,18 +54,36 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         "relative inline-flex h-8 items-center justify-center gap-2 rounded-control border px-4 text-body transition-colors duration-(--duration-micro)",
         BUTTON_VARIANT_CLASS[variant],
         FOCUS_RING,
-        DISABLED,
-        loading && "disabled:cursor-progress disabled:opacity-100",
+        // The loading button is disabled too; it keeps full opacity and shows a progress cursor.
+        loading ? "disabled:cursor-progress" : DISABLED,
       )}
     >
-      {/* The label stays in flow (transparent, not `invisible`/`hidden`) so the button keeps
-          its width and its accessible name while loading (WCAG 4.1.2). */}
-      <span className={cx("inline-flex items-center gap-2", loading && "opacity-0")}>
-        {children}
+      {/* Both contents share ONE grid cell, so the width is the max of the two (no layout shift);
+          the inactive one is transparent + aria-hidden, so the accessible name is exactly the
+          visible text in either state. */}
+      <span className="grid">
+        <span
+          data-testid="button-content"
+          aria-hidden={loading || undefined}
+          className={cx(
+            "col-start-1 row-start-1 inline-flex items-center justify-center gap-2",
+            loading && "opacity-0",
+          )}
+        >
+          {children}
+        </span>
+        <span
+          data-testid="button-loading-content"
+          aria-hidden={!loading || undefined}
+          className={cx(
+            "col-start-1 row-start-1 inline-flex items-center justify-center gap-2",
+            !loading && "opacity-0",
+          )}
+        >
+          <span aria-hidden="true" data-testid="button-spinner" className={SPINNER_INLINE} />
+          {loadingLabel ?? children}
+        </span>
       </span>
-      {loading ? (
-        <span aria-hidden="true" data-testid="button-spinner" className={SPINNER} />
-      ) : null}
     </button>
   );
 });

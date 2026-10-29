@@ -25,9 +25,10 @@ describe("StatusDot", () => {
     expect(screen.getByRole("img", { name: TEXT[state] })).toHaveAttribute("data-state", state);
   });
 
-  it("renders the visible label on request", () => {
+  it("renders the visible label on request without repeating the name for AT", () => {
     render(<StatusDot state="running" showLabel />);
     expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
   it.each(SERVICE_STATES)("animates %s per docs/07 section 3", (state) => {
@@ -49,14 +50,24 @@ describe("StatusDot", () => {
   it("actually runs the mount animation (not rendered at the final keyframe)", async () => {
     const { unmount } = render(<StatusDot state="running" />);
     const dot = screen.getByRole("img");
-    await waitFor(() => { expect(Number(dot.style.opacity || "1")).toBeLessThan(0.99); }, {
-      timeout: 1500,
-    });
+    await waitFor(
+      () => {
+        expect(Number(dot.style.opacity || "1")).toBeLessThan(0.99);
+      },
+      {
+        timeout: 1500,
+      },
+    );
     unmount();
     render(<StatusDot state="failed" />);
     const failed = screen.getByRole("img");
-    await waitFor(() => { expect(failed.style.transform).toMatch(/translateX\((?!0px)/); }, {
-      timeout: 1000,
-    });
+    await waitFor(
+      () => {
+        expect(failed.style.transform).toMatch(/translateX\((?!0px)/);
+      },
+      {
+        timeout: 1000,
+      },
+    );
   });
 });

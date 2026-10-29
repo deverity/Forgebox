@@ -32,22 +32,61 @@ describe("Button", () => {
     expect(screen.getByRole("button")).toBeDisabled();
   });
 
-  it("loading blocks clicks, is aria-busy and keeps the label in flow to hold the width", async () => {
+  it("loading blocks clicks, is aria-busy and keeps the text visible with a spinner", async () => {
     const onClick = vi.fn();
     render(
       <Button loading onClick={onClick}>
         Save changes
       </Button>,
     );
-    // The label must stay in the accessibility tree (no visibility:hidden).
     const button = screen.getByRole("button", { name: "Save changes" });
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute("aria-busy", "true");
     expect(screen.getByTestId("button-spinner")).toBeInTheDocument();
-    // Still in the DOM, in layout and in the a11y tree; only transparent.
-    expect(screen.getByText("Save changes")).not.toHaveClass("invisible");
+    // The visible (loading) content is not transparent; the spinner sits in it, before the text.
+    const active = screen.getByTestId("button-loading-content");
+    expect(active).not.toHaveClass("opacity-0");
+    expect(active).not.toHaveAttribute("aria-hidden");
+    expect(active).toContainElement(screen.getByTestId("button-spinner"));
+    expect(active).toHaveTextContent("Save changes");
     await userEvent.setup().click(button);
     expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("shows loadingLabel while loading and names the button by it", () => {
+    const { rerender } = render(<Button loadingLabel="Saving">Save</Button>);
+    expect(screen.getByRole("button", { name: "Save" })).not.toHaveAttribute("aria-busy");
+    expect(screen.getByTestId("button-loading-content")).toHaveClass("opacity-0");
+    rerender(
+      <Button loading loadingLabel="Saving">
+        Save
+      </Button>,
+    );
+    expect(screen.getByRole("button", { name: "Saving" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("button-content")).toHaveClass("opacity-0");
+    expect(screen.getByTestId("button-content")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByTestId("button-loading-content")).not.toHaveClass("opacity-0");
+  });
+
+  it("stacks normal and loading content in the same grid cell (width = max of both)", () => {
+    render(
+      <Button loading loadingLabel="Saving">
+        Save
+      </Button>,
+    );
+    for (const id of ["button-content", "button-loading-content"]) {
+      const el = screen.getByTestId(id);
+      expect(el).toHaveClass("col-start-1", "row-start-1");
+      expect(el.parentElement).toHaveClass("grid");
+    }
+  });
+
+  it("uses the progress cursor, not not-allowed, while loading", () => {
+    const { rerender } = render(<Button loading>Go</Button>);
+    expect(screen.getByRole("button").className).toContain("disabled:cursor-progress");
+    expect(screen.getByRole("button").className).not.toContain("cursor-not-allowed");
+    rerender(<Button disabled>Go</Button>);
+    expect(screen.getByRole("button").className).toContain("disabled:cursor-not-allowed");
   });
 });
 

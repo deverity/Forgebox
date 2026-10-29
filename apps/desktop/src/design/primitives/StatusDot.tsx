@@ -90,7 +90,8 @@ export function StatusDot({
     <span className="inline-flex items-center gap-2">
       <motion.span
         key={state}
-        role="img"
+        // With showLabel the text next to the dot already names the state: hide the dot.
+        {...(showLabel ? { "aria-hidden": true } : { role: "img" })}
         aria-label={text}
         data-state={state}
         data-animation={kind}

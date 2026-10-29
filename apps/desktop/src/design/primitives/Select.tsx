@@ -1,5 +1,6 @@
 import { Select as RadixSelect } from "radix-ui";
-import { DISABLED, FIELD_BASE, FOCUS_RING, cx } from "./shared";
+import { DISABLED, FIELD_BASE, FIELD_BORDER, FIELD_WIDTH, FOCUS_RING, cx } from "./shared";
+import type { FieldWidth } from "./shared";
 
 export interface SelectOption {
   value: string;
@@ -17,6 +18,8 @@ export interface SelectProps {
   /** Accessible name of the trigger. */
   label: string;
   id?: string;
+  /** Width token (default "md"). */
+  width?: FieldWidth;
 }
 
 function Chevron() {
@@ -46,6 +49,7 @@ export function Select({
   disabled = false,
   label,
   id,
+  width = "md",
 }: SelectProps) {
   return (
     <RadixSelect.Root
@@ -59,7 +63,9 @@ export function Select({
         aria-label={label}
         className={cx(
           FIELD_BASE,
-          "inline-flex min-w-40 items-center justify-between gap-2 text-left data-[placeholder]:text-fg-tertiary",
+          FIELD_BORDER,
+          FIELD_WIDTH[width],
+          "inline-flex items-center justify-between gap-2 text-left data-[placeholder]:text-fg-tertiary",
           FOCUS_RING,
           DISABLED,
         )}

@@ -8,7 +8,6 @@
     "ghost": "Ghost",
     "destructive": "Destructive",
     "disabled": "Disabled",
-    "loading": "Loading",
     "loadingLabel": "Saving"
   },
   "iconButton": {
@@ -20,7 +19,6 @@
   "toggle": {
     "title": "Toggle",
     "off": "Off",
-    "on": "On",
     "disabled": "Disabled",
     "autoStart": "Start with Windows"
   },
@@ -74,8 +72,5 @@
   "kbd": {
     "title": "Kbd",
     "palette": "Open the command palette"
-  },
-  "reduced": {
-    "label": "Reduced motion preview"
   }
 }

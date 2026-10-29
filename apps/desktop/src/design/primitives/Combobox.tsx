@@ -1,6 +1,7 @@
 import { useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { DISABLED, FIELD_BASE, FOCUS_RING, cx } from "./shared";
+import { DISABLED, FIELD_BASE, FIELD_BORDER, FIELD_WIDTH, FOCUS_RING, cx } from "./shared";
+import type { FieldWidth } from "./shared";
 
 export interface ComboboxOption {
   value: string;
@@ -19,6 +20,8 @@ export interface ComboboxProps {
   /** Accessible name of the input. */
   label: string;
   id?: string;
+  /** Width token (default "md"). */
+  width?: FieldWidth;
 }
 
 /**
@@ -36,6 +39,7 @@ export function Combobox({
   disabled = false,
   label,
   id,
+  width = "md",
 }: ComboboxProps) {
   const uid = useId();
   const listId = `${uid}-list`;
@@ -92,7 +96,7 @@ export function Combobox({
   }
 
   return (
-    <div className="relative inline-block min-w-40">
+    <div className={cx("relative inline-block", FIELD_WIDTH[width])}>
       <input
         ref={inputRef}
         {...(id !== undefined && { id })}
@@ -102,7 +106,7 @@ export function Combobox({
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={
-          open && activeOption ? `${uid}-opt-${activeOption.value}` : undefined
+          open && activeOption ? `${uid}-opt-${String(activeIndex)}` : undefined
         }
         autoComplete="off"
         disabled={disabled}
@@ -121,7 +125,7 @@ export function Combobox({
           setFilter(null);
         }}
         onKeyDown={onKeyDown}
-        className={cx(FIELD_BASE, "w-full", FOCUS_RING, DISABLED)}
+        className={cx(FIELD_BASE, FIELD_BORDER, "w-full", FOCUS_RING, DISABLED)}
       />
       <ul
         id={listId}
@@ -133,7 +137,7 @@ export function Combobox({
         {visible.map((option, index) => (
           <li
             key={option.value}
-            id={`${uid}-opt-${option.value}`}
+            id={`${uid}-opt-${String(index)}`}
             role="option"
             aria-selected={option.value === selected}
             data-active={index === activeIndex || undefined}

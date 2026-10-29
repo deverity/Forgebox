@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { createFormatters } from "../../i18n/format";
 import { Badge, BADGE_TONES } from "../../design/primitives/Badge";
 import { BUTTON_VARIANTS, Button } from "../../design/primitives/Button";
 import { Combobox } from "../../design/primitives/Combobox";
@@ -53,7 +54,9 @@ const HOST_RE = /^[a-z0-9-]+$/;
 
 /** `/__gallery`: every control primitive with all variants and states (docs/design/components.md). */
 export default function Gallery() {
-  const { t } = useTranslation("gallery");
+  const { t, i18n } = useTranslation("gallery");
+  const fmt = createFormatters(i18n.language);
+  const MB = 1024 * 1024;
   const [toggle, setToggle] = useState(true);
   const [memory, setMemory] = useState(256);
   const [theme, setTheme] = useState<string>(SYSTEM);
@@ -75,8 +78,8 @@ export default function Gallery() {
             <Button variant={variant} disabled>
               {t("button.disabled")}
             </Button>
-            <Button variant={variant} loading>
-              {t("button.loadingLabel")}
+            <Button variant={variant} loading loadingLabel={t("button.loadingLabel")}>
+              {t(`button.${variant}`)}
             </Button>
           </div>
         ))}
@@ -158,9 +161,11 @@ export default function Gallery() {
           step={64}
           value={memory}
           onValueChange={setMemory}
-          valueText={`${String(memory)} MB`}
+          valueText={fmt.bytes(memory * MB)}
         />
-        <span className="text-callout tabular-nums text-fg-secondary">{memory} MB</span>
+        <span className="text-callout tabular-nums text-fg-secondary">
+          {fmt.bytes(memory * MB)}
+        </span>
         <Slider label={t("slider.disabled")} defaultValue={128} disabled />
       </Section>
 

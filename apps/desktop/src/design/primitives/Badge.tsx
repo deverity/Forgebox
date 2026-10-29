@@ -12,13 +12,15 @@ export const BADGE_TONES: readonly BadgeTone[] = [
   "info",
 ];
 
+// The tone is carried by the border only: state-* tokens are guaranteed 3:1 (UI), not the 4.5:1
+// that small text needs (docs/07 section 2.3), so the text stays fg-primary/fg-secondary.
 const TONE: Record<BadgeTone, string> = {
   neutral: "text-fg-secondary border-stroke-strong",
-  accent: "text-accent border-accent",
-  success: "text-state-running border-state-running",
-  warning: "text-state-starting border-state-starting",
-  danger: "text-state-failed border-state-failed",
-  info: "text-state-updating border-state-updating",
+  accent: "text-fg-primary border-accent",
+  success: "text-fg-primary border-state-running",
+  warning: "text-fg-primary border-state-starting",
+  danger: "text-fg-primary border-state-failed",
+  info: "text-fg-primary border-state-updating",
 };
 
 /** Small status/count label. The meaning is always in the text, never only in the colour. */

@@ -59,9 +59,17 @@ describe("SegmentedControl", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("uses the fade under reduced motion", () => {
+  it("uses the fade under reduced motion: no shared layout slide, opacity 0 to 1", async () => {
     mockReducedMotion(true);
     render(<SegmentedControl label="Theme" options={OPTIONS} />);
     expect(screen.getByRole("radiogroup")).toHaveAttribute("data-motion", "fade");
+    const pill = screen.getByTestId("segment-pill");
+    // Without layoutId Motion does not translate the pill between segments: it only fades.
+    await waitFor(() => {
+      expect(Number(pill.style.opacity)).toBeGreaterThan(0.99);
+    });
+    await userEvent.setup().click(screen.getByRole("radio", { name: "Dark" }));
+    const next = screen.getByTestId("segment-pill");
+    expect(next.style.transform === "" || next.style.transform === "none").toBe(true);
   });
 });

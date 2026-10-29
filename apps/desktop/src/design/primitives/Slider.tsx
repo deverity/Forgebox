@@ -1,5 +1,6 @@
 import { Slider as RadixSlider } from "radix-ui";
-import { FOCUS_RING, cx } from "./shared";
+import { FIELD_WIDTH, FOCUS_RING, cx } from "./shared";
+import type { FieldWidth } from "./shared";
 
 export interface SliderProps {
   value?: number;
@@ -13,6 +14,8 @@ export interface SliderProps {
   label: string;
   /** Optional localized text for the current value (aria-valuetext), e.g. "512 MB". */
   valueText?: string;
+  /** Width token (default "md"). */
+  width?: FieldWidth;
 }
 
 /** Single-thumb Radix slider: arrows +/- step, PageUp/PageDown x10, Home/End min/max. */
@@ -26,6 +29,7 @@ export function Slider({
   disabled = false,
   label,
   valueText,
+  width = "md",
 }: SliderProps) {
   return (
     <RadixSlider.Root
@@ -41,7 +45,8 @@ export function Slider({
       step={step}
       disabled={disabled}
       className={cx(
-        "relative flex h-5 w-48 touch-none items-center select-none",
+        FIELD_WIDTH[width],
+        "relative flex h-5 touch-none items-center select-none",
         disabled && "cursor-not-allowed opacity-50",
       )}
     >
@@ -52,7 +57,7 @@ export function Slider({
         aria-label={label}
         {...(valueText !== undefined && { "aria-valuetext": valueText })}
         className={cx(
-          "block size-4 rounded-full border border-stroke-strong bg-surface shadow-popover",
+          "block size-4 rounded-full border-2 border-stroke-strong bg-surface",
           FOCUS_RING,
         )}
       />

@@ -26,9 +26,12 @@ describe("/__gallery", () => {
     ]) {
       expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
     }
-    expect(screen.getAllByRole("img").map((el) => el.getAttribute("aria-label"))).toEqual(
-      expect.arrayContaining(["Running", "Starting", "Stopped", "Failed", "Updating"]),
-    );
+    // The gallery shows the StatusDots with their label, so the text names each state.
+    for (const state of ["Running", "Starting", "Stopped", "Failed", "Updating"]) {
+      expect(screen.getAllByText(state).length).toBeGreaterThan(0);
+    }
+    // Loading buttons show text (not only a spinner).
+    expect(screen.getAllByText("Saving").length).toBeGreaterThanOrEqual(4);
     expect(
       screen.getAllByRole("button", { name: /Primary|Disabled|Saving/ }).length,
     ).toBeGreaterThanOrEqual(3);

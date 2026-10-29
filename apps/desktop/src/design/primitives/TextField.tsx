@@ -1,6 +1,7 @@
 import { forwardRef, useId, useState } from "react";
 import type { ChangeEvent, InputHTMLAttributes } from "react";
-import { DISABLED, FIELD_BASE, FOCUS_RING, cx } from "./shared";
+import { DISABLED, FIELD_BASE, FIELD_BORDER, FIELD_WIDTH, FOCUS_RING, cx } from "./shared";
+import type { FieldWidth } from "./shared";
 
 export interface TextFieldProps extends Omit<
   InputHTMLAttributes<HTMLInputElement>,
@@ -9,6 +10,8 @@ export interface TextFieldProps extends Omit<
   /** Visible label (already localized by the caller). */
   label: string;
   hint?: string;
+  /** Width token (default "md"). */
+  width?: FieldWidth;
   /** Forced error message (e.g. from the server); wins over `validate`. */
   error?: string;
   /**
@@ -19,7 +22,19 @@ export interface TextFieldProps extends Omit<
 }
 
 export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function TextField(
-  { label, hint, error, validate, value, defaultValue, onChange, onBlur, disabled, ...rest },
+  {
+    label,
+    hint,
+    width = "md",
+    error,
+    validate,
+    value,
+    defaultValue,
+    onChange,
+    onBlur,
+    disabled,
+    ...rest
+  },
   ref,
 ) {
   const uid = useId();
@@ -32,7 +47,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
     .join(" ");
 
   return (
-    <div className="flex w-64 flex-col gap-1">
+    <div className={cx("flex flex-col gap-1", FIELD_WIDTH[width])}>
       <label htmlFor={uid} className="text-callout text-fg-secondary">
         {label}
       </label>
@@ -52,7 +67,14 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
           setTouched(true);
           onBlur?.(event);
         }}
-        className={cx(FIELD_BASE, "w-full", message && "border-state-failed", FOCUS_RING, DISABLED)}
+        className={cx(
+          FIELD_BASE,
+          "w-full",
+          // Exactly one border colour (see FIELD_BASE).
+          message ? "border-state-failed" : FIELD_BORDER,
+          FOCUS_RING,
+          DISABLED,
+        )}
       />
       {message ? (
         <p id={`${uid}-error`} role="alert" className="text-caption text-state-failed">

@@ -26,9 +26,9 @@ Regras comuns: só tokens (`bg-surface`, `text-fg-primary`, `rounded-control`, `
 Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyText`...); nenhum texto fixo, exceto o estado do StatusDot, localizado internamente em `common:status.*`. Nenhum aceita `className` (só tokens). Foco: anel `outline-accent` 2 px com offset 2 px (`FOCUS_RING`; no Tailwind 4 `outline-hidden` zera o estilo, por isso `focus-visible:outline-solid` e obrigatório, com teste de regressão). Alto contraste (forced-colors): Toggle, Slider e StatusDot usam `forced-color-adjust-none` para pintar o estado com os valores `Highlight`/`CanvasText` de `tokens.css`. Movimento: `useMotionPreset(preset)` (`design/useMotionPreset.ts`) reavalia `prefers-reduced-motion` ao vivo; sob movimento reduzido tudo vira fade de 100 ms (`data-motion="fade"`).
 
 ### Button / IconButton
-- **Anatomia:** `<button>` 32 px de altura, borda 1 px, `radius-control`; rótulo em `span`; spinner sobreposto em `loading`. IconButton é 32x32, ícone 16 px e `label` obrigatório (`aria-label` + `title`).
+- **Anatomia:** `<button>` 32 px de altura, borda 1 px, `radius-control`; conteúdo em grade de uma célula (`grid` + `col-start-1 row-start-1`) com dois blocos empilhados: o normal e o de loading (spinner inline de 16 px à esquerda + texto). IconButton é 32x32, ícone 16 px e `label` obrigatório (`aria-label` + `title`).
 - **Variantes:** `primary` (fundo `accent`, texto `fg-on-accent`), `secondary` (surface + `stroke-strong`), `ghost`, `destructive` (borda e texto `state-failed`).
-- **Estados:** `loading` desabilita cliques, define `aria-busy` e mantém o rótulo no fluxo com `opacity-0` (nunca `invisible`/`hidden`: o nome acessível permanece na árvore de acessibilidade, WCAG 4.1.2), então a largura não muda; `disabled` com opacidade 50 %.
+- **Estados:** `loading` desabilita cliques, define `aria-busy` e mostra spinner + texto (nunca spinner sozinho, docs/07 §1.2): `loadingLabel` (já localizado pelo chamador) troca o texto, senão o rótulo normal continua visível. O bloco inativo fica `opacity-0` + `aria-hidden`, então o nome acessível é igual ao texto visível e a largura é o máximo dos dois (sem layout shift). Em `loading` o cursor é `progress` e a opacidade 100 %; `disabled` (sem loading) usa opacidade 50 % e `not-allowed`.
 - **Teclado:** Enter e Espaço (nativo).
 
 ### Toggle
@@ -44,21 +44,22 @@ Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyT
 - **Teclado:** ArrowDown/Up abrem e movem (circular); Enter escolhe; Escape fecha e descarta o filtro; digitar filtra por substring sem diferenciar maiúsculas; sem resultado mostra `emptyText`.
 
 ### SegmentedControl
-- Radix `RadioGroup` (`role=radiogroup`, itens `role=radio`): setas movem e selecionam; Tab sai do grupo. A pílula de seleção desliza com `layoutId` e a mola `toggle`; reduced motion usa fade de 100 ms.
+- Radix `RadioGroup` (`role=radiogroup`, itens `role=radio`): setas movem e selecionam; Tab sai do grupo. A pílula de seleção desliza com `layoutId` e a mola `toggle`; em reduced motion a pílula é renderizada sem `layoutId` (que deslizaria) e faz fade de opacidade 0 para 1 com o preset reduzido (100 ms).
 
 ### Slider
 - Radix `Slider` de um polegar (`role=slider`, `aria-valuemin/max/now`, `aria-valuetext` opcional). Setas = passo; PageUp/PageDown = 10 passos; Home/End = extremos.
 
 ### TextField
-- `label` visível ligado por `htmlFor`; `hint` e erro ligados por `aria-describedby`; erro com `role=alert`, `aria-invalid` e borda `state-failed`.
+- `label` visível ligado por `htmlFor`; `hint` e erro ligados por `aria-describedby`; erro com `role=alert`, `aria-invalid` e borda `state-failed`. A cor da borda é escolhida em exatamente uma classe (`message ? border-state-failed : border-stroke-strong`): duas cores no mesmo elemento são resolvidas pela ordem do CSS do Tailwind, não pela do `className` (`FIELD_BASE` não tem cor de borda; `conflictingColorClasses` em `shared.ts` + teste guardam isso).
+- **Largura:** prop `width` (`sm` 160 px, `md` 256 px, padrão, `full`), também em Select, Combobox e Slider; os primitives não aceitam `className`.
 - **Validação inline:** `validate(valor)` roda após o primeiro blur e depois a cada alteração (a mensagem some assim que o valor é corrigido); `error` força uma mensagem (ex.: do servidor) e vence `validate`.
 
 ### Badge
-- Tons: `neutral`, `accent`, `success`, `warning`, `danger`, `info` (cor de borda e texto = token; o significado vai sempre no texto).
+- Tons: `neutral`, `accent`, `success`, `warning`, `danger`, `info` (o tom vai na borda; o texto é `fg-primary`/`fg-secondary`, porque os `state-*` garantem só 3:1 e texto pequeno exige 4.5:1, docs/07 §2.3; o significado vai sempre no texto).
 
 ### StatusDot
-- **Anatomia:** ponto 8 px `role=img` com `aria-label` = estado localizado (`common:status.*`); `showLabel` mostra o texto ao lado.
-- **Animação (docs/07 §3):** `starting` e `updating` pulsam (escala + opacidade, 1 s, em loop); `running` respira (opacidade, 2 s, em loop); `stopped` estático; `failed` treme 1x (x ±2 px, 300 ms). Só `transform` e `opacity`.
+- **Anatomia:** ponto 8 px `role=img` com `aria-label` = estado localizado (`common:status.*`); `showLabel` mostra o texto ao lado e esconde o ponto da árvore de acessibilidade (`aria-hidden`, sem `role=img`) para o estado não ser lido duas vezes.
+- **Animação (docs/07 §3):** `starting` e `updating` pulsam (escala + opacidade, 1 s, em loop); `running` respira (opacidade, 2 s, em loop); `stopped` estático; `failed` treme 1x (x ±2 px, 300 ms); durações e amplitudes na tabela "StatusDot" de motion.md. Só `transform` e `opacity`.
 - **Reduced motion:** todos os estados viram um único fade de opacidade de 100 ms ao mudar de estado (`data-animation="fade"`).
 
 ### Kbd
