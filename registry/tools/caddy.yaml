@@ -94,7 +94,22 @@ spec:
         command: "caddy.exe reload --config {{ instance.config.caddyfile }} --adapter caddyfile"
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
-        - { label: Access log (JSON), path: "{{ paths.logs }}/caddy/access.json", format: forgebox-json }
+        - label: Access log (JSON)
+          path: "{{ paths.logs }}/caddy/access.json"
+          format: forgebox-json
+          access:
+            # Caddy's native JSON log (crates/forge-render/templates/caddy/Caddyfile.j2)
+            ts: { pointer: /ts, unit: s }
+            host: /request/host
+            status: /status
+            duration: { pointer: /duration, unit: s }
+            bytes: /size
+            method: /request/method
+            uri: { pointer: /request/uri, strip_query: true }
+            rotate:
+              max_size: 50MB                             # roll_size/roll_keep in Caddyfile.j2
+              keep: 5
+              strategy: self
       autostart: false
 
   discover:

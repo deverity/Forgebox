@@ -7,17 +7,17 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-27T19:20:43Z
+  updated_at: 2026-10-29T00:57:02Z
   tools:
   - id: apache
     path: tools/apache.yaml
-    sha256: 746312907f5e0cef1363efebcb99c24df0e310cc3547d69b2d8a82c20739d55a
+    sha256: 743bcb1cf1609936b2ae30a0d87d735b87fc847ac109732d37330e5dbd4d0498
     categories:
     - webserver
     latest: 2.4.69
   - id: caddy
     path: tools/caddy.yaml
-    sha256: 8f2bf214a48041506335dc0e71540986d047b2772d43bd461ee3a64121b42671
+    sha256: 3d8cd4b9a17204640a0dd4488adce3c98d0aa751c86b49d1b8ca0d3ec8d411c2
     categories:
     - webserver
     latest: 2.11.7
@@ -53,7 +53,7 @@ spec:
     latest: 8.4.13
   - id: nginx
     path: tools/nginx.yaml
-    sha256: e46718dde824618345dada0c2b8e40f1724f2ce8720c87f2d5856fbeeb92e145
+    sha256: a876f444850066fe7d0aacd30bf4cd7cb9370f0f41d0687e1086a06cbecd4f69
     categories:
     - webserver
     latest: 1.31.8

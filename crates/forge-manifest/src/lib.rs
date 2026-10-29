@@ -14,6 +14,7 @@
 pub mod index;
 pub mod issue;
 pub mod lint;
+pub mod locate;
 pub mod parse;
 pub mod schema;
 pub mod template;

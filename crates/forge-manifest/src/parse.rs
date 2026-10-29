@@ -25,9 +25,9 @@ use crate::schema::project::ProjectManifest;
 use crate::schema::registry::{REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryManifest};
 use crate::schema::stack::{PostCreateAction, StackManifest};
 use crate::schema::tool::{
-    ArchiveFormat, Config, Discover, Install, PostInstallAction, Provider, QuickSettingType,
-    Service, ServiceKind, Source, ToolManifest, ToolMetadata, Ui, Update, UpdatePolicy, Variant,
-    Versioning,
+    AccessRotate, ArchiveFormat, Config, Discover, Install, LogSpec, PostInstallAction, Provider,
+    QuickSettingType, RotateStrategy, Service, ServiceKind, Source, ToolManifest, ToolMetadata, Ui,
+    Update, UpdatePolicy, Variant, Versioning,
 };
 use crate::template::{self, VarRef};
 use crate::version::{Constraint, Version, validate_series_key};
@@ -480,6 +480,43 @@ fn collect_strings(value: &serde_json::Value, path: &str, out: &mut Vec<(String,
 
 fn set_of<'a>(items: impl IntoIterator<Item = &'a str>) -> BTreeSet<String> {
     items.into_iter().map(str::to_owned).collect()
+}
+
+/// `logs[].format` of a structured access log (docs/14 section 2).
+const ACCESS_LOG_FORMAT: &str = "forgebox-json";
+
+/// Why `pointer` is not an RFC 6901 pointer into an object member, if it is not.
+fn json_pointer_problem(pointer: &str) -> Option<&'static str> {
+    let Some(rest) = pointer.strip_prefix('/') else {
+        return Some("must start with `/`");
+    };
+    for token in rest.split('/') {
+        if token.is_empty() {
+            return Some("empty token");
+        }
+        let mut chars = token.chars();
+        while let Some(c) = chars.next() {
+            if c == '~' && !matches!(chars.next(), Some('0' | '1')) {
+                return Some("`~` must be followed by `0` or `1`");
+            }
+        }
+    }
+    None
+}
+
+/// `50MB`, `512 KB`, `1GB` (binary multiples) to bytes.
+fn parse_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let digits = text.chars().take_while(char::is_ascii_digit).count();
+    let (number, unit) = text.split_at(digits);
+    let factor: u64 = match unit.trim().to_ascii_uppercase().as_str() {
+        "B" => 1,
+        "KB" | "K" => 1 << 10,
+        "MB" | "M" => 1 << 20,
+        "GB" | "G" => 1 << 30,
+        _ => return None,
+    };
+    number.parse::<u64>().ok()?.checked_mul(factor)
 }
 
 // ------------------------------------------------------------------- checker
@@ -1361,6 +1398,7 @@ impl Checker<'_> {
             for (i, log) in daemon.logs.iter().enumerate() {
                 self.not_empty(&format!("{f}.logs[{i}].label"), &log.label);
                 self.not_empty(&format!("{f}.logs[{i}].path"), &log.path);
+                self.log_access(&format!("{f}.logs[{i}]"), log);
             }
             if let Some(data) = &daemon.data {
                 self.not_empty(&format!("{f}.data.dir"), &data.dir);
@@ -1406,6 +1444,134 @@ impl Checker<'_> {
     }
 
     /// Rule 3.
+    /// `logs[].access` (docs/04 section 1.2): a structured access log must say how to read it.
+    fn log_access(&mut self, f: &str, log: &LogSpec) {
+        let structured = log.format.as_deref() == Some(ACCESS_LOG_FORMAT);
+        let Some(access) = &log.access else {
+            if structured {
+                self.push(
+                    IssueCode::MissingAccess,
+                    format!("{f}.access"),
+                    format!(
+                        "a log with `format: {ACCESS_LOG_FORMAT}` must declare `access` \
+                         (pointers, units and rotation)"
+                    ),
+                );
+            }
+            return;
+        };
+        if !structured {
+            self.push(
+                IssueCode::InvalidValue,
+                format!("{f}.access"),
+                format!("`access` only applies to `format: {ACCESS_LOG_FORMAT}`"),
+            );
+        }
+        let a = format!("{f}.access");
+        let mut pointers: Vec<(String, &str)> = vec![
+            (format!("{a}.ts.pointer"), &access.ts.pointer),
+            (format!("{a}.host"), &access.host),
+            (format!("{a}.status"), &access.status),
+            (format!("{a}.duration.pointer"), &access.duration.pointer),
+        ];
+        if let Some(up) = &access.upstream_duration {
+            pointers.push((format!("{a}.upstream_duration.pointer"), &up.pointer));
+        }
+        if let Some(p) = &access.bytes {
+            pointers.push((format!("{a}.bytes"), p));
+        }
+        if let Some(p) = &access.method {
+            pointers.push((format!("{a}.method"), p));
+        }
+        if let Some(uri) = &access.uri {
+            pointers.push((format!("{a}.uri.pointer"), &uri.pointer));
+        }
+        if let Some(p) = &access.upstream {
+            pointers.push((format!("{a}.upstream"), p));
+        }
+        for (field, pointer) in &pointers {
+            if let Some(problem) = json_pointer_problem(pointer) {
+                self.push(
+                    IssueCode::InvalidValue,
+                    field.clone(),
+                    format!("invalid JSON pointer {pointer:?}: {problem}"),
+                );
+            }
+        }
+        // The parser walks a trie of the pointers: one cannot be a prefix of another.
+        for (i, (field, pointer)) in pointers.iter().enumerate() {
+            let overlaps = pointers.iter().enumerate().any(|(j, (_, other))| {
+                i != j
+                    && (other == pointer
+                        || other
+                            .strip_prefix(*pointer)
+                            .is_some_and(|rest| rest.starts_with('/')))
+            });
+            if overlaps && json_pointer_problem(pointer).is_none() {
+                self.push(
+                    IssueCode::InvalidValue,
+                    field.clone(),
+                    format!("pointer {pointer:?} overlaps another mapped pointer"),
+                );
+            }
+        }
+        if let Some(rotate) = &access.rotate {
+            self.access_rotate(&format!("{a}.rotate"), rotate);
+        }
+    }
+
+    fn access_rotate(&mut self, f: &str, rotate: &AccessRotate) {
+        if let Some(size) = &rotate.max_size {
+            if parse_size(size).is_none_or(|bytes| bytes == 0) {
+                self.push(
+                    IssueCode::InvalidValue,
+                    format!("{f}.max_size"),
+                    format!("{size:?} is not a size (`50MB`, `512KB`, `1GB`)"),
+                );
+            }
+        }
+        match rotate.strategy {
+            RotateStrategy::RenameReopen => {
+                if rotate.max_size.is_none() {
+                    self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.max_size"),
+                        "`rename-reopen` needs `max_size`",
+                    );
+                }
+                if rotate.keep == 0 {
+                    self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.keep"),
+                        "must be at least 1",
+                    );
+                }
+                match &rotate.reopen {
+                    None => self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.reopen"),
+                        "`rename-reopen` needs `reopen` (`command` or `signal`)",
+                    ),
+                    Some(r) if r.command.is_some() == r.signal.is_some() => self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.reopen"),
+                        "needs exactly one of `command` and `signal`",
+                    ),
+                    Some(_) => {}
+                }
+            }
+            RotateStrategy::SelfRotating | RotateStrategy::None => {
+                if rotate.reopen.is_some() {
+                    self.push(
+                        IssueCode::InvalidValue,
+                        format!("{f}.reopen"),
+                        "`reopen` only applies to `strategy: rename-reopen`",
+                    );
+                }
+            }
+        }
+    }
+
     fn port_range(&mut self, field: &str, range: &str) {
         if !self.options.port_ranges.iter().any(|r| r == range) {
             self.push(
