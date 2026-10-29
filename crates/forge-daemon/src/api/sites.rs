@@ -307,9 +307,9 @@ where
 
 /// `sites.php`: switches the PHP of a site, blue/green (docs/06 §2.2). The version or
 /// series must be installed (else `not_found` with `version_not_installed` details and
-/// the site untouched). In the job: the row is updated, the target pool started, the
-/// web servers re-rendered and reloaded; a failure for **this** site restores the row
-/// and fails the job. `site.php_changed {from, to}` goes out after the swap, before
+/// the site untouched). In the job: the target pool is started first (failure: the job
+/// fails and the row is never written), then the row is updated and the web servers
+/// re-rendered and reloaded; a render/reload failure restores the row. `site.php_changed {from, to}` goes out after the swap, before
 /// `job.done`.
 async fn php(daemon: Daemon, params: SitePhpParams, ctx: Ctx) -> Result<JobDto> {
     let selection = php_selection(&params.php)?;
@@ -335,6 +335,10 @@ async fn php(daemon: Daemon, params: SitePhpParams, ctx: Ctx) -> Result<JobDto> 
             let mut next = previous.clone();
             next.php.series = selection.series;
             next.php.exact = selection.exact;
+            // Blue/green step 1 (docs/06 §2.2): the target pool must be up before the
+            // row is written. On failure nothing was stored, so no `site.updated`, no
+            // concurrent reconcile and the old pool is never drained.
+            d.web.ensure_pool_for(&next).await?;
             let updated = d.sites.update(next).await?;
             apply_or_restore(&d, &previous, &updated, "site php changed", true).await?;
             let to = d.web.resolved_php(&updated).await.unwrap_or(requested);

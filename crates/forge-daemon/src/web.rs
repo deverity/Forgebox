@@ -271,6 +271,28 @@ impl WebManager {
         plan.get(&site.id).map(|p| p.version.version.clone())
     }
 
+    /// Starts the pool that would serve `candidate` (a not yet stored row) and fails
+    /// with the pool's own error when it cannot start. This is step 1 of the blue/green
+    /// switch (docs/06 §2.2): it runs *before* the row is written, so a bad target never
+    /// emits `site.updated`, never triggers a concurrent reconcile and never drains the
+    /// pool that keeps serving the site. A disabled or non-PHP site needs no pool.
+    pub async fn ensure_pool_for(&self, candidate: &Site) -> Result<()> {
+        let plan = self.php_plan(std::slice::from_ref(candidate)).await?;
+        let Some(version) = plan.get(&candidate.id).map(|p| p.version.id) else {
+            if candidate.enabled && candidate.kind == SiteKind::Php {
+                return Err(ForgeError::NotFound(format!(
+                    "no installed PHP serves {}",
+                    candidate.host
+                )));
+            }
+            return Ok(());
+        };
+        if let Some(pools) = self.pools() {
+            pools.ensure_started(version).await?;
+        }
+        Ok(())
+    }
+
     /// Steps 7-8 of the boot, and the reaction to site changes: pools for the sites,
     /// web servers rendered and reloaded, unused pools drained (blue/green of docs/06
     /// §2.2: target up, vhost re-rendered, reload, source drained).

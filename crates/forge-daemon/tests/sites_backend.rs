@@ -203,7 +203,11 @@ async fn php_switch_is_validated_announced_and_scoped_to_its_site() {
     let other = laravel_project(&root, "other");
     let mut daemon = spawn_daemon(&root, &[]);
     let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
-    let events = Events::collect(&client, &["job.*", "site.php_changed"]).await;
+    let events = Events::collect(
+        &client,
+        &["job.*", "site.php_changed", "site.updated", "service.*"],
+    )
+    .await;
 
     let added = add_site(&client, &app, "app.test", "8.3").await;
     assert_eq!(resolved(&added).as_deref(), Some("8.3.36"));
@@ -300,6 +304,14 @@ async fn php_switch_is_validated_announced_and_scoped_to_its_site() {
     assert_eq!(events.count("site.php_changed"), 1);
 
     // 3. A pool that cannot start fails the job; the site keeps its PHP.
+    let pools_before = client
+        .call::<php_pool_status>(PhpPoolStatusParams {
+            version: Some("8.4".into()),
+        })
+        .await
+        .unwrap()
+        .pools;
+    let baseline = events.all().len();
     let job = client
         .call::<sites_php>(SitePhpParams {
             site: SiteRef::from("app.test".to_owned()),
@@ -327,7 +339,20 @@ async fn php_switch_is_validated_announced_and_scoped_to_its_site() {
         1,
         "no event for a failed swap"
     );
-    // Blue/green: the failed switch neither re-rendered nor drained the 8.4 pool.
+    // Blue/green: the failed switch neither re-rendered nor drained the 8.4 pool. The
+    // row is never written, so there is no site.updated and no concurrent reconcile;
+    // wait past the reaction debounce (300 ms) before looking.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let during: Vec<_> = events.all().into_iter().skip(baseline).collect();
+    assert!(
+        !during.iter().any(|(_, k, _)| k == "site.updated"),
+        "a failed switch must not emit site.updated: {during:#?}"
+    );
+    assert!(
+        !during.iter().any(|(_, k, p)| k.starts_with("service.")
+            && (p.to_string().contains("8.4") || p.to_string().contains("php_8_4"))),
+        "the 8.4 pool must not be touched: {during:#?}"
+    );
     let pools = client
         .call::<php_pool_status>(PhpPoolStatusParams {
             version: Some("8.4".into()),
@@ -337,6 +362,11 @@ async fn php_switch_is_validated_announced_and_scoped_to_its_site() {
         .pools;
     assert_eq!(pools.len(), 1, "{pools:?}");
     assert_eq!(pools[0].version, "8.4.27");
+    assert_eq!(
+        pools[0].ports, pools_before[0].ports,
+        "workers were restarted"
+    );
+    assert_eq!(pools[0].workers, pools_before[0].workers);
     assert_eq!(
         pools[0].state,
         forge_ipc::api::ServiceState::Running,
