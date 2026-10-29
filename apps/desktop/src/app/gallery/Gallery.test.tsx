@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import i18n from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
-import { App, GALLERY_PATH } from "../../App";
+import { renderApp } from "../testApp";
+import { GALLERY_PATH } from "../routes/root";
 import Gallery from "./Gallery";
 
 describe("/__gallery", () => {
@@ -41,12 +42,10 @@ describe("/__gallery", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it("is routed by pathname from the app shell", async () => {
-    window.history.pushState({}, "", GALLERY_PATH);
-    render(<App />);
+  it("is a route of the app router", async () => {
+    await renderApp({ path: GALLERY_PATH });
     expect(
       await screen.findByRole("heading", { level: 1, name: "Component gallery" }),
     ).toBeInTheDocument();
-    window.history.pushState({}, "", "/");
   });
 });

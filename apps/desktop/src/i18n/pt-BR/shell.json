@@ -1,7 +1,10 @@
 {
   "title": "Forgebox",
   "tagline": "Seu ambiente de desenvolvimento local",
-  "daemon": { "connecting": "Conectando ao daemon…", "down": "O daemon não está respondendo" },
+  "daemon": {
+    "connecting": "Conectando ao daemon…",
+    "down": "O daemon não está respondendo"
+  },
   "titlebar": {
     "windowControls": "Controles da janela",
     "search": "Buscar",
@@ -11,5 +14,98 @@
     "maximize": "Maximizar",
     "restore": "Restaurar",
     "close": "Fechar"
-  }
+  },
+  "nav": {
+    "label": "Navegação principal",
+    "dashboard": "Dashboard",
+    "services": "Serviços",
+    "sites": "Sites",
+    "php": "PHP",
+    "databases": "Bancos de dados",
+    "mail": "Mail",
+    "logs": "Logs",
+    "catalog": "Catálogo",
+    "terminal": "Terminal",
+    "settings": "Configurações",
+    "diagnostics": "Diagnóstico",
+    "onboarding": "Boas-vindas"
+  },
+  "sidebar": {
+    "label": "Barra lateral",
+    "startAll": "Iniciar tudo",
+    "startAllHint": "Inicia todos os serviços",
+    "startAllBusy": "Iniciando…",
+    "servicesBadge": "{running} em execução, {stopped} parados",
+    "sitesBadge_one": "{count} site",
+    "sitesBadge_other": "{count} sites",
+    "updatesBadge_one": "{count} atualização disponível",
+    "updatesBadge_other": "{count} atualizações disponíveis",
+    "mailBadge_one": "{count} mensagem não lida",
+    "mailBadge_other": "{count} mensagens não lidas",
+    "version": "v{version}",
+    "versionUnknown": "Forgebox",
+    "updater": "Atualizações do app chegam na 1.0"
+  },
+  "context": {
+    "label": "Contexto",
+    "local": "Local",
+    "addRemote": "Adicionar remoto (M6)",
+    "current": "Contexto: {name}"
+  },
+  "status": {
+    "label": "Barra de status",
+    "connection": {
+      "connected": "Daemon conectado",
+      "connecting": "Conectando ao daemon…",
+      "starting": "Iniciando o daemon…",
+      "reconnecting": "Reconectando ao daemon…",
+      "stopped": "Daemon parado",
+      "uninitialized": "Ainda não configurado",
+      "closed": "Desconectado",
+      "idle": "Conectando ao daemon…"
+    },
+    "cpu": "CPU {value}",
+    "ram": "RAM {value}",
+    "resourcesHint": "CPU e RAM do daemon mais os serviços que ele executa",
+    "dns": {
+      "ok": "DNS ok",
+      "off": "DNS desligado",
+      "attention": "DNS precisa de atenção",
+      "unknown": "DNS desconhecido"
+    },
+    "ca": {
+      "ok": "CA ok",
+      "untrusted": "CA não confiável",
+      "missing": "Sem CA ainda",
+      "unknown": "CA desconhecida"
+    },
+    "unknownValue": "—"
+  },
+  "banner": {
+    "connecting": "Conectando ao daemon…",
+    "starting": "Iniciando o daemon…",
+    "reconnecting": "Reconectando ao daemon…",
+    "reconnectingAttempt": "Reconectando ao daemon… (tentativa {attempt})",
+    "stopped": "O daemon está parado. Os serviços não rodam até ele iniciar.",
+    "start": "Iniciar",
+    "startingAction": "Iniciando…",
+    "orRun": "ou execute",
+    "startFailed": "Não foi possível iniciar o daemon."
+  },
+  "placeholder": {
+    "title": "{feature} está a caminho",
+    "description": "Esta tela é entregue pela tarefa {task}.",
+    "unavailable": "As ações dependem do daemon, que não está conectado.",
+    "siteTabs": "Abas do site",
+    "dashboardSections": "Seções do Dashboard",
+    "siteId": "Site {id}",
+    "toolId": "Ferramenta {id}",
+    "noTabs": "Nenhuma aba registrada ainda."
+  },
+  "routes": {
+    "loading": "Carregando a tela…",
+    "notFound": "Esta página não existe.",
+    "goHome": "Ir para o Dashboard"
+  },
+  "disabledBecause": "Indisponível: {reason}"
 }

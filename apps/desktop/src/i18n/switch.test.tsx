@@ -1,8 +1,20 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { App } from "../App";
+import { useTranslation } from "react-i18next";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { initI18n, setLanguage } from "./index";
+
+/** What the old placeholder shell showed: a translated line and the picker. */
+function App() {
+  const { t } = useTranslation("shell");
+  return (
+    <main>
+      <p>{t("tagline")}</p>
+      <LanguageSwitcher />
+    </main>
+  );
+}
 
 describe("runtime language switch", () => {
   it("re-renders without reload and calls set_language", async () => {
