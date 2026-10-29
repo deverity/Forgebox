@@ -121,6 +121,7 @@ Fonte única: [`docs/design/tokens.json`](design/tokens.json) (DTCG). `pnpm -C a
 ### 5.6 Bancos de dados
 - Instâncias (MySQL/MariaDB/PostgreSQL/Mongo) com porta, tamanho em disco, bancos (lista com criar/dropar/exportar/importar com progresso), usuários, string de conexão (copiar: DSN, URL, `.env` snippet), abrir em (HeidiSQL, DBeaver, TablePlus, Adminer, phpMyAdmin, pgAdmin), backups agendados.
 - Redis-compatíveis: chaves, memória, `FLUSHALL` com confirmação, abrir RedisInsight.
+- No M2 (M2-E3-T14, [ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)): instâncias de `db.list.instances` (as que declaram `spec.database`), bancos com criar/dropar/exportar/importar, strings de conexão e shell (`db.shell` num terminal integrado). "Abrir em" (`db.open`), usuários, backups agendados e a seção Redis ficam para o M3 (M3-E1).
 
 ### 5.7 Mail
 - Inbox do Mailpit renderizada nativamente (lista + preview HTML/texto/headers/anexos, busca, marcar lido, apagar), credenciais SMTP com "copiar `.env`". Badge de não lidos na sidebar e na bandeja.

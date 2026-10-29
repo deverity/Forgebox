@@ -23,7 +23,8 @@ Forgebox/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── ids.rs            # ToolId (slug [a-z0-9-]) + newtypes ULID: VersionId, InstanceId, SiteId, JobId, EventId,
-│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts)
+│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts),
+│   │       │                     #   TerminalId (sessão de terminal do daemon, ADR-0040)
 │   │       ├── paths.rs          # ForgeRoot + todos os caminhos (bin/, etc/, data/...), discover(), init() com flag CS;
 │   │       │                     #   daemon_lock_file() (state/locks/forgeboxd.lock: evidência de saída limpa, ADR-0034)
 │   │       ├── error.rs          # ForgeError (thiserror), code() estável para API, exit_code() da CLI (docs/09)
@@ -219,7 +220,7 @@ Forgebox/
 │   ├── forge-ipc/                # protocolo: ADR-0015
 │   │   └── src/
 │   │       ├── api/              # contratos: um módulo de DTOs por grupo do docs/09 (daemon, tools, services, logs, php, sites,
-│   │       │                     #   db, net, tls, mail, shell, fs_parity, jobs, stats, remote, registry, system, fs, events) +
+│   │       │                     #   db, net, tls, mail, shell, terminal, fs_parity, jobs, stats, remote, registry, system, fs, events) +
 │   │       │                     #   common.rs (Role, MethodInfo, ApiError, SiteRef...), methods.rs (tabela única METHODS → marcadores,
 │   │       │                     #   Client, methods.ts), contracts.rs (export TS: generated.ts + methods.ts)
 │   │       ├── rpc.rs            # frames JSON-RPC 2.0 (request_id obrigatório, códigos de erro)

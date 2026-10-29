@@ -17,8 +17,14 @@ Isso é viável porque, desde a v1, GUI e CLI já são **clientes finos** da API
 | Transferência de arquivos é um método da API (`fs.read/write/tail` restrito a `etc/`, `logs/`, `www/`) | A GUI remota edita `php.ini` e lê logs sem SMB/SSH |
 | Download de tools é feito **pelo daemon remoto**, nunca pelo cliente | O servidor baixa de windows.php.net/apt/github diretamente |
 | Ações que abrem coisas no SO (`open in editor`, `browse`) são marcadas `local_only` ou traduzidas (abrir `https://loja.test` do remoto = abrir `https://loja.<remote>.test` ou túnel) | Evita botões quebrados na GUI remota |
+| O terminal integrado é uma sessão **hospedada no daemon** (`terminal.*`), não um processo da GUI: exige `admin` e não é `local_only` | Na GUI remota o terminal é um shell na máquina remota (como SSH), com reanexação por `terminal.list` + `resume_from` depois de quedas |
 
 Implementado em M1-E5-T1 ([ADR-0015](adr/0015-ipc-protocol.md)): `forge_ipc::transport::Transport` (named pipe, unix socket mínimo, em memória; `WebSocketTls` é placeholder até M6), `request_id` obrigatório em todo request com cache de idempotência no servidor, papéis e `local_only` na tabela `METHODS` (conexões não locais recebem `forbidden` nos métodos `local_only`), streams `events|logs|metrics.subscribe` com `seq`, fila drop-oldest + `*.lagged` e `resume_from`, e `fs.read|write|tail|list` restritos a `etc/`, `logs/`, `www/`. O cliente reconecta e reassina sozinho a partir do último `seq` recebido (ou, se nada chegou ainda, do `last_seq` devolvido pelo subscribe), sem perder nem repetir eventos.
+
+API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)), pensada para o remoto:
+- **Terminal** (`terminal.open|list|input|resize|close|subscribe|unsubscribe`, `TerminalId` ULID): todos `admin`, nenhum `local_only` — o processo roda na máquina do daemon, então um admin remoto ganha um shell remoto e o papel é a barreira. O stream é retomável por offset em bytes (`resume_from`), com anel de 1 MiB e `terminal.lagged` → limpar e reproduzir; `terminal.input` é deduplicado por `input_seq` (não pelo cache de `request_id`), o que torna retentativas pela rede seguras sem guardar cada tecla.
+- **`local_only` novos:** `shell.open_editor` (editor da máquina do usuário) e `services.kill_port_holder` (encerrar processos não é oferecido a clientes remotos). `db.shell` continua `local_only`, mas agora devolve um comando (`ShellCommandDto`) em vez de abrir uma janela; a GUI o roda num terminal hospedado no daemon (`terminal.open {command}`).
+- **Segredos:** `sites.env` mascara no daemon (valores secretos nunca saem sem `reveal`, que exige `admin`); `mail.attachment` é limitado a 4 MiB por causa do quadro de 8 MiB; `db.url` e o `env` de `db.shell` carregam credenciais e seguem o papel `operator`.
 
 ## 3. Arquitetura do modo remoto
 
