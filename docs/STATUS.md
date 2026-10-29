@@ -54,7 +54,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E1-T16 | Notificações nativas do Windows via modelo da bandeja | todo | — | |
 | M2-E1-T17 | i18n pt-BR/en-US | done | feature/M2-E1-T17-i18n | i18next + react-i18next com backend lazy por namespace (6 namespaces × 2 locales), chaves tipadas, `format.ts` (bytes/duração/relativo/%/data), pseudo-locale QA, `LanguageSwitcher` + `set_language` (Rust `i18n.rs` com `include_str!` de tray/notifications), lint `no-literal-string` com allowlist. Locale do SO via `navigator.language` (plugin-os não adicionado: exigiria plugin Rust + capability; ver relatório). |
 | M2-E1-T18 | Autostart com o Windows e fluxo do atualizador (inativo na 0.2.0) | todo | — | |
-| M2-E1-T19 | Harness de testes do frontend (Playwright, modo qa, e2e real, captura, cold start) | todo | — | |
+| M2-E1-T19 | Harness de testes do frontend (Playwright, modo qa, e2e real, captura, cold start) | doing | feature/M2-E1-T19-test-harness | |
 | M2-E1-T20 | CI do desktop | todo | — | |
 | M2-E1-T21 | Gate M2-E1 (auditoria do shell, cold start medido, tamanhos) | todo | — | |
 | M2-E2-T1 | Contratos IPC das telas núcleo | todo | — | |
