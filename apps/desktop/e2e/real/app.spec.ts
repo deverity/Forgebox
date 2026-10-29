@@ -195,7 +195,7 @@ test("killing forgeboxd shows starting, then reconnecting, and reconnects within
   expect(first).not.toBeNull();
   const m1 = await mark(page);
   const killedAt = Date.now();
-  kill(first as number);
+  kill(first!);
   await expect
     .poll(async () => (await connLog(page)).slice(m1).map((e) => e.status), { timeout: 10_000 })
     .toContain("connected");
@@ -212,7 +212,7 @@ test("killing forgeboxd shows starting, then reconnecting, and reconnects within
   // 2. Kill again inside the policy's 60 s window: no automatic restart, so the status must be
   // `reconnecting` until the test starts the daemon by hand.
   const m2 = await mark(page);
-  kill(second as number);
+  kill(second!);
   await expect
     .poll(async () => (await connLog(page)).slice(m2).map((e) => e.status), { timeout: 10_000 })
     .toContain("reconnecting");
