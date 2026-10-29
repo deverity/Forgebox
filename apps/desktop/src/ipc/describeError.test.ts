@@ -1,7 +1,7 @@
 // Acceptance (M2-E1-T9 #5): every ERROR_CODES entry (plus the client-only codes) and every
 // FailureReasonDto kind has a cause in pt-BR and en-US; port_in_use, needs_elevation,
 // not_implemented and unauthorized have at least one action, each with its `forge` command.
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, expectTypeOf, it } from "vitest";
 import { i18n } from "../i18n";
 import {
   DESCRIBED_CODES,
@@ -10,6 +10,7 @@ import {
   FAILURE_KINDS_COMPLETE,
   describeError,
   translateError,
+  type ErrorAction,
   type ErrorDescription,
   type ErrorTranslate,
 } from "./describeError";
@@ -148,7 +149,7 @@ describe("describeError", () => {
     const change = port.actions.find((a) => a.id === "change_port");
     expect(change?.input).toBe("port");
     expect(change?.bind?.(3307)).toEqual({
-      params: { target: "mysql/default", settings: { "ports.main": 3307 } },
+      params: { target: "mysql/default", settings: { "ports.main": "3307" } },
       cli: "forge service set mysql/default ports.main=3307",
     });
     const actions = (code: string) =>
@@ -166,6 +167,29 @@ describe("describeError", () => {
     expect(describeError(FAILURES.missing_runtime).actions[0]?.href).toBe(
       "https://aka.ms/vs/17/release/vc_redist.x64.exe",
     );
+  });
+
+  it("builds action params in the method's contract shape", () => {
+    // Type level (checked by `tsc`): an action's params are its method's params, so
+    // `services.set` settings (`BTreeMap<String, String>`) cannot take a number.
+    type SetParams = ReturnType<NonNullable<ErrorAction<"services.set">["bind"]>>["params"];
+    expectTypeOf<SetParams>().toEqualTypeOf<T.ServiceSetParams>();
+    expectTypeOf<
+      ErrorAction<"services.start">["params"]
+    >().toEqualTypeOf<T.ServiceTargetsParams | null>();
+    // @ts-expect-error: a port is a string in `services.set` settings.
+    const wrong: SetParams = { target: "mysql/default", settings: { "ports.main": 3307 } };
+    expect(wrong.target).toBe("mysql/default");
+
+    // Runtime: every bound value is a string (serde rejects a number there).
+    const change = describeError(FAILURES.port_in_use, { target: "mysql/default" }).actions.find(
+      (a) => a.id === "change_port",
+    );
+    expect(change?.method).toBe("services.set");
+    for (const port of [1, 3307, 65535]) {
+      const params = change?.bind?.(port).params as SetParams | undefined;
+      expect(params?.settings).toEqual({ "ports.main": String(port) });
+    }
   });
 
   it("offers to retry the failed call with its command", () => {

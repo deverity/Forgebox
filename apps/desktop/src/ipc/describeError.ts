@@ -10,6 +10,7 @@
 // a value. Actions name the method they would call (so `ActionButton` can gate them by
 // capability and make a new intent for it) or a client-only step (`client: "start_daemon"`,
 // a download link); `retry` repeats the failed call when the caller passes it.
+import type { ParamsOf } from "./api";
 import { renderCli } from "./cli";
 import { CLIENT_ERROR_CODES, ForgeApiError, toForgeApiError, type ApiErrorDto } from "./errors";
 import type * as T from "./generated";
@@ -116,12 +117,19 @@ export type ErrorActionId =
   | "daemon_status"
   | "update_registry";
 
-export interface ErrorAction {
+/**
+ * One suggested action. `M` ties `params` (and what `bind` returns) to the method's params
+ * type (`ParamsOf<M>`), so an action built with the wrong shape — e.g. a number where
+ * `services.set` takes string settings — fails to compile; a list of actions widens to
+ * `ErrorAction` (every method).
+ */
+export interface ErrorAction<M extends MethodName = MethodName> {
   id: ErrorActionId;
   label: I18nText;
   /** The API method the action calls (`null`: client-side step or link). */
-  method: MethodName | null;
-  params: Record<string, unknown> | null;
+  method: M | null;
+  /** The method's params (`null`: client-side step, link, or `bind` first). */
+  params: ParamsOf<M> | null;
   /** Equivalent `forge` command (`null` when there is none or it needs input first). */
   cli: string | null;
   /** Client-side step: start the context's daemon through the bridge. */
@@ -130,7 +138,7 @@ export interface ErrorAction {
   href?: string;
   /** The action needs a value first (`change_port`): `bind` gives the params and command. */
   input?: "port";
-  bind?: (value: number) => { params: Record<string, unknown>; cli: string | null };
+  bind?: (value: number) => { params: ParamsOf<M>; cli: string | null };
 }
 
 export interface ErrorDescription {
@@ -202,12 +210,12 @@ function isMethod(method: string | undefined): method is MethodName {
   return method !== undefined && Object.hasOwn(METHODS, method);
 }
 
-function methodAction(
+function methodAction<M extends MethodName>(
   id: ErrorActionId,
-  method: MethodName,
-  params: Record<string, unknown>,
+  method: M,
+  params: ParamsOf<M>,
   values: Record<string, unknown> = {},
-): ErrorAction {
+): ErrorAction<M> {
   return {
     id,
     label: text(`action.${id}`, values),
@@ -222,7 +230,10 @@ function methodAction(
 const A = {
   retry(ctx: ErrorContext): ErrorAction[] {
     if (!isMethod(ctx.method)) return [];
-    if (isRecord(ctx.params)) return [methodAction("retry", ctx.method, ctx.params)];
+    // The failed call's params are replayed as given: they were typed where it was made.
+    if (isRecord(ctx.params)) {
+      return [methodAction("retry", ctx.method, ctx.params as ParamsOf<MethodName>)];
+    }
     // Params unknown (only the error's method): retry only what takes none.
     const template = METHODS[ctx.method].cli_template as string | null;
     if (template === null || template.includes("{")) return [];
@@ -275,21 +286,24 @@ const A = {
   changePort(ctx: ErrorContext): ErrorAction[] {
     const target = ctx.target;
     if (target === undefined) return [];
+    // `services.set` settings are strings (`BTreeMap<String, String>` in the contract).
     const bind = (port: number) => {
-      const params = { target, settings: { "ports.main": port } };
+      const params: ParamsOf<"services.set"> = {
+        target,
+        settings: { "ports.main": String(port) },
+      };
       return { params, cli: renderCli("services.set", params) };
     };
-    return [
-      {
-        id: "change_port",
-        label: text("action.change_port"),
-        method: "services.set",
-        params: null,
-        cli: null,
-        input: "port",
-        bind,
-      },
-    ];
+    const action: ErrorAction<"services.set"> = {
+      id: "change_port",
+      label: text("action.change_port"),
+      method: "services.set",
+      params: null,
+      cli: null,
+      input: "port",
+      bind,
+    };
+    return [action];
   },
 };
 
