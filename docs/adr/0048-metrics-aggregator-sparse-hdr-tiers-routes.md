@@ -23,6 +23,8 @@ As contas não fecham com o desenho literal:
    - minutos abertos pelo tier 0, mais os atrasados quando o minuto inteiro está no intervalo.
 
    O trecho coberto volta em `Summary.from`/`to`.
+
+   O planejador nunca começa antes do **horizonte** (início da hora que contém `now - retenção`) nem passa do relógio. `from`/`to` e `span` vêm do cliente (`stats.get`, `stats.series`), então o custo de uma consulta é limitado pela retenção (no máximo 7 d, `MAX_RETENTION`), não pelo intervalo pedido: `range(Timestamp::MIN, now)` e `window(Duration::MAX)` custam o mesmo que uma janela de 24 h.
 6. **Rotas por Filtered Space-Saving** (Homem & Carvalho, 2010). Cada site tem K = 100 entradas monitoradas e um filtro de 1.024 contadores indexados pelo hash (`RandomState`, resistente a HashDoS) da rota. Uma rota de fora só entra quando a sua célula mais o peso alcança o menor contador. A entrada despejada deixa a contagem na sua célula, então contagem é limite superior e `count - overcount` o inferior. O histograma de 2 dígitos e os erros cobrem só o observado. São duas gerações de 12 h, e o relatório mescla as duas.
 7. **Erros recentes** em dois anéis (50 5xx, 50 4xx) com rota normalizada, sem query string, podados após 24 h.
 8. **Ganchos de persistência.**

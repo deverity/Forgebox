@@ -22,6 +22,15 @@
 //! 1 h within a per-site budget, and hours with histograms for 24 h). Windows and ranges are
 //! answered with whole buckets, aligned outward, from the finest tier that has the span
 //! ([`Summary::from`]/[`Summary::to`] say what was covered). Merges are exact.
+//!
+//! # Cost of a query
+//!
+//! A query never plans before the *horizon*, the start of the hour that holds the retention
+//! edge (`now - retention`): nothing older is kept. `from`/`to` (or a window `span`) come
+//! from clients (`stats.get`, `stats.series`), so the work of a query is bounded by the
+//! retention, never by the span asked: `range(Timestamp::MIN, now)` and
+//! `window(Duration::MAX)` plan the same ~25 hours as a 24 h window. The retention itself is
+//! capped at [`MAX_RETENTION`].
 
 mod errors;
 mod routes;
@@ -50,6 +59,9 @@ pub(crate) const T1: i64 = 10;
 pub(crate) const MINUTE: i64 = 60;
 /// Width of an hour bucket.
 pub(crate) const HOUR: i64 = 3600;
+/// Longest [`AggConfig::retention`] accepted (7 days; longer values are clamped). Queries
+/// plan one step per retained hour, so this also caps their cost whatever the config.
+pub const MAX_RETENTION: Duration = Duration::from_secs(7 * 24 * 3600);
 
 #[inline]
 pub(crate) fn floor_to(s: i64, w: i64) -> i64 {
@@ -94,7 +106,8 @@ pub struct AggConfig {
     pub grace: Duration,
     /// How long tier 0 (2 s buckets) is kept; at least 2 min.
     pub tier0_span: Duration,
-    /// How long tiers 1 and 2, the recent errors and the routes are kept; at least 1 h.
+    /// How long tiers 1 and 2, the recent errors and the routes are kept; at least 1 h and
+    /// at most [`MAX_RETENTION`] (7 d). Queries never reach before it (see the module docs).
     pub retention: Duration,
     /// Minute histograms younger than this are always kept.
     pub minute_hist_keep: Duration,
@@ -153,7 +166,7 @@ struct Cfg {
 
 impl Cfg {
     fn new(c: &AggConfig) -> Self {
-        let retention = secs(c.retention).max(HOUR);
+        let retention = secs(c.retention).clamp(HOUR, secs(MAX_RETENTION));
         Self {
             grace: secs(c.grace).min(MINUTE),
             tier0_span: secs(c.tier0_span).max(2 * MINUTE),
@@ -552,8 +565,18 @@ impl Aggregator {
         Some(&**s)
     }
 
+    /// First second a query may cover: the start of the hour holding the retention edge
+    /// (the oldest hour bucket still kept). Planning never starts before it, so the cost of a
+    /// query is bounded by the retention and not by the span a client asks for.
+    fn horizon(&self) -> i64 {
+        floor_to(self.now_s - self.cfg.retention, HOUR)
+    }
+
+    /// `[from, to)` in seconds, clamped to `[horizon, clock]` with `to >= from`.
     fn span(&self, from: Timestamp, to: Timestamp) -> (i64, i64) {
-        (ts_floor(from), ts_ceil(to.min(self.now)))
+        let from = ts_floor(from).max(self.horizon());
+        let to = ts_ceil(to.min(self.now)).max(from);
+        (from, to)
     }
 
     fn summary_bounds(&self, from: i64, to: i64) -> (Timestamp, Timestamp) {
@@ -602,15 +625,19 @@ impl Aggregator {
         )
     }
 
-    /// The last `span` up to the clock (`1m`, `5m`, `1h`, `24h`), aligned outward.
+    /// The last `span` up to the clock (`1m`, `5m`, `1h`, `24h`), aligned outward. A span
+    /// longer than the retention (up to `Duration::MAX`) starts at the horizon.
     pub fn window(&mut self, site: SiteId, span: Duration) -> Summary {
         let to = self.now_s + 1;
-        let from = self.now_s.saturating_sub(secs(span));
+        let back = i64::try_from(span.as_secs()).unwrap_or(i64::MAX);
+        let from = self.now_s.saturating_sub(back).max(self.horizon());
         self.range_inner(site, from, to, false).0
     }
 
     /// `[from, to)`, aligned outward to whole buckets (2 s where tier 0 still has the span,
-    /// else minutes, else hours).
+    /// else minutes, else hours). `from` is clamped to the horizon (the hour holding
+    /// `now - retention`) and `to` to the clock: [`Summary::from`]/[`Summary::to`] say what
+    /// was covered.
     pub fn range(&mut self, site: SiteId, from: Timestamp, to: Timestamp) -> Summary {
         let (from, to) = self.span(from, to);
         self.range_inner(site, from, to, false).0
@@ -630,6 +657,7 @@ impl Aggregator {
     }
 
     /// Counts and time sums only (no histogram work): the input of CPU attribution (T6).
+    /// Clamped like [`Self::range`].
     pub fn sums(&mut self, site: SiteId, from: Timestamp, to: Timestamp) -> Counters {
         let (from, to) = self.span(from, to);
         let clock = self.clock;
@@ -640,7 +668,8 @@ impl Aggregator {
         s.tiers.sums(&plan).0.to_public()
     }
 
-    /// Points of `[from, to)` at `step`; steps without data are left out.
+    /// Points of `[from, to)` at `step`; steps without data are left out. Clamped like
+    /// [`Self::range`].
     pub fn series(
         &mut self,
         site: SiteId,

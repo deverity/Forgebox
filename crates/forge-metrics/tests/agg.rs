@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use forge_core::ids::SiteId;
+use forge_metrics::agg::MAX_RETENTION;
 use forge_metrics::hist::HIGHEST_US;
 use forge_metrics::{
     AccessRecord, AggConfig, Aggregator, LatencyHist, MinuteDelta, Percentiles, Resources, Step,
@@ -543,6 +544,161 @@ fn weighted_records_scale_counts_and_mark_sampled() {
     let p = w.rt.unwrap();
     let slow = hdr3().highest_equivalent(50_000);
     assert_eq!((p.p50_us, p.p90_us, p.p99_us), (1000, slow, slow));
+}
+
+// ------------------------------------------------------------------------------------------
+// Cost of a query: bounded by the retention, not by the span asked
+// ------------------------------------------------------------------------------------------
+
+/// Runs `f` on its own thread and fails instead of hanging when it does not return within
+/// `limit` (an unbounded planner never returns from `window(Duration::MAX)`).
+fn within<T: Send + 'static>(limit: Duration, f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    match rx.recv_timeout(limit) {
+        Ok(v) => v,
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            std::panic::resume_unwind(handle.join().expect_err("the sender is gone"))
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            panic!("queries did not return within {limit:?}: unbounded planning")
+        }
+    }
+}
+
+/// Best of `runs` calls (the machine may be busy compiling other things).
+fn timed<T>(runs: usize, mut f: impl FnMut() -> T) -> (T, Duration) {
+    let mut best = Duration::MAX;
+    let mut out = None;
+    for _ in 0..runs {
+        let t = Instant::now();
+        let v = f();
+        best = best.min(t.elapsed());
+        out = Some(v);
+    }
+    (out.expect("runs > 0"), best)
+}
+
+/// Client-supplied spans (`stats.get`, `stats.series`) reach the aggregator as is:
+/// `Timestamp::MIN` and `Duration::MAX` must cost what a 24 h window costs.
+#[test]
+fn unbounded_spans_are_clamped_to_the_retention_horizon() {
+    const DAY: Duration = Duration::from_secs(86_400);
+    // Debug build, other builds running: still two orders of magnitude above the real cost.
+    const BUDGET: Duration = Duration::from_millis(50);
+    let site = SiteId::new();
+    let h0 = (base().as_second() / 3600 + 1) * 3600;
+    let start = h0 - 2 * 3600;
+    let mut rng = Rng(9);
+    // One request every ~20 s for 26 h, the last 5 min before the clock: the first 2 h
+    // leave the retention.
+    let reqs = spread(&mut rng, start * 1_000_000, 26 * 3600 - 300, 4_680, |r| {
+        r.lognormal(15_000.0, 0.6)
+    });
+    let mut agg = Aggregator::new(AggConfig::default(), Timestamp::from_second(start).unwrap());
+    feed(&mut agg, site, &reqs, 300);
+    // `now - 24h` is the hour `h0` itself: the horizon.
+    let now = Timestamp::from_second(start + 26 * 3600).unwrap();
+    agg.advance(now);
+    let horizon = Timestamp::from_second(h0).unwrap();
+    let in_day = reqs.iter().filter(|r| r.end_us >= h0 * 1_000_000).count() as u64;
+    let reqs_bg = reqs.clone();
+
+    let (agg, timings) = within(Duration::from_secs(20), move || {
+        let reqs = reqs_bg;
+        let mut agg = agg;
+        let mut timings = Vec::new();
+        let (w24, d) = timed(3, || agg.window(site, DAY));
+        timings.push(("window(24h)", d));
+        let (wmax, d) = timed(3, || agg.window(site, Duration::MAX));
+        timings.push(("window(MAX)", d));
+        let (rmin, d) = timed(3, || agg.range(site, Timestamp::MIN, now));
+        timings.push(("range(MIN, now)", d));
+        let (rall, d) = timed(3, || agg.range(site, Timestamp::MIN, Timestamp::MAX));
+        timings.push(("range(MIN, MAX)", d));
+        let (sums, d) = timed(3, || agg.sums(site, Timestamp::MIN, now));
+        timings.push(("sums(MIN, now)", d));
+        let ((rh, rt, ut), d) = timed(3, || agg.range_hists(site, Timestamp::MIN, now));
+        timings.push(("range_hists(MIN, now)", d));
+        let mut series = Vec::new();
+        for (name, step) in [
+            ("series(MIN, MAX, 1h)", Step::Hour),
+            ("series(MIN, MAX, 1m)", Step::Minute),
+            ("series(MIN, MAX, 10s)", Step::TenSeconds),
+        ] {
+            let (points, d) = timed(3, || agg.series(site, Timestamp::MIN, Timestamp::MAX, step));
+            timings.push((name, d));
+            series.push((name, points));
+        }
+        // An empty span far in the past, and a site without data.
+        let (old, d) = timed(3, || agg.range(site, Timestamp::MIN, Timestamp::MIN));
+        timings.push(("range(MIN, MIN)", d));
+        let (none, d) = timed(3, || agg.window(SiteId::new(), Duration::MAX));
+        timings.push(("window(MAX) unknown site", d));
+
+        assert_eq!((w24.from, w24.to), (horizon, now));
+        assert_eq!(w24.counters.requests, in_day);
+        check_summary("window(24h)", &w24, &reqs);
+        assert_eq!(wmax, w24, "window(MAX)");
+        assert_eq!(rmin, w24, "range(MIN, now)");
+        assert_eq!(rall, w24, "range(MIN, MAX)");
+        assert_eq!(sums, w24.counters, "sums(MIN, now)");
+        assert_eq!(rh, w24, "range_hists(MIN, now)");
+        assert_eq!(rt.total(), in_day);
+        assert_eq!(ut.total(), w24.counters.ut_count);
+        for (name, points) in &series {
+            let total: u64 = points.iter().map(|p| p.requests).sum();
+            assert_eq!(total, in_day, "{name}");
+            assert!(points[0].start >= horizon, "{name}: before the horizon");
+        }
+        assert_eq!((old.from, old.to), (horizon, horizon));
+        assert_eq!(old.counters.requests, 0);
+        assert_eq!((none.from, none.counters.requests), (horizon, 0));
+        (agg, timings)
+    });
+    println!("query cost (best of 3): {timings:?}");
+    for (what, d) in &timings {
+        assert!(*d < BUDGET, "{what} took {d:?}: {timings:?}");
+    }
+
+    // A clock off the hour: the horizon is the hour holding `now - 24h`, older than the
+    // 24 h window, and the range covers it exactly (its whole hour bucket).
+    let mut agg = agg;
+    let later = now + SignedDuration::from_secs(1234);
+    agg.advance(later);
+    let (s, w, d) = within(Duration::from_secs(20), move || {
+        let (s, d) = timed(3, || agg.range(site, Timestamp::MIN, Timestamp::MAX));
+        (s, agg.window(site, Duration::MAX), d)
+    });
+    assert!(d < BUDGET, "range(MIN, MAX) off the hour took {d:?}");
+    assert_eq!((s.from, s.to), (horizon, later));
+    check_summary("range(MIN, MAX) off the hour", &s, &reqs);
+    assert_eq!(w, s, "window(MAX) off the hour");
+}
+
+/// The horizon bound holds whatever the config: the retention is capped at 7 days.
+#[test]
+fn a_huge_retention_is_capped() {
+    let site = SiteId::new();
+    let config = AggConfig {
+        retention: Duration::MAX,
+        ..AggConfig::default()
+    };
+    let mut agg = Aggregator::new(config, base());
+    agg.advance(base() + SignedDuration::from_secs(1));
+    agg.record(site, &record(us(base()), 1000, None, 200, "/"), 1);
+    let now = agg.now();
+    let horizon = (now.as_second() - MAX_RETENTION.as_secs() as i64).div_euclid(3600) * 3600;
+    let (r, w, d) = within(Duration::from_secs(20), move || {
+        let (r, d) = timed(3, || agg.range(site, Timestamp::MIN, Timestamp::MAX));
+        (r, agg.window(site, Duration::MAX), d)
+    });
+    assert!(d < Duration::from_millis(50), "range(MIN, MAX) took {d:?}");
+    assert_eq!(r.from.as_second(), horizon);
+    assert_eq!(r.counters.requests, 1);
+    assert_eq!(w, r);
 }
 
 // ------------------------------------------------------------------------------------------
