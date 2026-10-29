@@ -77,7 +77,7 @@ forge site remove loja.test                          # pede confirmação (--yes
 forge site php loja.test 8.4                        # troca ao vivo
 forge site secure loja.test | unsecure
 forge site server loja.test apache
-forge site driver loja.test laravel|auto            # fixa o driver do framework; auto detecta de novo
+forge site driver loja.test laravel|auto            # fixa o driver do framework; auto detecta de novo  # sites parked: conflict (seguem a detecção; use site add)
 forge site alias loja.test add admin.loja.test
 forge site open loja.test [--editor|--terminal|--explorer]
 forge site info loja.test                           # diagnóstico: site.dns, site.certificate (aviso < 30 dias), site.php_pool, site.root_access

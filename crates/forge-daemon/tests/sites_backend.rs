@@ -19,13 +19,13 @@ use std::time::{Duration, Instant};
 
 use forge_ipc::Client;
 use forge_ipc::api::methods::{
-    events_subscribe, jobs_get, sites_add, sites_driver, sites_info, sites_list, sites_php,
-    sites_ps, sites_up, tls_ca_status, tls_issue, tls_list,
+    events_subscribe, jobs_get, php_pool_status, sites_add, sites_driver, sites_info, sites_list,
+    sites_park, sites_php, sites_ps, sites_up, tls_ca_status, tls_issue, tls_list,
 };
 use forge_ipc::api::{
     CheckStatus, EventFilter, EventsSubscribeParams, JobDto, JobIdParams, JobState, NoParams,
-    ProjectParams, SiteAddParams, SiteDriverParams, SiteDto, SiteInfoDto, SitePhpParams,
-    SitePsParams, SiteRef, TlsHostParams,
+    ParkParams, PhpPoolStatusParams, ProjectParams, SiteAddParams, SiteDriverParams, SiteDto,
+    SiteInfoDto, SitePhpParams, SitePsParams, SiteRef, TlsHostParams,
 };
 use forge_ipc::client::SubscriptionItem;
 use serde_json::Value;
@@ -327,6 +327,33 @@ async fn php_switch_is_validated_announced_and_scoped_to_its_site() {
         1,
         "no event for a failed swap"
     );
+    // Blue/green: the failed switch neither re-rendered nor drained the 8.4 pool.
+    let pools = client
+        .call::<php_pool_status>(PhpPoolStatusParams {
+            version: Some("8.4".into()),
+        })
+        .await
+        .unwrap()
+        .pools;
+    assert_eq!(pools.len(), 1, "{pools:?}");
+    assert_eq!(pools[0].version, "8.4.27");
+    assert_eq!(
+        pools[0].state,
+        forge_ipc::api::ServiceState::Running,
+        "{pools:?}"
+    );
+    let info: SiteInfoDto = client
+        .call::<sites_info>(forge_ipc::api::SiteParams {
+            site: SiteRef::from("app.test".to_owned()),
+        })
+        .await
+        .unwrap();
+    let pool_check = info
+        .checks
+        .iter()
+        .find(|c| c.id == "site.php_pool")
+        .unwrap();
+    assert_eq!(pool_check.status, CheckStatus::Ok, "{pool_check:?}");
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}\n{}", daemon.output());
@@ -564,4 +591,62 @@ async fn app_processes_report_instance_id_and_site_id() {
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}\n{}", daemon.output());
+}
+
+/// A parked site (the default kind) keeps following detection: `sites.driver` is
+/// refused with a structured error and the reconcile after `sites.park` changes nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn driver_override_is_refused_on_parked_sites() {
+    let root = TestRoot::new();
+    install_php(&root, "8.4.27", false);
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../forge-sites/tests/fixtures/projects/laravel");
+    copy_tree(&fixture, &root.root.www().join("blog"));
+    let mut daemon = spawn_daemon(&root, &[]);
+    let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let parked = loop {
+        if let Some(s) = sites(&client)
+            .await
+            .into_iter()
+            .find(|s| s.host == "blog.test")
+        {
+            break s;
+        }
+        assert!(Instant::now() < deadline, "blog.test never parked");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert!(parked.parked);
+    assert_eq!(parked.driver.as_deref(), Some("laravel"));
+
+    let err = client
+        .call::<sites_driver>(SiteDriverParams {
+            site: SiteRef::from("blog.test".to_owned()),
+            driver: Some("wordpress".into()),
+        })
+        .await
+        .expect_err("parked sites follow detection");
+    assert_eq!(err.code(), "conflict");
+    assert!(err.to_string().contains("forge site add"), "{err}");
+
+    // A parked reconcile leaves the site as it was.
+    client
+        .call::<sites_park>(ParkParams {
+            dir: forge_core::paths::posix_string(&root.root.www()),
+            tld: None,
+        })
+        .await
+        .unwrap();
+    let after = site(&client, "blog.test").await;
+    assert_eq!(after.driver.as_deref(), Some("laravel"));
+    assert_eq!(after.root, parked.root);
+
+    let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
+    assert!(
+        status.success(),
+        "{status}
+{}",
+        daemon.output()
+    );
 }

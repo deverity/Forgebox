@@ -378,6 +378,14 @@ async fn driver(daemon: Daemon, params: SiteDriverParams, ctx: Ctx) -> Result<Jo
             previous.host
         )));
     }
+    // ParkedSync re-detects parked sites at every boot and folder change, so an
+    // override would be silently reverted (ADR-0041 §9: no marker, no migration).
+    if previous.parked {
+        return Err(ForgeError::Conflict(format!(
+            "{} is a parked site: its driver follows detection; pin it with `forge site add` (explicit site) to choose a driver",
+            previous.host
+        )));
+    }
     let wanted = params
         .driver
         .as_deref()

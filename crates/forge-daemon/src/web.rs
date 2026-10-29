@@ -332,6 +332,13 @@ impl WebManager {
                 }
             }
         }
+        // Blue/green: a target pool that did not come up aborts before anything is
+        // re-rendered or drained, so the previous version keeps serving the site.
+        if check_pool {
+            if let Some(err) = target_failure.take() {
+                return Err(err);
+            }
+        }
         let report = self.apply_web(reason).await?;
         if let Some(pools) = self.pools() {
             for handle in pools.handles() {
