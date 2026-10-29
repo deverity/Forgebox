@@ -25,9 +25,10 @@ use crate::schema::project::ProjectManifest;
 use crate::schema::registry::{REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryManifest};
 use crate::schema::stack::{PostCreateAction, StackManifest};
 use crate::schema::tool::{
-    AccessRotate, ArchiveFormat, ClientCommand, Config, DatabaseSpec, Discover, Install, LogSpec,
-    MailSpec, PostInstallAction, Provider, QuickSettingType, RotateStrategy, Service, ServiceKind,
-    Source, ToolManifest, ToolMetadata, Ui, Update, UpdatePolicy, Variant, Versioning,
+    AccessRotate, ArchiveFormat, ClientCommand, Config, ConfigFormat, DatabaseSpec, Discover,
+    Install, LogSpec, MailSpec, PostInstallAction, Provider, QuickSettingType, RotateStrategy,
+    Service, ServiceKind, Source, ToolManifest, ToolMetadata, Ui, Update, UpdatePolicy, Variant,
+    Versioning,
 };
 use crate::template::{self, VarRef};
 use crate::version::{Constraint, Version, validate_series_key};
@@ -223,6 +224,42 @@ pub fn validate_with(manifest: &Manifest, options: &ValidateOptions) -> Vec<Vali
 // ------------------------------------------------------------------- helpers
 
 /// Identifier usable in templates (`php_ini`, `main`, `ts`).
+/// Why `target` cannot address a value in a file of `format` (`None` = fine): `ini` is
+/// `key` or `section/key`; `directive` one word; `pointer` dotted segments; `arg` a flag
+/// starting with `-`. No spaces, quotes, `=` or line breaks anywhere.
+fn setting_target_problem(format: ConfigFormat, target: &str) -> Option<&'static str> {
+    if target.is_empty() {
+        return Some("is empty");
+    }
+    if target
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '\'' | '=' | ';' | '#'))
+    {
+        return Some("has spaces, quotes, `=`, `;` or `#`");
+    }
+    match format {
+        ConfigFormat::Ini => {
+            let parts: Vec<&str> = target.split('/').collect();
+            match parts.as_slice() {
+                [_] => None,
+                [section, key] if !section.is_empty() && !key.is_empty() => {
+                    (section.contains(['[', ']'])).then_some("has `[`/`]` in the section")
+                }
+                _ => Some("is `key` or `section/key`"),
+            }
+        }
+        ConfigFormat::ConfDirective => target
+            .contains(['/', '{', '}', '<', '>'])
+            .then_some("is one directive name"),
+        ConfigFormat::Yaml | ConfigFormat::Json => target
+            .split('.')
+            .any(str::is_empty)
+            .then_some("has an empty segment"),
+        ConfigFormat::Args => (!target.starts_with('-')).then_some("starts with `-`"),
+        ConfigFormat::Text => Some("a `text` file has no quick settings"),
+    }
+}
+
 fn is_key(s: &str) -> bool {
     let mut chars = s.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_lowercase() || c == '_')
@@ -1225,8 +1262,9 @@ impl Checker<'_> {
         self.uninstall_keep("spec.install.uninstall.keep", &install.uninstall.keep);
     }
 
-    /// Returns the ids of `config.files`.
-    fn config(&mut self, config: &Config, scheme: VersionScheme) -> BTreeSet<String> {
+    /// Returns the ids of `config.files`. `tool`: quick settings must name their `file`
+    /// (an Extension's go into the target tool's files, M2-E2-T9).
+    fn config(&mut self, config: &Config, scheme: VersionScheme, tool: bool) -> BTreeSet<String> {
         let mut ids = BTreeSet::new();
         for (i, file) in config.files.iter().enumerate() {
             let f = format!("spec.config.files[{i}]");
@@ -1239,6 +1277,26 @@ impl Checker<'_> {
             }
             self.duplicate(&format!("{f}.id"), &mut ids, &file.id);
             self.not_empty(&format!("{f}.path"), &file.path);
+            if let Some(overlay) = &file.overlay {
+                let field = format!("{f}.overlay");
+                match template::root_dir_prefix(overlay) {
+                    Some((dir, rest)) if dir == "etc" && !has_dotdot(rest) => {}
+                    _ => self.push(
+                        IssueCode::WriteOutsideRoot,
+                        &field,
+                        format!(
+                            "{overlay:?} must start with `{{{{ paths.etc }}}}` and stay inside it"
+                        ),
+                    ),
+                }
+                if file.format == ConfigFormat::Text {
+                    self.push(
+                        IssueCode::InvalidValue,
+                        field,
+                        "a `text` file has no quick settings, so no overlay",
+                    );
+                }
+            }
         }
         let mut keys = BTreeSet::new();
         for (i, qs) in config.quick_settings.iter().enumerate() {
@@ -1259,6 +1317,12 @@ impl Checker<'_> {
                         format!("no config.files entry with id `{file}`"),
                     );
                 }
+            } else if tool {
+                self.push(
+                    IssueCode::InvalidReference,
+                    format!("{f}.file"),
+                    "a quick setting of a Tool names the `config.files` entry it writes",
+                );
             }
             let targets = [&qs.ini, &qs.directive, &qs.pointer, &qs.arg]
                 .iter()
@@ -1270,6 +1334,14 @@ impl Checker<'_> {
                     &f,
                     "use only one of `ini`, `directive`, `pointer`, `arg`",
                 );
+            }
+            let format = qs
+                .file
+                .as_ref()
+                .and_then(|id| config.files.iter().find(|file| &file.id == id))
+                .map(|file| file.format);
+            if let Some(format) = format {
+                self.quick_setting_target(&f, qs, format);
             }
             self.quick_setting_values(&f, qs);
         }
@@ -1308,6 +1380,55 @@ impl Checker<'_> {
         }
         self.env_names("spec.config.env", config.env.keys());
         ids
+    }
+
+    /// The target field matches the file's format (`ini` in an ini file, `directive` in a
+    /// conf-directive one, `pointer` in yaml/json, `arg` in args; none = the `key`), and
+    /// the target and the `also_set` keys are well formed for it (docs/04 §1.3).
+    fn quick_setting_target(
+        &mut self,
+        f: &str,
+        qs: &crate::schema::tool::QuickSetting,
+        format: ConfigFormat,
+    ) {
+        let (field, allowed) = match format {
+            ConfigFormat::Ini => ("ini", qs.ini.is_some()),
+            ConfigFormat::ConfDirective => ("directive", qs.directive.is_some()),
+            ConfigFormat::Yaml | ConfigFormat::Json => ("pointer", qs.pointer.is_some()),
+            ConfigFormat::Args => ("arg", qs.arg.is_some()),
+            ConfigFormat::Text => {
+                self.push(
+                    IssueCode::InvalidValue,
+                    format!("{f}.file"),
+                    "a `text` file has no quick settings",
+                );
+                return;
+            }
+        };
+        let any = [&qs.ini, &qs.directive, &qs.pointer, &qs.arg]
+            .iter()
+            .any(|t| t.is_some());
+        if any && !allowed {
+            self.push(
+                IssueCode::InvalidValue,
+                f,
+                format!("the file's format takes `{field}` as the target"),
+            );
+            return;
+        }
+        let mut check = |what: String, target: &str| {
+            if let Some(problem) = setting_target_problem(format, target) {
+                self.push(
+                    IssueCode::InvalidValue,
+                    what,
+                    format!("{target:?}: {problem}"),
+                );
+            }
+        };
+        check(format!("{f}.{field}"), qs.target());
+        for key in qs.also_set.keys() {
+            check(format!("{f}.also_set"), key);
+        }
     }
 
     fn quick_setting_values(&mut self, f: &str, qs: &crate::schema::tool::QuickSetting) {
@@ -1872,7 +1993,7 @@ impl Checker<'_> {
             Some(&spec.versioning.variants),
         );
         self.install(&spec.install);
-        let config_ids = self.config(&spec.config, spec.versioning.scheme);
+        let config_ids = self.config(&spec.config, spec.versioning.scheme, true);
         let port_names = self.service(&spec.service, &m.metadata.id);
         if let Some(database) = &spec.database {
             self.database(database, &port_names);
@@ -1952,7 +2073,7 @@ impl Checker<'_> {
         }
         self.post_install("spec.install.post_install", &install.post_install);
         self.uninstall_keep("spec.install.uninstall.keep", &install.uninstall.keep);
-        self.config(&spec.config, VersionScheme::Semver);
+        self.config(&spec.config, VersionScheme::Semver, false);
         if let Some(toggle) = &spec.toggle {
             self.not_empty("spec.toggle.enable", &toggle.enable);
             self.not_empty("spec.toggle.disable", &toggle.disable);

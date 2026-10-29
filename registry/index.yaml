@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-29T05:58:49Z
+  updated_at: 2026-10-29T08:58:27Z
   tools:
   - id: apache
     path: tools/apache.yaml
@@ -35,7 +35,7 @@ spec:
     latest: 1.32.0
   - id: mariadb
     path: tools/mariadb.yaml
-    sha256: f66ec1e0973b94bb34cc8533269cc7a2ab5354efe752d3b183ea015fe46310bd
+    sha256: 50494726d200e6ea2d4304cd2f86e5a8787465c37b4f8fc76f6353a000ce8c0e
     categories:
     - database
     latest: 11.8.9
@@ -47,13 +47,13 @@ spec:
     latest: 4.3.2
   - id: mysql
     path: tools/mysql.yaml
-    sha256: 9815e252327770f5a71d33c9e684ec2ad07d2fb5ebe66609e3d55ed41d578dde
+    sha256: fdee53b30550848c237f2810f927be3774a1c3a00e97a3592e4ce4aa4f7e155a
     categories:
     - database
     latest: 8.4.13
   - id: nginx
     path: tools/nginx.yaml
-    sha256: a876f444850066fe7d0aacd30bf4cd7cb9370f0f41d0687e1086a06cbecd4f69
+    sha256: f82f8d20f9e32563603b2133a44e62e9b5802abd95377c689d37cf8766b2ea78
     categories:
     - webserver
     latest: 1.31.8
@@ -65,7 +65,7 @@ spec:
     latest: 22.23.4
   - id: php
     path: tools/php.yaml
-    sha256: dfdb7dd029ed4dc25dfe346f25525fc005464ff8e907d0c0e28e73ebcfd453f7
+    sha256: d6bb5e3a66a7f78dbeeaaa4d3924c162cd11c0af18366665acd2b750183b37a2
     categories:
     - runtime
   - id: postgresql
