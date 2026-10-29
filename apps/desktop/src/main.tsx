@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import type { Bridge } from "./ipc/bridge";
 import { bootAppearance, followAppearance, isTauri } from "./app/appearance";
 import { initI18n } from "./i18n";
 import "./index.css";
@@ -16,10 +17,10 @@ bootAppearance();
 if (isTauri()) void import("@tauri-apps/api/core");
 
 // Core namespaces load before first paint (tiny JSON); the daemon connection comes later (T8).
-function render(root: HTMLElement) {
+function render(root: HTMLElement, bridge?: Bridge) {
   createRoot(root).render(
     <StrictMode>
-      <App />
+      <App bridge={bridge} />
     </StrictMode>,
   );
   // Live theme/material changes; never on the first-paint path.
@@ -44,5 +45,13 @@ qa.then((handle) =>
     console.warn("i18n init failed", error);
   })
   .finally(() => {
-    render(container);
+    // In qa mode the app must use the scenario bridge instead of createTauriBridge().
+    void qa.then(
+      (handle) => {
+        render(container, handle?.bridge);
+      },
+      () => {
+        render(container);
+      },
+    );
   });

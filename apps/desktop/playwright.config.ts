@@ -4,7 +4,9 @@
 // pointing at a project-local folder (drop `channel`).
 import { defineConfig } from "@playwright/test";
 
-const PORT = 4174;
+// FORGE_QA_PORT lets several worktrees run side by side; the server is never reused, so a stale
+// dist-qa or another worktree's preview cannot answer for this code.
+const PORT = Number(process.env.FORGE_QA_PORT ?? 4174);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -21,9 +23,9 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "pnpm build:qa && pnpm preview:qa",
+    command: `pnpm build:qa && pnpm preview:qa --port ${String(PORT)}`,
     url: `http://127.0.0.1:${String(PORT)}`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 180_000,
   },
 });

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { QA_SCENARIO_NAMES } from "../../qa/fixtures/scenarios";
+import { heavyData } from "../../qa/fixtures/scenarios/data";
+import { isUlid } from "../ipc/api";
 import { bootQa, QA_SENTINEL } from "./bootstrap";
 import { qaLocaleOverride } from "./pseudo-locale";
 
@@ -61,5 +63,16 @@ describe("qa bootstrap", () => {
     expect(qaLocaleOverride("pt-br")).toBe("pt-BR");
     expect(qaLocaleOverride("xx")).toBeNull();
     expect(qaLocaleOverride(null)).toBeNull();
+  });
+});
+
+describe("scenario ids", () => {
+  it("heavy data has unique ULID-valid ids", () => {
+    const data = heavyData(500, 50);
+    expect(new Set(data.sites.map((s) => s.id)).size).toBe(500);
+    expect(new Set(data.instances.map((i) => i.id)).size).toBe(50);
+    for (const id of [...data.sites, ...data.instances].map((x) => x.id)) {
+      expect(isUlid(id)).toBe(true);
+    }
   });
 });

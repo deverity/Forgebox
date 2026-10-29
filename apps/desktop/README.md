@@ -96,8 +96,12 @@ pnpm -C apps/desktop perf:startup    # release cold start: 1 discarded + 10 runs
   config), on a temp portable root with DNS off and a fake Mailpit. It leaves no process or file
   outside the temp folder (the script fails otherwise).
 - `perf:startup` options: `--exe`, `--runs`, `--budget-ms`, `--budget-factor` (CI uses 1.5), `--daemon
-  both|running|stopped`. Run it only on a quiet machine; the session type (rdp/console) is part of
+both|running|stopped`. Run it only on a quiet machine; the session type (rdp/console) is part of
   the output. Screenshots and captures go to `qa/out/` (gitignored); there is no pixel-diff gate in M2.
+
+- Wiring point of the fake bridge: in `qa` mode `main.tsx` passes `handle.bridge` (also
+  `window.__FORGEBOX_QA__.bridge`) to `<App bridge={...}/>`; the state layer (M2-E1-T10) must use that
+  bridge instead of `createTauriBridge()` whenever the prop is set. Without it `?scenario=` changes nothing.
 
 ## Version pins
 

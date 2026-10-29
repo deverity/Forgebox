@@ -37,6 +37,7 @@ public static class ForgeboxCapture {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder text, int max);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT rect, int size);
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
 
     public static IntPtr Find(uint pid, string title) {
@@ -53,30 +54,42 @@ public static class ForgeboxCapture {
     }
 
     // Returns "w,h,mean_luma,content_ratio" or null when PrintWindow failed.
+    // GetWindowRect includes the invisible resize borders of Win10 (about 8 px left/right/bottom,
+    // painted black by PrintWindow); DWMWA_EXTENDED_FRAME_BOUNDS (9) is the visible frame, so the
+    // bitmap is cropped to it.
     public static string Capture(IntPtr h, string png) {
         RECT r; GetWindowRect(h, out r);
-        int w = Math.Max(1, r.Right - r.Left), ht = Math.Max(1, r.Bottom - r.Top);
-        using (var bmp = new Bitmap(w, ht, PixelFormat.Format32bppArgb)) {
-            using (var g = Graphics.FromImage(bmp)) {
+        int fw = Math.Max(1, r.Right - r.Left), fh = Math.Max(1, r.Bottom - r.Top);
+        int cx = 0, cy = 0, w = fw, ht = fh;
+        RECT v;
+        if (DwmGetWindowAttribute(h, 9, out v, Marshal.SizeOf(typeof(RECT))) == 0) {
+            int x0 = Math.Max(0, v.Left - r.Left), y0 = Math.Max(0, v.Top - r.Top);
+            int x1 = Math.Min(fw, v.Right - r.Left), y1 = Math.Min(fh, v.Bottom - r.Top);
+            if (x1 - x0 > 0 && y1 - y0 > 0) { cx = x0; cy = y0; w = x1 - x0; ht = y1 - y0; }
+        }
+        using (var full = new Bitmap(fw, fh, PixelFormat.Format32bppArgb)) {
+            using (var g = Graphics.FromImage(full)) {
                 IntPtr hdc = g.GetHdc();
                 bool ok = PrintWindow(h, hdc, 2);
                 g.ReleaseHdc(hdc);
                 if (!ok) return null;
             }
-            var data = bmp.LockBits(new Rectangle(0, 0, w, ht), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            byte[] px = new byte[data.Stride * ht];
-            Marshal.Copy(data.Scan0, px, 0, px.Length); bmp.UnlockBits(data);
-            int inset = Math.Min(10, Math.Min(w, ht) / 4);
-            double sum = 0; long n = 0, bright = 0;
-            for (int y = inset; y < ht - inset; y += 2) for (int x = inset; x < w - inset; x += 2) {
-                int i = y * data.Stride + x * 4;
-                double lum = 0.2126 * px[i + 2] + 0.7152 * px[i + 1] + 0.0722 * px[i];
-                sum += lum; n++; if (lum >= 10) bright++;
+            using (var bmp = full.Clone(new Rectangle(cx, cy, w, ht), PixelFormat.Format32bppArgb)) {
+                var data = bmp.LockBits(new Rectangle(0, 0, w, ht), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                byte[] px = new byte[data.Stride * ht];
+                Marshal.Copy(data.Scan0, px, 0, px.Length); bmp.UnlockBits(data);
+                int inset = Math.Min(10, Math.Min(w, ht) / 4);
+                double sum = 0; long n = 0, bright = 0;
+                for (int y = inset; y < ht - inset; y += 2) for (int x = inset; x < w - inset; x += 2) {
+                    int i = y * data.Stride + x * 4;
+                    double lum = 0.2126 * px[i + 2] + 0.7152 * px[i + 1] + 0.0722 * px[i];
+                    sum += lum; n++; if (lum >= 10) bright++;
+                }
+                n = Math.Max(1, n);
+                bmp.Save(png, ImageFormat.Png);
+                return String.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "{0},{1},{2:F1},{3:F4}", w, ht, sum / n, (double)bright / n);
             }
-            n = Math.Max(1, n);
-            bmp.Save(png, ImageFormat.Png);
-            return String.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "{0},{1},{2:F1},{3:F4}", w, ht, sum / n, (double)bright / n);
         }
     }
 }

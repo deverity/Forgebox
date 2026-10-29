@@ -13,7 +13,7 @@
     "preview": "vite preview --port 4173 --strictPort",
     "dev:qa": "vite --mode qa --port 1421 --strictPort",
     "build:qa": "tsc --noEmit && vite build --mode qa",
-    "preview:qa": "vite preview --outDir dist-qa --host 127.0.0.1 --port 4174 --strictPort",
+    "preview:qa": "vite preview --outDir dist-qa --host 127.0.0.1 --strictPort",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && stylelint \"src/**/*.css\"",
     "tokens": "node scripts/gen-tokens.mjs",

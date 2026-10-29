@@ -84,6 +84,27 @@ function stopDaemon(ctx, child) {
     if (child?.pid) killTree(child.pid);
 }
 
+/** "stopped" mode: no daemon may survive a previous run (it outlives the GUI that started it). */
+async function ensureDaemonStopped(ctx) {
+    const lock = join(ctx.root, "state", "locks", "forgeboxd.lock");
+    const pid = daemonPid(ctx);
+    if (pid) killTree(pid);
+    for (let i = 0; i < 50; i++) {
+        if (!existsSync(lock)) return;
+        await sleep(100);
+        // The lock file is kept after a kill on some paths; a dead pid means it is stale.
+        const current = daemonPid(ctx);
+        if (!current || current === pid) {
+            try {
+                process.kill(current ?? pid, 0);
+            } catch {
+                rmSync(lock, { force: true });
+            }
+        }
+    }
+    if (existsSync(lock)) throw new Error("forgeboxd.lock is still present: the daemon is running");
+}
+
 function oneRun(ctx) {
     return new Promise((ok, fail) => {
         const child = spawn(exe, ["--perf-startup"], {
@@ -128,10 +149,12 @@ async function measureMode(mode) {
     let daemon = null;
     try {
         if (mode === "running") daemon = await startDaemon(ctx);
+        if (mode === "stopped") await ensureDaemonStopped(ctx);
         await oneRun(ctx); // warm-up, discarded: creates the WebView2 profile
         const samples = [];
         let session = "unknown";
         for (let i = 0; i < runs; i++) {
+            if (mode === "stopped") await ensureDaemonStopped(ctx);
             const line = await oneRun(ctx);
             samples.push(line.first_frame_ms);
             session = line.session ?? session;

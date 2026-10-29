@@ -10,25 +10,13 @@
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ulid } from "../../src/ipc/api";
 import { chromium, expect, test, type Browser, type Page } from "@playwright/test";
 
 function need(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set: run scripts/e2e-desktop.ps1`);
   return value;
-}
-
-const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
-function ulid(): string {
-  let time = "";
-  let rest = Date.now();
-  for (let i = 0; i < 10; i += 1) {
-    time = CROCKFORD.charAt(rest % 32) + time;
-    rest = Math.floor(rest / 32);
-  }
-  let random = "";
-  for (let i = 0; i < 16; i += 1) random += CROCKFORD.charAt(Math.floor(Math.random() * 32));
-  return time + random;
 }
 
 interface Internals {
@@ -117,6 +105,13 @@ test("mailpit stop and start reach the UI through service events", async () => {
     w.__e2eEvents = [];
     const id = internals.transformCallback((message) => {
       w.__e2eEvents.push(message);
+      // Ack every frame like src/ipc/tauriBridge.ts: the pump stops after 4 unacked frames.
+      const frame = message as { stream_id?: string; frame?: number };
+      if (frame.stream_id !== undefined && frame.frame !== undefined) {
+        internals
+          .invoke("ipc_ack", { stream_id: frame.stream_id, frame: frame.frame })
+          .catch(() => undefined);
+      }
     });
     await internals.invoke("ipc_subscribe", {
       context: "local",
@@ -177,8 +172,8 @@ async function recordConnection(p: Page): Promise<void> {
   });
 }
 const connLog = (p: Page) =>
-  p.evaluate(
-    () => (window as unknown as { __e2eConn: { t: number; status: string }[] }).__e2eConn.slice(),
+  p.evaluate(() =>
+    (window as unknown as { __e2eConn: { t: number; status: string }[] }).__e2eConn.slice(),
   );
 const mark = (p: Page) =>
   p.evaluate(() => (window as unknown as { __e2eConn: unknown[] }).__e2eConn.length);

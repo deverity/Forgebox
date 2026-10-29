@@ -29,6 +29,7 @@ O M2 entrega ~20 telas em paralelo. Precisamos de testes que rodem nesta máquin
 - *Abrir a porta CDP em builds de debug:* um build de debug pode ser distribuído por engano; só o ambiente do teste decide.
 
 ## Consequências
+- Ponto de ligação da bridge fake: no modo `qa`, `main.tsx` entrega `handle.bridge` (igual a `window.__FORGEBOX_QA__.bridge`) ao `<App bridge>`; a camada de estado (M2-E1-T10) usa essa bridge no lugar de `createTauriBridge()` quando a prop existe. Sem isso `?scenario=` não muda a UI.
 - `pnpm -C apps/desktop e2e` não baixa nada e roda headless; `e2e:real` só é chamado por `scripts/e2e-desktop.ps1`.
 - Enquanto as telas do M2 não existem, o e2e real dirige a conexão e os serviços pelos mesmos comandos Tauri da camada de estado (`ipc_state`, `ipc_call`, `ipc_subscribe`) e verifica `data-testid="connection-status"` (`data-status`) quando a barra de status o expõe; a tarefa da barra de status deve expô-lo.
 - Cada tarefa de tela registra seus dados em `qa/fixtures/scenarios` e ganha as verificações de axe/teclado/CLS dos helpers de `e2e/fixtures.ts`.

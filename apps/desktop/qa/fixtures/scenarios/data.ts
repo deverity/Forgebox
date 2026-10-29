@@ -5,13 +5,20 @@ import type * as T from "../../../src/ipc/generated";
 
 const NOW = "2026-10-28T10:00:00Z";
 
-/** Deterministic ULID-shaped ids (26 Crockford chars) so screenshots and tests are stable. */
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/**
+ * Deterministic ULID-shaped ids (26 Crockford chars) so screenshots and tests are stable.
+ * `n` is encoded digit by digit in base 32, so distinct (prefix, n) pairs never collide.
+ */
 export function fakeId(prefix: string, n: number): string {
-  const body = n
-    .toString(32)
-    .toUpperCase()
-    .replace(/[ILOU]/g, "0")
-    .padStart(26 - prefix.length, "0");
+  const width = 26 - prefix.length;
+  let rest = Math.max(0, Math.floor(n));
+  let body = "";
+  for (let i = 0; i < width; i += 1) {
+    body = CROCKFORD.charAt(rest % 32) + body;
+    rest = Math.floor(rest / 32);
+  }
   return prefix + body;
 }
 
@@ -22,7 +29,7 @@ export function instance(
   patch: Partial<T.InstanceDto> = {},
 ): T.InstanceDto {
   return {
-    id: fakeId("01QAINST", n),
+    id: fakeId("01QA1NST", n),
     tool,
     version_id: fakeId("01QAVERS", n % 7),
     version: "1.0.0",
@@ -42,7 +49,7 @@ export function instance(
 
 export function port(owner: T.InstanceDto, number: number, name: string): T.PortDto {
   return {
-    id: fakeId("01QAPORT", number),
+    id: fakeId("01QAP0RT", number),
     port: number,
     protocol: "tcp",
     owner_kind: "instance",
@@ -56,7 +63,7 @@ export function port(owner: T.InstanceDto, number: number, name: string): T.Port
 
 export function site(n: number, host: string, patch: Partial<T.SiteDto> = {}): T.SiteDto {
   return {
-    id: fakeId("01QASITE", n),
+    id: fakeId("01QAS1TE", n),
     slug: host.split(".")[0] ?? host,
     host,
     aliases: [],

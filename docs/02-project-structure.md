@@ -275,9 +275,15 @@ Forgebox/
 │       ├── eslint.config.js      # ESLint 9 flat: typescript-eslint strict, react-hooks, jsx-a11y
 │       ├── .prettierrc.json / .prettierignore / .gitignore
 │       ├── README.md             # runbook: Node 24, NODE_OPTIONS, comandos, o que roda sem Node
+│       ├── playwright.config.ts / playwright.real.config.ts  # M2-E1-T19 (ADR-0036): e2e web (Edge, build `qa` + vite preview, porta FORGE_QA_PORT, padrão 4174, sem reuso) e e2e da janela real (CDP)
+│       ├── e2e/                  # fixtures.ts (emulação, axe, teclado, CLS), *.spec.ts por cenário; real/app.spec.ts (Forgebox.exe via CDP, só por scripts/e2e-desktop.ps1)
+│       ├── qa/                   # fixtures/scenarios/ (biblioteca tipada com `satisfies` contra generated.ts: empty, populated, heavy...); out/ (gitignored)
+│       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree)
+│       ├── dist-qa/              # saída de `vite build --mode qa` (gitignored; nunca sobre dist/)
 │       ├── src/
 │       │   ├── main.tsx / App.tsx / index.css   # casca placeholder; Tailwind com `source("./")` (não varre src-tauri/target)
 │       │   ├── App.test.tsx / test/setup.ts     # vitest + Testing Library
+│       │   ├── qa/               # (M2-E1-T19) bootstrap.ts (modo `qa`: ?scenario, theme, vibrancy, motion, locale, latency), pseudo-locale.ts; fora do build de produção (sentinela)
 │       │   ├── app/              # appearance.ts (M2-E1-T7: data-theme/data-vibrancy/data-effect/data-contrast em <html>,
 │       │   │                     #   boot por window.__FORGEBOX_SHELL__ + evento forge://appearance); shell/ (M2-E1-T7: Titlebar.tsx,
 │       │   │                     #   WindowControls.tsx, windowApi.ts = janela Tauri lazy + `ready` após duplo rAF);
@@ -386,7 +392,7 @@ Forgebox/
 │   └── assets/                   # banners, ícones do instalador
 │
 ├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, arch-guard (grafo de dependências: GUI/CLI/MCP só dependem de forge-ipc; GUI sem windows/windows-sys), lint-registry, registry-index, registry-sign, registry-keygen
-├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1
+├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1; e2e-desktop.ps1 (e2e da janela real, M2-E1-T19); qa/ (capture-window.ps1: PrintWindow, window-probe.ps1)
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)
 │   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout;

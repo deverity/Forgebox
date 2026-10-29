@@ -1,5 +1,5 @@
 // QA-mode bootstrap (ADR-0036). Reached only from `import.meta.env.MODE === "qa"` in main.tsx,
-// so production builds drop this module (a sentinel check scans dist: e2e/dist.test.ts).
+// so production builds drop this module (a sentinel check scans dist: src/qa/sentinel.test.ts).
 //
 // URL parameters (all optional):
 //   scenario   empty | populated | heavy | errors | not-implemented | daemon-down | slow | remote
