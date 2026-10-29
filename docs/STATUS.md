@@ -77,7 +77,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E2-T18 | Catálogo (busca/filtros, página da tool, instalar com progresso, stacks) | todo | — | |
 | M2-E2-T19 | Assistente de onboarding (4 passos) | todo | — | |
 | M2-E2-T20 | Integração do E2 contra o daemon real, checklist §11 e varredura de paridade | todo | — | |
-| M2-E3-T1 | Contratos IPC do E3 (db, mail, logs, terminal, shell, config, doctor, segurança) | todo | — | |
+| M2-E3-T1 | Contratos IPC do E3 (db, mail, logs, terminal, shell, config, doctor, segurança) | doing | feature/M2-E3-T1-e3-ipc-contract | |
 | M2-E3-T2 | Schema de manifesto: blocos `spec.database` e `spec.mail` + manifestos | todo | — | |
 | M2-E3-T3 | Pseudoterminal ConPTY em `forge-core` (trait + impl Windows) | todo | — | |
 | M2-E3-T4 | Sessões de terminal no daemon (`TerminalManager`) | todo | — | |
