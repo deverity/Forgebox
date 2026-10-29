@@ -75,7 +75,7 @@ them (ESLint and Prettier skip them).
 pnpm -C apps/desktop test            # vitest (unit; includes the production-bundle sentinel scan)
 pnpm -C apps/desktop e2e             # Playwright on system Edge against `vite build --mode qa` (headless)
 pnpm -C apps/desktop dev:qa          # qa-mode dev server on :1421
-powershell -NoProfile -File scripts/e2e-desktop.ps1     # real Forgebox.exe + forgeboxd over CDP
+powershell -NoProfile -File scripts/e2e-desktop.ps1     # real Forgebox.exe + forgeboxd over CDP (kill: starting on auto-restart, reconnecting on a 2nd kill within 60 s)
 powershell -NoProfile -File scripts/qa/capture-window.ps1 -ProcessId <pid> -Png out.png
 pnpm -C apps/desktop perf:startup    # release cold start: 1 discarded + 10 runs, exit 1 if median >= 800 ms
 ```

@@ -157,28 +157,78 @@ test("mailpit stop and start reach the UI through service events", async () => {
   await expect.poll(() => mailpitState(page), { timeout: 30_000 }).toBe("running");
 });
 
-test("killing forgeboxd shows reconnecting and then reconnects within 10 s", async () => {
-  const before = daemonPid(root());
-  expect(before).not.toBeNull();
-  execFileSync("taskkill", ["/PID", String(before), "/T", "/F"], { stdio: "ignore" });
+// Every `forge://connection` payload is recorded from before the kill, so no transient status
+// can be missed by polling (ADR-0036). Statuses are the `ContextStateDto.status` strings.
+async function recordConnection(p: Page): Promise<void> {
+  await p.evaluate(async () => {
+    const internals = (window as unknown as { __TAURI_INTERNALS__: Internals }).__TAURI_INTERNALS__;
+    const w = window as unknown as { __e2eConn?: { t: number; status: string }[] };
+    if (w.__e2eConn) return;
+    w.__e2eConn = [];
+    const handler = internals.transformCallback((message) => {
+      const payload = (message as { payload?: { status?: string } }).payload;
+      if (payload?.status) w.__e2eConn?.push({ t: Date.now(), status: payload.status });
+    });
+    await internals.invoke("plugin:event|listen", {
+      event: "forge://connection",
+      target: { kind: "Any" },
+      handler,
+    });
+  });
+}
+const connLog = (p: Page) =>
+  p.evaluate(
+    () => (window as unknown as { __e2eConn: { t: number; status: string }[] }).__e2eConn.slice(),
+  );
+const mark = (p: Page) =>
+  p.evaluate(() => (window as unknown as { __e2eConn: unknown[] }).__e2eConn.length);
+
+function kill(pid: number): void {
+  execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+}
+
+test("killing forgeboxd shows starting, then reconnecting, and reconnects within 10 s", async () => {
+  await recordConnection(page);
+
+  // 1. Kill: the bridge restarts the daemon (ADR-0034: the restart path shows `starting`).
+  const first = daemonPid(root());
+  expect(first).not.toBeNull();
+  const m1 = await mark(page);
   const killedAt = Date.now();
-  const seen: string[] = [];
-  let reconnectedAt = 0;
-  while (Date.now() - killedAt < 30_000) {
-    const status = (await state(page)).status;
-    if (seen.at(-1) !== status) seen.push(status);
-    if (status === "connected" && seen.length > 1) {
-      reconnectedAt = Date.now();
-      break;
-    }
-    await page.waitForTimeout(40);
-  }
-  expect(seen, `statuses seen: ${seen.join(" > ")}`).toContain("reconnecting");
-  expect(reconnectedAt, "never reconnected").toBeGreaterThan(0);
-  expect(reconnectedAt - killedAt, `statuses: ${seen.join(" > ")}`).toBeLessThan(10_000);
-  const after = daemonPid(root());
-  expect(after).not.toBeNull();
-  expect(after).not.toBe(before);
+  kill(first as number);
+  await expect
+    .poll(async () => (await connLog(page)).slice(m1).map((e) => e.status), { timeout: 10_000 })
+    .toContain("connected");
+  const log1 = (await connLog(page)).slice(m1);
+  const seen1 = log1.map((e) => e.status);
+  expect(seen1[0], `statuses: ${seen1.join(" > ")}`).toMatch(/^(starting|reconnecting)$/);
+  const back = log1.find((e) => e.status === "connected");
+  expect((back?.t ?? Infinity) - killedAt, `statuses: ${seen1.join(" > ")}`).toBeLessThan(10_000);
+  const second = daemonPid(root());
+  expect(second).not.toBeNull();
+  expect(second).not.toBe(first);
+  expect((await state(page)).status).toBe("connected");
+
+  // 2. Kill again inside the policy's 60 s window: no automatic restart, so the status must be
+  // `reconnecting` until the test starts the daemon by hand.
+  const m2 = await mark(page);
+  kill(second as number);
+  await expect
+    .poll(async () => (await connLog(page)).slice(m2).map((e) => e.status), { timeout: 10_000 })
+    .toContain("reconnecting");
+
+  const startedAt = Date.now();
+  const daemon = spawn(need("FORGE_DAEMON_EXE"), ["--root", root()], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  daemon.unref();
+  await expect.poll(async () => (await state(page)).status, { timeout: 10_000 }).toBe("connected");
+  expect(Date.now() - startedAt).toBeLessThan(10_000);
+  const third = daemonPid(root());
+  expect(third).not.toBeNull();
+  expect(third).not.toBe(second);
   const bar = page.getByTestId("connection-status");
   if ((await bar.count()) > 0) await expect(bar).toHaveAttribute("data-status", "connected");
 });

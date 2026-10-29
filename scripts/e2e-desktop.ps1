@@ -6,8 +6,10 @@
 #   powershell -NoProfile -File scripts/e2e-desktop.ps1 [-SkipBuild]
 #
 # Asserts: the daemon auto-starts and the connection reports connected; mailpit start/stop
-# reach the UI through events; killing forgeboxd shows `reconnecting` and reconnects within
-# 10 s; a second instance exits and focuses the first. Teardown kills every process it started
+# reach the UI through events; killing forgeboxd (statuses recorded from forge://connection)
+# goes connected -> starting (the bridge's own restart, ADR-0034) -> connected within 10 s, and a
+# second kill inside the 60 s policy window shows `reconnecting` until the test restarts
+# `forgeboxd --root <root>` and the UI reconnects within 10 s; a second instance exits and focuses the first. Teardown kills every process it started
 # (GUI, WebView2 children, daemon, fake services) and removes the temp folder; the script fails
 # if anything is left behind.
 param(
