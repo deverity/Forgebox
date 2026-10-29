@@ -45,11 +45,6 @@
     "what": "Xdebug toggle per PHP version"
   },
   {
-    "method": "sites.driver",
-    "task": "M2-E2-T6",
-    "what": "driver override"
-  },
-  {
     "method": "sites.share",
     "task": "M3-E3",
     "what": "public tunnels (cloudflared, ngrok, expose)"
@@ -213,11 +208,6 @@
     "method": "tls.ca_uninstall",
     "task": "M2-E3-T11",
     "what": "removing the local CA"
-  },
-  {
-    "method": "tls.list",
-    "task": "M2-E2-T6",
-    "what": "listing leaf certificates"
   },
   {
     "method": "services.kill_port_holder",

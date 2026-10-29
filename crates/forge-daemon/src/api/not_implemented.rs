@@ -31,7 +31,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "per-version extension toggles",
     ),
     ("php.xdebug", "M2-E2-T9", "Xdebug toggle per PHP version"),
-    ("sites.driver", "M2-E2-T6", "driver override"),
     (
         "sites.share",
         "M3-E3",
@@ -105,7 +104,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "configuration document with schema",
     ),
     ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
-    ("tls.list", "M2-E2-T6", "listing leaf certificates"),
     (
         "services.kill_port_holder",
         "M2-E3-T11",
@@ -286,8 +284,6 @@ mod tests {
             ("php.ext_enable", "M2-E2-T9"),
             ("php.ext_disable", "M2-E2-T9"),
             ("php.xdebug", "M2-E2-T9"),
-            ("sites.driver", "M2-E2-T6"),
-            ("tls.list", "M2-E2-T6"),
         ] {
             let err = error(method);
             assert_eq!(err.code(), "not_implemented", "{method}");
