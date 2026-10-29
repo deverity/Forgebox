@@ -10,7 +10,12 @@
 # Structured access log consumed by forge-metrics (docs/14 section 2).
 (forgebox_log) {
     log {
-        output file "{{ paths.logs }}/caddy/access.json"
+        output file "{{ paths.logs }}/caddy/access.json" {
+            # Rotation by Caddy itself: keep in sync with `logs[].access.rotate` of
+            # registry/tools/caddy.yaml.
+            roll_size 50MiB
+            roll_keep 5
+        }
         format json
     }
 }

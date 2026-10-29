@@ -25,6 +25,229 @@
     "spec"
   ],
   "$defs": {
+    "AccessDuration": {
+      "description": "`access.duration`.",
+      "type": "object",
+      "properties": {
+        "pointer": {
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessUnit"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pointer",
+        "unit"
+      ]
+    },
+    "AccessMulti": {
+      "description": "How a multi-valued upstream duration (`0.010, 0.020 : 0.003`) is combined.",
+      "type": "string",
+      "enum": [
+        "sum",
+        "last"
+      ]
+    },
+    "AccessRotate": {
+      "description": "`access.rotate`.",
+      "type": "object",
+      "properties": {
+        "keep": {
+          "description": "Rotated files kept. Default 5.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "max_size": {
+          "description": "Size that triggers the rotation (`50MB`, `512KB`, `1GB`). Required by `rename-reopen`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reopen": {
+          "description": "How to make the server reopen the file after the rename: required (and only valid)\nwith `rename-reopen`. `command` or `signal`, like `reload`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reload"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "strategy": {
+          "$ref": "#/$defs/RotateStrategy"
+        }
+      },
+      "additionalProperties": false
+    },
+    "AccessSpec": {
+      "description": "`logs[].access`: where each field of a request lives in a JSON log line.\n\nEvery pointer is an RFC 6901 JSON pointer (`/request/host`).",
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "description": "Response body bytes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "duration": {
+          "description": "Total request duration.",
+          "$ref": "#/$defs/AccessDuration"
+        },
+        "host": {
+          "description": "Host header (a string; may carry a port).",
+          "type": "string"
+        },
+        "lenient_escapes": {
+          "description": "The server writes escapes that are not JSON (Apache `\\xhh`, `\\v`): the parser\nrewrites them before decoding.",
+          "type": "boolean"
+        },
+        "method": {
+          "description": "Request method.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rotate": {
+          "description": "Rotation of this log. Default: strategy `none`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessRotate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "description": "HTTP status (number or numeric string).",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Request timestamp.",
+          "$ref": "#/$defs/AccessTimestamp"
+        },
+        "upstream": {
+          "description": "Upstream address used (`$upstream_addr`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "upstream_duration": {
+          "description": "Time spent in the upstream; omitted when the server does not log it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessUpstreamDuration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uri": {
+          "description": "Request URI.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessUri"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ts",
+        "host",
+        "status",
+        "duration"
+      ]
+    },
+    "AccessTimestamp": {
+      "description": "`access.ts`.",
+      "type": "object",
+      "properties": {
+        "pointer": {
+          "type": "string"
+        },
+        "start": {
+          "description": "The timestamp is the instant the request arrived (Apache `%{msec}t`), not when it\nfinished: the end is `ts + duration`. Default `false`.",
+          "type": "boolean"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessUnit"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pointer",
+        "unit"
+      ]
+    },
+    "AccessUnit": {
+      "description": "Unit of a numeric log field.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "ms",
+            "us",
+            "ns"
+          ]
+        },
+        {
+          "description": "Seconds, possibly fractional.",
+          "type": "string",
+          "const": "s"
+        }
+      ]
+    },
+    "AccessUpstreamDuration": {
+      "description": "`access.upstream_duration`.",
+      "type": "object",
+      "properties": {
+        "multi": {
+          "description": "Default `sum`.",
+          "$ref": "#/$defs/AccessMulti"
+        },
+        "pointer": {
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/AccessUnit"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pointer",
+        "unit"
+      ]
+    },
+    "AccessUri": {
+      "description": "`access.uri`.",
+      "type": "object",
+      "properties": {
+        "pointer": {
+          "type": "string"
+        },
+        "strip_query": {
+          "description": "The value carries a query string (Caddy `request.uri`) that must be dropped.\nDefault `false`.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "pointer"
+      ]
+    },
     "ApiVersion": {
       "description": "`apiVersion` of a manifest. Anything other than `forgebox.dev/v1` is rejected.",
       "type": "string",
@@ -766,6 +989,17 @@
       "description": "`service.daemon.logs[]`.",
       "type": "object",
       "properties": {
+        "access": {
+          "description": "Field mapping and rotation of a structured access log (`format: forgebox-json`);\nconsumed by forge-metrics and the log rotation (docs/04 section 1.2, docs/14 section 2).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "format": {
           "description": "Parser id for the log viewer (`mysql`, `nginx-error`, `json`). Default: plain text.",
           "type": [
@@ -1553,6 +1787,26 @@
         }
       },
       "additionalProperties": false
+    },
+    "RotateStrategy": {
+      "description": "How the daemon keeps an access log from growing forever.",
+      "oneOf": [
+        {
+          "description": "The daemon renames the file (`access.json.1`...) and asks the server to reopen it.",
+          "type": "string",
+          "const": "rename-reopen"
+        },
+        {
+          "description": "The server rotates by itself (Caddy `roll_*`, configured in the template).",
+          "type": "string",
+          "const": "self"
+        },
+        {
+          "description": "Not rotated (provisional for Apache until M2-E5-T12).",
+          "type": "string",
+          "const": "none"
+        }
+      ]
     },
     "RunAction": {
       "description": "A command run by the engine (`post_install[].run`, `post_create[].run`).\n\nIn `post_install`, the executable (first token of `command`) is resolved inside\n`{{ paths.version }}` and never through `PATH` (docs/04 §6 rule 6, docs/11 §2).",

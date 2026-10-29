@@ -1,0 +1,23 @@
+# expect: invalid_value
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: access-rename-without-reopen, name: Fixture, category: webserver }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  service:
+    kind: daemon
+    daemon:
+      exe: web.exe
+      logs:
+        - label: Access log (JSON)
+          path: "{{ paths.logs }}/web/access.json"
+          format: forgebox-json
+          access:
+            ts: { pointer: /t, unit: s }
+            host: /host
+            status: /s
+            duration: { pointer: /rt, unit: s }
+            rotate: { max_size: 50MB, keep: 5, strategy: rename-reopen }

@@ -2,7 +2,7 @@
 source: crates/forge-render/tests/snapshots.rs
 expression: content
 ---
-# forgebox:begin main (hash=ec8a375b752893b3)
+# forgebox:begin main (hash=d8ab1f5e9c77c385)
 {
     admin 127.0.0.1:2019
     http_port 80
@@ -15,7 +15,12 @@ expression: content
 # Structured access log consumed by forge-metrics (docs/14 section 2).
 (forgebox_log) {
     log {
-        output file "C:/fb-test/logs/caddy/access.json"
+        output file "C:/fb-test/logs/caddy/access.json" {
+            # Rotation by Caddy itself: keep in sync with `logs[].access.rotate` of
+            # registry/tools/caddy.yaml.
+            roll_size 50MiB
+            roll_keep 5
+        }
         format json
     }
 }

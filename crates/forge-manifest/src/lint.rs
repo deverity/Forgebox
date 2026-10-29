@@ -23,6 +23,7 @@ use forge_core::config::PortsConfig;
 use forge_core::ids::ToolId;
 
 use crate::issue::IssueCode;
+use crate::locate::locate;
 use crate::parse::{self, ManifestError, ValidateOptions};
 use crate::schema::common::Kind;
 use crate::schema::tool::PostInstallAction;
@@ -248,7 +249,16 @@ pub fn lint_registry(dir: &RegistryDir, ctx: &LintContext) -> LintReport {
         match parse::load_file(&path) {
             Err(err) => report.issues.push(schema_issue(&path, &err)),
             Ok(manifest) => {
-                lint_one(dir, ctx, &options, &path, &manifest, &mut report.issues);
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                lint_one(
+                    dir,
+                    ctx,
+                    &options,
+                    &path,
+                    &manifest,
+                    &text,
+                    &mut report.issues,
+                );
                 loaded.push(Loaded { path, manifest });
             }
         }
@@ -270,6 +280,7 @@ fn lint_one(
     options: &ValidateOptions,
     path: &Path,
     manifest: &Manifest,
+    text: &str,
     issues: &mut Vec<LintIssue>,
 ) {
     let folder = path
@@ -306,12 +317,10 @@ fn lint_one(
         }
     }
     for issue in parse::validate_with(manifest, options) {
-        issues.push(LintIssue::new(
-            path,
-            issue.code,
-            Some(issue.field),
-            issue.message,
-        ));
+        let location = locate(text, &issue.field);
+        let mut lint_issue = LintIssue::new(path, issue.code, Some(issue.field), issue.message);
+        lint_issue.location = location;
+        issues.push(lint_issue);
     }
     // Rule 4.
     let post_install = match manifest {

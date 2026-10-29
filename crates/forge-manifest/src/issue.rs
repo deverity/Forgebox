@@ -42,6 +42,8 @@ pub enum IssueCode {
     MissingProvider,
     /// A database tool with an automatic update policy (docs/05 §4).
     DatabaseAutoUpdate,
+    /// A `forgebox-json` access log without the `access` mapping (docs/04 section 1.2).
+    MissingAccess,
     /// The same id in two files of a registry.
     DuplicateId,
     /// Reference to a tool/extension/stack that the registry does not have.
@@ -99,6 +101,7 @@ impl IssueCode {
             IssueCode::ServiceMismatch => "service_mismatch",
             IssueCode::MissingProvider => "missing_provider",
             IssueCode::DatabaseAutoUpdate => "database_auto_update",
+            IssueCode::MissingAccess => "missing_access",
             IssueCode::DuplicateId => "duplicate_id",
             IssueCode::UnknownTool => "unknown_tool",
             IssueCode::IndexMismatch => "index_mismatch",

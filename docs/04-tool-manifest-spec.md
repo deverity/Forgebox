@@ -255,6 +255,37 @@ service:
     autostart: true
 ```
 
+#### `logs[].access` (access log estruturado)
+Todo log com `format: forgebox-json` **declara** `access` (regra 1, `missing_access`): é o mapeamento que o `forge-metrics` ([14](14-observability-metrics.md) §3.1) e a rotação usam para ler a linha JSON sem conhecer o id da tool. `access` em log de outro `format` é erro.
+
+```yaml
+logs:
+  - label: Access log (JSON)
+    path: "{{ paths.logs }}/nginx/access.json"
+    format: forgebox-json
+    access:
+      ts:   { pointer: /t, unit: s, start: false }   # unit: s | ms | us | ns; start: true = instante em que a requisição chegou (Apache), fim = ts + duration
+      host: /host                                    # string; pode ter porta
+      status: /s                                     # número ou string numérica
+      duration: { pointer: /rt, unit: s }
+      upstream_duration: { pointer: /ut, unit: s, multi: sum }   # multi: sum (padrão) | last, para "0.010, 0.020 : 0.003"; omitido se o servidor não registra
+      bytes: /b                                      # opcionais: bytes, method, uri, upstream
+      method: /m
+      uri: { pointer: /u, strip_query: false }       # strip_query: true quando o valor traz a query string (Caddy)
+      upstream: /up
+      lenient_escapes: false                         # true: o servidor escreve \xhh/\v (Apache) e o parser reescreve antes de decodificar
+      rotate:
+        max_size: 50MB                               # B | KB | MB | GB (binários); obrigatório em rename-reopen
+        keep: 5                                      # arquivos rotacionados mantidos (padrão 5)
+        strategy: rename-reopen                      # rename-reopen | self | none (padrão)
+        reopen: { command: "nginx.exe -s reopen ..." }   # ou { signal: ctrl-c | ctrl-break }; obrigatório (e só válido) em rename-reopen
+```
+
+- Cada `pointer` é um JSON Pointer (RFC 6901) para um membro de objeto: começa com `/`, sem token vazio, `~` só como `~0`/`~1`. Um ponteiro não pode ser igual nem prefixo de outro (o parser usa uma trie): `/request` e `/request/host` juntos são erro.
+- `strategy`: `rename-reopen` = o daemon renomeia (`access.json.1`...) e pede ao servidor que reabra o arquivo (`reopen`, com os mesmos `-p`/`-c` do `reload`); `self` = o próprio servidor rotaciona, configurado no template (Caddy: `roll_size`/`roll_keep` em `Caddyfile.j2`, em sincronia com `max_size`/`keep`); `none` = sem rotação (Apache, **provisório** até M2-E5-T12).
+- Manifestos oficiais: nginx (`/t` s, `/rt` s, `/ut` s somado, `rename-reopen` com `nginx.exe -s reopen`), Apache (`/t` ms com `start: true`, `/rt_us` µs, host com porta, `lenient_escapes`, rotação `none`) e Caddy (`/ts`, `/duration`, `/request/host`, `/request/uri` com `strip_query`, `self`).
+- Erros de schema (ponteiro ausente, unidade desconhecida) e de validação (`rename-reopen` sem `reopen`, ponteiro inválido) saem como `arquivo:linha:coluna` no `lint-registry`.
+
 ### 1.3 `config.quick_settings[]`
 `type`: `toggle`, `select`, `number`, `text`, `path`, `port`, `slider{min,max,step}`, `multi` (lista de checkboxes). O `format` do arquivo (`config.files[].format`: `ini | conf-directive | yaml | json | args | text`) decide como o valor é gravado; o alvo dentro do arquivo é **uma** destas chaves: `ini` (chave do ini), `directive` (conf-directive), `pointer` (caminho com pontos em yaml/json) ou `arg` (flag em `args`). Para `conf-directive` (Apache/Nginx), o motor edita só dentro do bloco gerenciado do arquivo. `text` é editável, mas sem quick settings.
 
@@ -458,7 +489,7 @@ spec:
 ## 6. Regras de lint (`cargo xtask lint-registry`)
 Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::parse::validate` (um manifesto). Cada problema tem um código estável (`IssueCode`, também chave de i18n) e a regra a que pertence.
 
-1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
+1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Todo log `forgebox-json` exige `access` (`missing_access`, §1.2). Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
 2. Provider sem checksum upstream (`http`/`github-release` sem `checksum`, `nginx-org`, `mysql`, `postgresql-edb`, `python-embed`) precisa de `releases[].sha256` em todas as releases.
 3. `service.daemon.ports[].range` e `service.pool.port_range` devem existir nas faixas conhecidas (`forge_core::config`, [03](03-engine.md) §4).
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).
