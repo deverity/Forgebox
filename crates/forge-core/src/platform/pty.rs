@@ -8,8 +8,9 @@
 //!
 //! Every call is **blocking** (`CreatePseudoConsole` starts a console host process,
 //! `CreateProcess`, pipe writes) and belongs in `spawn_blocking` (ADR-0011). The reader and
-//! the writer of a [`PtySession`] are blocking byte streams meant for dedicated threads:
-//! the output never pauses waiting for a slow consumer only if somebody keeps reading it.
+//! the writer of a [`PtySession`] are blocking byte streams meant for dedicated threads.
+//! Whenever nobody reads the output, the console stalls, and with it the program writing
+//! to it, as on a real terminal.
 //!
 //! What a consumer must know (Windows ConPTY behavior, docs/03 §1.6):
 //! - The output is a *rendering* of the console screen, not the bytes the program wrote:

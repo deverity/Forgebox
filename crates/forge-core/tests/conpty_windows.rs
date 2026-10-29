@@ -366,6 +366,47 @@ async fn shell_descendants_die_with_the_group() {
     drain.finish(WAIT);
 }
 
+/// Ctrl+C typed into the console (`0x03`) stops the foreground program and not the shell:
+/// the process is not created in a group of its own, so console control events reach it
+/// as in a real terminal.
+#[tokio::test]
+async fn ctrl_c_stops_the_foreground_program_only() {
+    let control = control();
+    let (_root, group) = session_group(&*control);
+    let mut session = spawn(&*group, &command("cmd.exe", &["/d"], 80, 24));
+    let drain = Drain::start(std::mem::replace(
+        &mut session.reader,
+        Box::new(std::io::empty()),
+    ));
+    drain.expect(">");
+    type_line(&mut session, "ping -t 127.0.0.1");
+    let started = Instant::now();
+    let ping = loop {
+        let pids = group.pids().unwrap();
+        if let Some(&pid) = pids.iter().find(|&&pid| pid != session.pid) {
+            break pid;
+        }
+        assert!(started.elapsed() < WAIT, "ping never started: {pids:?}");
+        thread::sleep(Duration::from_millis(50));
+    };
+    let mut ping_exit = control.watch(ping).unwrap();
+    // Let ping print a reply first, so the console is in its steady state.
+    drain.expect("127.0.0.1:");
+
+    session.writer.write_all(b"\x03").unwrap();
+    session.writer.flush().unwrap();
+    let code = ping_exit
+        .wait_timeout(Duration::from_secs(10))
+        .await
+        .unwrap();
+    assert!(code.is_some(), "ping ignored Ctrl+C");
+    assert!(control.is_alive(session.pid).unwrap(), "the shell died too");
+    type_line(&mut session, "exit 4");
+    assert_eq!(exit_code(&mut session).await, 4);
+    session.close().unwrap();
+    drain.finish(WAIT);
+}
+
 fn flood_file(dir: &Path, bytes: usize) -> PathBuf {
     let path = dir.join("flood.txt");
     let mut file = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());

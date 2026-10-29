@@ -19,6 +19,15 @@
 //!   - No `CREATE_NEW_PROCESS_GROUP` (it would disable Ctrl+C in the shell) and no
 //!     `CREATE_NO_WINDOW`/`DETACHED_PROCESS` (they would give the process a console of its
 //!     own instead of the pseudo console). The console host runs headless: no window.
+//!   - The "ignore Ctrl+C" flag is inherited: a process created with
+//!     `CREATE_NEW_PROCESS_GROUP` (the auto-started daemon, a test runner under some
+//!     harnesses) carries it, and so would the shell and every program it starts, which
+//!     then ignore the Ctrl+C typed into the terminal (measured: `ping -t` kept running).
+//!     Before each spawn this process clears its own flag (`SetConsoleCtrlHandler(NULL,
+//!     FALSE)`). The change is process-wide and permanent, and harmless here: the detached
+//!     daemon has no console for a Ctrl+C to come from, a daemon in the foreground of a
+//!     terminal already gets Ctrl+C, and the daemon only ever sends `CTRL_BREAK` to its
+//!     services, which the flag does not affect.
 //! * The `HPCON` belongs to a console thread (`forgebox-pty`): resize and close are
 //!   messages to it, answered within a timeout, so no caller ever waits on the console host
 //!   forever and the handle is never used after it was closed. `ClosePseudoConsole` on
@@ -42,6 +51,7 @@ use std::{fmt, io};
 use ::windows::Win32::Foundation::HANDLE;
 use ::windows::Win32::System::Console::{
     COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole,
+    SetConsoleCtrlHandler,
 };
 use ::windows::Win32::System::Pipes::CreatePipe;
 use ::windows::Win32::System::Threading::{
@@ -91,6 +101,20 @@ fn anonymous_pipe() -> Result<(OwnedHandle, OwnedHandle)> {
         .map_err(|e| win_err("creating a pseudo console pipe", &e))?;
     // SAFETY: CreatePipe succeeded; both handles are fresh and ours.
     Ok(unsafe { (owned(read), owned(write)) })
+}
+
+/// Clears this process' inherited "ignore Ctrl+C" flag, so the console's processes do not
+/// inherit it (module docs). A failure only costs Ctrl+C in the terminal: logged, not
+/// fatal.
+fn stop_ignoring_ctrl_c() {
+    // SAFETY: no handler routine is passed; the call only clears the flag.
+    if let Err(err) = unsafe { SetConsoleCtrlHandler(None, false) } {
+        tracing::warn!(
+            error = %err,
+            "could not clear the inherited 'ignore Ctrl+C' flag: Ctrl+C may not reach \
+             the programs of a terminal session"
+        );
+    }
 }
 
 fn coord(size: PtySize) -> COORD {
@@ -156,6 +180,7 @@ fn spawn(group: &dyn ProcessGroup, cmd: &PtyCommand) -> Result<PtySession> {
     info.StartupInfo.hStdError = HANDLE::default();
     info.lpAttributeList = attributes.ptr();
     let flags = CREATE_SUSPENDED.0 | EXTENDED_STARTUPINFO_PRESENT.0 | CREATE_UNICODE_ENVIRONMENT.0;
+    stop_ignoring_ctrl_c();
 
     let mut pi = PROCESS_INFORMATION::default();
     // SAFETY: `app`, `cwd` are NUL-terminated; `line` is writable and NUL-terminated
@@ -229,13 +254,6 @@ impl fmt::Debug for ConPtyConsole {
     }
 }
 
-/// Owned `HPCON` that moves to the console thread.
-struct ConsoleHandle(HPCON);
-
-// SAFETY: an HPCON is a process-wide handle, usable from any thread; only the console
-// thread uses it once moved there.
-unsafe impl Send for ConsoleHandle {}
-
 fn pack(size: PtySize) -> u32 {
     (u32::from(size.cols) << 16) | u32::from(size.rows)
 }
@@ -256,12 +274,12 @@ impl ConPtyConsole {
     fn start(hpc: HPCON, size: PtySize) -> Result<Self> {
         let (requests, inbox) = mpsc::channel();
         let closed = Arc::new(AtomicBool::new(false));
-        let handle = ConsoleHandle(hpc);
         let done = Arc::clone(&closed);
         std::thread::Builder::new()
             .name("forgebox-pty".to_owned())
             .stack_size(CONSOLE_THREAD_STACK)
-            .spawn(move || console_thread(handle, inbox, &done))
+            // The HPCON (a plain handle value) moves to the thread, its only user from now on.
+            .spawn(move || console_thread(hpc, inbox, &done))
             .map_err(|e| ForgeError::io("starting a pseudo console thread", e))?;
         Ok(Self {
             requests,
@@ -271,8 +289,7 @@ impl ConPtyConsole {
     }
 }
 
-fn console_thread(handle: ConsoleHandle, inbox: mpsc::Receiver<Request>, closed: &AtomicBool) {
-    let ConsoleHandle(hpc) = handle;
+fn console_thread(hpc: HPCON, inbox: mpsc::Receiver<Request>, closed: &AtomicBool) {
     // Ends on `Close` or when every sender is gone (the console was dropped).
     while let Ok(request) = inbox.recv() {
         match request {
@@ -377,11 +394,13 @@ mod tests {
     use super::*;
     use crate::platform::process::{GroupOptions, ProcessControl, ProcessControlOptions};
     use crate::platform::windows::WindowsProcessControl;
+    use ::windows::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
 
     const WAIT: Duration = Duration::from_secs(60);
 
-    /// Env var that turns [`owner_helper`] into the owner process of
-    /// [`owner_death_leaves_no_console_host`].
+    /// Env var that turns [`owner_helper`] into a helper process: `hold` for
+    /// [`owner_death_leaves_no_console_host`], `ctrl-c` for
+    /// [`ctrl_c_works_under_a_detached_daemon`].
     const OWNER_HELPER_ENV: &str = "FORGEBOX_TEST_PTY_OWNER";
 
     struct Proc {
@@ -590,29 +609,54 @@ mod tests {
         session.close().unwrap();
     }
 
-    /// Owner side of [`owner_death_leaves_no_console_host`]: holds a session (shell in a
-    /// kill-on-close group, output never read) until its stdin closes. Does nothing
-    /// unless started by that test.
+    /// Helper process of the tests below; does nothing unless started by one of them.
+    /// - `hold`: holds a session (shell in a kill-on-close group, output never read) until
+    ///   its stdin closes.
+    /// - `ctrl-c`: types `ping -t` and then Ctrl+C into a session and reports whether ping
+    ///   ended.
     #[test]
-    #[ignore = "helper process of owner_death_leaves_no_console_host"]
+    #[ignore = "helper process of the owner tests"]
     fn owner_helper() {
-        if std::env::var_os(OWNER_HELPER_ENV).is_none() {
+        let Some(mode) = std::env::var_os(OWNER_HELPER_ENV) else {
             return;
-        }
+        };
         let control = WindowsProcessControl::new(ProcessControlOptions::default());
         let root = control.create_group(GroupOptions::ROOT).unwrap();
         let group = root.create_child(GroupOptions::INSTANCE).unwrap();
-        let session = cmd_in(&*group, &control);
-        println!("pty-owner shell={}", session.pid);
+        let mut session = cmd_in(&*group, &control);
+        if mode == "hold" {
+            println!("pty-owner shell={}", session.pid);
+            std::io::stdout().flush().unwrap();
+            let _ = std::io::stdin().read_to_end(&mut Vec::new());
+            return;
+        }
+        let chunks = drain(&mut session);
+        let mut seen = Vec::new();
+        wait_output(&chunks, &mut seen, ">");
+        session.writer.write_all(b"ping -t 127.0.0.1\r").unwrap();
+        // A reply line ("Reply from 127.0.0.1: ..."): ping runs in the foreground.
+        wait_output(&chunks, &mut seen, "127.0.0.1:");
+        let pids = group.pids().unwrap();
+        let ping = *pids.iter().find(|&&pid| pid != session.pid).unwrap();
+        let mut ping_exit = control.watch(ping).unwrap();
+        session.writer.write_all(b"\x03").unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let code = runtime
+            .block_on(ping_exit.wait_timeout(Duration::from_secs(10)))
+            .unwrap();
+        println!("pty-owner ctrl-c={code:?}");
         std::io::stdout().flush().unwrap();
-        let _ = std::io::stdin().read_to_end(&mut Vec::new());
+        group.terminate_all(1).unwrap();
+        session.close().unwrap();
     }
 
-    /// If the owner of a session dies (a daemon crash), nothing survives it: the shell dies
-    /// with its group, and the console host exits once the kernel closes the owner's end
-    /// of the console.
-    #[tokio::test]
-    async fn owner_death_leaves_no_console_host() {
+    /// Starts [`owner_helper`] in `mode` with extra creation `flags`; its stdout lines
+    /// arrive on the channel.
+    fn start_owner(mode: &str, flags: u32) -> (std::process::Child, mpsc::Receiver<String>) {
+        use std::os::windows::process::CommandExt;
         let mut owner = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
@@ -621,7 +665,8 @@ mod tests {
                 "--nocapture",
                 "--test-threads=1",
             ])
-            .env(OWNER_HELPER_ENV, "1")
+            .env(OWNER_HELPER_ENV, mode)
+            .creation_flags(flags)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -637,13 +682,28 @@ mod tests {
                 let _ = sender.send(line);
             }
         });
-        let shell: u32 = loop {
+        (owner, lines)
+    }
+
+    /// The value the owner reported as `pty-owner <key>=<value>`.
+    fn owner_report(lines: &mpsc::Receiver<String>, key: &str) -> String {
+        let marker = format!("pty-owner {key}=");
+        loop {
             let line = lines.recv_timeout(WAIT).expect("the owner never reported");
             // libtest prints `test <name> ... ` first, on the same line.
-            if let Some((_, pid)) = line.split_once("pty-owner shell=") {
-                break pid.trim().parse().unwrap();
+            if let Some((_, value)) = line.split_once(&marker) {
+                return value.trim().to_owned();
             }
-        };
+        }
+    }
+
+    /// If the owner of a session dies (a daemon crash), nothing survives it: the shell dies
+    /// with its group, and the console host exits once the kernel closes the owner's end
+    /// of the console.
+    #[tokio::test]
+    async fn owner_death_leaves_no_console_host() {
+        let (mut owner, lines) = start_owner("hold", 0);
+        let shell: u32 = owner_report(&lines, "shell").parse().unwrap();
         let hosts = console_hosts(&processes(), owner.id());
         assert_eq!(hosts.len(), 1, "console hosts of the owner: {hosts:?}");
         let control = WindowsProcessControl::new(ProcessControlOptions::default());
@@ -662,5 +722,19 @@ mod tests {
             .await
             .unwrap();
         assert!(host_code.is_some(), "the console host outlived its owner");
+    }
+
+    /// The daemon as `forge`/`Forgebox.exe` start it (`DETACHED_PROCESS |
+    /// CREATE_NEW_PROCESS_GROUP`, so with the inherited "ignore Ctrl+C" flag): Ctrl+C
+    /// typed into its terminal sessions still stops the foreground program.
+    #[test]
+    fn ctrl_c_works_under_a_detached_daemon() {
+        let flags = DETACHED_PROCESS.0 | CREATE_NEW_PROCESS_GROUP.0;
+        let (mut owner, lines) = start_owner("ctrl-c", flags);
+        let code = owner_report(&lines, "ctrl-c");
+        drop(owner.stdin.take());
+        owner.wait().unwrap();
+        // 0xC000013A = STATUS_CONTROL_C_EXIT.
+        assert_eq!(code, "Some(3221225786)", "ping after Ctrl+C");
     }
 }

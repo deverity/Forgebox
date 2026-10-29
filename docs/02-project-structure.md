@@ -89,7 +89,8 @@ Forgebox/
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
 │   │                             #   conpty.rs (CreatePipe, CreatePseudoConsole, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
 │   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
-│   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama),
+│   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama; limpa a marca
+│   │                             #   "ignorar Ctrl+C" herdada antes do spawn),
 │   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
 │   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
 │   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
