@@ -516,7 +516,7 @@ pub async fn retire(
 }
 
 /// Snapshot of a worker for [`crate::PoolStatus`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkerStatus {
     pub slot: u64,
     pub phase: WorkerPhase,
@@ -533,6 +533,11 @@ pub struct WorkerStatus {
     /// Slot of the worker this one replaces / is replaced by.
     pub replaces: Option<u64>,
     pub replaced_by: Option<u64>,
+    /// CPU of the process as a share of the whole machine (0-100) since the previous
+    /// sample; `None` before the first measurable window. Absent in statuses written
+    /// before M2-E5-T6.
+    #[serde(default)]
+    pub cpu_pct: Option<f64>,
 }
 
 #[cfg(test)]

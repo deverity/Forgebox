@@ -16,12 +16,17 @@
 //! rotations and truncations, with checkpoints and adaptive sampling, and hands the decoded
 //! lines out in batches through a bounded channel (docs/14 section 3.2).
 
+pub mod attribution;
 mod parse;
 mod record;
 mod route;
 mod router;
 pub mod tail;
 
+pub use attribution::{
+    AppSample, Attribution, Bucket, Overhead, PoolMode, PoolRoute, PoolSample, SiteLoad,
+    SiteResources, attribute,
+};
 pub use parse::{AccessParser, MAX_LINE_BYTES, ParseError};
 pub use record::{AccessFormat, AccessRecord, FieldMap, FormatError, Multi, Unit, UpstreamMap};
 pub use route::UriNormalizer;

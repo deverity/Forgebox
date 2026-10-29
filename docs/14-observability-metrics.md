@@ -61,6 +61,14 @@ Um `Tailer` por arquivo, task própria (`tail::spawn`, ou `Tailer::new` + `run` 
 - **Status e ciclo de vida:** `watch` com estado (`Starting`, `Waiting`, `Following`, `Orphaned`, `Stopped`, `Failed`), resultado da partida, offset, tamanho, `k` e contadores (linhas, itens, escalado, rejeitadas, longas, bytes, rotações, truncamentos, lotes, ticks adiados). Não segurar o `Ref` do `watch` através de `.await` (é uma trava de leitura do canal). Tick em pânico → `Failed`, e o dono reinicia do `delivered`. `TailerHandle::stop(timeout)` para e devolve o status final; soltar o handle também para.
 - **Medido** (`crates/forge-metrics/tests/tail.rs`, build debug, máquina com outros builds rodando): com os valores de produção, backlog de 50 MiB (373 mil linhas nginx, `AccessParser` de verdade) alcançado em ~1,5 s em 13 ticks, maior `poll` do tailer no runtime entre 0,08 e 0,7 ms em 15 execuções (orçamento: 50 ms), lotes amostrados até `k = 16` e contagem escalada a ≤ 0,001 % da real; ~86 mil linhas atravessando 6 rotações estilo nginx (rename, linhas atrasadas no arquivo antigo, reabertura) com escrita contínua chegam exatamente uma vez.
 
+### 3.3 Atribuição por vhost (`forge_metrics::attribute`, M2-E5-T6)
+Função pura por balde (10 s). Entrada: `PoolSample` (CPU % da máquina, working set, workers ativos, intervalo de vida no balde, modo `Shared`/`Dedicated(site)`), `AppSample` (processos do site), `PoolRoute` (qual site apontava para qual pool e quando) e `SiteLoad` (`ut_sum`, com `rt_sum` de reserva). Saída: `SiteResources {cpu_pct, mem_bytes, approx, workers_active}` por site e `Overhead` por pool.
+- Pool dedicado e processos de app: 100 % para o dono, `approx = false`; apps do mesmo site são somados.
+- Pool compartilhado: rateio pela fatia de `ut` (3:1 vira 75/25), `approx = true`.
+- Pool compartilhado sem nenhum `ut`/`rt` no balde (regra de tráfego zero): nada é atribuído; CPU e memória viram `Overhead`.
+- Mudanças no meio do balde (swap blue/green, troca de `pool_mode`): CPU e memória de um pool são escaladas pela fração do balde em que ele existiu, e a carga de um site é repartida entre os pools para onde apontou, proporcionalmente ao tempo em cada um.
+- A amostragem de CPU do pool vem de `PoolStatus.cpu_pct` / `PoolHandle::subscribe_metrics()` (`forge-fcgi`): `Δcpu_total / Δrelógio / CPUs lógicas` por (pid, criação), como o supervisor; medido a 0,2 % de `Get-Process`.
+
 ## 4. O que a UI mostra
 
 ### 4.1 Aba "Desempenho" do site
