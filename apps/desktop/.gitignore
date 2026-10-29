@@ -7,3 +7,4 @@ playwright-report
 # Tauri build output lives in the root /target; generated schemas stay local.
 src-tauri/gen
 *.tsbuildinfo
+dist-qa

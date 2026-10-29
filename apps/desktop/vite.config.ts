@@ -5,7 +5,7 @@ import { defineConfig } from "vitest/config";
 // `tauri dev` loads devUrl (tauri.conf.json) and requires this exact port.
 const DEV_PORT = 1420;
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   // Keep the Rust compiler output visible in the `tauri dev` terminal.
   clearScreen: false,
@@ -15,10 +15,11 @@ export default defineConfig({
     // src-tauri/target holds hundreds of thousands of files; never watch them.
     watch: { ignored: ["**/src-tauri/**"] },
   },
-  build: { target: "es2022" },
+  // `--mode qa` (ADR-0036) builds next to the real app, never over dist/ (Tauri embeds it).
+  build: { target: "es2022", outDir: mode === "qa" ? "dist-qa" : "dist" },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
   },
-});
+}));

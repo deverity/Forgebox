@@ -3,8 +3,11 @@
 //!
 //! * `os_build` against `HKLM\…\CurrentVersion\CurrentBuildNumber` (read by the case
 //!   sensitivity diagnostics) and `is_win11` against it;
-//! * `remote_session` against `%SESSIONNAME%` (`RDP-Tcp#n` in Remote Desktop, `Console`
-//!   locally; absent in service sessions, then not compared).
+//! * `remote_session` against the live session name from `query session` (the line marked
+//!   with `>`: `rdp-tcp#n` in Remote Desktop, `console` locally; not compared when the tool
+//!   is missing or prints no current session). `%SESSIONNAME%` is not used: it is inherited,
+//!   so processes started before a session moves between Remote Desktop and the console
+//!   (reconnect, resume from hibernation) keep the old value.
 //!
 //! Exact values of a given machine are opt-in through the environment, so the test runs
 //! everywhere: `FORGEBOX_EXPECT_OS_BUILD=19045` and `FORGEBOX_EXPECT_REMOTE_SESSION=1`.
@@ -28,6 +31,17 @@ const COLD_LIMIT_QUIET: Duration = Duration::from_millis(50);
 
 fn snapshot() -> AppearanceSnapshot {
     platform::system_appearance().snapshot()
+}
+
+/// Name of the session this process runs in, as `query session` (WTS) reports it now.
+fn live_session_name() -> Option<String> {
+    let out = std::process::Command::new("query")
+        .arg("session")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().find(|l| l.starts_with('>'))?;
+    line[1..].split_whitespace().next().map(str::to_owned)
 }
 
 #[test]
@@ -56,14 +70,14 @@ fn snapshot_matches_independent_sources() {
         "{snap:?}"
     );
 
-    match std::env::var("SESSIONNAME") {
-        Ok(name) if name.to_ascii_uppercase().starts_with("RDP-") => {
-            assert!(snap.remote_session, "SESSIONNAME={name}, {snap:?}");
+    match live_session_name() {
+        Some(name) if name.to_ascii_uppercase().starts_with("RDP-") => {
+            assert!(snap.remote_session, "query session: {name}, {snap:?}");
         }
-        Ok(name) if name.eq_ignore_ascii_case("Console") => {
-            assert!(!snap.remote_session, "SESSIONNAME={name}, {snap:?}");
+        Some(name) if name.eq_ignore_ascii_case("console") => {
+            assert!(!snap.remote_session, "query session: {name}, {snap:?}");
         }
-        other => println!("SESSIONNAME {other:?}: remote_session not cross-checked"),
+        other => println!("query session {other:?}: remote_session not cross-checked"),
     }
 
     if let Ok(expected) = std::env::var("FORGEBOX_EXPECT_OS_BUILD") {
