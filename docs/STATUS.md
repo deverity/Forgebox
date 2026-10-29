@@ -62,7 +62,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E2-T3 | Registry: stack PHP genérica + tags e ordem do onboarding | todo | — | |
 | M2-E2-T4 | Backend de metadados do catálogo (search/info estendidos, `tools.icon`, `tools.history`) | todo | — | |
 | M2-E2-T5 | Jobs de releases e plano de instalação (`tools.releases`, `tools.plan`) | todo | — | |
-| M2-E2-T6 | Lacunas do backend de sites (troca de PHP validada, `site.php_changed`, driver, info) | todo | — | |
+| M2-E2-T6 | Lacunas do backend de sites (troca de PHP validada, `site.php_changed`, driver, info) | doing | feature/M2-E2-T6-sites-backend-gaps | |
 | M2-E2-T7 | Backend de quick settings (`services.settings`, `services.set`, `ports.<name>`) | todo | — | |
 | M2-E2-T8 | Instalação do kind Extension (Xdebug) por versão alvo | todo | — | |
 | M2-E2-T9 | Extensões PHP e modos do Xdebug (`php.ext_*`, `php.xdebug`, IDE key) | todo | — | |
