@@ -125,6 +125,53 @@ describe("ActionButton", () => {
     expect(button).toHaveAccessibleDescription("Not available yet in this version of Forgebox.");
   });
 
+  it("stays enabled while reconnecting and sends once, with the held request_id, after reconnect", async () => {
+    const action = startServices();
+    const h = await mount(
+      <ActionButton action={action} input={["mysql"]}>
+        Start
+      </ActionButton>,
+    );
+    act(() => {
+      h.fake.disconnect();
+    });
+    const button = await screen.findByRole("button", { name: "Start" });
+    expect(button).toBeEnabled();
+    act(() => {
+      fireEvent.click(button);
+    });
+    expect(screen.getByRole("button", { name: "Waiting for the daemon…" })).toBeDisabled();
+    expect(h.count("services.start")).toBe(0);
+    act(() => {
+      h.fake.reconnect();
+    });
+    await waitFor(() =>
+      expect(document.querySelector('[data-action="services.start"]')).toHaveAttribute(
+        "data-phase",
+        "done",
+      ),
+    );
+    expect(screen.getByRole("button", { name: /Done/ })).toBeInTheDocument();
+    const sent = h.fake.calls.filter((call) => call.method === "services.start");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.requestId).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+  });
+
+  it("is disabled with the reason when the daemon is stopped", async () => {
+    const action = startServices();
+    const h = await mount(
+      <ActionButton action={action} input={["mysql"]}>
+        Start
+      </ActionButton>,
+    );
+    act(() => {
+      h.fake.setStatus("stopped");
+    });
+    const button = await screen.findByRole("button", { name: "Start" });
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAccessibleDescription("Not connected to the daemon.");
+  });
+
   it("is disabled with the reason for local_only on a remote context", async () => {
     const action = defineAction({
       id: "tools.add_local",

@@ -33,6 +33,7 @@
     "cliCopied": "Copiado",
     "cliCopyFailed": "Não foi possível copiar",
     "actionDone": "Concluído",
+    "actionWaiting": "Aguardando o daemon…",
     "asyncLoading": "Carregando",
     "asyncDisconnectedTitle": "Sem conexão com o daemon",
     "asyncDisconnectedHint": "Inicie o daemon para ver estes dados.",

@@ -6,7 +6,8 @@ import type { ErrorAction } from "../../ipc/describeError";
 import { toForgeApiError, type ForgeApiError } from "../../ipc/errors";
 import type { MethodName } from "../../ipc/methods";
 import { newIntent } from "../../ipc/api";
-import { useCapabilities, useCapability, useRuntime } from "../../state";
+import { useCapabilities, useCapability, useConnectionStatus, useRuntime } from "../../state";
+import { HOLD_STATUSES } from "../../state/reconnectQueue";
 import { Button, type ButtonVariant } from "./Button";
 import { ErrorNotice, useErrorTranslate } from "./ErrorNotice";
 import { Tooltip } from "./Tooltip";
@@ -37,7 +38,11 @@ export interface ActionButtonProps<M extends MethodName, I> {
  * Button bound to a registered action (docs/07 sections 1.2, 1.7, 11): loading text in the
  * same frame as the click, a success check, and on failure the localized cause plus the
  * actions of `describeError`. Disabled with a visible reason when the capabilities say
- * not_implemented, local_only on a remote context, insufficient role or no daemon. Its
+ * not_implemented, local_only on a remote context, insufficient role, or the daemon is
+ * deliberately away (uninitialized, stopped, closed). While the daemon is coming back (idle,
+ * connecting, reconnecting, starting) the button stays enabled: the click goes through the
+ * ReconnectQueue, which holds the call (same `request_id`) for up to 30 s (ADR-0034 section 11,
+ * docs/03 section 7.5) and the button shows "Waiting for the daemon" meanwhile. Its
  * tooltip always shows the equivalent `forge` command, also in `data-forge-cli`.
  */
 export function ActionButton<M extends MethodName, I = void>({
@@ -55,6 +60,7 @@ export function ActionButton<M extends MethodName, I = void>({
   const translate = useErrorTranslate();
   const runtime = useRuntime();
   const capability = useCapability(action.method);
+  const status = useConnectionStatus();
   const capabilities = useCapabilities();
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [failure, setFailure] = useState<ForgeApiError | null>(null);
@@ -76,9 +82,13 @@ export function ActionButton<M extends MethodName, I = void>({
   } catch {
     cli = null; // The input is not complete yet: no command to show.
   }
+  // `disconnected` only means "no hello yet": when the queue holds calls the click is allowed.
+  const held = capability.reason === "disconnected" && HOLD_STATUSES.has(status);
   const reason =
     disabledReason ??
-    (capability.text === null ? undefined : translate(capability.text.key, capability.text.values));
+    (capability.text === null || held
+      ? undefined
+      : translate(capability.text.key, capability.text.values));
   const disabled = reason !== undefined;
 
   const run = () => {
@@ -143,7 +153,9 @@ export function ActionButton<M extends MethodName, I = void>({
           <Button
             variant={variant}
             loading={phase === "running"}
-            {...(loadingLabel === undefined ? {} : { loadingLabel })}
+            {...(loadingLabel === undefined && !held
+              ? {}
+              : { loadingLabel: held ? t("ui.actionWaiting") : loadingLabel })}
             disabled={disabled}
             aria-describedby={disabled ? reasonId : undefined}
             onClick={run}
