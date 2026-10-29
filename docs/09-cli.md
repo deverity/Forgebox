@@ -23,9 +23,14 @@ O daemon em si é `forgeboxd [--root <dir>] [--foreground] [--log-level <filtro>
 forge search <texto> [--category db]              # busca no(s) registry(ies)
 forge tool list [--installed] [--updates]
 forge tool info php                                # versões, variantes, política, sites que usam
+forge tool info php --versions [--channel preview] # releases dos providers: série → patches, builds, tamanhos (offline: cache)
+forge tool info php --history [--series 8.3] [--limit N]   # updates e rollbacks
 forge tool install php@8.3 [--variant ts] [--yes]  # série → última patch; php@8.3.36 → exata
 forge tool install nginx mysql@8.4 mailpit         # vários
+forge tool install php@8.4 nginx --dry-run         # só o plano: o que seria baixado e o total (≈ com estimativas)
+forge tool install xdebug [--for php@8.3]          # extensão: na versão indicada (padrão: em todas as compatíveis)
 forge tool remove php@8.2.29 [--keep-config]
+forge tool remove xdebug@3.4.1 [--for php@8.4]     # extensão: só dessa versão
 forge tool update [php|--all] [--check]            # respeita políticas; --check só lista; sem alvo e sem --all é erro 2 (--check sozinho lista tudo)
 forge tool rollback php@8.3                        # volta para a versão retida da série
 forge tool policy php auto-patch|notify|manual
@@ -40,10 +45,12 @@ forge which php                                    # mostra versão/caminho ativ
 forge start [all|nginx|mysql/default|php@8.3]      # php@8.3 = pool
 forge stop [...] | forge restart [...] | forge reload nginx
 forge status [--watch]                             # tabela com estado, portas, CPU/RAM, uptime
-forge service create mysql@8.4 legacy --port 3307  # nova instância
+forge service create mysql@8.4 legacy --port 3307 [--data-dir D:\dados\mysql]   # nova instância
 forge service remove mysql/legacy [--delete-data]
 forge service config nginx                          # lista os arquivos e, num terminal, abre no editor (FORGE_EDITOR/VISUAL/EDITOR; Notepad)
 forge service set php@8.3 memory_limit=1G upload_max_filesize=256M   # quick settings
+forge service set mysql/default                     # sem pares: os ajustes com valores atuais e padrões, e as portas (ports.<nome>)
+forge service update mysql/default [--autostart|--no-autostart] [--arg <a>]... [--no-args] [--env K=V]... [--no-env] [--restart never|failure|always] [--restart-max N] [--restart-window <s>] [--version 8.4.14]
 forge service ports                                 # mapa de portas e donos (inclui conflitos externos)
 forge service kill-port 80 [--pid 4412]             # encerra o processo de fora do Forgebox que ocupa a porta (pede confirmação)
 forge logs <alvo> [-f] [-n N] [--since 10m] [--grep x] [--before <seq>]    # nginx | nginx.error | php@8.3 | mysql/default | site:loja.test | app:loja.test/web (os dois últimos: M2-E3-T8)
@@ -51,6 +58,7 @@ forge logs --list                                   # alvos disponíveis (logs.t
 ```
 - `forge logs` lê os arquivos do alvo **inclusive os rotacionados** (`.out.log.1` … `.4`; o log do daemon, todos os dias guardados). Cada linha tem um `seq` monotônico por alvo ([ADR-0046](adr/0046-logs-seq-domain.md)): o índice absoluto da linha no conjunto de arquivos (log do daemon: `dia << 32 + linha`), o mesmo no backlog, nas linhas ao vivo e depois de reinícios do daemon ou rotações — é o que o `--json` mostra em `seq`.
 - `--list` lista os alvos (`logs.targets`: alvo, tipo, grupo, formato, ao vivo; M2-E3-T8). `--before <seq>` pagina para trás: só linhas com `seq` menor (até M2-E3-T8 responde `not_implemented`, em vez de devolver as mais novas de novo).
+- `service set <alvo>` sem pares lê (`services.settings`); com `chave=valor` grava (`services.set`, valores em texto: `true`/`false`, números decimais, itens de `multi` separados por `,`; portas com `ports.<nome>=<porta>`). `service update` muda as configurações avançadas de uma instância ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)): o que não vem fica como está; `--arg`/`--env` substituem a lista inteira (`--no-args`/`--no-env` limpam); `--version` só aceita outra versão instalada da mesma série (os dados não são migrados). A instância é re-renderizada e reiniciada se estiver rodando.
 - `-f` mostra as últimas `-n` linhas (padrão 50, no máximo 10 000) e segue ao vivo. Se a conexão cai (daemon reiniciado), o `forge` reconecta e retoma do último `seq` recebido: as linhas escritas nesse meio-tempo são reenviadas dos arquivos; as que a rotação já apagou (ou mais de 10 000 atrás) viram o aviso de linhas perdidas (`logs.lagged`), nunca uma lacuna silenciosa.
 
 ### php
@@ -69,6 +77,7 @@ forge site remove loja.test                          # pede confirmação (--yes
 forge site php loja.test 8.4                        # troca ao vivo
 forge site secure loja.test | unsecure
 forge site server loja.test apache
+forge site driver loja.test laravel|auto            # fixa o driver do framework; auto detecta de novo
 forge site alias loja.test add admin.loja.test
 forge site open loja.test [--editor|--terminal|--explorer]
 forge site info loja.test                           # diagnóstico: DNS, cert, pool, root, driver
@@ -102,6 +111,7 @@ forge db open mysql/default --with heidisql|dbeaver|adminer|phpmyadmin   # M3-E1
 forge dns status | enable | disable | test loja.test    # test sai com 1 se o nome não resolve como esperado
 forge tls ca status | install [--scope user|machine] | uninstall [--scope user|machine] | export [-o ca.crt] | rotate
 forge tls issue loja.test | renew [loja.test|--all] | export loja.test [--pfx [--password x]] [-o arquivo]
+forge tls list                                      # certificados dos sites: validade e se este Windows confia neles
 forge lan expose loja.test | unexpose | qr loja.test
 ```
 
@@ -164,9 +174,11 @@ Comando equivalente ([ADR-0037](adr/0037-cli-equivalent-templates.md)): cada lin
 
 Rodam só no cliente (sem método): `forge daemon start` (inicia o `forgeboxd`), `forge completions`, `forge mcp serve`, `forge remote add|list|use|remove` e `--context` (perfis de conexão guardados na máquina do cliente).
 
-Sem comando da CLI (só a GUI e o protocolo): `net.port_check` (valida o campo de porta), `system.hello`, `system.ping`, `events.*`, `terminal.*` (o terminal integrado: sessões no daemon, `admin`, não `local_only`; o equivalente mostrado é `forge shell`) e `shell.open_editor` (abre um arquivo no editor na linha/coluna; `local_only`).
+Sem comando da CLI (só a GUI e o protocolo): `tools.icon` (ícone SVG sanitizado do catálogo, guardado pela GUI pelo `sha256`), `net.port_check` (valida o campo de porta), `system.hello`, `system.ping`, `events.*`, `terminal.*` (o terminal integrado: sessões no daemon, `admin`, não `local_only`; o equivalente mostrado é `forge shell`) e `shell.open_editor` (abre um arquivo no editor na linha/coluna; `local_only`).
 
 API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md), aditiva na 1.1): os métodos novos (`terminal.*`, `logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`, `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) e os de bancos/e-mail respondem `not_implemented` citando a tarefa dona (`M2-E3-T4`…`T11`; `db.open` → `M3-E1`) até o backend chegar — `system.hello.not_implemented` os lista.
+
+API do E2 ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md), aditiva na 1.1): `tools.releases` e `tools.plan` (jobs, `viewer`; nada é baixado), `tools.history`, `tools.icon`, `services.settings` (`viewer`; o bloco `advanced` só vai para admin), `services.update` (job, `admin`), `sites.driver` (job, `operator`) e `tls.list` respondem `not_implemented` citando a tarefa dona (`M2-E2-T4`…`T10`) até o backend chegar; `tools.install|remove` com `--for` (`target`) citam M2-E2-T8 e `service create --data-dir` cita M2-E2-T10, em vez de ignorar o parâmetro. O plano de uma stack (`tools.plan {stack}`) e os `args`/`env` de `services.update` (`launch`) não têm comando equivalente: a GUI não mostra comando em vez de mostrar um errado.
 
 `forge site open <site>` (`sites.open`, `local_only`): sem opção abre no navegador padrão; `--explorer` abre a pasta do site no Explorer (ambos pelo `ShellOpener` da plataforma, `ShellExecuteExW`); `--editor` e `--terminal` respondem `not_implemented` citando M2-E3-T9 até essa tarefa.
 
@@ -182,6 +194,7 @@ Métodos `local_only` (recusados em conexões remotas): `sites.open`, `db.open`,
 | `not_found` | `not_found` | `what` (o que não existe, em inglês: texto de apoio, não para traduzir) |
 | `not_implemented` | `not_implemented` | `what`; `method` e `task` quando o método ou parte dele é de uma tarefa futura (`sites.open` com `with=editor` → `task: "M2-E3-T9"`; `logs.read` com `before_seq` → `task: "M2-E3-T8"`) |
 | `timeout` | `timeout` | `operation`, `after_ms` |
+| `not_found` | `version_not_installed` | `tool`, `requested`, `installed` (versões instaladas da tool), `fix` (comando que instala); `sites.php` com uma versão ou série não instalada — o site não muda (M2-E2-T6, [ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)) |
 | (falha de serviço) | `kind` do diagnóstico (`port_in_use`, `missing_dll`, `missing_runtime`, `config_invalid`, `dependency_not_running`, `permission`, `health_timeout`, `exited_during_start`, `crash_loop`, `other`) | os demais campos do `FailureReasonDto`, que continuam no nível de cima (API 1.0) |
 
 Os demais códigos não têm `details` (a GUI mostra o `code` e a `message`). Implementação: `ForgeError::details()` (`forge-core`) alimenta `ApiError::from` e `JobErrorInfo::from`; `ApiError::with_reason`, `reason()` e `args()` montam e leem a convenção. `system.hello` traz `not_implemented: [métodos]` (a tabela `NOT_IMPLEMENTED` do daemon) para a GUI desabilitar o que ainda não existe sem tentar; `daemon.status` traz `cpu_pct` e `rss_bytes` do próprio daemon.

@@ -26,6 +26,8 @@ API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)), pensada para o
 - **`local_only` novos:** `shell.open_editor` (editor da máquina do usuário) e `services.kill_port_holder` (encerrar processos não é oferecido a clientes remotos). `db.shell` continua `local_only`, mas agora devolve um comando (`ShellCommandDto`) em vez de abrir uma janela; a GUI o roda num terminal hospedado no daemon (`terminal.open {command}`).
 - **Segredos:** `sites.env` mascara no daemon (valores secretos nunca saem sem `reveal`, que exige `admin`); `mail.attachment` é limitado a 4 MiB por causa do quadro de 8 MiB; `db.url` e o `env` de `db.shell` carregam credenciais e seguem o papel `operator`.
 
+API do E2 ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)): nenhum método novo é `local_only` (catálogo, releases, plano, histórico, ícones, quick settings, `services.update`, `sites.driver` e `tls.list` acontecem na máquina do daemon). `services.settings` é `viewer`, mas o bloco `advanced` (args e `env` extras de uma instância, que podem ter segredos) só vai para conexões `admin`, conferido pelo handler; ícones chegam como SVG sanitizado pelo daemon e a GUI só os usa em `<img>`.
+
 ## 3. Arquitetura do modo remoto
 
 ```
