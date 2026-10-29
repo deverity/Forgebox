@@ -69,6 +69,9 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "tools.add_local": TOOL_VERSIONS,
   "tools.discover": TOOL_VERSIONS,
   "tools.use": TOOL_VERSIONS,
+  // Read-only jobs (ADR-0041): provider releases and install plans change nothing.
+  "tools.releases": NONE,
+  "tools.plan": NONE,
 
   "services.start": LIFECYCLE,
   "services.stop": LIFECYCLE,
@@ -77,6 +80,7 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "services.create": effect(["services"], Q.services, Q.config),
   "services.remove": effect(["services"], Q.services, Q.config),
   "services.set": effect(["services"], Q.services, Q.config),
+  "services.update": effect(["services"], Q.services, Q.config, Q.pools),
   "services.kill_port_holder": effect(
     ["services"],
     ["services.ports", "services.status", "net.port_check"],
@@ -91,6 +95,7 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "sites.php": SITE_AND_POOLS,
   "sites.secure": effect(["sites"], Q.sites, Q.tls),
   "sites.server": effect(["sites", "services"], Q.sites, Q.services),
+  "sites.driver": effect(["sites"], Q.sites, Q.config),
   "sites.alias": SITE,
   "sites.park": SITE,
   "sites.unpark": SITE,
