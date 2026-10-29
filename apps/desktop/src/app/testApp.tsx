@@ -35,7 +35,35 @@ export interface RenderAppOptions {
   data?: ScenarioData;
 }
 
+let warmed: Promise<unknown> | undefined;
+
+/**
+ * Loads every lazy route module and shell chunk once per test file, so the first `renderApp()`
+ * does not pay for cold module transforms inside its `findBy` window (cold-start flakiness).
+ */
+export function warmAppModules(): Promise<unknown> {
+  warmed ??= Promise.all([
+    import("../features/catalog"),
+    import("../features/dashboard"),
+    import("../features/databases"),
+    import("../features/diagnostics"),
+    import("../features/logs"),
+    import("../features/mail"),
+    import("../features/onboarding"),
+    import("../features/php"),
+    import("../features/services"),
+    import("../features/settings"),
+    import("../features/sites"),
+    import("../features/terminal"),
+    import("./gallery/Gallery"),
+    import("./shell/ContextSelect"),
+    import("../design/primitives/Toast"),
+  ]);
+  return warmed;
+}
+
 export async function renderApp(options: RenderAppOptions = {}): Promise<AppHarness> {
+  await warmAppModules();
   window.innerWidth = options.width ?? 1280;
   const data = options.data ?? populatedData();
   const named = options.scenario === undefined ? {} : (SCENARIOS.get(options.scenario)?.() ?? {});
