@@ -109,10 +109,13 @@ try {
     pnpm -C $desktop e2e:real
     $exit = $LASTEXITCODE
 
-    # Native frame, informative: a locked session is reported, not a failure of the e2e.
+    # Native frame: a black frame (exit 2) is reported only; no window / PrintWindow failure (exit 1) fails.
     $shot = Join-Path $desktop 'qa\out\e2e-desktop\native-frame.png'
     $cap = & powershell -NoProfile -File $capture -ProcessId $gui.Id -Png $shot -TimeoutMs 5000
-    Write-Host "==> native frame: $cap"
+    $capExit = $LASTEXITCODE
+    Write-Host "==> native frame (exit $capExit): $cap"
+    # Exit 2 (black frame) stays informative; exit 1 (no window / PrintWindow failed) is a failure.
+    if ($capExit -eq 1) { throw "native frame capture failed: $cap" }
 }
 catch {
     $failure = $_

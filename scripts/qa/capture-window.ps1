@@ -22,11 +22,6 @@ function Fail([int]$Code, [string]$Message) {
     exit $Code
 }
 
-# LogonUI.exe runs while the session is locked (and shows the secure desktop): nothing can be captured.
-if (Get-Process -Name LogonUI -ErrorAction SilentlyContinue) {
-    Fail 2 'the session is locked (LogonUI is running): unlock it and run again'
-}
-
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
 using System;
 using System.Drawing;
@@ -111,7 +106,11 @@ $result = [ordered]@{
 # Black: nothing but unpainted/transparent pixels (a locked or composition-less session).
 if ($result.mean_luma -lt 2 -or $result.content_ratio -lt 0.01) {
     Remove-Item -LiteralPath $full -ErrorAction SilentlyContinue
-    Fail 2 "the captured frame is black (mean luma $($result.mean_luma)): the session is locked or the display is off; unlock and run again"
+    # LogonUI in THIS session only words the hint; PrintWindow itself works on a locked session.
+    $mine = (Get-Process -Id $PID).SessionId
+    $locked = @(Get-Process -Name LogonUI -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $mine }).Count -gt 0
+    $hint = if ($locked) { 'this session is locked (LogonUI is running in it): unlock and run again' } else { 'the window painted nothing (still loading, or the display is off)' }
+    Fail 2 "the captured frame is black (mean luma $($result.mean_luma)): $hint"
 }
 Write-Output ($result | ConvertTo-Json -Compress)
 exit 0

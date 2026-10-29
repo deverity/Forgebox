@@ -109,14 +109,14 @@ test("the daemon auto-starts and the connection reports connected", async () => 
   if ((await bar.count()) > 0) await expect(bar).toHaveAttribute("data-status", "connected");
 });
 
-test("mailpit start and stop reach the UI through events", async () => {
-  // Subscribe first, so the events of the start are not missed.
+test("mailpit stop and start reach the UI through service events", async () => {
+  // Subscribe first, so no event of the stop/start is missed. Frames are kept as parsed objects.
   await page.evaluate(async () => {
     const internals = (window as unknown as { __TAURI_INTERNALS__: Internals }).__TAURI_INTERNALS__;
-    const w = window as unknown as { __e2eEvents: string[] };
+    const w = window as unknown as { __e2eEvents: unknown[] };
     w.__e2eEvents = [];
     const id = internals.transformCallback((message) => {
-      w.__e2eEvents.push(JSON.stringify(message));
+      w.__e2eEvents.push(message);
     });
     await internals.invoke("ipc_subscribe", {
       context: "local",
@@ -125,19 +125,36 @@ test("mailpit start and stop reach the UI through events", async () => {
       on_frame: `__CHANNEL__:${String(id)}`,
     });
   });
-  const events = () =>
-    page.evaluate(() => (window as unknown as { __e2eEvents: string[] }).__e2eEvents.join("\n"));
-
-  // The daemon publishes job.started/job.done for the start and stop jobs on events.subscribe;
-  // service.* events are not observed on this stream yet (reported in the task notes), so the
-  // job events are what proves the live path and the state is confirmed with services.status.
-  await call(page, "services.start", { targets: ["mailpit/default"] });
+  // The daemon starts mailpit by itself at boot, so it is running here: stop it first.
   await expect.poll(() => mailpitState(page), { timeout: 30_000 }).toBe("running");
-  await expect.poll(events, { timeout: 15_000 }).toContain("services.start mailpit/default");
+
+  const serviceEvents = () =>
+    page.evaluate(() => {
+      const frames = (window as unknown as { __e2eEvents: unknown[] }).__e2eEvents;
+      const out: { kind: string; name: string; state?: string | undefined }[] = [];
+      const walk = (v: unknown): void => {
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v === "object") {
+          const o = v as Record<string, unknown>;
+          if (typeof o.kind === "string" && o.kind.startsWith("service.")) {
+            const p = (o.payload ?? o) as Record<string, unknown>;
+            out.push({ kind: o.kind, name: String(p.name), state: p.state as string | undefined });
+          } else Object.values(o).forEach(walk);
+        }
+      };
+      frames.forEach(walk);
+      return out;
+    });
+  const has = async (kind: string) =>
+    (await serviceEvents()).some((e) => e.kind === kind && e.name === "mailpit/default");
 
   await call(page, "services.stop", { targets: ["mailpit/default"] });
+  await expect.poll(() => has("service.stopped"), { timeout: 30_000 }).toBe(true);
   await expect.poll(() => mailpitState(page), { timeout: 30_000 }).toBe("stopped");
-  await expect.poll(events, { timeout: 15_000 }).toContain("services.stop mailpit/default");
+
+  await call(page, "services.start", { targets: ["mailpit/default"] });
+  await expect.poll(() => has("service.running"), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => mailpitState(page), { timeout: 30_000 }).toBe("running");
 });
 
 test("killing forgeboxd shows reconnecting and then reconnects within 10 s", async () => {
