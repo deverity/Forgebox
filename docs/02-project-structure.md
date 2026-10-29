@@ -71,6 +71,9 @@ Forgebox/
 │   │                             #   (conexão medida), spawn_detached (daemon.restart); impl em windows/host.rs (CreateMutexW,
 │   │                             #   INetworkCostManager);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
+│   │                             #   pty.rs: PtySpawner/PtyCommand/PtySession/PtyConsole/PtySize (pseudoconsole do terminal
+│   │                             #   integrado, processo membro do ProcessGroup antes de rodar; leitor/escritor bloqueantes,
+│   │                             #   resize e close com prazo; docs/03 §1.6; stub unsupported_platform fora do Windows);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
 │   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
@@ -84,6 +87,9 @@ Forgebox/
 │   │                             #   trust_store.rs (CertOpenStore SYSTEM_REGISTRY, CertAdd/Find/Delete por SHA-1,
 │   │                             #   motor de cadeia com hExclusiveRoot + CERT_CHAIN_POLICY_SSL),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
+│   │                             #   conpty.rs (CreatePipe, CreatePseudoConsole, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+│   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
+│   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama),
 │   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
 │   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
 │   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
