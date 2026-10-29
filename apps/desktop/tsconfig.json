@@ -25,6 +25,7 @@
     "qa",
     "e2e",
     "playwright.config.ts",
+    "playwright.real.config.ts",
     "vite.config.ts",
     "eslint.i18n.js",
     "eslint.colors.js"

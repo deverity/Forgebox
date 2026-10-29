@@ -69,6 +69,36 @@ The binary lands in the workspace `target/`, not in `src-tauri/target`.
 `src/ipc/generated.ts` and `src/ipc/methods.ts` are written by `cargo xtask gen-ts`; never edit
 them (ESLint and Prettier skip them).
 
+## Test harness (ADR-0036)
+
+```powershell
+pnpm -C apps/desktop test            # vitest (unit; includes the production-bundle sentinel scan)
+pnpm -C apps/desktop e2e             # Playwright on system Edge against `vite build --mode qa` (headless)
+pnpm -C apps/desktop dev:qa          # qa-mode dev server on :1421
+powershell -NoProfile -File scripts/e2e-desktop.ps1     # real Forgebox.exe + forgeboxd over CDP
+powershell -NoProfile -File scripts/qa/capture-window.ps1 -ProcessId <pid> -Png out.png
+pnpm -C apps/desktop perf:startup    # release cold start: 1 discarded + 10 runs, exit 1 if median >= 800 ms
+```
+
+- `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`: the tests use the installed Edge (`channel: "msedge"`);
+  nothing is downloaded. Fallback: `chromium-headless-shell` with `PLAYWRIGHT_BROWSERS_PATH` set to
+  a project-local folder.
+- qa mode (`?scenario=empty|populated|heavy|errors|not-implemented|daemon-down|slow|remote`,
+  `&theme=light|dark&vibrancy=on|off&motion=reduced&locale=pt-BR|en-US|pseudo&latency=<ms>`) builds
+  into `dist-qa/` and is removed from production builds; `src/qa/sentinel.test.ts` proves it.
+  Scenarios live in `qa/fixtures/scenarios` (typed with `satisfies` against `generated.ts`); the bridge
+  is on `window.__FORGEBOX_QA__`.
+- Helpers (`e2e/fixtures.ts`): `qaUrl`, `emulate` (scale factor, color scheme, reduced motion and
+  transparency via CDP), `axeViolations`, `tabOrder`, `trackCls`, and an automatic fixture that fails
+  any test whose page logs a console error.
+- The real-app run opens the WebView2 debugging port through
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` in the test's own environment only (never in code or release
+  config), on a temp portable root with DNS off and a fake Mailpit. It leaves no process or file
+  outside the temp folder (the script fails otherwise).
+- `perf:startup` options: `--exe`, `--runs`, `--budget-ms`, `--budget-factor` (CI uses 1.5), `--daemon
+  both|running|stopped`. Run it only on a quiet machine; the session type (rdp/console) is part of
+  the output. Screenshots and captures go to `qa/out/` (gitignored); there is no pixel-diff gate in M2.
+
 ## Version pins
 
 - `typescript` 6.0.x: the newest line supported by `typescript-eslint` (peer `<6.1.0`); TypeScript
