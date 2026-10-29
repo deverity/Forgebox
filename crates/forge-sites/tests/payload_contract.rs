@@ -68,3 +68,35 @@ async fn site_events_decode_as_site_payload() {
     let p = decode(&events.try_recv().unwrap(), EventKind::SiteRemoved);
     assert_eq!(p.site_id, site.id);
 }
+
+#[tokio::test]
+async fn php_changed_decodes_as_its_payload() {
+    use forge_ipc::api::events::SitePhpChangedPayload;
+    let store = Store::open_in_memory().unwrap();
+    let bus = EventBus::new();
+    let svc = SiteService::new(
+        store.writer().clone(),
+        store.reader().clone(),
+        bus.clone(),
+        SiteRules::default(),
+    );
+    let site = svc.create(draft("loja.test", false)).await.unwrap().site;
+    let mut events = bus.subscribe();
+    svc.publish_php_changed(&site, Some("8.3.36"), "8.4.27");
+    svc.publish_php_changed(&site, None, "8.4.27");
+
+    let event = events.try_recv().unwrap();
+    assert_eq!(event.kind, EventKind::SitePhpChanged);
+    let api: SitePhpChangedPayload = serde_json::from_value(event.payload.clone()).unwrap();
+    assert_eq!(
+        (api.site_id, api.host.as_str(), api.from.as_deref(), api.to.as_str()),
+        (site.id, "loja.test", Some("8.3.36"), "8.4.27")
+    );
+    let back = serde_json::to_value(&api).unwrap();
+    for (field, value) in event.payload.as_object().unwrap() {
+        assert_eq!(back.get(field), Some(value), "field `{field}` lost");
+    }
+    let event = events.try_recv().unwrap();
+    let api: SitePhpChangedPayload = serde_json::from_value(event.payload).unwrap();
+    assert_eq!(api.from, None);
+}
