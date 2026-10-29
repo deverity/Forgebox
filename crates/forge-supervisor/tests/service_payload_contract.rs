@@ -100,6 +100,8 @@ fn every_constructor_decodes_as_service_payload() {
     let err = ForgeError::PortInUse {
         port: 3306,
         owner: Some("mysqld.exe (pid 99)".into()),
+        pid: Some(99),
+        exe: None,
     };
     let payloads = [
         ServiceEventPayload::starting(&service, 3),

@@ -25,8 +25,17 @@ pub enum ForgeError {
     Conflict(String),
 
     /// A TCP/UDP port is taken, optionally by a known owner (`mysqld.exe (PID 4412)`).
+    /// `pid`/`exe` name the listening process when it is known (a listener of the OS
+    /// table, not a reservation): the GUI offers to end it (`services.kill_port_holder`).
     #[error("port {port} is already in use{}", owner_suffix(owner.as_deref()))]
-    PortInUse { port: u16, owner: Option<String> },
+    PortInUse {
+        port: u16,
+        owner: Option<String>,
+        /// PID of the process listening on the port.
+        pid: Option<u32>,
+        /// Full path of its executable (`/` separators).
+        exe: Option<String>,
+    },
 
     /// The operation must go through `forgebox-helper` (docs/11).
     #[error("operation needs elevation: {0}")]
@@ -198,15 +207,21 @@ impl ForgeError {
     /// Structured details for clients (docs/09 "Detalhes estruturados de erro", ADR-0039):
     /// `{"reason": <stable snake_case id>, "args": {...}}`. Clients localize from `code`
     /// plus these, never from the English message. Only the errors a GUI acts on carry
-    /// them: `port_in_use` (`port`, `owner`), `needs_elevation` (`detail`), `not_found`
+    /// them: `port_in_use` (`port`, `owner`, `pid`, `exe`), `needs_elevation` (`detail`), `not_found`
     /// (`what`), `not_implemented` (`method`, `task`, `what`) and `timeout`
     /// (`operation`, `after_ms`).
     pub fn details(&self) -> Option<serde_json::Value> {
         use serde_json::json;
         let (reason, args) = match self {
-            Self::PortInUse { port, owner } => {
-                ("port_in_use", json!({ "port": port, "owner": owner }))
-            }
+            Self::PortInUse {
+                port,
+                owner,
+                pid,
+                exe,
+            } => (
+                "port_in_use",
+                json!({ "port": port, "owner": owner, "pid": pid, "exe": exe }),
+            ),
             Self::NeedsElevation(detail) => ("needs_elevation", json!({ "detail": detail })),
             Self::NotFound(what) => ("not_found", json!({ "what": what })),
             Self::NotImplemented(what) => ("not_implemented", json!({ "what": what })),
@@ -277,6 +292,8 @@ mod tests {
             ForgeError::PortInUse {
                 port: 80,
                 owner: None,
+                pid: None,
+                exe: None,
             },
             ForgeError::NeedsElevation("nrpt.add".into()),
             ForgeError::VerificationFailed("sha256".into()),
@@ -354,6 +371,8 @@ mod tests {
         let err = ForgeError::PortInUse {
             port: 3306,
             owner: Some("mysqld.exe (PID 4412)".into()),
+            pid: Some(4412),
+            exe: None,
         };
         assert_eq!(
             err.to_string(),
@@ -362,6 +381,8 @@ mod tests {
         let err = ForgeError::PortInUse {
             port: 80,
             owner: None,
+            pid: None,
+            exe: None,
         };
         assert_eq!(err.to_string(), "port 80 is already in use");
     }
@@ -372,15 +393,22 @@ mod tests {
         let d = details(ForgeError::PortInUse {
             port: 3306,
             owner: Some("mysqld.exe (PID 4412)".into()),
+            pid: Some(4412),
+            exe: Some("C:/xampp/mysql/bin/mysqld.exe".into()),
         });
         assert_eq!(d["reason"], "port_in_use");
         assert_eq!(d["args"]["port"], 3306);
         assert_eq!(d["args"]["owner"], "mysqld.exe (PID 4412)");
+        assert_eq!(d["args"]["pid"], 4412);
+        assert_eq!(d["args"]["exe"], "C:/xampp/mysql/bin/mysqld.exe");
         let d = details(ForgeError::PortInUse {
             port: 80,
             owner: None,
+            pid: None,
+            exe: None,
         });
         assert!(d["args"]["owner"].is_null());
+        assert!(d["args"]["pid"].is_null() && d["args"]["exe"].is_null());
         let d = details(ForgeError::NeedsElevation("nrpt.add".into()));
         assert_eq!(d["reason"], "needs_elevation");
         assert_eq!(d["args"]["detail"], "nrpt.add");

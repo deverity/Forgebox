@@ -597,9 +597,16 @@ fn duplicate(err: &ForgeError) -> ForgeError {
     match err {
         ForgeError::NotFound(m) => ForgeError::NotFound(m.clone()),
         ForgeError::Conflict(m) => ForgeError::Conflict(m.clone()),
-        ForgeError::PortInUse { port, owner } => ForgeError::PortInUse {
+        ForgeError::PortInUse {
+            port,
+            owner,
+            pid,
+            exe,
+        } => ForgeError::PortInUse {
             port: *port,
             owner: owner.clone(),
+            pid: *pid,
+            exe: exe.clone(),
         },
         ForgeError::ConfigInvalid(m) => ForgeError::ConfigInvalid(m.clone()),
         ForgeError::InvalidInput(m) => ForgeError::InvalidInput(m.clone()),

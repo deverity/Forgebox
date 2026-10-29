@@ -301,6 +301,8 @@ impl DnsActor {
         Err(ForgeError::PortInUse {
             port,
             owner: Some(message),
+            pid: None,
+            exe: None,
         })
     }
 

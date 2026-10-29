@@ -595,6 +595,8 @@ mod tests {
             ForgeError::PortInUse {
                 port: 1,
                 owner: None,
+                pid: None,
+                exe: None,
             },
             "w",
         );

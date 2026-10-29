@@ -270,12 +270,19 @@ impl PortAllocator {
             return Err(ForgeError::PortInUse {
                 port,
                 owner: Some(describe(&holder)),
+                pid: Some(holder.pid),
+                exe: holder
+                    .exe_path
+                    .as_deref()
+                    .map(forge_core::paths::posix_string),
             });
         }
         if !self.bindable(port).await? {
             return Err(ForgeError::PortInUse {
                 port,
                 owner: Some("the system (the port cannot be bound)".into()),
+                pid: None,
+                exe: None,
             });
         }
         let range = range.map(str::to_owned);
