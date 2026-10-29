@@ -28,3 +28,27 @@
 - O mapeamento manifesto → `HealthSpec`/`RestartPolicy` (inclusive `start_interval`, `timeout` e `backoff`, que não estão no manifesto e usam padrões) fica para M1-E5-T2; `port_in_use`/`config_invalid` são produzidos pelas pré-checagens (M1-E3-T3).
 - A CPU de um processo que nasce e morre entre duas amostras não é vista; processos vistos pela primeira vez contam o que usaram dentro da janela.
 - A redução de frequência do sampler sob carga (§7.4) ainda não existe: o intervalo é fixo por instância.
+
+## Adendo M2-E5-T10 — CPU/RAM/disco da máquina e nomes de imagem (2026-10-29)
+
+**Contexto.** O monitor da máquina do dashboard e o `forge top` ([14](../14-observability-metrics.md) §4.2-§4.3) mostram CPU/RAM/disco totais ao lado da parcela do Forgebox, e cada PID com o nome do executável. O §6 acima só mede processos.
+
+**Decisão** (`forge_core::platform::{system_stats, process_stats}`, Win32 em `platform/windows/{system_stats,process_stats}.rs`):
+1. **`SystemStats`** (`sample() -> MachineSample`, `volume(path) -> VolumeSpace`), bloqueante como `ProcessStats`, com `sample_machine`/`volume_space` (`spawn_blocking`, prazo de 5 s), `FakeSystemStats` e `UnsupportedSystemStats`; injetável por `Platform::with_system_stats`.
+2. **CPU da máquina por `GetSystemTimes`**, contadores acumulados somados em todos os processadores lógicos (todas as processor groups): ocupado = kernel − ocioso + usuário (o kernel inclui o ocioso). CPU % entre duas amostras = Δocupado / (Δocupado + Δocioso), **sem relógio de parede**. A parcela de processos usa a **mesma capacidade** (`cpu_share_since(Σ Δcpu_total)`), limitada a 100.
+3. **Memória por `GlobalMemoryStatusEx`** (`ullTotalPhys` = `Win32_ComputerSystem.TotalPhysicalMemory`; `ullAvailPhys` = "Disponível"); **disco por `GetDiskFreeSpaceExW`** com separador final (UNC exige), um arquivo respondendo pelo volume da pasta dele, `total`/`free`/`available` (cota do usuário).
+4. **Nome de imagem por `ProcessStats::info(pid)`**: um handle `PROCESS_QUERY_LIMITED_INFORMATION` dá a criação e `QueryFullProcessImageNameW` (o mesmo auxiliar da tabela TCP), então o nome é do processo daquela identidade. Método com implementação padrão (sem imagem): os fakes existentes continuam valendo.
+5. **`ImageNameCache`** separado, do dono do sampler: chave `(pid, started_at)`; PID reutilizado responde `None` para a identidade antiga e o novo processo fica lembrado com a sua; processo que sumiu não é lembrado; acesso negado é lembrado como sem nome; `retain` por rodada e recomeço acima de 4.096 entradas; trava `platform.image_names` (rank 10, folha, nunca durante a consulta ao SO).
+
+**Alternativas rejeitadas.**
+- **PDH `\Processor(_Total)\% Processor Time` ou `% Processor Utility`:** precisa de consulta aberta e duas coletas, nomes de contador localizados e custo maior; a "Utilidade" (escalada por frequência, a do Gerenciador de Tarefas com turbo) não é comparável à CPU por processo do §6, que é por tempo. `GetSystemTimes` é uma chamada barata (~0,1 ms medido) e mede a mesma grandeza que `GetProcessTimes`.
+- **CPU % = Δocupado / (Δparede × CPUs):** depende do instante exato das duas leituras (o sampler tem jitter) e passa do real depois de uma suspensão/hibernação, em que o relógio anda e os contadores não. A razão ocupado/(ocupado + ocioso) não tem esses erros; a parcela dos processos no mesmo denominador garante "Forgebox ≤ máquina".
+- **`NtQuerySystemInformation(SystemProcessorPerformanceInformation)`:** por processador, API não documentada como estável; o total basta.
+- **`image_name` em `ProcStats`:** cada amostra (2 s por PID) consultaria ou clonaria o nome e todos os construtores de `ProcStats` (a impl Windows e os fakes de forge-core, forge-ipc e forge-supervisor) quebrariam; o nome muda só quando a identidade muda.
+- **Cache global dentro de `WindowsProcessStats`:** estado escondido sem dono para podar, e fakes não o exercitariam. **Cache só por PID:** PID reutilizado mostraria o nome do processo anterior.
+- **Lembrar `not_found`:** a identidade não volta; só cresceria a tabela.
+
+**Consequências.**
+- O daemon (M2-E5-T9) compõe `TopDto.machine` e a parcela do Forgebox a partir de `Platform::system_stats()` e das amostras de processo que já coleta; nada de IPC nesta tarefa.
+- O número é `% Processor Time`: pode ficar abaixo do gráfico do Gerenciador de Tarefas quando o processador está em turbo (lá é "Utilidade"). Documentado em [03](../03-engine.md) §6.
+- Aceite medido nesta máquina (Win10 19045, 8 CPUs lógicas, RDP, builds de outros worktrees rodando): `mem_total` exato; `mem_avail` e `volume` dentro do intervalo das nossas leituras antes/depois do PowerShell (±10 % / ±1 %); serviço falso a 50 % de uma CPU → máquina em 2 s ≥ 6,25 % e ≥ a parcela medida do serviço; nome da imagem do processo de teste = `current_exe`.
