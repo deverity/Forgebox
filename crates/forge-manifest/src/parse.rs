@@ -25,9 +25,9 @@ use crate::schema::project::ProjectManifest;
 use crate::schema::registry::{REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryManifest};
 use crate::schema::stack::{PostCreateAction, StackManifest};
 use crate::schema::tool::{
-    AccessRotate, ArchiveFormat, Config, Discover, Install, LogSpec, PostInstallAction, Provider,
-    QuickSettingType, RotateStrategy, Service, ServiceKind, Source, ToolManifest, ToolMetadata, Ui,
-    Update, UpdatePolicy, Variant, Versioning,
+    AccessRotate, ArchiveFormat, ClientCommand, Config, DatabaseSpec, Discover, Install, LogSpec,
+    MailSpec, PostInstallAction, Provider, QuickSettingType, RotateStrategy, Service, ServiceKind,
+    Source, ToolManifest, ToolMetadata, Ui, Update, UpdatePolicy, Variant, Versioning,
 };
 use crate::template::{self, VarRef};
 use crate::version::{Constraint, Version, validate_series_key};
@@ -273,6 +273,11 @@ fn relative_path_problem(path: &str) -> Option<&'static str> {
     }
 }
 
+/// Name of a database or charset: `[A-Za-z0-9_]{1,max}`.
+fn is_sql_ident(name: &str, max: usize) -> bool {
+    (1..=max).contains(&name.len()) && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 /// A single file or command name: `[A-Za-z0-9._-]`, not `.`/`..`.
 fn is_file_name(name: &str) -> bool {
     !name.is_empty()
@@ -429,11 +434,23 @@ fn check_var(scope: &Scope, field: &str, var: &VarRef) -> Result<(), String> {
                 "paths" => paths(),
                 "instance" => instance_ref(&segs[1..], scope),
                 "prefs" if segs.len() >= 2 => Ok(()),
+                // Capability variables (docs/04 §1.8): valid only inside `spec.database`.
+                "sql" if leaf && field.starts_with("spec.database.client.args") => Ok(()),
+                "database"
+                    if leaf
+                        && field.starts_with("spec.database.")
+                        && !field.starts_with("spec.database.client") =>
+                {
+                    Ok(())
+                }
+                "charset" if leaf && field.starts_with("spec.database.queries.") => Ok(()),
                 "recycle" if in_pool => pool_keys(&["max_requests", "max_rss_mb", "max_age"]),
                 "scaling" if in_pool => pool_keys(&["min", "max", "idle_timeout"]),
                 _ => unknown(
                     "version, series, variant.<key>, paths.<dir>, instance.*, prefs.*; \
-                     `value` in quick_settings; `port`, `recycle.*`, `scaling.*` in service.pool",
+                     `value` in quick_settings; `port`, `recycle.*`, `scaling.*` in service.pool; \
+                     `sql` in database.client.args, `database` in database (except client), \
+                     `charset` in database.queries",
                 ),
             }
         }
@@ -739,6 +756,118 @@ impl Checker<'_> {
                 }
             }
         }
+    }
+
+    /// Rule 6 for capability clients: `exe` is a plain relative path inside the version
+    /// folder (no `..`, absolute path or variables).
+    fn client_exe(&mut self, field: &str, exe: &str) {
+        let problem = if exe.contains("{{") || exe.contains(['%', '$']) {
+            Some("must not use variables")
+        } else {
+            relative_path_problem(exe)
+        };
+        if let Some(problem) = problem {
+            self.push(
+                IssueCode::ExeOutsideVersion,
+                field,
+                format!(
+                    "{exe:?} {problem}: client executables are relative to {{{{ paths.version }}}}"
+                ),
+            );
+        }
+    }
+
+    fn client_command(&mut self, f: &str, cmd: &ClientCommand) {
+        self.client_exe(&format!("{f}.exe"), &cmd.exe);
+    }
+
+    /// `spec.database` (docs/04 §1.8).
+    fn database(&mut self, db: &DatabaseSpec, port_names: &BTreeSet<String>) {
+        let f = "spec.database";
+        if !port_names.contains(&db.port) {
+            self.push(
+                IssueCode::InvalidReference,
+                format!("{f}.port"),
+                format!(
+                    "port `{}` is not declared in service.daemon.ports (declared: {})",
+                    db.port,
+                    port_names.iter().cloned().collect::<Vec<_>>().join(", ")
+                ),
+            );
+        }
+        self.not_empty(&format!("{f}.admin_user"), &db.admin_user);
+        if !is_sql_ident(&db.default_charset, 32) {
+            self.push(
+                IssueCode::InvalidValue,
+                format!("{f}.default_charset"),
+                "charsets use [A-Za-z0-9_], 1 to 32 characters",
+            );
+        }
+        let mut seen = BTreeSet::new();
+        for (i, name) in db.system_databases.iter().enumerate() {
+            let field = format!("{f}.system_databases[{i}]");
+            if !is_sql_ident(name, 64) {
+                self.push(
+                    IssueCode::InvalidValue,
+                    &field,
+                    "database names use [A-Za-z0-9_], 1 to 64 characters",
+                );
+            }
+            self.duplicate(&field, &mut seen, name);
+        }
+        self.client_command(&format!("{f}.client"), &db.client);
+        if !db.client.args.iter().any(|a| a.contains("{{ sql }}")) {
+            self.push(
+                IssueCode::InvalidValue,
+                format!("{f}.client.args"),
+                "the runner must pass the statement with `{{ sql }}`",
+            );
+        }
+        for (name, query) in [
+            ("list", &db.queries.list),
+            ("create", &db.queries.create),
+            ("drop", &db.queries.drop),
+        ] {
+            self.not_empty(&format!("{f}.queries.{name}"), query);
+        }
+        for (name, query) in [("create", &db.queries.create), ("drop", &db.queries.drop)] {
+            if !query.contains("{{ database }}") {
+                self.push(
+                    IssueCode::InvalidValue,
+                    format!("{f}.queries.{name}"),
+                    "must use `{{ database }}`",
+                );
+            }
+        }
+        for (name, cmd) in [
+            ("dump", &db.dump),
+            ("restore", &db.restore),
+            ("shell", &db.shell),
+        ] {
+            if let Some(cmd) = cmd {
+                self.client_command(&format!("{f}.{name}"), cmd);
+            }
+        }
+        self.not_empty(&format!("{f}.url"), &db.url);
+        self.env_names(&format!("{f}.env"), db.env.keys());
+    }
+
+    /// `spec.mail` (docs/04 §1.9).
+    fn mail(&mut self, mail: &MailSpec, port_names: &BTreeSet<String>) {
+        let f = "spec.mail";
+        for (name, port) in [
+            ("http_port", &mail.http_port),
+            ("smtp_port", &mail.smtp_port),
+        ] {
+            if !port_names.contains(port) {
+                self.push(
+                    IssueCode::InvalidReference,
+                    format!("{f}.{name}"),
+                    format!("port `{port}` is not declared in service.daemon.ports"),
+                );
+            }
+        }
+        self.env_names(&format!("{f}.env"), mail.env.keys());
     }
 
     fn tool_metadata(&mut self, m: &ToolMetadata) {
@@ -1745,6 +1874,12 @@ impl Checker<'_> {
         self.install(&spec.install);
         let config_ids = self.config(&spec.config, spec.versioning.scheme);
         let port_names = self.service(&spec.service, &m.metadata.id);
+        if let Some(database) = &spec.database {
+            self.database(database, &port_names);
+        }
+        if let Some(mail) = &spec.mail {
+            self.mail(mail, &port_names);
+        }
         if let Some(discover) = &spec.discover {
             self.discover(discover, &spec.versioning.variants);
         }

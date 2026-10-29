@@ -90,6 +90,104 @@ pub struct ToolSpec {
     pub update: Update,
     #[serde(default, skip_serializing_if = "is_default")]
     pub ui: Ui,
+    /// Database capability (docs/04 §1.8): the daemon drives the declared client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<DatabaseSpec>,
+    /// Mail-catcher capability (docs/04 §1.9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<MailSpec>,
+}
+
+// ---------------------------------------------------------------- capabilities
+
+/// `spec.database` (docs/04 §1.8): everything the daemon needs to list, create and drop
+/// databases, dump/restore them and build connection strings, without per-tool code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseSpec {
+    /// Identifier-quoting and validation family.
+    pub protocol: DatabaseProtocol,
+    /// Name of a `service.daemon.ports[]` entry (rule 1 `invalid_reference`).
+    pub port: String,
+    /// Administrative account the client connects with.
+    pub admin_user: String,
+    /// Value of `{{ charset }}` when the caller gives none (`[A-Za-z0-9_]{1,32}`).
+    pub default_charset: String,
+    /// Hidden from `db.list`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub system_databases: Vec<String>,
+    /// Runs one SQL statement: `args` hold `{{ sql }}` and the client prints
+    /// tab-separated rows without a header.
+    pub client: ClientCommand,
+    pub queries: DatabaseQueries,
+    /// Writes the dump to stdout (`{{ database }}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dump: Option<ClientCommand>,
+    /// Reads the dump from stdin (`{{ database }}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore: Option<ClientCommand>,
+    /// Interactive client for `db.shell`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<ClientCommand>,
+    /// Connection string (`{{ database }}`, `{{ instance.ports.<n> }}`).
+    pub url: String,
+    /// Variables for a project's `.env`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+/// `spec.database.protocol`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseProtocol {
+    /// MySQL and MariaDB (backtick identifiers).
+    Mysql,
+    /// PostgreSQL (double-quoted identifiers).
+    Postgresql,
+}
+
+/// A client program: `exe` relative to the version folder (rule 6) and its argv.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCommand {
+    pub exe: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+}
+
+/// `spec.database.queries`: SQL templates run through `client`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseQueries {
+    /// One database name per row (first column).
+    pub list: String,
+    /// Uses `{{ database }}` and may use `{{ charset }}`.
+    pub create: String,
+    /// Uses `{{ database }}`.
+    pub drop: String,
+}
+
+/// `spec.mail` (docs/04 §1.9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MailSpec {
+    /// API family the daemon adapter speaks.
+    pub api: MailApi,
+    /// Name of the HTTP/API port in `service.daemon.ports[]`.
+    pub http_port: String,
+    /// Name of the SMTP port in `service.daemon.ports[]`.
+    pub smtp_port: String,
+    /// `MAIL_*` variables for a project's `.env`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+/// `spec.mail.api`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum MailApi {
+    /// Mailpit REST API v1 (`/api/v1`).
+    #[serde(rename = "mailpit-v1")]
+    MailpitV1,
 }
 
 // ---------------------------------------------------------------- versioning
