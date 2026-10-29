@@ -5,7 +5,8 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 
 use forge_ipc::api::{
-    NoParams, ShellEnvDto, ShellEnvParams, ShellFormat, ShellOpenParams, UserPathDto,
+    NoParams, ShellCommandDto, ShellEnvDto, ShellEnvParams, ShellFormat, ShellOpenParams,
+    UserPathDto,
 };
 
 use crate::cli::{EnvArgs, ExecArgs, OptDirArg, PathCmd};
@@ -137,6 +138,42 @@ pub async fn exec(ctx: &Context, args: ExecArgs) -> CliResult<()> {
                 .stderr(Stdio::inherit())
                 .status()
                 .map_err(|e| (program, e))
+        }
+    })
+    .await
+    .map_err(|e| CliError::new("internal", e.to_string()))?
+    .map_err(|(program, e)| {
+        let code = if e.kind() == std::io::ErrorKind::NotFound {
+            "not_found"
+        } else {
+            "io"
+        };
+        CliError::new(code, ctx.out.tf(Msg::ExecFailed, &[&program, &e]))
+    })?;
+    match status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(CliError::exit_silently(code)),
+        None => Err(CliError::exit_silently(1)),
+    }
+}
+
+/// Runs a command the daemon prepared (`db.shell`) attached to this console: same stdin,
+/// stdout and stderr, its environment additions on top of ours; exits with its code.
+pub(crate) async fn run_attached(ctx: &Context, command: &ShellCommandDto) -> CliResult<()> {
+    let status = tokio::task::spawn_blocking({
+        let command = command.clone();
+        move || {
+            let mut child = Command::new(&command.program);
+            child
+                .args(&command.args)
+                .envs(&command.env)
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+            if let Some(cwd) = &command.cwd {
+                child.current_dir(cwd);
+            }
+            child.status().map_err(|e| (command.program, e))
         }
     })
     .await

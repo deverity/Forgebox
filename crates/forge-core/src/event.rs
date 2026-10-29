@@ -114,13 +114,25 @@ event_kinds! {
     SitePhpChanged => "site.php_changed",
     ConfigRendered => "config.rendered",
     ConfigDriftDetected => "config.drift_detected",
+    /// `forgebox.toml` changed (`system.config_set`); payload `{keys}` lists the dotted keys
+    /// written (ADR-0040).
+    ConfigChanged => "config.changed",
     DnsPolicyApplied => "dns.policy_applied",
     TlsCaCreated => "tls.ca_created",
     TlsLeafIssued => "tls.leaf_issued",
     TlsRenewed => "tls.renewed",
+    /// The local CA was removed from a trust store (`tls.ca_uninstall`, ADR-0040).
+    TlsCaUntrusted => "tls.ca_untrusted",
     PortConflict => "port.conflict",
+    /// Audit: the process holding a port was terminated on request
+    /// (`services.kill_port_holder`, ADR-0040).
+    PortHolderKilled => "port.holder_killed",
     /// Payload `{name, ok}` (docs/03 §8, `helper.op{name, ok}`).
     HelperOp => "helper.op",
+    /// The captured mailbox changed (counts and new messages; ADR-0040).
+    MailChanged => "mail.changed",
+    /// A daemon-hosted terminal session ended (ADR-0040).
+    TerminalExited => "terminal.exited",
 }
 
 /// A name that is not in [`EventKind`].

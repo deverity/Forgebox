@@ -171,6 +171,12 @@ ulid_id!(
     ClientId,
     "client id"
 );
+ulid_id!(
+    /// A terminal session hosted by the daemon (`terminal.*`, ADR-0040): a pseudo-console
+    /// that outlives the client that opened it.
+    TerminalId,
+    "terminal id"
+);
 
 /// Maximum length of a [`ToolId`].
 pub const TOOL_ID_MAX_LEN: usize = 64;

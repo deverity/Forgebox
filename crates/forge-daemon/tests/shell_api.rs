@@ -338,13 +338,26 @@ async fn hello_status_port_check_and_sites_open() {
         let api = err.api().unwrap();
         assert_eq!(api.reason(), Some("not_implemented"), "{method}");
         assert_eq!(api.args().unwrap()["method"], method.as_str());
-        assert!(
-            api.args().unwrap()["task"]
-                .as_str()
-                .unwrap()
-                .starts_with('M')
-        );
+        let task = NOT_IMPLEMENTED
+            .iter()
+            .find(|(m, _, _)| m == method)
+            .map(|(_, task, _)| *task)
+            .unwrap();
+        assert_eq!(api.args().unwrap()["task"], task, "{method}");
+        assert!(api.message.contains(&format!("roadmap {task}")), "{method}");
     }
+    // A working method with a parameter of a later task says so instead of ignoring it.
+    let err = client
+        .call_raw(
+            "logs.read",
+            json!({"target": "daemon", "before_seq": 10}),
+            CallOptions::default(),
+        )
+        .await
+        .expect_err("before_seq");
+    let api = err.api().unwrap();
+    assert_eq!(api.code, "not_implemented");
+    assert_eq!(api.args().unwrap()["task"], "M2-E3-T8");
 
     // daemon.status: the daemon's own CPU and memory.
     let first = client.call::<daemon_status>(NoParams {}).await.unwrap();

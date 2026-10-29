@@ -5,13 +5,13 @@ use std::io::IsTerminal;
 use std::time::Duration;
 
 use forge_ipc::api::methods::{
-    services_create, services_reload, services_remove, services_restart, services_set,
-    services_start, services_stop,
+    net_port_check, services_create, services_kill_port_holder, services_reload, services_remove,
+    services_restart, services_set, services_start, services_stop,
 };
 use forge_ipc::api::{
-    EventFilter, InstanceDto, NoParams, PortMapDto, PortState, ServiceCreateParams,
-    ServiceRemoveParams, ServiceSetParams, ServiceStatusDto, ServiceTarget, ServiceTargetParams,
-    ServiceTargetsParams, ToolSpec,
+    EventFilter, InstanceDto, KillPortHolderParams, NoParams, PortCheckParams, PortMapDto,
+    PortProtocol, PortState, ServiceCreateParams, ServiceRemoveParams, ServiceSetParams,
+    ServiceStatusDto, ServiceTarget, ServiceTargetParams, ServiceTargetsParams, ToolSpec,
 };
 use forge_ipc::client::SubscriptionItem;
 
@@ -199,7 +199,45 @@ pub async fn service(ctx: &Context, command: ServiceCmd) -> CliResult<()> {
             ctx.out.emit(&ports, |out| port_table(out, &ports));
             Ok(())
         }
+        ServiceCmd::KillPort { port, pid } => kill_port(ctx, port, pid).await,
     }
+}
+
+/// `forge service kill-port <port> [--pid <n>]`: names the process holding the port, asks,
+/// then `services.kill_port_holder` (the daemon checks again that this pid still holds the
+/// port and may be terminated).
+async fn kill_port(ctx: &Context, port: u16, pid: Option<u32>) -> CliResult<()> {
+    let check = ctx
+        .call::<net_port_check>(PortCheckParams {
+            port,
+            protocol: PortProtocol::Tcp,
+        })
+        .await?;
+    let (pid, exe) = match (pid, check.holder) {
+        (None, Some(holder)) => (holder.pid, holder.exe),
+        (Some(pid), Some(holder)) if holder.pid == pid => (pid, holder.exe),
+        // A pid the table does not show: the daemon decides (it refuses a pid that does not
+        // hold the port).
+        (Some(pid), _) => (pid, format!("PID {pid}")),
+        (None, None) => {
+            return Err(CliError::new(
+                "not_found",
+                ctx.out.tf(Msg::PortHolderNone, &[&port]),
+            ));
+        }
+    };
+    ctx.confirm(&ctx.out.tf(Msg::ConfirmKillPortHolder, &[&exe, &pid, &port]))?;
+    let ack = ctx
+        .call::<services_kill_port_holder>(KillPortHolderParams {
+            port,
+            pid,
+            confirm: true,
+        })
+        .await?;
+    ctx.out.emit(&ack, |out| {
+        out.success(out.tf(Msg::PortHolderKilled, &[&exe, &port]));
+    });
+    Ok(())
 }
 
 /// Lists the config files and, on a terminal, opens them in the editor.

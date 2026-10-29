@@ -281,6 +281,16 @@
     "expected": "forge service ports"
   },
   {
+    "method": "services.kill_port_holder",
+    "params": {
+      "port": 80,
+      "pid": 4412,
+      "confirm": true
+    },
+    "expected": "forge service kill-port 80 --pid 4412",
+    "note": "confirm is never rendered: the CLI asks"
+  },
+  {
     "method": "logs.read",
     "params": {
       "target": "nginx.error",
@@ -301,6 +311,18 @@
     "expected": "forge logs daemon"
   },
   {
+    "method": "logs.read",
+    "params": {
+      "target": "nginx.error",
+      "since_secs": null,
+      "grep": null,
+      "limit": 200,
+      "before_seq": 1000
+    },
+    "expected": "forge logs nginx.error -n 200 --before 1000",
+    "note": "paging back (ADR-0040)"
+  },
+  {
     "method": "logs.subscribe",
     "params": {
       "target": "site:loja.test",
@@ -309,6 +331,11 @@
       "resume_from": null
     },
     "expected": "forge logs site:loja.test -f -n 50"
+  },
+  {
+    "method": "logs.targets",
+    "params": {},
+    "expected": "forge logs --list"
   },
   {
     "method": "php.list",
@@ -577,6 +604,22 @@
     "expected": "forge site info loja.test"
   },
   {
+    "method": "sites.env",
+    "params": {
+      "site": "loja.test",
+      "reveal": false
+    },
+    "expected": "forge site env loja.test"
+  },
+  {
+    "method": "sites.env",
+    "params": {
+      "site": "loja.test",
+      "reveal": true
+    },
+    "expected": "forge site env loja.test --reveal"
+  },
+  {
     "method": "sites.park",
     "params": {
       "dir": "C:\\www",
@@ -835,6 +878,20 @@
     "expected": "forge tls ca install --scope machine"
   },
   {
+    "method": "tls.ca_uninstall",
+    "params": {
+      "scope": "current_user"
+    },
+    "expected": "forge tls ca uninstall --scope user"
+  },
+  {
+    "method": "tls.ca_uninstall",
+    "params": {
+      "scope": "local_machine"
+    },
+    "expected": "forge tls ca uninstall --scope machine"
+  },
+  {
     "method": "tls.ca_export",
     "params": {},
     "expected": "forge tls ca export"
@@ -914,11 +971,78 @@
     "expected": "forge mail list"
   },
   {
+    "method": "mail.list",
+    "params": {
+      "unread": false,
+      "limit": 20,
+      "query": "from:loja pedido",
+      "offset": 40
+    },
+    "expected": "forge mail list --search \"from:loja pedido\" --limit 20 --offset 40"
+  },
+  {
     "method": "mail.show",
     "params": {
       "id": "abc123"
     },
     "expected": "forge mail show abc123"
+  },
+  {
+    "method": "mail.show",
+    "params": {
+      "id": "abc123",
+      "mark_read": true
+    },
+    "expected": "forge mail show abc123"
+  },
+  {
+    "method": "mail.show",
+    "params": {
+      "id": "abc123",
+      "mark_read": false
+    },
+    "expected": "forge mail show abc123 --keep-unread"
+  },
+  {
+    "method": "mail.mark_read",
+    "params": {
+      "ids": [
+        "a1",
+        "b2"
+      ],
+      "read": true
+    },
+    "expected": "forge mail read a1 b2"
+  },
+  {
+    "method": "mail.mark_read",
+    "params": {
+      "ids": [
+        "a1"
+      ],
+      "read": false
+    },
+    "expected": "forge mail read a1 --unread"
+  },
+  {
+    "method": "mail.delete",
+    "params": {
+      "ids": [
+        "a1",
+        "b2"
+      ],
+      "confirm": true
+    },
+    "expected": "forge mail delete a1 b2",
+    "note": "confirm is never rendered: the CLI asks"
+  },
+  {
+    "method": "mail.attachment",
+    "params": {
+      "id": "abc123",
+      "part_id": "2"
+    },
+    "expected": "forge mail show abc123 --attachment 2"
   },
   {
     "method": "mail.clear",
@@ -1268,6 +1392,11 @@
       "key": "ports.http"
     },
     "expected": "forge config get ports.http"
+  },
+  {
+    "method": "system.config_list",
+    "params": {},
+    "expected": "forge config list"
   },
   {
     "method": "system.config_set",

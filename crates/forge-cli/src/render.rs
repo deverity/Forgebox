@@ -327,6 +327,8 @@ mod tests {
             status,
             message: String::new(),
             fix: None,
+            fix_method: None,
+            fix_params: None,
         };
         let list = [
             c(CheckStatus::Ok),

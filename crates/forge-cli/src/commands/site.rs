@@ -11,9 +11,10 @@ use forge_ipc::api::methods::{
 use forge_ipc::api::{
     Ack, CaseFixChoice, CaseLintReportDto, LintCaseParams, ListAction, NoParams, ParkParams,
     ParkedDirDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, ShareDto,
-    SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDto, SiteNewParams, SiteOpenParams,
-    SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto, SitePsParams, SiteRef,
-    SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams, SiteShareParams,
+    SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDto, SiteEnvDto, SiteEnvParams,
+    SiteNewParams, SiteOpenParams, SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto,
+    SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
+    SiteShareParams,
 };
 
 use crate::cli::{
@@ -23,8 +24,33 @@ use crate::cli::{
 use crate::context::Context;
 use crate::error::{CliError, CliResult};
 use crate::messages::Msg;
-use crate::output::{DIM, RED, YELLOW, or_dash, paint};
+use crate::output::{DIM, Output, RED, YELLOW, or_dash, paint};
 use crate::render;
+
+/// The variables of `sites.env`, one row per variable (masked secrets say so).
+fn dotenv_table(out: &Output, env: &SiteEnvDto) {
+    let rows = env
+        .files
+        .iter()
+        .flat_map(|file| {
+            file.vars.iter().map(|var| {
+                vec![
+                    var.key.clone(),
+                    match &var.value {
+                        Some(value) => value.clone(),
+                        None => paint(DIM, out.t(Msg::DotenvMasked)),
+                    },
+                    format!("{}:{}", file.name, var.line),
+                ]
+            })
+        })
+        .collect();
+    out.table(
+        &[out.t(Msg::HKey), out.t(Msg::HValue), out.t(Msg::HFile)],
+        rows,
+        Msg::NoDotenv,
+    );
+}
 
 pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
     match command {
@@ -143,6 +169,16 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                     render::checks(out, &info.checks);
                 }
             });
+            Ok(())
+        }
+        SiteCmd::Env { site, reveal } => {
+            let env = ctx
+                .call::<forge_ipc::api::methods::sites_env>(SiteEnvParams {
+                    site: SiteRef::from(site),
+                    reveal,
+                })
+                .await?;
+            ctx.out.emit(&env, |out| dotenv_table(out, &env));
             Ok(())
         }
         SiteCmd::CaseSensitive { site, state } => {
@@ -403,6 +439,7 @@ pub async fn run_process(ctx: &Context, args: RunArgs) -> CliResult<()> {
                     since: None,
                     grep: None,
                     lines: None,
+                    before: None,
                 },
             )
             .await;

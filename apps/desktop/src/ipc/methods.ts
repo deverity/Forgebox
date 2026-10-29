@@ -49,9 +49,11 @@ export const METHODS = {
   "services.config_files": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
   "services.set": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service set"], cli_template: "forge service set {target} {settings...}", notification: null, lagged_notification: null },
   "services.ports": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge service ports"], cli_template: "forge service ports", notification: null, lagged_notification: null },
-  "logs.read": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs", "forge daemon logs"], cli_template: "forge logs {target} {since_secs=--since} {grep=--grep} {limit=-n}", notification: null, lagged_notification: null },
+  "services.kill_port_holder": { kind: "call", min_role: "admin", local_only: true, long_running: false, mutating: true, cli: ["forge service kill-port"], cli_template: "forge service kill-port {port} {pid=--pid}", notification: null, lagged_notification: null },
+  "logs.read": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs", "forge daemon logs"], cli_template: "forge logs {target} {since_secs=--since} {grep=--grep} {limit=-n} {before_seq=--before}", notification: null, lagged_notification: null },
   "logs.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs -f", "forge daemon logs -f"], cli_template: "forge logs {target} -f {grep=--grep} {tail=-n}", notification: "logs.line", lagged_notification: "logs.lagged" },
   "logs.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "logs.targets": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs --list"], cli_template: "forge logs --list", notification: null, lagged_notification: null },
   "php.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php list"], cli_template: "forge php list", notification: null, lagged_notification: null },
   "php.pool_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php pool status"], cli_template: "forge php pool status {version}", notification: null, lagged_notification: null },
   "php.ext_list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php ext list"], cli_template: "forge php ext list {version}", notification: null, lagged_notification: null },
@@ -69,6 +71,7 @@ export const METHODS = {
   "sites.alias": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site alias"], cli_template: "forge site alias {site} {action} {alias}", notification: null, lagged_notification: null },
   "sites.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge site open"], cli_template: "[with=editor] forge site open {site} --editor | [with=terminal] forge site open {site} --terminal | [with=explorer] forge site open {site} --explorer | forge site open {site}", notification: null, lagged_notification: null },
   "sites.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge site info"], cli_template: "forge site info {site}", notification: null, lagged_notification: null },
+  "sites.env": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: false, cli: ["forge site env"], cli_template: "forge site env {site} {reveal?--reveal}", notification: null, lagged_notification: null },
   "sites.park": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge park"], cli_template: "forge park {dir} {tld=--tld}", notification: null, lagged_notification: null },
   "sites.unpark": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge unpark"], cli_template: "forge unpark {dir}", notification: null, lagged_notification: null },
   "sites.parked": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge parked"], cli_template: "forge parked", notification: null, lagged_notification: null },
@@ -97,6 +100,7 @@ export const METHODS = {
   "net.lan_qr": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge lan qr"], cli_template: "forge lan qr {site}", notification: null, lagged_notification: null },
   "tls.ca_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls ca status"], cli_template: "forge tls ca status", notification: null, lagged_notification: null },
   "tls.ca_install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca install"], cli_template: "[scope=local_machine] forge tls ca install --scope machine | forge tls ca install --scope user", notification: null, lagged_notification: null },
+  "tls.ca_uninstall": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca uninstall"], cli_template: "[scope=local_machine] forge tls ca uninstall --scope machine | forge tls ca uninstall --scope user", notification: null, lagged_notification: null },
   "tls.ca_export": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls ca export"], cli_template: "forge tls ca export", notification: null, lagged_notification: null },
   "tls.ca_rotate": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca rotate"], cli_template: "forge tls ca rotate", notification: null, lagged_notification: null },
   "tls.issue": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls issue"], cli_template: "forge tls issue {host}", notification: null, lagged_notification: null },
@@ -104,15 +108,26 @@ export const METHODS = {
   "tls.export": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: ["forge tls export"], cli_template: "[format=pfx] forge tls export {host} --pfx | forge tls export {host}", notification: null, lagged_notification: null },
   "mail.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail status"], cli_template: "forge mail status", notification: null, lagged_notification: null },
   "mail.open": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge mail open"], cli_template: "forge mail open", notification: null, lagged_notification: null },
-  "mail.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail list"], cli_template: "forge mail list {unread?--unread} {limit=--limit}", notification: null, lagged_notification: null },
-  "mail.show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail show"], cli_template: "forge mail show {id}", notification: null, lagged_notification: null },
+  "mail.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail list"], cli_template: "forge mail list {unread?--unread} {query=--search} {limit=--limit} {offset=--offset}", notification: null, lagged_notification: null },
+  "mail.show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail show"], cli_template: "forge mail show {id} {mark_read?:--keep-unread}", notification: null, lagged_notification: null },
+  "mail.mark_read": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail read"], cli_template: "forge mail read {ids...} {read?:--unread}", notification: null, lagged_notification: null },
+  "mail.delete": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail delete"], cli_template: "forge mail delete {ids...}", notification: null, lagged_notification: null },
+  "mail.attachment": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail show --attachment"], cli_template: "forge mail show {id} --attachment {part_id}", notification: null, lagged_notification: null },
   "mail.clear": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail clear"], cli_template: "forge mail clear", notification: null, lagged_notification: null },
   "mail.env": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail env"], cli_template: "forge mail env", notification: null, lagged_notification: null },
   "shell.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge shell"], cli_template: "forge shell {dir}", notification: null, lagged_notification: null },
+  "shell.open_editor": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
   "shell.env": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge env", "forge exec"], cli_template: "[format=cmd] forge env {dir} --cmd | [format=bash] forge env {dir} --bash | [format=json] forge env {dir} --json | forge env {dir} --powershell", notification: null, lagged_notification: null },
   "shell.path_show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge path show"], cli_template: "forge path show", notification: null, lagged_notification: null },
   "shell.path_add": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge path add"], cli_template: "forge path add", notification: null, lagged_notification: null },
   "shell.path_remove": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge path remove"], cli_template: "forge path remove", notification: null, lagged_notification: null },
+  "terminal.open": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.list": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.input": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.resize": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.close": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.subscribe": { kind: "stream", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: "terminal.output", lagged_notification: "terminal.lagged" },
+  "terminal.unsubscribe": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
   "fs_parity.case_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge fs case-sensitive status"], cli_template: "forge fs case-sensitive status {dir}", notification: null, lagged_notification: null },
   "fs_parity.case_enable": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge fs case-sensitive enable"], cli_template: "forge fs case-sensitive enable {dir}", notification: null, lagged_notification: null },
   "fs_parity.case_disable": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge fs case-sensitive disable"], cli_template: "forge fs case-sensitive disable {dir}", notification: null, lagged_notification: null },
@@ -143,6 +158,7 @@ export const METHODS = {
   "system.backup_now": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge backup now"], cli_template: "forge backup now {instance}", notification: null, lagged_notification: null },
   "system.backup_schedule": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge backup schedule"], cli_template: "forge backup schedule {frequency} {at}", notification: null, lagged_notification: null },
   "system.config_get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge config get"], cli_template: "forge config get {key}", notification: null, lagged_notification: null },
+  "system.config_list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge config list"], cli_template: "forge config list", notification: null, lagged_notification: null },
   "system.config_set": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge config set"], cli_template: "forge config set {key} {value}", notification: null, lagged_notification: null },
   "system.self_update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge self-update"], cli_template: "forge self-update {check?--check} {channel=--channel}", notification: null, lagged_notification: null },
   "fs.read": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
@@ -186,9 +202,11 @@ export interface ApiMethods {
   "services.config_files": { params: T.ServiceTargetParams; result: T.ConfigFilesDto };
   "services.set": { params: T.ServiceSetParams; result: T.JobDto; job_result: T.ServiceStatusDto };
   "services.ports": { params: T.NoParams; result: T.PortMapDto };
+  "services.kill_port_holder": { params: T.KillPortHolderParams; result: T.Ack };
   "logs.read": { params: T.LogsReadParams; result: T.LogChunkDto };
   "logs.subscribe": { params: T.LogsSubscribeParams; result: T.SubscriptionDto; item: T.LogEnvelope };
   "logs.unsubscribe": { params: T.UnsubscribeParams; result: T.Ack };
+  "logs.targets": { params: T.NoParams; result: T.LogTargetListDto };
   "php.list": { params: T.NoParams; result: T.PhpVersionListDto };
   "php.pool_status": { params: T.PhpPoolStatusParams; result: T.PoolListDto };
   "php.ext_list": { params: T.PhpVersionParams; result: T.PhpExtListDto };
@@ -206,6 +224,7 @@ export interface ApiMethods {
   "sites.alias": { params: T.SiteAliasParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.open": { params: T.SiteOpenParams; result: T.Ack };
   "sites.info": { params: T.SiteParams; result: T.SiteInfoDto };
+  "sites.env": { params: T.SiteEnvParams; result: T.SiteEnvDto };
   "sites.park": { params: T.ParkParams; result: T.ParkedDirDto };
   "sites.unpark": { params: T.ParkParams; result: T.Ack };
   "sites.parked": { params: T.NoParams; result: T.ParkedListDto };
@@ -221,7 +240,7 @@ export interface ApiMethods {
   "db.drop": { params: T.DbDropParams; result: T.Ack };
   "db.export": { params: T.DbExportParams; result: T.JobDto; job_result: T.DbExportDto };
   "db.import": { params: T.DbImportParams; result: T.JobDto; job_result: T.Ack };
-  "db.shell": { params: T.DbShellParams; result: T.Ack };
+  "db.shell": { params: T.DbShellParams; result: T.ShellCommandDto };
   "db.url": { params: T.DbUrlParams; result: T.DbUrlDto };
   "db.open": { params: T.DbOpenParams; result: T.Ack };
   "net.dns_status": { params: T.NoParams; result: T.DnsStatusDto };
@@ -234,6 +253,7 @@ export interface ApiMethods {
   "net.lan_qr": { params: T.LanSiteParams; result: T.LanAccessDto };
   "tls.ca_status": { params: T.NoParams; result: T.CaStatusDto };
   "tls.ca_install": { params: T.CaInstallParams; result: T.JobDto; job_result: T.CaStatusDto };
+  "tls.ca_uninstall": { params: T.CaUninstallParams; result: T.JobDto; job_result: T.CaStatusDto };
   "tls.ca_export": { params: T.NoParams; result: T.PemDto };
   "tls.ca_rotate": { params: T.CaRotateParams; result: T.JobDto; job_result: T.CaStatusDto };
   "tls.issue": { params: T.TlsHostParams; result: T.JobDto; job_result: T.CertificateDto };
@@ -243,13 +263,24 @@ export interface ApiMethods {
   "mail.open": { params: T.NoParams; result: T.Ack };
   "mail.list": { params: T.MailListParams; result: T.MailListDto };
   "mail.show": { params: T.MailShowParams; result: T.MailMessageDto };
+  "mail.mark_read": { params: T.MailMarkReadParams; result: T.Ack };
+  "mail.delete": { params: T.MailDeleteParams; result: T.Ack };
+  "mail.attachment": { params: T.MailAttachmentParams; result: T.MailAttachmentContentDto };
   "mail.clear": { params: T.MailClearParams; result: T.Ack };
   "mail.env": { params: T.NoParams; result: T.EnvVarsDto };
   "shell.open": { params: T.ShellOpenParams; result: T.Ack };
+  "shell.open_editor": { params: T.ShellOpenEditorParams; result: T.Ack };
   "shell.env": { params: T.ShellEnvParams; result: T.ShellEnvDto };
   "shell.path_show": { params: T.NoParams; result: T.UserPathDto };
   "shell.path_add": { params: T.NoParams; result: T.UserPathDto };
   "shell.path_remove": { params: T.NoParams; result: T.UserPathDto };
+  "terminal.open": { params: T.TerminalOpenParams; result: T.TerminalDto };
+  "terminal.list": { params: T.NoParams; result: T.TerminalListDto };
+  "terminal.input": { params: T.TerminalInputParams; result: T.Ack };
+  "terminal.resize": { params: T.TerminalResizeParams; result: T.Ack };
+  "terminal.close": { params: T.TerminalIdParams; result: T.Ack };
+  "terminal.subscribe": { params: T.TerminalSubscribeParams; result: T.SubscriptionDto; item: T.TerminalEnvelope };
+  "terminal.unsubscribe": { params: T.UnsubscribeParams; result: T.Ack };
   "fs_parity.case_status": { params: T.CaseDirParams; result: T.CaseSensitivityDto };
   "fs_parity.case_enable": { params: T.CaseDirParams; result: T.CaseSensitivityDto };
   "fs_parity.case_disable": { params: T.CaseDirParams; result: T.CaseSensitivityDto };
@@ -280,6 +311,7 @@ export interface ApiMethods {
   "system.backup_now": { params: T.BackupNowParams; result: T.JobDto; job_result: T.BackupReportDto };
   "system.backup_schedule": { params: T.BackupScheduleDto; result: T.BackupScheduleDto };
   "system.config_get": { params: T.ConfigGetParams; result: T.ConfigValueDto };
+  "system.config_list": { params: T.NoParams; result: T.ConfigDocumentDto };
   "system.config_set": { params: T.ConfigSetParams; result: T.ConfigValueDto };
   "system.self_update": { params: T.SelfUpdateParams; result: T.JobDto; job_result: T.SelfUpdateDto };
   "fs.read": { params: T.FsReadParams; result: T.FsReadDto };
@@ -295,13 +327,15 @@ export interface ApiMethods {
 export interface ApiNotifications {
   "logs.line": T.LogEnvelope;
   "logs.lagged": T.LaggedDto;
+  "terminal.output": T.TerminalEnvelope;
+  "terminal.lagged": T.LaggedDto;
   "metrics.site": T.MetricsEnvelope;
   "metrics.lagged": T.LaggedDto;
   "events.event": T.EventEnvelope;
   "events.lagged": T.LaggedDto;
 }
 
-export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updates_available", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
+export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updates_available", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "config.changed", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "tls.ca_untrusted", "port.conflict", "port.holder_killed", "helper.op", "mail.changed", "terminal.exited"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** Payload type of each event kind (`EventDto.payload`). */
@@ -341,12 +375,17 @@ export interface EventPayloads {
   "site.php_changed": T.SitePhpChangedPayload;
   "config.rendered": T.ConfigFilePayload;
   "config.drift_detected": T.ConfigFilePayload;
+  "config.changed": T.ConfigChangedPayload;
   "dns.policy_applied": T.DnsPolicyPayload;
   "tls.ca_created": T.TlsPayload;
   "tls.leaf_issued": T.TlsPayload;
   "tls.renewed": T.TlsPayload;
+  "tls.ca_untrusted": T.TlsCaUntrustedPayload;
   "port.conflict": T.PortConflictPayload;
+  "port.holder_killed": T.PortHolderKilledPayload;
   "helper.op": T.HelperOpPayload;
+  "mail.changed": T.MailChangedPayload;
+  "terminal.exited": T.TerminalExitedPayload;
 }
 
 /** Stable error codes (`ApiError.code`); only additions are allowed. */

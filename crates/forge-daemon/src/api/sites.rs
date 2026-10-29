@@ -369,6 +369,8 @@ async fn info(daemon: Daemon, params: SiteParams, _ctx: Ctx) -> Result<SiteInfoD
         },
         message: site.root.clone().unwrap_or_else(|| "-".into()),
         fix: None,
+        fix_method: None,
+        fix_params: None,
     });
     let dto = dto(&daemon, &site).await;
     if let Some(php) = &dto.php {
@@ -393,6 +395,8 @@ async fn info(daemon: Daemon, params: SiteParams, _ctx: Ctx) -> Result<SiteInfoD
                 php.upstream.clone().unwrap_or_default()
             ),
             fix: (!running).then(|| "forge tool install php".into()),
+            fix_method: None,
+            fix_params: None,
         });
     }
     if site.secure {
@@ -414,6 +418,8 @@ async fn info(daemon: Daemon, params: SiteParams, _ctx: Ctx) -> Result<SiteInfoD
             }
             .into(),
             fix: (!exists).then(|| format!("forge tls issue {}", site.host)),
+            fix_method: None,
+            fix_params: None,
         });
     }
     Ok(SiteInfoDto { site: dto, checks })
