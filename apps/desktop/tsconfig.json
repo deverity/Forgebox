@@ -28,6 +28,7 @@
     "playwright.real.config.ts",
     "vite.config.ts",
     "eslint.i18n.js",
+    "eslint.actions.js",
     "eslint.colors.js"
   ]
 }

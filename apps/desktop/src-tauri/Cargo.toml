@@ -45,6 +45,8 @@ thiserror = { workspace = true }
 # Window shell (src/window.rs, ADR-0035): materials and single instance. No windows/windows-sys.
 window-vibrancy = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

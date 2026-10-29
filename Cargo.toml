@@ -128,6 +128,10 @@ window-vibrancy = "0.8.1"
 # A second Forgebox.exe focuses the running one (ADR-0035). Plugins may link Win32 themselves;
 # src-tauri still has no direct windows/windows-sys dependency (cargo xtask arch-guard).
 tauri-plugin-single-instance = "2.4.5"
+# Clipboard ("Copiar comando") and native folder/file dialog (PathField, only when hello.local);
+# M2-E1-T13. Plugins may link Win32 themselves; src-tauri still has no direct windows deps.
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

@@ -53,3 +53,9 @@ Valores são strings, inteiros ou booleanos (`true`/`false`); string vazia conta
 - `methods.ts` ganha `cli_template: string | null` por método (`gen-ts` sem drift é checado na CI); a API não muda (nenhum campo no fio), então `API_VERSION` não sobe.
 - O renderizador TypeScript (M2-E1-T13) é validado contra o mesmo golden; uma divergência de gramática aparece como diferença de string, não como comportamento sutil.
 - Comandos que dependem de entrada fora dos params (`forge exec -- <comando>`, `forge env --powershell` com `versions`) ficam de fora do template (só o `forge env` de `shell.env`); `forge daemon logs`, `forge link`, `forge unlink` e `forge proxy remove` equivalem a formas já cobertas (`forge logs daemon`, `forge site add`, `forge site remove`).
+
+## Adendo (M2-E1-T13): primitivas ligadas ao daemon
+- `apps/desktop/src/actions/registry.ts`: `defineAction({id, method, toParams})` é obrigatório para método `mutating`. A ação liga a entrada da tela ao `ParamsOf<M>` e ao comando (`action.cli(input)` = `renderCli(method, toParams(input))`), então a chamada e o "Copiar comando" nunca divergem. `listActions()` alimenta o gate de paridade (E4-T5).
+- Regra ESLint `forgebox/no-direct-mutation` (`eslint.actions.js`, lê `src/ipc/methods.ts`): `x.call("<método mutável>")`/`x.job(...)` com nome literal é erro fora de `src/actions/`, `src/ipc/`, `src/state/` e testes. Telas usam `<ActionButton action input>` (ou `runAction`), que passa pela fila de reconexão (`ReconnectQueue`).
+- `<CliCommand>` (Sheets, painéis) e o slot `command` do `Tooltip` mostram o comando em mono e gravam `data-forge-cli`; "Copiar comando" usa `tauri-plugin-clipboard-manager` (capability `clipboard-manager:allow-write-text`), com `navigator.clipboard` fora do Tauri.
+- `<PathField>` abre o diálogo nativo (`tauri-plugin-dialog`, capability `dialog:allow-open`) só quando `hello.local`; `<PortField>` chama `net.port_check` 250 ms após a última tecla.

@@ -4,6 +4,7 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import { actionsConfig } from "./eslint.actions.js";
 import { colorLiteralConfig } from "./eslint.colors.js";
 import { i18nLiteralConfig } from "./eslint.i18n.js";
 
@@ -50,6 +51,8 @@ export default defineConfig([
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/design/tokens.ts", "src/**/*.test.{ts,tsx}"],
   },
+  // Mutating API methods only through the action registry (M2-E1-T13).
+  actionsConfig,
   {
     // Config files are plain JS, outside the TS project.
     files: ["**/*.js"],
