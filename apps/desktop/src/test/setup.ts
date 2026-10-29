@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, beforeAll } from "vitest";
 import { initI18n } from "../i18n";
 
@@ -7,6 +7,9 @@ import { initI18n } from "../i18n";
 beforeAll(async () => {
   await initI18n({ override: "en-US", setLanguage: () => Promise.resolve() });
 });
+
+// Lazy route chunks load on first use; a busy machine (parallel builds) needs more than 1 s.
+configure({ asyncUtilTimeout: 5000 });
 
 // Vitest globals are off, so Testing Library cannot register its own cleanup.
 afterEach(cleanup);

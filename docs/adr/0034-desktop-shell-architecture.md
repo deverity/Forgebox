@@ -86,3 +86,15 @@ e o evento `forge://connection` (todo `ContextStateDto` que muda, com `version` 
 - *`renderCli` antecipado* (era do M2-E1-T13): necessário para as ações de erro não montarem CLI à mão; validado pelo mesmo golden do Rust, então o T13 só acrescenta `<CliCommand>` e o registro de ações.
 
 **Alternativas descartadas**: eventos `service.metrics` ou stream novo para métricas (acima); aplicar cada evento ao chegar (um commit por evento; 1 000 eventos travariam o frame); store global única (todo evento re-renderiza tudo); só TanStack Query, sem stores (cada evento viraria refetch); resync a cada reconexão (a ponte já retoma sem perda); segurar também leituras na fila (telas mostram o estado desconectado em vez de esperar 30 s).
+
+## Adendo M2-E1-T10 — layout do app, rotas e slots (2026-10-29)
+
+**Decisão** (`apps/desktop/src/app`, [docs/07 §4](../07-ui-ux.md)):
+- *Rotas*: TanStack Router por código (`@tanstack/react-router` 1.170.46, sem *file-based codegen*). Um arquivo por feature em `routes/`, cada um com `lazyRouteComponent` apontando para `src/features/<id>/index.tsx`; o layout sem caminho `shell` (Titlebar + Sidebar + StatusBar) envolve as rotas de tela, o layout `chrome` (só Titlebar) o `/onboarding`, e `/__gallery` fica fora do build de produção (a checagem de `MODE` é estática). O roteador **não** é registrado nos tipos (`Register`): os caminhos vêm da tabela `features.ts` (dados), não de literais.
+- *Portão do onboarding*: componente da rota raiz que navega para `/onboarding` enquanto o contexto está `uninitialized`; nenhum outro estado de conexão bloqueia navegação.
+- *Slots*: quatro registros (`siteTabs`, `dashboardSections`, `attentionSources`, `settingsSections`) como singletons com `register()` que devolve o desfazer, ordenação determinística e `useSyncExternalStore`. Uma fonte de Atenção é um *hook*, não um dado, para ler stores e queries; o Dashboard renderiza um componente por fonte (número de hooks por render nunca muda).
+- *Tooltips do shell*: `title` nativo (como os controles da janela, T7) e não Radix: mantém Radix/motion fora do bundle inicial e funciona em botão desabilitado (o `title` fica no invólucro). O motivo de uma ação desabilitada também é texto no DOM (`sr-only`, `aria-describedby`).
+- *Bundle*: medido com `vite build` (gzip -9): antes do T10 89 kB; depois ~151 kB (React 19 ~65, TanStack Router ~26,5, i18next ~16, Query ~10, código do app ~30). O orçamento "~70 kB" do plano não é atingível com React 19 (piso ~81 kB com i18next); fica registrado para o gate do M2-E1-T21 re-baselinar. Carregados depois do primeiro paint: Radix Select do seletor de contexto, toasts, todas as telas.
+
+**Consequências.** Épicos posteriores trocam o placeholder em `features/<id>/index.tsx` e registram slots em `features/<id>/slots.ts`, sem editar arquivos do shell. A paleta (T14) lê `features.ts`. Remotos (M6) acrescentam linhas a `shell/contexts.ts`.
+

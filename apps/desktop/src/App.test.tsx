@@ -1,11 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { App } from "./App";
+import { renderApp } from "./app/testApp";
 
 describe("App", () => {
-  it("renders the placeholder shell with the product name", () => {
-    render(<App />);
-    expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "Forgebox" })).toBeInTheDocument();
+  it("renders the shell around the first route with the product name", async () => {
+    await renderApp();
+    expect(await screen.findByRole("main")).toBeInTheDocument();
+    expect(screen.getByTestId("titlebar")).toHaveTextContent("Forgebox");
+    expect(await screen.findByTestId("page-dashboard")).toBeInTheDocument();
   });
 });

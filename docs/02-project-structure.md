@@ -17,6 +17,7 @@ Forgebox/
 ├── docs/                         # ESTA pasta. Fonte da verdade. Ver docs/README.md
 │   ├── adr/                      # Architecture Decision Records (0001-..., 0002-...)
 │   └── design/                   # mockups, tokens exportados, specs de tela (png/svg/md)
+│       └── brand/                # (M2-E1-T22) ícone da marca: referência do usuário, master SVG, grades 16-32 px, paleta, folha de contato
 │
 ├── crates/
 │   ├── forge-core/
@@ -278,7 +279,7 @@ Forgebox/
 │   │   └── tests/                # processo real contra forgeboxd real em raiz temporária: commands.rs (tabela de TODOS os comandos,
 │   │                             #   --json e humano), output.rs, exit_codes.rs, lifecycle.rs (daemon automático), misc.rs; online.rs (#[ignore])
 │   ├── forge-helper/             # forgebox-helper.exe: executa as ops de forge_core::helper (ADR-0022/0024); lib + bin (test = false)
-│   │   ├── build.rs              # manifest requireAdministrator embutido (crate embed-manifest)
+│   │   ├── build.rs              # manifest requireAdministrator embutido (crate embed-manifest) + ícone da marca (embed-resource)
 │   │   ├── src/                  # lib.rs (Helper: validação léxica + canônica, elevação, run), args.rs, exchange.rs (arquivos de
 │   │   │                         #   troca), ops.rs (cada operação: plano/--dry-run e execução), log.rs (logs/helper.log), messages.rs
 │   │   └── tests/                # cli.rs (binário real com __COMPAT_LAYER=RunAsInvoker, --dry-run), manifest.rs (nível de execução)
@@ -300,6 +301,7 @@ Forgebox/
 │       ├── qa/                   # fixtures/scenarios/ (biblioteca tipada com `satisfies` contra generated.ts: empty, populated, heavy...); out/ (gitignored)
 │       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree)
 │       ├── dist-qa/              # saída de `vite build --mode qa` (gitignored; nunca sobre dist/)
+│       ├── scripts/              # gen-tokens.mjs (tokens:check), gen-icons.mjs (M2-E1-T22: icons / icons:check a partir de docs/design/brand)
 │       ├── src/
 │       │   ├── main.tsx / App.tsx / index.css   # casca placeholder; Tailwind com `source("./")` (não varre src-tauri/target)
 │       │   ├── App.test.tsx / test/setup.ts     # vitest + Testing Library
@@ -335,11 +337,11 @@ Forgebox/
 │       │   ├── build.rs          # tauri_build::build(); sem a feature, modo dev: compila sem Node e sem apps/desktop/dist
 │       │   ├── tauri.conf.json   # janela `main`, CSP estrita sem origens remotas, identifier dev.forgebox.app (vibrancy/updater/bundle: tarefas seguintes)
 │       │   ├── capabilities/     # main.json: permissões Tauri 2 só da janela `main`
-│       │   ├── app-icon.png      # fonte dos ícones: `pnpm tauri icon src-tauri/app-icon.png`
 │       │   ├── tests/            # bridge.rs (Server forge-ipc em memória: validação, retry com o mesmo request_id, 10 000
 │       │   │                     #   eventos em quadros, lag, política com perdas reais), bridge_daemon.rs (forgeboxd real em
-│       │   │                     #   raiz portátil temporária: start, kill → restart, daemon.stop → parado)
-│       │   ├── icons/
+│       │   │                     #   raiz portátil temporária: start, kill → restart, daemon.stop → parado), exe_icon.rs (ícone 32512 = icon.ico)
+│       │   ├── icons/            # GERADOS por `pnpm icons` (docs/design/brand): icon.ico (16-256, recurso 32512 de todos os EXEs),
+│       │   │                     #   conjunto do `tauri icon`, tray/<estado>-<light|dark>.ico e tray/remote-*.ico (M2-E1-T15)
 │       │   └── src/
 │       │       ├── main.rs / lib.rs  # lib.rs: Builder (Bridge gerenciado, on_page_load fecha streams da página) +
 │       │       │                     #   teste que exige `async` em todo #[tauri::command]

@@ -1,9 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import type { Bridge } from "./ipc/bridge";
 import { bootAppearance, followAppearance, isTauri } from "./app/appearance";
 import { initI18n } from "./i18n";
+import type { Bridge } from "./ipc/bridge";
+import { createTauriBridge } from "./ipc/tauriBridge";
+import { StateLayer } from "./state";
 import "./index.css";
 
 const container = document.getElementById("root");
@@ -16,11 +18,26 @@ bootAppearance();
 // Warm the IPC module so `ready` goes out right after the first frame.
 if (isTauri()) void import("@tauri-apps/api/core");
 
-// Core namespaces load before first paint (tiny JSON); the daemon connection comes later (T8).
-function render(root: HTMLElement, bridge?: Bridge) {
+/**
+ * One bridge-selection path: the qa-mode scenario bridge (bootQa, `window.__FORGEBOX_QA__`),
+ * else the Tauri bridge, else (plain dev outside Tauri) the scripted fakeBridge picked by
+ * `?scenario=`. The production build drops the fake branch.
+ */
+async function pickBridge(qaBridge: Bridge | undefined): Promise<Bridge> {
+  if (qaBridge !== undefined) return qaBridge;
+  if (!isTauri() && import.meta.env.MODE !== "production") {
+    const { createFakeBridge, scenarioFromSearch } = await import("./ipc/fakeBridge");
+    return createFakeBridge(scenarioFromSearch(window.location.search));
+  }
+  return createTauriBridge();
+}
+
+// Core namespaces load before first paint (tiny JSON); the daemon connection starts after the
+// first commit (ForgeStateProvider), so it never blocks the paint.
+function render(root: HTMLElement, bridge: Bridge) {
   createRoot(root).render(
     <StrictMode>
-      <App bridge={bridge} />
+      <App layer={new StateLayer(bridge)} />
     </StrictMode>,
   );
   // Live theme/material changes; never on the first-paint path.
@@ -44,14 +61,10 @@ qa.then((handle) =>
   .catch((error: unknown) => {
     console.warn("i18n init failed", error);
   })
-  .finally(() => {
-    // In qa mode the app must use the scenario bridge instead of createTauriBridge().
-    void qa.then(
-      (handle) => {
-        render(container, handle?.bridge);
-      },
-      () => {
-        render(container);
-      },
-    );
+  .then(async () => pickBridge((await qa)?.bridge))
+  .then((bridge) => {
+    render(container, bridge);
+  })
+  .catch((error: unknown) => {
+    console.error("could not start the app", error);
   });
