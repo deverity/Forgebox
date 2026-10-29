@@ -507,6 +507,7 @@ pub async fn boot_with(
         started_at,
         server: std::sync::OnceLock::new(),
         endpoint: endpoint.clone(),
+        settings_turn: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     });
 
     // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web

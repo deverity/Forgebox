@@ -5,7 +5,9 @@
 //!
 //! The table is keyed by version id (port owners are `pool/<version id>#worker-<n>`);
 //! spawning and stopping take a turn (one permit, with a timeout) so two callers never
-//! build the same pool twice. The table also answers the update engine
+//! build the same pool twice. Rendering a version's configuration takes another turn, so
+//! the quick settings of its series (`tool_series_settings`, ADR-0042) are read and
+//! written by one render at a time. The table also answers the update engine
 //! ([`forge_provider::update::PoolSwitcher`], blue/green through
 //! [`forge_fcgi::Switcher`]) and the swap ([`forge_fcgi::PoolDirectory`]).
 
@@ -21,7 +23,7 @@ use forge_core::ids::{ToolId, VersionId};
 use forge_core::model::port::PortReservations;
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::RuntimeDep;
-use forge_core::store::{StoreReader, ToolVersionRow};
+use forge_core::store::{StoreReader, ToolSeriesSettingsRepo, ToolVersionRow};
 use forge_core::sync::{LockLevel, OrderedMutex};
 use forge_fcgi::{
     PhpPool, PoolDeps, PoolDirectory, PoolHandle, PoolSpec, PoolState, PoolStatus, Recycle,
@@ -38,6 +40,7 @@ use tokio::sync::Semaphore;
 
 use crate::catalog;
 use crate::render;
+use crate::settings;
 use crate::vars::{PoolVars, RuntimeVars};
 
 /// Budget of a pool start (`min` workers warm).
@@ -65,6 +68,8 @@ struct Inner {
     /// Lock `daemon.tables` (leaf).
     table: OrderedMutex<BTreeMap<VersionId, PoolHandle>>,
     turn: Arc<Semaphore>,
+    /// One configuration render at a time (settings read and files written together).
+    render_turn: Arc<Semaphore>,
 }
 
 /// The pools. Cheap to clone.
@@ -111,6 +116,7 @@ impl PoolManager {
                 prefs,
                 table: OrderedMutex::new(LockLevel::DAEMON_TABLES, BTreeMap::new()),
                 turn: Arc::new(Semaphore::new(1)),
+                render_turn: Arc::new(Semaphore::new(1)),
             }),
         }
     }
@@ -198,16 +204,44 @@ impl PoolManager {
         Ok(handle)
     }
 
-    async fn render_config(&self, version: VersionId) -> Result<()> {
+    /// Renders the configuration of `version` (its `conf.d` overlay of the render target
+    /// and the quick settings of its series, `conf.d/90-forgebox-settings.ini` for PHP)
+    /// and publishes `config.rendered` for what changed. Does not touch the pool.
+    pub async fn render_config(&self, version: VersionId) -> Result<()> {
+        let _render = tokio::time::timeout(
+            TURN_TIMEOUT,
+            Arc::clone(&self.inner.render_turn).acquire_owned(),
+        )
+        .await
+        .map_err(|_| ForgeError::Timeout {
+            operation: "waiting for another pool configuration render".into(),
+            after: TURN_TIMEOUT,
+        })?
+        .map_err(|_| ForgeError::Internal("pool render turn closed".into()))?;
         let row = catalog::version(&self.inner.reader, version).await?;
         let tool = catalog::require_tool(&self.inner.registry, &row.tool_id)?;
         let config = (self.inner.config)();
         let mut ctx = render::base_context(&self.inner.root, &config, &tool.manifest, &row);
-        let owner = format!(
-            "{}@{}",
-            row.tool_id,
-            catalog::series_of(&tool.manifest, &row.version)
-        );
+        let series = catalog::series_of(&tool.manifest, &row.version);
+        let stored = {
+            let (tool_id, series) = (row.tool_id.clone(), series.clone());
+            self.inner
+                .reader
+                .query(move |conn| ToolSeriesSettingsRepo::new(conn).get(&tool_id, &series))
+                .await?
+        };
+        if let Some(php) = ctx.php.as_mut() {
+            php.settings = settings::context(&tool.manifest, &stored);
+        }
+        let mut vars = RuntimeVars::new(self.inner.layout.vars_for(&tool.manifest, &row));
+        vars.prefs = (self.inner.prefs)();
+        // A broken plan never blocks a pool: it renders without the settings (the API
+        // validated them before storing, so this is a manifest changed since).
+        let plans = settings::plans(&tool.manifest, &stored, &vars).unwrap_or_else(|err| {
+            tracing::warn!(tool = %row.tool_id, %series, %err, "quick settings not written");
+            Vec::new()
+        });
+        let owner = format!("{}@{series}", row.tool_id);
         let (root, engine, bus) = (
             self.inner.root.clone(),
             self.inner.engine.clone(),
@@ -219,7 +253,7 @@ impl PoolManager {
             Duration::from_secs(30),
             move || {
                 render::keep_present_extensions(&manifest, Path::new(&row.path), &mut ctx);
-                render::apply_target(&root, &engine, &bus, &ctx, &owner).map(|_| ())
+                render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans).map(|_| ())
             },
         )
         .await

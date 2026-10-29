@@ -50,6 +50,7 @@ use crate::instance_case::{self, DataDirProbe};
 use crate::pools::PoolManager;
 use crate::render;
 use crate::services::{ConfigRenderer, Entry, ServiceManager};
+use crate::settings;
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
@@ -461,12 +462,17 @@ impl WebManager {
         let case_sensitive = self
             .instance_case_sensitive(entry, config.case_sensitive, &data_dir)
             .await?;
+        // Stored keys plus the effective quick settings in the form the file gets
+        // (`On`, `1G`): a template that renders the whole file emits the same values the
+        // writers enforce (ADR-0042).
+        let mut values = entry.row.settings.clone();
+        values.extend(settings::context(manifest, &entry.row.settings));
         ctx.instance = InstanceModel {
             name: entry.row.name.clone(),
             ports: entry.ports.clone(),
             data_dir,
             case_sensitive,
-            settings: entry.row.settings.clone(),
+            settings: values,
         };
         if let Some(port) = entry.ports.get("http") {
             ctx.prefs.http_port = *port;
@@ -556,8 +562,31 @@ impl WebManager {
         report: &mut WebReport,
         pinned: Option<&forge_fcgi::UpstreamModel>,
     ) -> Result<bool> {
-        let Some(ctx) = self.instance_context(entry, report, pinned).await? else {
-            return Ok(false);
+        // The table holds what `services.set` stored after `entry` was cloned.
+        let mut entry = entry.clone();
+        if let Some(current) = self.inner.services.get(entry.row.id) {
+            entry.row.settings = current.row.settings;
+        }
+        let entry = &entry;
+        let plans = match (&entry.manifest, &entry.vars) {
+            (Some(manifest), Some(vars)) => settings::plans(manifest, &entry.row.settings, vars)
+                .unwrap_or_else(|err| {
+                    // Never blocks a start: the API validated the values it stored.
+                    tracing::warn!(instance = %entry.label(), %err, "quick settings not written");
+                    Vec::new()
+                }),
+            _ => Vec::new(),
+        };
+        let ctx = match self.instance_context(entry, report, pinned).await? {
+            Some(ctx) => ctx,
+            // No render target: only the files of its quick settings.
+            None => match (&entry.manifest, &entry.version) {
+                (Some(manifest), Some(version)) if !plans.is_empty() => {
+                    let config = (self.inner.config)();
+                    render::base_context(&self.inner.root, &config, manifest, version)
+                }
+                _ => return Ok(false),
+            },
         };
         let (root, engine, bus, owner) = (
             self.inner.root.clone(),
@@ -568,7 +597,7 @@ impl WebManager {
         let applied = forge_core::runtime::spawn_blocking_timeout(
             "rendering configuration",
             RENDER_TIMEOUT,
-            move || render::apply_target(&root, &engine, &bus, &ctx, &owner),
+            move || render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans),
         )
         .await?;
         report.written.extend(applied.written.iter().cloned());
