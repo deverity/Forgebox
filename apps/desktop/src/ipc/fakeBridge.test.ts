@@ -220,7 +220,11 @@ describe("fakeBridge daemon semantics", () => {
     const error = await rejection(call(fake, "db.list", {}));
     expect(error.code).toBe("not_implemented");
     expect(error.reason).toBe("not_implemented");
-    expect(error.args).toEqual({ method: "db.list", task: "M2-E3", what: "database management" });
+    expect(error.args).toEqual({
+      method: "db.list",
+      task: "M2-E3-T5",
+      what: "database management",
+    });
     const state = await fake.state(LOCAL_CONTEXT);
     expect(state.hello?.not_implemented).toEqual(NOT_IMPLEMENTED.map((row) => row.method));
     // Streams too.
@@ -231,7 +235,7 @@ describe("fakeBridge daemon semantics", () => {
     // A scenario decides its own list.
     const none = createFakeBridge({
       notImplemented: [],
-      handlers: { "db.list": () => ({ instances: [], databases: [] }) as never },
+      handlers: { "db.list": () => ({ instances: [], databases: [] }) },
     });
     await expect(call(none, "db.list", {})).resolves.toBeDefined();
   });

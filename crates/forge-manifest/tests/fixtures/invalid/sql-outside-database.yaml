@@ -1,0 +1,14 @@
+# expect: unknown_template_variable
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: sql-outside-database, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  config:
+    env:
+      A: "{{ sql }}"
+      B: "{{ database }}"
+      C: "{{ charset }}"

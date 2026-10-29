@@ -4,17 +4,23 @@
 use std::path::Path;
 
 use forge_ipc::api::methods::{
-    fs_parity_lint_case, fs_parity_site_case, sites_add, sites_alias, sites_down, sites_new,
-    sites_php, sites_proxy_add, sites_remove, sites_run, sites_secure, sites_server, sites_share,
-    sites_up,
+    fs_parity_lint_case, fs_parity_site_case, sites_add, sites_alias, sites_down, sites_driver,
+    sites_new, sites_php, sites_proxy_add, sites_remove, sites_run, sites_secure, sites_server,
+    sites_share, sites_up,
 };
 use forge_ipc::api::{
     Ack, CaseFixChoice, CaseLintReportDto, LintCaseParams, ListAction, NoParams, ParkParams,
     ParkedDirDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, ShareDto,
-    SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDto, SiteNewParams, SiteOpenParams,
-    SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto, SitePsParams, SiteRef,
-    SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams, SiteShareParams,
+    SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDriverParams, SiteDto, SiteEnvDto,
+    SiteEnvParams, SiteNewParams, SiteOpenParams, SiteOpenTarget, SiteParams, SitePhpParams,
+    SiteProcessDto, SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams,
+    SiteServerParams, SiteShareParams,
 };
+
+/// `forge site driver <site> auto` detects again (`driver: None`, ADR-0041).
+fn driver_param(word: &str) -> Option<String> {
+    (!word.eq_ignore_ascii_case("auto")).then(|| word.to_owned())
+}
 
 use crate::cli::{
     AliasAction, DirArg, LinkArgs, NewArgs, OnOff, OptDirArg, ParkArgs, PsArgs, RunAction, RunArgs,
@@ -23,8 +29,33 @@ use crate::cli::{
 use crate::context::Context;
 use crate::error::{CliError, CliResult};
 use crate::messages::Msg;
-use crate::output::{DIM, RED, YELLOW, or_dash, paint};
+use crate::output::{DIM, Output, RED, YELLOW, or_dash, paint};
 use crate::render;
+
+/// The variables of `sites.env`, one row per variable (masked secrets say so).
+fn dotenv_table(out: &Output, env: &SiteEnvDto) {
+    let rows = env
+        .files
+        .iter()
+        .flat_map(|file| {
+            file.vars.iter().map(|var| {
+                vec![
+                    var.key.clone(),
+                    match &var.value {
+                        Some(value) => value.clone(),
+                        None => paint(DIM, out.t(Msg::DotenvMasked)),
+                    },
+                    format!("{}:{}", file.name, var.line),
+                ]
+            })
+        })
+        .collect();
+    out.table(
+        &[out.t(Msg::HKey), out.t(Msg::HValue), out.t(Msg::HFile)],
+        rows,
+        Msg::NoDotenv,
+    );
+}
 
 pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
     match command {
@@ -79,6 +110,18 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                 .job::<sites_server, SiteDto>(SiteServerParams {
                     site: SiteRef::from(site),
                     server,
+                })
+                .await?;
+            ctx.out.emit(&site, |out| {
+                out.success(out.tf(Msg::SiteUpdated, &[&site.host]))
+            });
+            Ok(())
+        }
+        SiteCmd::Driver { site, driver } => {
+            let site: SiteDto = ctx
+                .job::<sites_driver, SiteDto>(SiteDriverParams {
+                    site: SiteRef::from(site),
+                    driver: driver_param(&driver),
                 })
                 .await?;
             ctx.out.emit(&site, |out| {
@@ -143,6 +186,16 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                     render::checks(out, &info.checks);
                 }
             });
+            Ok(())
+        }
+        SiteCmd::Env { site, reveal } => {
+            let env = ctx
+                .call::<forge_ipc::api::methods::sites_env>(SiteEnvParams {
+                    site: SiteRef::from(site),
+                    reveal,
+                })
+                .await?;
+            ctx.out.emit(&env, |out| dotenv_table(out, &env));
             Ok(())
         }
         SiteCmd::CaseSensitive { site, state } => {
@@ -403,6 +456,7 @@ pub async fn run_process(ctx: &Context, args: RunArgs) -> CliResult<()> {
                     since: None,
                     grep: None,
                     lines: None,
+                    before: None,
                 },
             )
             .await;
@@ -535,5 +589,12 @@ mod tests {
         let sites = [site];
         assert!(site_of_dir(&sites, r"C:\Forgebox\www\loja\").is_some());
         assert!(site_of_dir(&sites, r"C:\Forgebox\www\outra").is_none());
+    }
+
+    #[test]
+    fn driver_auto_detects_again() {
+        assert_eq!(driver_param("auto"), None);
+        assert_eq!(driver_param("AUTO"), None);
+        assert_eq!(driver_param("laravel").as_deref(), Some("laravel"));
     }
 }

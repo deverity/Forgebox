@@ -41,6 +41,10 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
+thiserror = { workspace = true }
+# Window shell (src/window.rs, ADR-0035): materials and single instance. No windows/windows-sys.
+window-vibrancy = { workspace = true }
+tauri-plugin-single-instance = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -90,6 +90,104 @@ pub struct ToolSpec {
     pub update: Update,
     #[serde(default, skip_serializing_if = "is_default")]
     pub ui: Ui,
+    /// Database capability (docs/04 §1.8): the daemon drives the declared client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<DatabaseSpec>,
+    /// Mail-catcher capability (docs/04 §1.9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<MailSpec>,
+}
+
+// ---------------------------------------------------------------- capabilities
+
+/// `spec.database` (docs/04 §1.8): everything the daemon needs to list, create and drop
+/// databases, dump/restore them and build connection strings, without per-tool code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseSpec {
+    /// Identifier-quoting and validation family.
+    pub protocol: DatabaseProtocol,
+    /// Name of a `service.daemon.ports[]` entry (rule 1 `invalid_reference`).
+    pub port: String,
+    /// Administrative account the client connects with.
+    pub admin_user: String,
+    /// Value of `{{ charset }}` when the caller gives none (`[A-Za-z0-9_]{1,32}`).
+    pub default_charset: String,
+    /// Hidden from `db.list`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub system_databases: Vec<String>,
+    /// Runs one SQL statement: `args` hold `{{ sql }}` and the client prints
+    /// tab-separated rows without a header.
+    pub client: ClientCommand,
+    pub queries: DatabaseQueries,
+    /// Writes the dump to stdout (`{{ database }}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dump: Option<ClientCommand>,
+    /// Reads the dump from stdin (`{{ database }}`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restore: Option<ClientCommand>,
+    /// Interactive client for `db.shell`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<ClientCommand>,
+    /// Connection string (`{{ database }}`, `{{ instance.ports.<n> }}`).
+    pub url: String,
+    /// Variables for a project's `.env`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+/// `spec.database.protocol`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DatabaseProtocol {
+    /// MySQL and MariaDB (backtick identifiers).
+    Mysql,
+    /// PostgreSQL (double-quoted identifiers).
+    Postgresql,
+}
+
+/// A client program: `exe` relative to the version folder (rule 6) and its argv.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ClientCommand {
+    pub exe: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+}
+
+/// `spec.database.queries`: SQL templates run through `client`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DatabaseQueries {
+    /// One database name per row (first column).
+    pub list: String,
+    /// Uses `{{ database }}` and may use `{{ charset }}`.
+    pub create: String,
+    /// Uses `{{ database }}`.
+    pub drop: String,
+}
+
+/// `spec.mail` (docs/04 §1.9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MailSpec {
+    /// API family the daemon adapter speaks.
+    pub api: MailApi,
+    /// Name of the HTTP/API port in `service.daemon.ports[]`.
+    pub http_port: String,
+    /// Name of the SMTP port in `service.daemon.ports[]`.
+    pub smtp_port: String,
+    /// `MAIL_*` variables for a project's `.env`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+/// `spec.mail.api`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub enum MailApi {
+    /// Mailpit REST API v1 (`/api/v1`).
+    #[serde(rename = "mailpit-v1")]
+    MailpitV1,
 }
 
 // ---------------------------------------------------------------- versioning
@@ -1219,6 +1317,154 @@ pub struct LogSpec {
     /// Parser id for the log viewer (`mysql`, `nginx-error`, `json`). Default: plain text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
+    /// Field mapping and rotation of a structured access log (`format: forgebox-json`);
+    /// consumed by forge-metrics and the log rotation (docs/04 section 1.2, docs/14 section 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<AccessSpec>,
+}
+
+/// `logs[].access`: where each field of a request lives in a JSON log line.
+///
+/// Every pointer is an RFC 6901 JSON pointer (`/request/host`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AccessSpec {
+    /// Request timestamp.
+    pub ts: AccessTimestamp,
+    /// Host header (a string; may carry a port).
+    pub host: String,
+    /// HTTP status (number or numeric string).
+    pub status: String,
+    /// Total request duration.
+    pub duration: AccessDuration,
+    /// Time spent in the upstream; omitted when the server does not log it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream_duration: Option<AccessUpstreamDuration>,
+    /// Response body bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<String>,
+    /// Request method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// Request URI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<AccessUri>,
+    /// Upstream address used (`$upstream_addr`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
+    /// The server writes escapes that are not JSON (Apache `\xhh`, `\v`): the parser
+    /// rewrites them before decoding.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub lenient_escapes: bool,
+    /// Rotation of this log. Default: strategy `none`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<AccessRotate>,
+}
+
+/// Unit of a numeric log field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AccessUnit {
+    /// Seconds, possibly fractional.
+    S,
+    Ms,
+    Us,
+    Ns,
+}
+
+/// `access.ts`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AccessTimestamp {
+    pub pointer: String,
+    pub unit: AccessUnit,
+    /// The timestamp is the instant the request arrived (Apache `%{msec}t`), not when it
+    /// finished: the end is `ts + duration`. Default `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub start: bool,
+}
+
+/// `access.duration`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AccessDuration {
+    pub pointer: String,
+    pub unit: AccessUnit,
+}
+
+/// How a multi-valued upstream duration (`0.010, 0.020 : 0.003`) is combined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AccessMulti {
+    #[default]
+    Sum,
+    Last,
+}
+
+/// `access.upstream_duration`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AccessUpstreamDuration {
+    pub pointer: String,
+    pub unit: AccessUnit,
+    /// Default `sum`.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub multi: AccessMulti,
+}
+
+/// `access.uri`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AccessUri {
+    pub pointer: String,
+    /// The value carries a query string (Caddy `request.uri`) that must be dropped.
+    /// Default `false`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub strip_query: bool,
+}
+
+/// How the daemon keeps an access log from growing forever.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, JsonSchema)]
+pub enum RotateStrategy {
+    /// The daemon renames the file (`access.json.1`...) and asks the server to reopen it.
+    #[serde(rename = "rename-reopen")]
+    RenameReopen,
+    /// The server rotates by itself (Caddy `roll_*`, configured in the template).
+    #[serde(rename = "self")]
+    SelfRotating,
+    /// Not rotated (provisional for Apache until M2-E5-T12).
+    #[default]
+    #[serde(rename = "none")]
+    None,
+}
+
+/// `access.rotate`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AccessRotate {
+    /// Size that triggers the rotation (`50MB`, `512KB`, `1GB`). Required by `rename-reopen`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<String>,
+    /// Rotated files kept. Default 5.
+    #[serde(
+        default = "default_rotate_keep",
+        skip_serializing_if = "is_default_rotate_keep"
+    )]
+    pub keep: u32,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub strategy: RotateStrategy,
+    /// How to make the server reopen the file after the rename: required (and only valid)
+    /// with `rename-reopen`. `command` or `signal`, like `reload`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reopen: Option<Reload>,
+}
+
+fn default_rotate_keep() -> u32 {
+    5
+}
+
+fn is_default_rotate_keep(keep: &u32) -> bool {
+    *keep == default_rotate_keep()
 }
 
 /// `service.daemon.data`.

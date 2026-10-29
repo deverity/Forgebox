@@ -26,6 +26,10 @@ describe("/__gallery", () => {
     ]) {
       expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
     }
+    // The surfaces/feedback section (M2-E1-T12) is mounted by the gallery.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Surfaces and feedback" }),
+    ).toBeInTheDocument();
     // The gallery shows the StatusDots with their label, so the text names each state.
     for (const state of ["Running", "Starting", "Stopped", "Failed", "Updating"]) {
       expect(screen.getAllByText(state).length).toBeGreaterThan(0);

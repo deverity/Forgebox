@@ -155,3 +155,82 @@ spec:
       - { label: "postgresql.conf", icon: file-text, open: config:postgresql_conf }
       - { label: "pg_hba.conf", icon: file-text, open: config:pg_hba }
       - { label: "Cliente psql", icon: terminal, shell: { path_prepend: ["{{ paths.version }}/bin"] } }
+
+  # Database capability (docs/04 section 1.8). PostgreSQL has no information_schema view of
+  # databases, so `list` reads pg_database (templates excluded). psql prints unaligned, tuples
+  # only, with a TAB separator (the YAML "\t" escape is a real tab).
+  database:
+    protocol: postgresql
+    port: main
+    admin_user: postgres
+    default_charset: UTF8
+    system_databases: [postgres, template0, template1]
+    client:
+      exe: bin/psql.exe
+      args:
+        - "-X"
+        - "-h"
+        - "127.0.0.1"
+        - "-p"
+        - "{{ instance.ports.main }}"
+        - "-U"
+        - "postgres"
+        - "-d"
+        - "postgres"
+        - "-v"
+        - "ON_ERROR_STOP=1"
+        - "-At"
+        - "-F"
+        - "\t"
+        - "-c"
+        - "{{ sql }}"
+    queries:
+      list: "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY datname"
+      create: "CREATE DATABASE \"{{ database }}\" ENCODING '{{ charset }}' TEMPLATE template0"
+      drop: "DROP DATABASE \"{{ database }}\""
+    dump:
+      exe: bin/pg_dump.exe
+      args:
+        - "-h"
+        - "127.0.0.1"
+        - "-p"
+        - "{{ instance.ports.main }}"
+        - "-U"
+        - "postgres"
+        - "--no-owner"
+        - "-d"
+        - "{{ database }}"
+    restore:
+      exe: bin/psql.exe
+      args:
+        - "-X"
+        - "-q"
+        - "-h"
+        - "127.0.0.1"
+        - "-p"
+        - "{{ instance.ports.main }}"
+        - "-U"
+        - "postgres"
+        - "-v"
+        - "ON_ERROR_STOP=1"
+        - "-d"
+        - "{{ database }}"
+    shell:
+      exe: bin/psql.exe
+      args:
+        - "-h"
+        - "127.0.0.1"
+        - "-p"
+        - "{{ instance.ports.main }}"
+        - "-U"
+        - "postgres"
+        - "-d"
+        - "postgres"
+    url: "postgresql://postgres@127.0.0.1:{{ instance.ports.main }}/{{ database }}"
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: "127.0.0.1"
+      DB_PORT: "{{ instance.ports.main }}"
+      DB_DATABASE: "{{ database }}"
+      DB_USERNAME: postgres
+      DB_PASSWORD: ""

@@ -255,8 +255,50 @@ fn check_clock(text: &str) -> CliResult<()> {
 
 // --- config / self-update -----------------------------------------------------------
 
+/// `key = value` lines of a nested configuration document, dotted keys in order.
+fn flatten_config(prefix: &str, value: &serde_json::Value, out: &mut Vec<(String, String)>) {
+    match value {
+        serde_json::Value::Object(map) if !map.is_empty() => {
+            for (key, child) in map {
+                let dotted = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                flatten_config(&dotted, child, out);
+            }
+        }
+        serde_json::Value::String(text) => out.push((prefix.to_owned(), text.clone())),
+        other => out.push((prefix.to_owned(), other.to_string())),
+    }
+}
+
 pub async fn config(ctx: &Context, command: ConfigCmd) -> CliResult<()> {
     let value = match command {
+        ConfigCmd::List => {
+            let doc = ctx
+                .call::<forge_ipc::api::methods::system_config_list>(NoParams {})
+                .await?;
+            ctx.out.emit(&doc, |out| {
+                let mut lines = Vec::new();
+                flatten_config("", &doc.values, &mut lines);
+                for (key, value) in lines {
+                    let set = doc
+                        .set_keys
+                        .iter()
+                        .any(|k| *k == key || key.starts_with(&format!("{k}.")));
+                    if set {
+                        out.line(format!("{key} = {value}"));
+                    } else {
+                        out.line(format!(
+                            "{key} = {value}  {}",
+                            paint(DIM, out.t(Msg::ConfigDefault))
+                        ));
+                    }
+                }
+            });
+            return Ok(());
+        }
         ConfigCmd::Get { key } => {
             ctx.call::<forge_ipc::api::methods::system_config_get>(ConfigGetParams { key })
                 .await?
@@ -354,6 +396,34 @@ fn mcp_exe() -> Option<PathBuf> {
             .map(|dir| dir.join(name))
             .find(|p| p.is_file())
     })
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::flatten_config;
+
+    #[test]
+    fn nested_values_become_dotted_lines() {
+        let doc = serde_json::json!({
+            "tld": ".test",
+            "dns": {"enabled": true, "port": 53},
+            "parked_dirs": ["www"],
+            "editor": {}
+        });
+        let mut lines = Vec::new();
+        flatten_config("", &doc, &mut lines);
+        let text: Vec<String> = lines.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        assert_eq!(
+            text,
+            [
+                "dns.enabled=true",
+                "dns.port=53",
+                "editor={}",
+                "parked_dirs=[\"www\"]",
+                "tld=.test"
+            ]
+        );
+    }
 }
 
 #[cfg(test)]

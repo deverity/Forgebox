@@ -29,6 +29,11 @@
 //! the desktop shell's materials) and [`process_creation_time`] (cold-start measurement);
 //! the GUI reaches both through `forge_ipc::base::platform`. M2-E1-T3 added
 //! [`ShellOpener`] (a URL in the default browser, a folder in Explorer; `ShellExecuteExW`).
+//! M2-E3-T3 added [`PtySpawner`] (a process in a pseudo console, inside a
+//! [`ProcessGroup`]; ConPTY) for the daemon's terminal sessions. M2-E5-T10 added
+//! [`SystemStats`] (machine CPU times, physical memory and volume space for the machine
+//! monitor and `forge top`) and [`ProcessStats::info`] with [`ImageNameCache`] (the image
+//! base name of a process, cached by `(pid, started_at)`).
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -52,9 +57,11 @@ pub mod privileged;
 pub mod probe;
 pub mod process;
 pub mod process_stats;
+pub mod pty;
 pub mod runtime_deps;
 pub mod secure_file;
 pub mod shell_open;
+pub mod system_stats;
 pub mod trust_store;
 pub mod user_env;
 #[cfg(windows)]
@@ -87,7 +94,14 @@ pub use process::{
     ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
     SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
 };
-pub use process_stats::{ProcStats, ProcessStats, process_creation_time, process_stats};
+pub use process_stats::{
+    FakeProcessStats, ImageNameCache, ProcStats, ProcessInfo, ProcessStats, process_creation_time,
+    process_stats,
+};
+pub use pty::{
+    PTY_CLOSE_TIMEOUT, PTY_RESIZE_TIMEOUT, PtyCommand, PtyConsole, PtyReader, PtySession, PtySize,
+    PtySpawner, PtyWriter, pty_spawner,
+};
 pub use runtime_deps::{
     RuntimeDep, RuntimeDeps, VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, VCREDIST_X64_URL,
     VcRedistFlavor, VcRuntimeVersion, runtime_deps,
@@ -95,6 +109,10 @@ pub use runtime_deps::{
 pub use secure_file::{NoFollow, NoFollowFile, final_path, open_no_follow};
 pub use shell_open::{
     RecordingShellOpener, ShellOpen, ShellOpener, is_executable_extension, shell_opener,
+};
+pub use system_stats::{
+    FakeSystemStats, MachineSample, SYSTEM_STATS_TIMEOUT, SystemStats, UnsupportedSystemStats,
+    VolumeSpace, sample_machine, system_stats, volume_space,
 };
 pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
 pub use user_env::{
@@ -270,6 +288,7 @@ pub struct Platform {
     case_sensitive_fs: Arc<dyn CaseSensitiveFs>,
     processes: Arc<dyn ProcessControl>,
     process_stats: Arc<dyn ProcessStats>,
+    system_stats: Arc<dyn SystemStats>,
     code_sign: Arc<dyn CodeSign>,
     file_acl: Arc<dyn FileAcl>,
     port_table: Arc<dyn PortTable>,
@@ -278,6 +297,7 @@ pub struct Platform {
     net_adapters: Arc<dyn NetAdapters>,
     user_env: Arc<dyn UserEnv>,
     shell_opener: Arc<dyn ShellOpener>,
+    pty: Arc<dyn PtySpawner>,
 }
 
 impl fmt::Debug for Platform {
@@ -290,14 +310,16 @@ impl fmt::Debug for Platform {
 
 impl Platform {
     /// Assembles a platform from parts (tests use fakes). Process operations default to
-    /// [`process_control`] with default options; process counters, code signing, file
-    /// ACLs, the TCP table, runtime detection, elevation, network adapters and the user
-    /// environment to the implementations of the running OS. See
+    /// [`process_control`] with default options; process and machine counters, code
+    /// signing, file ACLs, the TCP table, runtime detection, elevation, network adapters,
+    /// the user environment, the shell opener and pseudo consoles to the implementations
+    /// of the running OS. See
     /// [`Platform::with_processes`], [`Platform::with_process_stats`],
-    /// [`Platform::with_code_sign`], [`Platform::with_file_acl`],
+    /// [`Platform::with_system_stats`], [`Platform::with_code_sign`], [`Platform::with_file_acl`],
     /// [`Platform::with_port_table`], [`Platform::with_runtime_deps`],
-    /// [`Platform::with_elevation`], [`Platform::with_net_adapters`] and
-    /// [`Platform::with_user_env`].
+    /// [`Platform::with_elevation`], [`Platform::with_net_adapters`],
+    /// [`Platform::with_user_env`], [`Platform::with_shell_opener`] and
+    /// [`Platform::with_pty_spawner`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -309,6 +331,7 @@ impl Platform {
             case_sensitive_fs,
             processes: process_control(ProcessControlOptions::default()),
             process_stats: process_stats(),
+            system_stats: system_stats(),
             code_sign: default_code_sign(),
             file_acl: default_file_acl(),
             port_table: port_table(),
@@ -317,6 +340,7 @@ impl Platform {
             net_adapters: net_adapters(),
             user_env: user_env(),
             shell_opener: shell_opener(),
+            pty: pty_spawner(),
         }
     }
 
@@ -329,6 +353,12 @@ impl Platform {
     /// Replaces the per-process counters (fakes in tests).
     pub fn with_process_stats(mut self, process_stats: Arc<dyn ProcessStats>) -> Self {
         self.process_stats = process_stats;
+        self
+    }
+
+    /// Replaces the machine counters ([`FakeSystemStats`] in tests).
+    pub fn with_system_stats(mut self, system_stats: Arc<dyn SystemStats>) -> Self {
+        self.system_stats = system_stats;
         self
     }
 
@@ -380,6 +410,12 @@ impl Platform {
         self
     }
 
+    /// Replaces the pseudo console spawner (fakes in tests).
+    pub fn with_pty_spawner(mut self, pty: Arc<dyn PtySpawner>) -> Self {
+        self.pty = pty;
+        self
+    }
+
     /// `"windows"`, `"linux"`, `"macos"`...
     pub fn name(&self) -> &'static str {
         self.name
@@ -408,6 +444,12 @@ impl Platform {
     /// `spawn_blocking`).
     pub fn process_stats(&self) -> &Arc<dyn ProcessStats> {
         &self.process_stats
+    }
+
+    /// Machine CPU times, physical memory and volume space (shared, so it can move into
+    /// `spawn_blocking`; see [`sample_machine`] and [`volume_space`]).
+    pub fn system_stats(&self) -> &Arc<dyn SystemStats> {
+        &self.system_stats
     }
 
     /// Authenticode verification (shared, so it can move into `spawn_blocking`).
@@ -458,6 +500,11 @@ impl Platform {
     /// into `spawn_blocking`).
     pub fn shell_opener(&self) -> &Arc<dyn ShellOpener> {
         &self.shell_opener
+    }
+
+    /// Starts processes in pseudo consoles (shared, so it can move into `spawn_blocking`).
+    pub fn pty_spawner(&self) -> &Arc<dyn PtySpawner> {
+        &self.pty
     }
 }
 
@@ -624,6 +671,16 @@ mod tests {
                 .is_restricted_to_current_user(&missing)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn system_stats_can_be_replaced() {
+        let fake = Arc::new(FakeSystemStats::new(MachineSample {
+            mem_total: 42,
+            ..MachineSample::default()
+        }));
+        let platform = current().with_system_stats(fake);
+        assert_eq!(platform.system_stats().sample().unwrap().mem_total, 42);
     }
 
     #[test]

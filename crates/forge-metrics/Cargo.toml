@@ -20,6 +20,10 @@ jiff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+# Log tailer (tail.rs): one task per file, reads in spawn_blocking, bounded output channel.
+tokio = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+tempfile = { workspace = true }

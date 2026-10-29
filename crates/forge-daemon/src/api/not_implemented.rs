@@ -15,28 +15,42 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "M3-E1",
         "installing a local zip or folder as a tool version",
     ),
+    ("tools.releases", "M2-E2-T5", "listing provider releases"),
+    ("tools.plan", "M2-E2-T5", "install plans"),
+    ("tools.history", "M2-E2-T4", "update history"),
+    ("tools.icon", "M2-E2-T4", "catalog icons"),
     (
         "services.set",
-        "M2-E2",
+        "M2-E2-T7",
         "quick settings written into the managed config files",
     ),
-    ("php.ext_enable", "M2-E2", "per-version extension toggles"),
-    ("php.ext_disable", "M2-E2", "per-version extension toggles"),
-    ("php.xdebug", "M2-E2", "Xdebug toggle per PHP version"),
+    ("services.settings", "M2-E2-T7", "reading quick settings"),
+    ("services.update", "M2-E2-T10", "advanced instance settings"),
+    (
+        "php.ext_enable",
+        "M2-E2-T9",
+        "per-version extension toggles",
+    ),
+    (
+        "php.ext_disable",
+        "M2-E2-T9",
+        "per-version extension toggles",
+    ),
+    ("php.xdebug", "M2-E2-T9", "Xdebug toggle per PHP version"),
     (
         "sites.share",
         "M3-E3",
         "public tunnels (cloudflared, ngrok, expose)",
     ),
     ("sites.new", "M3-E2", "project scaffolding from a stack"),
-    ("db.list", "M2-E3", "database management"),
-    ("db.create", "M2-E3", "database management"),
-    ("db.drop", "M2-E3", "database management"),
-    ("db.export", "M2-E3", "database export"),
-    ("db.import", "M2-E3", "database import"),
-    ("db.shell", "M2-E3", "database shell"),
-    ("db.url", "M2-E3", "database URLs"),
-    ("db.open", "M2-E3", "database GUI launch"),
+    ("db.list", "M2-E3-T5", "database management"),
+    ("db.create", "M2-E3-T5", "database management"),
+    ("db.drop", "M2-E3-T5", "database management"),
+    ("db.export", "M2-E3-T6", "database export"),
+    ("db.import", "M2-E3-T6", "database import"),
+    ("db.shell", "M2-E3-T5", "database shell"),
+    ("db.url", "M2-E3-T5", "database URLs"),
+    ("db.open", "M3-E1", "database GUI launch"),
     (
         "net.lan_expose",
         "M3-E3",
@@ -48,13 +62,60 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "LAN exposure with firewall rules",
     ),
     ("net.lan_qr", "M3-E3", "LAN QR codes"),
-    ("mail.status", "M2-E3", "Mailpit integration"),
-    ("mail.open", "M2-E3", "Mailpit integration"),
-    ("mail.list", "M2-E3", "Mailpit integration"),
-    ("mail.show", "M2-E3", "Mailpit integration"),
-    ("mail.clear", "M2-E3", "Mailpit integration"),
-    ("mail.env", "M2-E3", "Mailpit integration"),
-    ("shell.open", "M2-E3", "integrated terminal"),
+    ("mail.status", "M2-E3-T7", "Mailpit integration"),
+    ("mail.open", "M2-E3-T7", "Mailpit integration"),
+    ("mail.list", "M2-E3-T7", "Mailpit integration"),
+    ("mail.show", "M2-E3-T7", "Mailpit integration"),
+    ("mail.mark_read", "M2-E3-T7", "Mailpit integration"),
+    ("mail.delete", "M2-E3-T7", "Mailpit integration"),
+    ("mail.attachment", "M2-E3-T7", "Mailpit integration"),
+    ("mail.clear", "M2-E3-T7", "Mailpit integration"),
+    ("mail.env", "M2-E3-T7", "Mailpit integration"),
+    ("logs.targets", "M2-E3-T8", "listing log targets"),
+    ("shell.open", "M2-E3-T9", "external terminal launcher"),
+    ("shell.open_editor", "M2-E3-T9", "editor launcher"),
+    (
+        "terminal.open",
+        "M2-E3-T4",
+        "daemon-hosted terminal sessions",
+    ),
+    (
+        "terminal.list",
+        "M2-E3-T4",
+        "daemon-hosted terminal sessions",
+    ),
+    (
+        "terminal.input",
+        "M2-E3-T4",
+        "daemon-hosted terminal sessions",
+    ),
+    (
+        "terminal.resize",
+        "M2-E3-T4",
+        "daemon-hosted terminal sessions",
+    ),
+    (
+        "terminal.close",
+        "M2-E3-T4",
+        "daemon-hosted terminal sessions",
+    ),
+    (
+        "terminal.subscribe",
+        "M2-E3-T4",
+        "daemon-hosted terminal sessions",
+    ),
+    (
+        "system.config_list",
+        "M2-E3-T10",
+        "configuration document with schema",
+    ),
+    ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
+    (
+        "services.kill_port_holder",
+        "M2-E3-T11",
+        "terminating a port holder",
+    ),
+    ("sites.env", "M2-E3-T11", "masked .env viewer"),
     ("stats.get", "M2-E5", "per-site metrics (forge-metrics)"),
     ("stats.top", "M2-E5", "per-site metrics (forge-metrics)"),
     ("stats.export", "M2-E5", "per-site metrics (forge-metrics)"),
@@ -81,6 +142,17 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
 /// Roadmap task of the editor and terminal targets of `sites.open` (the browser and the
 /// file manager already work; this is a partial method, so it is not in the table).
 pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
+
+/// Roadmap task of `logs.read {before_seq}` (paging back; `logs.read` itself works, so it
+/// is not in the table).
+pub const LOGS_BEFORE_SEQ_TASK: &str = "M2-E3-T8";
+
+/// Roadmap task of `tools.install|remove {target}` (extensions into a version of the tool
+/// they extend, `--for`; ADR-0041). The methods work without it.
+pub const EXTENSION_TARGET_TASK: &str = "M2-E2-T8";
+
+/// Roadmap task of `services.create {data_dir}` (ADR-0041). The method works without it.
+pub const SERVICES_DATA_DIR_TASK: &str = "M2-E2-T10";
 
 /// The method names of the table, in table order: what `system.hello` reports as
 /// `not_implemented` (API 1.1) so clients can disable the matching controls.
@@ -156,6 +228,117 @@ mod tests {
         sorted.sort();
         sorted.dedup();
         assert_eq!(sorted.len(), reported.len(), "duplicated row");
+    }
+
+    #[test]
+    fn e3_methods_name_their_task() {
+        // The E3 contract (ADR-0040): each backend task owns its methods.
+        for (method, task) in [
+            ("db.list", "M2-E3-T5"),
+            ("db.create", "M2-E3-T5"),
+            ("db.drop", "M2-E3-T5"),
+            ("db.url", "M2-E3-T5"),
+            ("db.shell", "M2-E3-T5"),
+            ("db.export", "M2-E3-T6"),
+            ("db.import", "M2-E3-T6"),
+            ("db.open", "M3-E1"),
+            ("mail.status", "M2-E3-T7"),
+            ("mail.open", "M2-E3-T7"),
+            ("mail.list", "M2-E3-T7"),
+            ("mail.show", "M2-E3-T7"),
+            ("mail.mark_read", "M2-E3-T7"),
+            ("mail.delete", "M2-E3-T7"),
+            ("mail.attachment", "M2-E3-T7"),
+            ("mail.clear", "M2-E3-T7"),
+            ("mail.env", "M2-E3-T7"),
+            ("logs.targets", "M2-E3-T8"),
+            ("shell.open", "M2-E3-T9"),
+            ("shell.open_editor", "M2-E3-T9"),
+            ("terminal.open", "M2-E3-T4"),
+            ("terminal.list", "M2-E3-T4"),
+            ("terminal.input", "M2-E3-T4"),
+            ("terminal.resize", "M2-E3-T4"),
+            ("terminal.close", "M2-E3-T4"),
+            ("terminal.subscribe", "M2-E3-T4"),
+            ("system.config_list", "M2-E3-T10"),
+            ("tls.ca_uninstall", "M2-E3-T11"),
+            ("services.kill_port_holder", "M2-E3-T11"),
+            ("sites.env", "M2-E3-T11"),
+        ] {
+            let err = error(method);
+            assert_eq!(err.code(), "not_implemented", "{method}");
+            assert!(
+                err.to_string().contains(&format!("(roadmap {task})")),
+                "{method}: {err}"
+            );
+            assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+        }
+        // terminal.unsubscribe is a server built-in (closes any stream of the connection).
+        assert!(!methods().iter().any(|m| m == "terminal.unsubscribe"));
+        assert!(crate::api::SERVER_BUILTINS.contains(&"terminal.unsubscribe"));
+    }
+
+    #[test]
+    fn e2_methods_name_their_task() {
+        // The E2 contract (ADR-0041): each backend task owns its methods.
+        for (method, task) in [
+            ("tools.releases", "M2-E2-T5"),
+            ("tools.plan", "M2-E2-T5"),
+            ("tools.history", "M2-E2-T4"),
+            ("tools.icon", "M2-E2-T4"),
+            ("services.settings", "M2-E2-T7"),
+            ("services.set", "M2-E2-T7"),
+            ("services.update", "M2-E2-T10"),
+            ("php.ext_enable", "M2-E2-T9"),
+            ("php.ext_disable", "M2-E2-T9"),
+            ("php.xdebug", "M2-E2-T9"),
+        ] {
+            let err = error(method);
+            assert_eq!(err.code(), "not_implemented", "{method}");
+            assert!(
+                err.to_string().contains(&format!("(roadmap {task})")),
+                "{method}: {err}"
+            );
+            assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+            assert_eq!(err.details().unwrap()["args"]["method"], method);
+        }
+        // Partial methods (they work without the new parameter) stay out of the table.
+        for method in ["tools.install", "tools.remove", "services.create"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        assert_eq!(EXTENSION_TARGET_TASK, "M2-E2-T8");
+        assert_eq!(SERVICES_DATA_DIR_TASK, "M2-E2-T10");
+        // Every E2 row names its task, not only the epic.
+        for (method, task, _) in NOT_IMPLEMENTED {
+            if task.starts_with("M2-E2") {
+                assert!(task.starts_with("M2-E2-T"), "{method}: {task}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_gui_fake_bridge_mirrors_the_table() {
+        // apps/desktop's fakeBridge answers not_implemented from this fixture; a stale copy
+        // would make the GUI tests disagree with the daemon.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/desktop/src/ipc/fixtures/not-implemented.json");
+        let fixture: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let rows: Vec<(String, String, String)> = fixture
+            .iter()
+            .map(|row| {
+                let field = |name: &str| row[name].as_str().unwrap_or_default().to_owned();
+                (field("method"), field("task"), field("what"))
+            })
+            .collect();
+        let table: Vec<(String, String, String)> = NOT_IMPLEMENTED
+            .iter()
+            .map(|(m, t, w)| ((*m).to_owned(), (*t).to_owned(), (*w).to_owned()))
+            .collect();
+        assert_eq!(
+            rows, table,
+            "update apps/desktop/src/ipc/fixtures/not-implemented.json"
+        );
     }
 
     #[test]

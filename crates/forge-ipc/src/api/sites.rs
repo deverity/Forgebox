@@ -10,7 +10,7 @@ use specta::Type;
 use super::common::{CheckDto, SiteRef};
 use super::services::ServiceState;
 use forge_core::Timestamp;
-use forge_core::ids::{SiteId, ToolId};
+use forge_core::ids::{InstanceId, SiteId, ToolId};
 
 /// Kind of site (docs/06 §1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -57,6 +57,11 @@ pub struct SiteProcessDto {
     pub pid: Option<u32>,
     pub port: Option<u16>,
     pub autostart: bool,
+    /// Instance that runs the process: the `instance_id` of its `service.*` events (which
+    /// also carry `site_id`), so a client follows the state live. `None` before the first
+    /// start. API 1.1 (ADR-0041).
+    #[serde(default)]
+    pub instance_id: Option<InstanceId>,
 }
 
 /// A site (vhost or proxy), docs/06 §1.
@@ -171,6 +176,17 @@ pub struct SiteAliasParams {
     pub site: SiteRef,
     pub action: ListAction,
     pub alias: String,
+}
+
+/// Params of `sites.driver` (job): overrides the framework driver of a site, or detects it
+/// again (`driver: None`, CLI `auto`) and stores the result; then re-renders. API 1.1
+/// (ADR-0041).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SiteDriverParams {
+    pub site: SiteRef,
+    /// `laravel`, `wordpress`, `generic-php`...; `None` = detect from the project files.
+    #[serde(default)]
+    pub driver: Option<String>,
 }
 
 /// What `sites.open` opens on the daemon's machine.
@@ -312,4 +328,48 @@ pub struct SiteNewParams {
     /// Parent folder (default: `www/`).
     #[serde(default)]
     pub dir: Option<String>,
+}
+
+/// Params of `sites.env` (the site's `.env` files, read by the daemon). `operator`;
+/// `reveal: true` needs `admin`. API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SiteEnvParams {
+    pub site: SiteRef,
+    /// Also send the values of secret keys.
+    #[serde(default)]
+    pub reveal: bool,
+}
+
+/// One variable of a `.env` file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct DotenvVarDto {
+    pub key: String,
+    /// `None` when the key is secret (`*PASS*`, `*SECRET*`, `*KEY*`, `*TOKEN*`, a DSN with
+    /// credentials) and `reveal` was not asked: masked values never leave the daemon.
+    pub value: Option<String>,
+    /// The key matches a secret pattern.
+    pub secret: bool,
+    /// 1-based line in the file.
+    pub line: u32,
+}
+
+/// A `.env` file of a site (`.env`, `.env.local`), in the order they apply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct DotenvFileDto {
+    /// File name (`.env.local`).
+    pub name: String,
+    /// Informative absolute path (for `shell.open_editor`).
+    pub path: String,
+    pub vars: Vec<DotenvVarDto>,
+}
+
+/// Result of `sites.env`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SiteEnvDto {
+    pub site_id: SiteId,
+    pub host: String,
+    /// Only the files that exist; empty when the site has none.
+    pub files: Vec<DotenvFileDto>,
+    /// Secret values are included (`reveal` by an admin).
+    pub revealed: bool,
 }

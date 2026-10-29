@@ -42,6 +42,8 @@ pub enum IssueCode {
     MissingProvider,
     /// A database tool with an automatic update policy (docs/05 §4).
     DatabaseAutoUpdate,
+    /// A `forgebox-json` access log without the `access` mapping (docs/04 section 1.2).
+    MissingAccess,
     /// The same id in two files of a registry.
     DuplicateId,
     /// Reference to a tool/extension/stack that the registry does not have.
@@ -72,6 +74,8 @@ pub enum IssueCode {
     RunNotAllowed,
     /// `post_install` writes outside the Forgebox root.
     WriteOutsideRoot,
+    /// A `spec.database` client `exe` that is absolute, has `..` or uses variables.
+    ExeOutsideVersion,
     // Rule 7.
     /// Icon not SVG, missing, larger than 20 KB or with scripts.
     InvalidIcon,
@@ -99,6 +103,7 @@ impl IssueCode {
             IssueCode::ServiceMismatch => "service_mismatch",
             IssueCode::MissingProvider => "missing_provider",
             IssueCode::DatabaseAutoUpdate => "database_auto_update",
+            IssueCode::MissingAccess => "missing_access",
             IssueCode::DuplicateId => "duplicate_id",
             IssueCode::UnknownTool => "unknown_tool",
             IssueCode::IndexMismatch => "index_mismatch",
@@ -112,6 +117,7 @@ impl IssueCode {
             IssueCode::RunOutsideVersion => "run_outside_version",
             IssueCode::RunNotAllowed => "run_not_allowed",
             IssueCode::WriteOutsideRoot => "write_outside_root",
+            IssueCode::ExeOutsideVersion => "exe_outside_version",
             IssueCode::InvalidIcon => "invalid_icon",
         }
     }
@@ -125,7 +131,8 @@ impl IssueCode {
             IssueCode::UnknownTemplateVariable | IssueCode::InvalidTemplate => 5,
             IssueCode::RunOutsideVersion
             | IssueCode::RunNotAllowed
-            | IssueCode::WriteOutsideRoot => 6,
+            | IssueCode::WriteOutsideRoot
+            | IssueCode::ExeOutsideVersion => 6,
             IssueCode::InvalidIcon => 7,
             _ => 1,
         }

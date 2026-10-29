@@ -33,8 +33,18 @@ impl fmt::Display for ApiVersion {
 /// The API version implemented by this crate. 1.1 (M2, ADR-0039) added, all additive:
 /// `tool.updates_available`, `net.port_check`, `HelloDto.not_implemented`,
 /// `DaemonStatusDto.cpu_pct|rss_bytes`, `sites.open` for browser/explorer and the
-/// `{reason, args}` convention of [`ApiError::details`]. Peers accept any `minor` of the
-/// same `major`.
+/// `{reason, args}` convention of [`ApiError::details`]; then (ADR-0040) `terminal.*`,
+/// `logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`,
+/// `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`, the
+/// events `mail.changed`, `terminal.exited`, `config.changed`, `tls.ca_untrusted`,
+/// `port.holder_killed` and new optional fields. `db.shell` answers a `ShellCommandDto`
+/// instead of `Ack` (never implemented before). Then (ADR-0041) `tools.releases`,
+/// `tools.plan`, `tools.history`, `tools.icon`, `services.settings`, `services.update`,
+/// `sites.driver`, `tls.list`, the catalog metadata of `CatalogEntryDto`/`ToolInfoDto`,
+/// the extension `target` of `tools.install|remove`, `ServiceCreateParams.data_dir`,
+/// `InstanceDto.data_dir|size_bytes`, `SiteProcessDto.instance_id`,
+/// `ServicePayload.site_id` and `CertificateDto.trusted|ca_thumbprint_sha256`. Peers
+/// accept any `minor` of the same `major`.
 pub const API_VERSION: ApiVersion = ApiVersion { major: 1, minor: 1 };
 
 /// Authorization profile of a connection (ADR-0009, rule 7; docs/13 §3.3). Ordered:
@@ -491,6 +501,15 @@ pub struct CheckDto {
     pub message: String,
     /// Suggested fix (a `forge` command or a short instruction).
     pub fix: Option<String>,
+    /// A method that fixes it, for a "Fix" button (`net.dns_enable`, `tls.ca_install`,
+    /// `shell.path_add`); clients run it only if it is in their own allowlist, then run the
+    /// check again. API 1.1 (ADR-0040).
+    #[serde(default)]
+    pub fix_method: Option<String>,
+    /// Params of `fix_method`.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Unknown>)]
+    pub fix_params: Option<serde_json::Value>,
 }
 
 /// Answer of every `*.subscribe` method. Notifications of the stream carry

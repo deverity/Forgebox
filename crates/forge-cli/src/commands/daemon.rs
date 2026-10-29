@@ -38,6 +38,7 @@ pub async fn run(ctx: &Context, command: DaemonCmd) -> CliResult<()> {
                     since: None,
                     grep: None,
                     lines: args.lines,
+                    before: None,
                 },
             )
             .await
@@ -194,6 +195,8 @@ fn version_check(ctx: &Context, daemon_version: &str, api: forge_ipc::api::ApiVe
             &[&cli, &daemon_version, &api, &API_VERSION],
         ),
         fix,
+        fix_method: None,
+        fix_params: None,
     }
 }
 

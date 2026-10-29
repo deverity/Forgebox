@@ -260,6 +260,14 @@ async fn reload(daemon: Daemon, params: ServiceTargetParams, ctx: Ctx) -> Result
 }
 
 async fn create(daemon: Daemon, params: ServiceCreateParams, ctx: Ctx) -> Result<JobDto> {
+    if params.data_dir.is_some() {
+        // API 1.1 (ADR-0041): ignoring it would put the data where the user did not ask.
+        return Err(ForgeError::NotImplementedYet {
+            method: "services.create".into(),
+            task: super::not_implemented::SERVICES_DATA_DIR_TASK.into(),
+            what: "choosing the data folder of a new instance (--data-dir)".into(),
+        });
+    }
     let (tool_id, version) = install::parse_spec(params.tool.as_str())?;
     let tool = catalog::require_tool(&daemon.registry, &tool_id)?;
     let rows = catalog::installed(&daemon.reader, &tool_id, Some(&tool.manifest)).await?;

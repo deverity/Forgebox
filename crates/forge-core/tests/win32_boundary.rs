@@ -2,8 +2,9 @@
 //! traits. This test scans the production sources of the workspace (every `src/` of the
 //! crates and of the desktop shell, `xtask` included) and fails on a direct Win32 binding
 //! anywhere else: the `windows`/`windows_sys` crate paths, the WDK namespaces, `extern
-//! "system"` blocks, or the appearance/process calls of M2-E1-T5. It also checks that only
-//! forge-core declares a dependency on the `windows`/`windows-sys` crates.
+//! "system"` blocks, the appearance/process calls of M2-E1-T5, the pseudo console calls of
+//! M2-E3-T3 or the machine counter and image name calls of M2-E5-T10. It also checks that
+//! only forge-core declares a dependency on the `windows`/`windows-sys` crates.
 //!
 //! The scan looks at Rust *code* only: a small lexer blanks comments and string/char
 //! literals first, so data that merely names a crate (for example the forbidden-deps list
@@ -30,6 +31,16 @@ const FORBIDDEN_CODE: &[&str] = &[
     "RtlGetVersion",
     "SM_REMOTESESSION",
     "GetProcessTimes",
+    // Pseudo consoles (M2-E3-T3): only platform/windows/conpty.rs.
+    "CreatePseudoConsole",
+    "ResizePseudoConsole",
+    "ClosePseudoConsole",
+    // Machine counters and process image names (M2-E5-T10): only
+    // platform/windows/system_stats.rs and process_stats.rs.
+    "GetSystemTimes",
+    "GlobalMemoryStatusEx",
+    "GetDiskFreeSpaceEx",
+    "QueryFullProcessImageName",
 ];
 
 /// An ABI name is itself a string literal, so this needle is matched against the code with

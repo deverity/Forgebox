@@ -14,11 +14,11 @@ use forge_ipc::api::methods::{
     tools_remove, tools_rollback, tools_search, tools_update, tools_use, tools_which,
 };
 use forge_ipc::api::{
-    Ack, AvailableVersionDto, CatalogEntryDto, CatalogSearchDto, JobDto, NoParams, SiteUsageDto,
-    ToolDiscoverDto, ToolDto, ToolInfoDto, ToolInstallParams, ToolInstallResultDto, ToolListDto,
-    ToolListParams, ToolParams, ToolPolicyParams, ToolRemoveParams, ToolRollbackParams,
-    ToolSearchParams, ToolUpdateDto, ToolUpdateParams, ToolUpdatesDto, ToolUseParams,
-    ToolVersionDto, ToolWhichParams, UpdatePolicy, WhichDto,
+    Ack, AvailableVersionDto, CatalogEntryDto, CatalogKind, CatalogSearchDto, JobDto, NoParams,
+    SiteUsageDto, ToolDiscoverDto, ToolDto, ToolInfoDto, ToolInstallParams, ToolInstallResultDto,
+    ToolListDto, ToolListParams, ToolParams, ToolPolicyParams, ToolRemoveParams,
+    ToolRollbackParams, ToolSearchParams, ToolUpdateDto, ToolUpdateParams, ToolUpdatesDto,
+    ToolUseParams, ToolVersionDto, ToolWhichParams, UpdatePolicy, WhichDto,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_manifest::schema::tool::ServiceKind;
@@ -61,6 +61,8 @@ async fn search(daemon: Daemon, params: ToolSearchParams, _ctx: Ctx) -> Result<C
         .into_iter()
         .map(|hit| {
             let entry = hit.entry;
+            // API 1.1 metadata (ADR-0041): what the index entry already says is filled here;
+            // color, icon, platforms, sizes and updates come with M2-E2-T4.
             CatalogEntryDto {
                 id: entry.id.clone(),
                 name: entry.name().to_owned(),
@@ -72,6 +74,16 @@ async fn search(daemon: Daemon, params: ToolSearchParams, _ctx: Ctx) -> Result<C
                 registry: entry.registry.clone(),
                 versions: entry.latest.clone().into_iter().collect(),
                 installed: installed.contains(&entry.id),
+                kind: convert::catalog_kind(entry.kind()),
+                summary: entry.summary().map(str::to_owned),
+                color: None,
+                icon_sha256: None,
+                platforms: Vec::new(),
+                native: true,
+                official: entry.official,
+                latest: entry.latest.clone(),
+                update_available: None,
+                size_estimate_bytes: None,
             }
         })
         .collect();
@@ -194,14 +206,40 @@ async fn info(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<ToolInfoD
             channel: Some("stable".into()),
         })
         .collect();
+    // The API 1.1 metadata (Markdown description, links, variants, suggests, extensions
+    // and stacks) is M2-E2-T4 (ADR-0041).
     Ok(ToolInfoDto {
         tool: tool_dto(&daemon, &tool, rows, &[]).await,
         available,
         used_by,
+        kind: CatalogKind::Tool,
+        description_md: None,
+        homepage: None,
+        docs: None,
+        changelog_url: None,
+        license: None,
+        variants: Vec::new(),
+        suggests: Vec::new(),
+        extends: None,
+        stack: None,
     })
 }
 
+/// `target` of `tools.install`/`tools.remove` (extensions, API 1.1) is M2-E2-T8: refused
+/// instead of ignored, which would install or remove more than asked.
+fn refuse_extension_target(method: &str, target: Option<&forge_ipc::api::ToolSpec>) -> Result<()> {
+    match target {
+        Some(_) => Err(ForgeError::NotImplementedYet {
+            method: method.into(),
+            task: super::not_implemented::EXTENSION_TARGET_TASK.into(),
+            what: "installing extensions into a target version (--for)".into(),
+        }),
+        None => Ok(()),
+    }
+}
+
 async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> Result<JobDto> {
+    refuse_extension_target("tools.install", params.target.as_ref())?;
     if params.specs.is_empty() {
         return Err(ForgeError::InvalidInput("nothing to install".into()));
     }
@@ -239,6 +277,7 @@ async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> R
 }
 
 async fn remove(daemon: Daemon, params: ToolRemoveParams, ctx: Ctx) -> Result<JobDto> {
+    refuse_extension_target("tools.remove", params.target.as_ref())?;
     if !params.confirm {
         return Err(ForgeError::InvalidInput(
             "removing a tool version is destructive: confirm must be true".into(),

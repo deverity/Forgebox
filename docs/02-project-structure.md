@@ -23,7 +23,8 @@ Forgebox/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── ids.rs            # ToolId (slug [a-z0-9-]) + newtypes ULID: VersionId, InstanceId, SiteId, JobId, EventId,
-│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts)
+│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts),
+│   │       │                     #   TerminalId (sessão de terminal do daemon, ADR-0040)
 │   │       ├── paths.rs          # ForgeRoot + todos os caminhos (bin/, etc/, data/...), discover(), init() com flag CS;
 │   │       │                     #   daemon_lock_file() (state/locks/forgeboxd.lock: evidência de saída limpa, ADR-0034)
 │   │       ├── error.rs          # ForgeError (thiserror), code() estável para API, exit_code() da CLI (docs/09)
@@ -70,8 +71,17 @@ Forgebox/
 │   │                             #   (conexão medida), spawn_detached (daemon.restart); impl em windows/host.rs (CreateMutexW,
 │   │                             #   INetworkCostManager);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
+│   │                             #   pty.rs: PtySpawner/PtyCommand/PtySession/PtyConsole/PtySize (pseudoconsole do terminal
+│   │                             #   integrado, processo membro do ProcessGroup antes de rodar; leitor/escritor bloqueantes,
+│   │                             #   resize e close com prazo; docs/03 §1.6; stub unsupported_platform fora do Windows);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
-│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
+│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI), info(pid) → ProcessInfo
+│   │                             #   (pid, started_at, image_path, image_name), ImageNameCache (nome base da imagem em cache por
+│   │                             #   (pid, started_at); retain/limite de 4.096), FakeProcessStats;
+│   │                             #   system_stats.rs: SystemStats (sample() → MachineSample: CPU ocupada/ociosa acumulada, CPUs
+│   │                             #   lógicas, RAM total/disponível; volume(path) → VolumeSpace {total, free, available}),
+│   │                             #   cpu_pct_since/cpu_share_since, sample_machine/volume_space (spawn_blocking com prazo),
+│   │                             #   FakeSystemStats, UnsupportedSystemStats (fora do Windows);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
 │   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
 │   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;
@@ -83,8 +93,15 @@ Forgebox/
 │   │                             #   trust_store.rs (CertOpenStore SYSTEM_REGISTRY, CertAdd/Find/Delete por SHA-1,
 │   │                             #   motor de cadeia com hExclusiveRoot + CERT_CHAIN_POLICY_SSL),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
-│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
-│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
+│   │                             #   conpty.rs (CreatePipe, CreatePseudoConsole, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+│   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
+│   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama; limpa a marca
+│   │                             #   "ignorar Ctrl+C" herdada antes do spawn),
+│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount,
+│   │                             #   QueryFullProcessImageNameW: image_path compartilhado com net_table.rs),
+│   │                             #   system_stats.rs (GetSystemTimes: ocupado = kernel − ocioso + usuário, GlobalMemoryStatusEx,
+│   │                             #   GetDiskFreeSpaceExW),
+│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + imagem do dono via process_stats.rs),
 │   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
 │   │                             #   dns_policy.rs (NRPT no registro, DataBasePath do hosts, DnsFlushResolverCache, ops via helper),
 │   │                             #   net_adapters.rs (GetAdaptersAddresses),
@@ -138,7 +155,10 @@ Forgebox/
 │   │   ├── src/
 │   │   │   ├── job.rs            # JobTree: Job Object raiz e por instância; nested() = Job de um pool (workers aninhados)
 │   │   │   ├── process.rs        # SpawnSpec: env mínimo + PATH determinístico, stdio Capture|Discard|File, console oculto
-│   │   │   ├── logs.rs           # bombas de pipe → .out.log (rotação 10 MiB × 5, backpressure) + broadcast drop-oldest
+│   │   │   ├── logs.rs           # bombas de pipe → hub por instância (seq continua os arquivos) → .out.log (rotação 10 MiB × 5,
+│   │   │   │                     #   backpressure) + broadcast drop-oldest
+│   │   │   ├── logs/set.rs       # domínio de seq dos logs (ADR-0046): LogSet Rotated (+ sidecar .seq)/Daily, snapshot, tail,
+│   │   │   │                     #   range, Follower (polling que atravessa rotação sem repetir nem recuar)
 │   │   │   ├── stop.rs           # cascata: stop.command → CTRL_BREAK → WM_CLOSE → TerminateJobObject
 │   │   │   ├── events.rs         # ServiceEventPayload: payloads service.* (v1), mesma forma de forge_ipc ServicePayload
 │   │   │   ├── health.rs         # probes tcp/http/command/pid, limiares, start_timeout, intervalo com jitter
@@ -216,7 +236,7 @@ Forgebox/
 │   ├── forge-ipc/                # protocolo: ADR-0015
 │   │   └── src/
 │   │       ├── api/              # contratos: um módulo de DTOs por grupo do docs/09 (daemon, tools, services, logs, php, sites,
-│   │       │                     #   db, net, tls, mail, shell, fs_parity, jobs, stats, remote, registry, system, fs, events) +
+│   │       │                     #   db, net, tls, mail, shell, terminal, fs_parity, jobs, stats, remote, registry, system, fs, events) +
 │   │       │                     #   common.rs (Role, MethodInfo, ApiError, SiteRef...), methods.rs (tabela única METHODS → marcadores,
 │   │       │                     #   Client, methods.ts), contracts.rs (export TS: generated.ts + methods.ts)
 │   │       ├── rpc.rs            # frames JSON-RPC 2.0 (request_id obrigatório, códigos de erro)
@@ -264,7 +284,7 @@ Forgebox/
 ├── apps/
 │   └── desktop/                  # Itens marcados (M2-E1-Tn) ainda não existem: chegam na tarefa indicada.
 │       ├── package.json          # pnpm@10.7.1, node >= 24; react 19, vite 8, tailwind 4, vitest, eslint 9, prettier, @tauri-apps/cli
-│       │                         #   (radix, motion, tanstack e afins entram com as tarefas que os usam)
+│       │                         #   (radix, motion e afins entram com as tarefas que os usam; zustand e @tanstack/react-query: M2-E1-T9)
 │       ├── pnpm-lock.yaml
 │       ├── index.html
 │       ├── vite.config.ts        # porta 1420 (devUrl do Tauri) + config do vitest (jsdom)
@@ -275,7 +295,10 @@ Forgebox/
 │       ├── src/
 │       │   ├── main.tsx / App.tsx / index.css   # casca placeholder; Tailwind com `source("./")` (não varre src-tauri/target)
 │       │   ├── App.test.tsx / test/setup.ts     # vitest + Testing Library
-│       │   ├── app/              # (M2-E1-T10) roteamento (tanstack-router), shell (sidebar, titlebar, command palette)
+│       │   ├── app/              # appearance.ts (M2-E1-T7: data-theme/data-vibrancy/data-effect/data-contrast em <html>,
+│       │   │                     #   boot por window.__FORGEBOX_SHELL__ + evento forge://appearance); shell/ (M2-E1-T7: Titlebar.tsx,
+│       │   │                     #   WindowControls.tsx, windowApi.ts = janela Tauri lazy + `ready` após duplo rAF);
+│       │   │                     #   (M2-E1-T10) roteamento (tanstack-router), sidebar, command palette
 │       │   ├── design/           # (M2-E1-T6, T11) tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
 │       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`;
@@ -283,8 +306,20 @@ Forgebox/
 │       │   │                     #   (comandos ipc_* + forge://connection, ack por quadro), api.ts (ForgeApi: call<M>, job<M> →
 │       │   │                     #   {job, done}, subscribe<M>; ULID por intenção), errors.ts (ForgeApiError, CLIENT_ERROR_CODES),
 │       │   │                     #   fakeBridge.ts (o fake único de vitest/Playwright: cenários, jobs, streams, quedas),
-│       │   │                     #   fixtures/ (bridge-dtos.json conferido pelo Rust; not-implemented.json conferido contra o daemon)
-│       │   ├── state/            # (M2-E1-T9) stores, event bridge
+│       │   │                     #   fixtures/ (bridge-dtos.json conferido pelo Rust; not-implemented.json conferido contra o daemon),
+│       │   │                     #   cli.ts (renderCli: cli_template → comando `forge`, golden de forge-ipc/tests/fixtures/cli_templates.json),
+│       │   │                     #   describeError.ts (ApiError/FailureReasonDto → causa i18n `errors:*` + ações com o comando `forge`)
+│       │   ├── state/            # camada de dados (M2-E1-T9, ADR-0034 adendo): layer.ts (StateLayer: um ContextRuntime por contexto,
+│       │   │                     #   QueryClient compartilhado), runtime.ts (stores + stream + snapshots + métricas + fila + RTT),
+│       │   │                     #   stores.ts (stores Zustand por assunto, Draft copy-on-write, reconcile), reducers.ts (EVENT_REDUCERS:
+│       │   │                     #   um reducer ou ignore por EventKind), effects.ts (JOB_EFFECTS: snapshots e queries a recarregar quando
+│       │   │                     #   um job ou uma chamada mutável termina), frame.ts (lote por rAF, timer oculto, teto), eventStream.ts
+│       │   │                     #   (events.subscribe: lagged/reset/end), snapshots.ts (SNAPSHOTS + resync com debounce), queries.ts
+│       │   │                     #   (chaves [contexto, método, params], EVENT_INVALIDATIONS), jobs.ts (watchJob: poll de 1 s), metrics.ts
+│       │   │                     #   (MetricsPoller: services.status a cada 2 s com consumidor visível e focado, anel de 30, req/s),
+│       │   │                     #   capabilities.ts (capabilityOf), reconnectQueue.ts (mutáveis do usuário por até 30 s), page.ts
+│       │   │                     #   (visível/focado), react.tsx (ForgeStateProvider + hooks: useInstance, useJob, useMetricsPoll,
+│       │   │                     #   useStatusTotals, useCapabilities, useForgeQuery...), testFixtures.ts (só testes)
 │       │   └── i18n/             # (M2-E1-T17) index.ts, format.ts, pseudo.ts, {pt-BR,en-US}/<ns>.json (tray/notifications também embutidos em src-tauri/src/i18n.rs)
 │       ├── src-tauri/            # crate `forgebox-desktop` (membro do workspace; depende só de forge-ipc, guarda: `cargo xtask arch-guard`)
 │       │   ├── Cargo.toml        # bin `Forgebox` (mainBinaryName), lib `forgebox_desktop`; feature `custom-protocol` embute dist
@@ -307,7 +342,15 @@ Forgebox/
 │       │       │                 #   (política pura de auto-start), streams.rs (bomba: quadros ≤ 16 ms/≤ 256, janela de 4
 │       │       │                 #   confirmados, lagged/reset/end; registro de streams), errors.rs (ClientError → ApiError)
 │       │       ├── tray.rs       # (M2-E1-T15) ícone/menu de bandeja, estados, ações rápidas
-│       │       ├── window.rs     # (M2-E1-T7) vibrancy/mica, titlebar custom, lembrar posição
+│       │       ├── window.rs     # (M2-E1-T7, ADR-0035) janela escondida até `ready`, choose_effect (Mica/Acrylic/opaco)
+│       │       │                 #   aplicado por window-vibrancy, reavaliação em tema/foco/prefs, fechar → bandeja,
+│       │       │                 #   segunda instância foca (tauri-plugin-single-instance), comandos ready/appearance_get
+│       │       ├── window_state.rs # posição/tamanho/maximizada por monitor (window-state.json), mínimo min(960×600, área)
+│       │       ├── data_dir.rs   # dados da GUI: FORGE_GUI_DATA_DIR → <raiz>/state/gui (portátil) → %LOCALAPPDATA%\Forgebox\gui;
+│       │       │                 #   root_initialized (state/ só com gui/ não conta)
+│       │       ├── prefs.rs      # prefs.json (theme, vibrancy, win10_acrylic, close_to_tray + chaves de outras features),
+│       │       │                 #   comandos gui_prefs_get/gui_prefs_set
+│       │       ├── perf.rs       # criação do processo → `ready` (perf_startup, `--perf-startup` imprime JSON e sai)
 │       │       └── autostart.rs  # (M2-E1-T18)
 │       └── public/               # (quando houver assets estáticos)
 │

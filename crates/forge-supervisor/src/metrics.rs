@@ -383,6 +383,7 @@ mod tests {
             instance_id: InstanceId::new(),
             tool: ToolId::new("mysql").unwrap(),
             instance: "default".into(),
+            site_id: None,
         };
         let t0 = Instant::now();
         let mut tracker = CpuTracker::new(t0);

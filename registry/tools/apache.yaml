@@ -136,7 +136,22 @@ spec:
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
         - { label: Error log, path: "{{ paths.logs }}/apache/error.log", format: apache-error }
-        - { label: Access log (JSON), path: "{{ paths.logs }}/apache/access.json", format: forgebox-json }
+        - label: Access log (JSON)
+          path: "{{ paths.logs }}/apache/access.json"
+          format: forgebox-json
+          access:
+            # LogFormat forgebox_json (crates/forge-render/templates/apache/httpd.conf.j2)
+            ts: { pointer: /t, unit: ms, start: true }   # %{msec}t: when the request arrived
+            host: /host                                  # %{Host}i, may carry the port
+            status: /s
+            duration: { pointer: /rt_us, unit: us }      # %D
+            bytes: /b
+            method: /m
+            uri: { pointer: /u }                         # %U has no query string
+            upstream: /up
+            lenient_escapes: true                        # \xhh and \v are not JSON
+            rotate:
+              strategy: none                             # provisional until M2-E5-T12
       autostart: true
 
   discover:

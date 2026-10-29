@@ -255,6 +255,37 @@ service:
     autostart: true
 ```
 
+#### `logs[].access` (access log estruturado)
+Todo log com `format: forgebox-json` **declara** `access` (regra 1, `missing_access`): é o mapeamento que o `forge-metrics` ([14](14-observability-metrics.md) §3.1) e a rotação usam para ler a linha JSON sem conhecer o id da tool. `access` em log de outro `format` é erro.
+
+```yaml
+logs:
+  - label: Access log (JSON)
+    path: "{{ paths.logs }}/nginx/access.json"
+    format: forgebox-json
+    access:
+      ts:   { pointer: /t, unit: s, start: false }   # unit: s | ms | us | ns; start: true = instante em que a requisição chegou (Apache), fim = ts + duration
+      host: /host                                    # string; pode ter porta
+      status: /s                                     # número ou string numérica
+      duration: { pointer: /rt, unit: s }
+      upstream_duration: { pointer: /ut, unit: s, multi: sum }   # multi: sum (padrão) | last, para "0.010, 0.020 : 0.003"; omitido se o servidor não registra
+      bytes: /b                                      # opcionais: bytes, method, uri, upstream
+      method: /m
+      uri: { pointer: /u, strip_query: false }       # strip_query: true quando o valor traz a query string (Caddy)
+      upstream: /up
+      lenient_escapes: false                         # true: o servidor escreve \xhh/\v (Apache) e o parser reescreve antes de decodificar
+      rotate:
+        max_size: 50MB                               # B | KB | MB | GB (binários); obrigatório em rename-reopen
+        keep: 5                                      # arquivos rotacionados mantidos (padrão 5)
+        strategy: rename-reopen                      # rename-reopen | self | none (padrão)
+        reopen: { command: "nginx.exe -s reopen ..." }   # ou { signal: ctrl-c | ctrl-break }; obrigatório (e só válido) em rename-reopen
+```
+
+- Cada `pointer` é um JSON Pointer (RFC 6901) para um membro de objeto: começa com `/`, sem token vazio, `~` só como `~0`/`~1`. Um ponteiro não pode ser igual nem prefixo de outro (o parser usa uma trie): `/request` e `/request/host` juntos são erro.
+- `strategy`: `rename-reopen` = o daemon renomeia (`access.json.1`...) e pede ao servidor que reabra o arquivo (`reopen`, com os mesmos `-p`/`-c` do `reload`); `self` = o próprio servidor rotaciona, configurado no template (Caddy: `roll_size`/`roll_keep` em `Caddyfile.j2`, em sincronia com `max_size`/`keep`); `none` = sem rotação (Apache, **provisório** até M2-E5-T12).
+- Manifestos oficiais: nginx (`/t` s, `/rt` s, `/ut` s somado, `rename-reopen` com `nginx.exe -s reopen`), Apache (`/t` ms com `start: true`, `/rt_us` µs, host com porta, `lenient_escapes`, rotação `none`) e Caddy (`/ts`, `/duration`, `/request/host`, `/request/uri` com `strip_query`, `self`).
+- Erros de schema (ponteiro ausente, unidade desconhecida) e de validação (`rename-reopen` sem `reopen`, ponteiro inválido) saem como `arquivo:linha:coluna` no `lint-registry`.
+
 ### 1.3 `config.quick_settings[]`
 `type`: `toggle`, `select`, `number`, `text`, `path`, `port`, `slider{min,max,step}`, `multi` (lista de checkboxes). O `format` do arquivo (`config.files[].format`: `ini | conf-directive | yaml | json | args | text`) decide como o valor é gravado; o alvo dentro do arquivo é **uma** destas chaves: `ini` (chave do ini), `directive` (conf-directive), `pointer` (caminho com pontos em yaml/json) ou `arg` (flag em `args`). Para `conf-directive` (Apache/Nginx), o motor edita só dentro do bloco gerenciado do arquivo. `text` é editável, mas sem quick settings.
 
@@ -268,6 +299,8 @@ service:
 | `apply` | todos | `reload` \| `restart` (padrão) \| `none` |
 | `also_set` | todos | outras chaves gravadas com o mesmo valor (`{{ value }}`) |
 
+Na API ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)), `services.settings` devolve cada quick setting com `kind`, opções, limites, `apply`, `also_set` e o valor atual/padrão tipado pelo `type` (toggle → booleano; number/slider/port → número; multi → lista; select/text/path → texto); `services.set` recebe o **texto** de cada um (`true`/`false`, números decimais, itens de `multi` separados por `,`) e as portas como `ports.<nome>=<porta>` (M2-E2-T7).
+
 ### 1.4 Contexto de template nos manifestos
 Strings dos manifestos só **substituem variáveis**: `{{ caminho.da.variavel }}`, com filtros opcionais (`{{ paths.etc | posix_path }}`). Literais, operadores e blocos `{% %}` são erro (regra 5). Variáveis permitidas:
 
@@ -276,6 +309,7 @@ Strings dos manifestos só **substituem variáveis**: `{{ caminho.da.variavel }}
 | Tool e Extension (qualquer campo de `spec`) | `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` (key declarada em `versioning.variants`; em Extension, as da tool alvo), `{{ paths.root\|bin\|etc\|data\|logs\|tmp\|www\|certs\|version }}`, `{{ instance.name\|data_dir }}`, `{{ instance.ports.<n> }}` (porta declarada em `service.daemon.ports`), `{{ instance.config.<id> }}` (id de `config.files`), `{{ prefs.<chave> }}` |
 | `spec.install` (Tool e Extension) | só `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` e `{{ paths.<dir> }}`: `install` roda **uma vez por versão, antes de existir instância** (`instance.*` e `prefs.*` são erro de lint, regra 5). Pastas e arquivos por instância (`logs/mysql/<instância>/`, `my.ini`) vêm do alvo de render e de `service.daemon.logs` no start |
 | `config.quick_settings[]` | + `{{ value }}` (valor escolhido, em `also_set`) |
+| `spec.database` | + `{{ database }}` (todos os campos menos `client`), `{{ charset }}` (só `queries.*`), `{{ sql }}` (só `client.args`); `{{ instance.ports.<n> }}` como nas demais (§1.8) |
 | `service.pool` | + `{{ port }}`, `{{ recycle.max_requests\|max_rss_mb\|max_age }}`, `{{ scaling.min\|max\|idle_timeout }}` |
 | Stack e Project | `{{ dir }}`, `{{ site.slug\|host\|root }}`, `{{ paths.* }}`, `{{ prefs.* }}`, `{{ instances.<tool>.<instance>.ports.<n>\|config.<id>\|name\|data_dir }}` (tool listada em `spec.tools`/`spec.services`) |
 
@@ -319,6 +353,53 @@ Placeholders de URL usam chaves simples: `{version}`, `{series}`, `{major}`, `{m
 | `service.pool` | `protocol: fastcgi`, `port_range: php-pools`, `scaling: {min: 2, max: 12, idle_timeout: 120s}`, `recycle: {max_requests: 500, max_rss_mb: 256, max_age: 1h}` |
 | `update` | `policy: notify`, `retention: 1`, `check_interval: 6h` |
 | `processes.*` (Project) | `restart: failure`, `autostart: true`, `proxy: false` |
+
+### 1.8 `spec.database` (capacidade de banco de dados)
+Bloco opcional e aditivo ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)): o daemon lista, cria e remove bancos, exporta/importa e monta strings de conexão **só a partir do manifesto**, sem código por tool. `db.*` aparece para toda instância cuja tool declara o bloco.
+
+```yaml
+database:
+  protocol: mysql                 # mysql | postgresql: só a família de aspas/validação de identificadores
+  port: main                      # nome de service.daemon.ports[] (regra 1, invalid_reference)
+  admin_user: root
+  default_charset: utf8mb4        # valor de {{ charset }} quando o chamador não informa ([A-Za-z0-9_]{1,32})
+  system_databases: [information_schema, mysql, performance_schema, sys]   # escondidos em db.list
+  client:                         # roda UMA instrução; imprime linhas separadas por TAB, sem cabeçalho
+    exe: bin/mysql.exe            # relativo à pasta da versão (regra 6: sem .., caminho absoluto ou variáveis)
+    args: ["--protocol=tcp", "--host=127.0.0.1", "--port={{ instance.ports.main }}", "--user=root",
+           "--batch", "--skip-column-names", "--execute={{ sql }}"]
+  queries:                        # SQL ANSI (information_schema) sempre que a família permite
+    list: "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name"   # nome na 1ª coluna
+    create: "CREATE DATABASE `{{ database }}` CHARACTER SET {{ charset }}"
+    drop: "DROP DATABASE `{{ database }}`"
+  dump: { exe: bin/mysqldump.exe, args: ["--port={{ instance.ports.main }}", "--user=root", "{{ database }}"] }   # stdout
+  restore: { exe: bin/mysql.exe, args: ["--port={{ instance.ports.main }}", "--user=root", "{{ database }}"] }    # stdin
+  shell: { exe: bin/mysql.exe, args: ["--port={{ instance.ports.main }}", "--user=root"] }                        # db.shell
+  url: "mysql://root@127.0.0.1:{{ instance.ports.main }}/{{ database }}"
+  env:                            # variáveis do .env do projeto
+    DB_CONNECTION: mysql
+    DB_PORT: "{{ instance.ports.main }}"
+    DB_DATABASE: "{{ database }}"
+```
+
+- **Variáveis novas, válidas só neste bloco:** `{{ database }}` (nome do banco), `{{ charset }}` (só em `queries.*`) e `{{ sql }}` (só em `client.args`). Fora dele continuam erro de regra 5 (`unknown_template_variable`); `{{ instance.ports.<n> }}` usa as portas declaradas, como no resto do manifesto.
+- `queries.create` e `queries.drop` precisam de `{{ database }}`; `client.args` precisa de `{{ sql }}`. `dump`, `restore` e `shell` são opcionais (sem eles a capacidade correspondente some da UI).
+- **Segurança:** o consumidor valida `database` (`^[A-Za-z0-9_]{1,64}$`) e `charset` (`^[A-Za-z0-9_]{1,32}$`) **antes** de substituir, e o valor substituído nunca é reexaminado. `forge_manifest::database::{DbVars, DatabaseSpec::render_*}` implementa isso e devolve `(exe, argv)` exatos; o daemon só executa o resultado. Nomes diferenciam maiúsculas (docs/15).
+- PostgreSQL não expõe bancos em `information_schema`; `queries.list` lê `pg_database` (sem templates), e `psql` usa `-At -F "\t"` (TAB real em YAML de aspas duplas).
+- Manifestos oficiais: `mysql`, `mariadb` (família `mysql`, clientes `mariadb`/`mariadb-dump`) e `postgresql`.
+
+### 1.9 `spec.mail` (capacidade de captura de e-mail)
+```yaml
+mail:
+  api: mailpit-v1                 # família de API que o adaptador do daemon fala (hoje só mailpit-v1: /api/v1)
+  http_port: http                 # nomes de service.daemon.ports[] (regra 1, invalid_reference)
+  smtp_port: smtp
+  env:                            # variáveis MAIL_* do .env do projeto
+    MAIL_MAILER: smtp
+    MAIL_HOST: "127.0.0.1"
+    MAIL_PORT: "{{ instance.ports.smtp }}"
+```
+O daemon escolhe o adaptador por `api`, nunca pelo id da tool. Manifesto oficial: `mailpit`.
 
 ---
 
@@ -458,10 +539,10 @@ spec:
 ## 6. Regras de lint (`cargo xtask lint-registry`)
 Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::parse::validate` (um manifesto). Cada problema tem um código estável (`IssueCode`, também chave de i18n) e a regra a que pertence.
 
-1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
+1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Todo log `forgebox-json` exige `access` (`missing_access`, §1.2). Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
 2. Provider sem checksum upstream (`http`/`github-release` sem `checksum`, `nginx-org`, `mysql`, `postgresql-edb`, `python-embed`) precisa de `releases[].sha256` em todas as releases.
 3. `service.daemon.ports[].range` e `service.pool.port_range` devem existir nas faixas conhecidas (`forge_core::config`, [03](03-engine.md) §4).
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).
-5. Variáveis de template desconhecidas (§1.4) ou expressões que não são variáveis = erro.
-6. `post_install.run` só pode invocar executáveis dentro de `{{ paths.version }}` (caminho relativo, resolvido lá e nunca via PATH; sem `..`, caminho absoluto ou variáveis); destinos de `copy`/`render`/`mkdir` começam com `{{ paths.<dir> }}` e não saem dele; `Extension.install.target` começa com `{{ paths.version }}`; registries de terceiros não podem declarar `run`.
+5. Variáveis de template desconhecidas (§1.4) ou expressões que não são variáveis = erro. `{{ sql }}`, `{{ database }}` e `{{ charset }}` só valem dentro de `spec.database` (§1.8, nos campos indicados); em qualquer outro lugar são `unknown_template_variable`.
+6. `post_install.run` só pode invocar executáveis dentro de `{{ paths.version }}` (caminho relativo, resolvido lá e nunca via PATH; sem `..`, caminho absoluto ou variáveis); destinos de `copy`/`render`/`mkdir` começam com `{{ paths.<dir> }}` e não saem dele; `Extension.install.target` começa com `{{ paths.version }}`; registries de terceiros não podem declarar `run`. Os `exe` de `spec.database` (`client`, `dump`, `restore`, `shell`) seguem a mesma ideia: caminho relativo à pasta da versão, sem `..`, caminho absoluto ou variáveis (`exe_outside_version`).
 7. Ícones em SVG ≤ 20 KB (arquivo em `registry/icons/` ou URL `https://` para `.svg`), sem `<script>`; tudo em `registry/icons/` é `.svg`.

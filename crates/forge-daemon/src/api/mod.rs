@@ -76,4 +76,5 @@ pub const SERVER_BUILTINS: &[&str] = &[
     "fs.list",
     "logs.unsubscribe",
     "metrics.unsubscribe",
+    "terminal.unsubscribe",
 ];

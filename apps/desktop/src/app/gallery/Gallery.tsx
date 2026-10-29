@@ -2,17 +2,23 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { createFormatters } from "../../i18n/format";
-import { Badge, BADGE_TONES } from "../../design/primitives/Badge";
-import { BUTTON_VARIANTS, Button } from "../../design/primitives/Button";
-import { Combobox } from "../../design/primitives/Combobox";
-import { IconButton } from "../../design/primitives/IconButton";
-import { Kbd } from "../../design/primitives/Kbd";
-import { SegmentedControl } from "../../design/primitives/SegmentedControl";
-import { Select } from "../../design/primitives/Select";
-import { Slider } from "../../design/primitives/Slider";
-import { SERVICE_STATES, StatusDot } from "../../design/primitives/StatusDot";
-import { TextField } from "../../design/primitives/TextField";
-import { Toggle } from "../../design/primitives/Toggle";
+import {
+  Badge,
+  BADGE_TONES,
+  BUTTON_VARIANTS,
+  Button,
+  Combobox,
+  IconButton,
+  Kbd,
+  SegmentedControl,
+  SERVICE_STATES,
+  Select,
+  Slider,
+  StatusDot,
+  TextField,
+  Toggle,
+} from "../../design/primitives";
+import { SurfacesGallery } from "../../design/gallery/SurfacesGallery";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -203,6 +209,8 @@ export default function Gallery() {
           <Kbd>{KEY_CTRL}</Kbd>+<Kbd>{KEY_K}</Kbd> {t("kbd.palette")}
         </span>
       </Section>
+
+      <SurfacesGallery />
     </main>
   );
 }

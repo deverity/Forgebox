@@ -1,0 +1,29 @@
+# ADR-0047 — Tail dos access logs: polling, identidade por creation time + primeiros bytes, checkpoints e amostragem em blocos
+
+**Status:** aceito · **Data:** 2026-10-29 · Implementa a parte de tail do desenho de métricas v1 ([docs/14](../14-observability-metrics.md) §3.2; a ADR das métricas v1, M2-E5-T1, a referencia). Segue a [ADR-0011](0011-actor-concurrency-model.md) (nada síncrono no runtime, nada bloqueia o controlador).
+
+## Contexto
+As métricas por vhost vêm do access log JSON de cada servidor web ([14](../14-observability-metrics.md) §2). O daemon precisa ler cada linha exatamente uma vez enquanto o servidor escreve, atravessar as rotações (nginx: rename + `-s reopen`, com workers que ainda escrevem no arquivo antigo; Caddy: rename próprio; delete + recriação; truncamento estilo *copytruncate*), retomar depois de um reinício do daemon sem contar duas vezes, e nunca segurar o runtime nem impedir a rotação do servidor. O plano previa identificar o arquivo pelo **creation time**. Medido nesta máquina (Windows 10 19045, NTFS): renomear `access.log` e criar outro `access.log`, ou apagar e recriar, dá ao novo arquivo **o mesmo creation time** do antigo (*tunneling* do NTFS: um nome removido há menos de 15 s devolve o creation time ao próximo arquivo criado com ele). Esses são justamente os casos de rotação. O std estável não expõe o file index (`windows_by_handle` é instável) e a regra do projeto é não usar Win32 fora de `forge-core/platform`.
+
+## Decisão
+1. **Polling com std, sem `notify` e sem Win32.** Uma task por arquivo; tick de 250 ms ± 10 %, recuo até 1 s sem novidade, 50 ms depois de bater o teto; todo I/O num `spawn_blocking` por tick (estado movido para dentro e de volta), ≤ 4 MiB por tick. `File::open` do std (share mode `READ | WRITE | DELETE`) para que rename/delete pelo servidor ou pelo daemon funcionem com o arquivo em tail.
+2. **Identidade = creation time + primeiros 256 bytes.** A cada tick: o handle aberto encolheu ou mudou os primeiros bytes → truncado (volta ao 0, mesmo que o conteúdo novo já tenha passado do offset). O caminho com o mesmo creation time, tamanho e LastWriteTime do handle (pelo `metadata`, sem acesso de leitura: antivírus não reescaneia) é o mesmo arquivo; senão é aberto e comparado por creation time + prefixo dos primeiros bytes. Um arquivo reescrito nunca troca de handle no mesmo tick (evita ler o mesmo arquivo por dois handles).
+3. **Rotação sem perda:** arquivo novo no caminho → o handle antigo é *aposentado* e drenado primeiro em todo tick até ficar 2 s parado no fim; caminho sumido → o handle continua lido e é solto depois de 5 s parado (na hora, se o nome está com exclusão pendente); arquivo ausente é aguardado e lido do 0.
+4. **Checkpoint `{creation_time, offset, head_len, head_hash}`** em todo lote (offset depois da última linha completa; `head_hash` = FNV-1a 64 dos primeiros `min(offset, 256)` bytes, estável entre builds, nunca os bytes). A persistência grava o do último lote aplicado na mesma transação dos dados (`metrics_tail` ganha `head_len` e `head_hash`). Retomada só com identidade igual, `len >= offset` e atraso ≤ 64 MiB; senão começa no fim com aviso.
+5. **Amostragem em blocos:** backlog > 8 MiB, teto atingido ou canal cheio → `k` dobra até 16 (senão cai pela metade). Uma linha decodificada por bloco de `k`, em posição sorteada no bloco; o lote leva `weight = k`. Linhas sempre contadas.
+6. **Saída só por `try_send`** num `mpsc` limitado do consumidor; canal cheio → o lote fica pendente e nada mais é lido (o arquivo é o buffer). Decodificação (`LineDecoder`) no pool de bloqueio, só nas linhas amostradas.
+
+## Alternativas rejeitadas
+- **Só creation time** (plano original): o tunneling faz rename + reabertura e delete + recriação parecerem o mesmo arquivo; o novo seria lido a partir do offset do antigo (perda) ou o antigo relido (duplicação).
+- **File index (`GetFileInformationByHandle`) por trait no `forge-core`:** identidade exata dentro de um volume, mas é Win32 para algo que o std resolve pelo conteúdo, e índices de arquivos apagados podem ser reusados. Fica como opção se aparecer um caso que os primeiros bytes não separem (dois arquivos com os mesmos 256 bytes iniciais; não acontece com timestamp na primeira linha).
+- **`notify` (ReadDirectoryChangesW):** atrasado para arquivo mantido aberto por outro processo (tamanho e LastWrite da entrada de diretório só atualizam no fechamento) e ainda exigiria o mesmo polling de identidade.
+- **Abrir o caminho com leitura a cada tick:** mais simples, mas um filtro antivírus pode reescanear o log modificado a cada abertura; o `metadata` sem acesso de leitura resolve o caso comum.
+- **Amostragem sistemática (1 a cada k fixo) ou Bernoulli:** a sistemática enviesa com tráfego periódico (dois sites alternando); a Bernoulli tem erro de contagem ~1 % em 200 mil linhas. Blocos com posição sorteada são não enviesados e exatos a menos de um bloco por troca de `k`.
+- **`send().await` no canal:** prenderia o tailer ao consumidor; o arquivo já é um buffer durável.
+
+## Consequências
+- Um tick em regime custa algumas chamadas de sistema (metadata dos dois lados, 256 bytes do handle, leituras); medido: maior `poll` do tailer no runtime ≤ 0,7 ms com backlog de 50 MiB (orçamento 50 ms).
+- A persistência (M2-E5-T7) guarda cinco colunas por arquivo; mudar o hash exige migração (por isso FNV-1a fixo, não o `DefaultHasher`).
+- Num reinício do daemon durante os 2 s de drenagem de um arquivo aposentado, as linhas ainda não lidas dele se perdem (o checkpoint aponta para o arquivo novo).
+- Com a semântica antiga de delete (pendente até o último handle), o tailer solta o arquivo assim que o drena, mas o nome fica ocupado até lá; nesta máquina o delete já é POSIX.
+- Consumidores do status (`watch`) não podem segurar o `Ref` através de `.await` (é uma trava de leitura do canal).

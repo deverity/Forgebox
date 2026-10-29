@@ -11,13 +11,11 @@
 //! are stored in network byte order in the low 16 bits of `dwLocalPort`.
 
 use std::collections::HashMap;
-use std::ffi::OsString;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
-use std::os::windows::ffi::OsStringExt;
-use std::os::windows::io::{AsRawHandle, OwnedHandle};
+use std::os::windows::io::OwnedHandle;
 use std::path::PathBuf;
 
-use ::windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, HANDLE, NO_ERROR};
+use ::windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, NO_ERROR};
 use ::windows::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCP_STATE, MIB_TCP_STATE_CLOSE_WAIT,
     MIB_TCP_STATE_CLOSED, MIB_TCP_STATE_CLOSING, MIB_TCP_STATE_DELETE_TCB, MIB_TCP_STATE_ESTAB,
@@ -27,12 +25,10 @@ use ::windows::Win32::NetworkManagement::IpHelper::{
     MIB_UDP6TABLE_OWNER_PID, MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_CLASS,
     TCP_TABLE_OWNER_PID_CONNECTIONS, TCP_TABLE_OWNER_PID_LISTENER, UDP_TABLE_OWNER_PID,
 };
-use ::windows::Win32::System::Threading::{
-    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
-};
-use ::windows::core::PWSTR;
+use ::windows::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
 
-use super::process::{open_process, win32_code};
+use super::process::open_process;
+use super::process_stats;
 use crate::error::{ForgeError, Result};
 use crate::platform::net_table::{PortOwner, PortProto, PortTable, TcpConnection, TcpState};
 
@@ -226,33 +222,7 @@ fn image_path(pid: u32) -> Option<PathBuf> {
         return None;
     }
     let process: OwnedHandle = open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION).ok()?;
-    let mut buffer = vec![0_u16; 1024];
-    loop {
-        let mut len = u32::try_from(buffer.len()).unwrap_or(u32::MAX);
-        // SAFETY: valid handle with query access; `buffer` holds `len` u16s.
-        let result = unsafe {
-            QueryFullProcessImageNameW(
-                HANDLE(process.as_raw_handle()),
-                PROCESS_NAME_WIN32,
-                PWSTR(buffer.as_mut_ptr()),
-                &mut len,
-            )
-        };
-        match result {
-            Ok(()) => {
-                buffer.truncate(len as usize);
-                return Some(PathBuf::from(OsString::from_wide(&buffer)));
-            }
-            Err(err)
-                if win32_code(&err) == Some(ERROR_INSUFFICIENT_BUFFER.0)
-                    && buffer.len() < 32 * 1024 =>
-            {
-                let bigger = buffer.len() * 2;
-                buffer.resize(bigger, 0);
-            }
-            Err(_) => return None,
-        }
-    }
+    process_stats::image_path(&process)
 }
 
 impl PortTable for WindowsPortTable {

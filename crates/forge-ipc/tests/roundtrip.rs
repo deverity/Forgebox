@@ -100,6 +100,7 @@ struct Fakes {
     stats: StatsDto,
     remote: RemoteClientListDto,
     registry: RegistryListDto,
+    terminal: TerminalDto,
 }
 
 fn fakes() -> Fakes {
@@ -157,6 +158,8 @@ fn fakes() -> Fakes {
                 rss_bytes: Some(400 << 20),
                 restarts: 0,
                 last_error: None,
+                data_dir: Some("C:/Forgebox/data/mysql/default".into()),
+                size_bytes: None,
             }],
             pools: vec![pool_dto()],
         },
@@ -168,6 +171,7 @@ fn fakes() -> Fakes {
                 source: LogSource::File,
                 level: Some("error".into()),
                 text: "upstream timed out".into(),
+                access: None,
             }],
             last_seq: 41,
         },
@@ -197,6 +201,23 @@ fn fakes() -> Fakes {
                 collation: None,
                 size_bytes: Some(1 << 20),
                 tables: Some(42),
+            }],
+            instances: vec![DbInstanceDto {
+                instance_id: InstanceId::new(),
+                instance: "mysql/default".into(),
+                tool: tool("mysql"),
+                version: "8.4.13".into(),
+                protocol: "mysql".into(),
+                state: ServiceState::Running,
+                port: Some(3306),
+                data_size_bytes: None,
+                capabilities: DbCapabilitiesDto {
+                    create: true,
+                    drop: true,
+                    shell: true,
+                    url: true,
+                    ..DbCapabilitiesDto::default()
+                },
             }],
         },
         net: DnsStatusDto {
@@ -297,6 +318,20 @@ fn fakes() -> Fakes {
                 last_refresh_at: None,
             }],
         },
+        terminal: TerminalDto {
+            id: TerminalId::new(),
+            title: "loja.test".into(),
+            shell: "pwsh".into(),
+            cwd: "C:/Forgebox/www/loja".into(),
+            site_id: Some(site_id),
+            cols: 120,
+            rows: 30,
+            pid: Some(4412),
+            started_at: ts(),
+            exit_code: None,
+            exited_at: None,
+            last_seq: 0,
+        },
     }
 }
 
@@ -325,6 +360,32 @@ fn fake_router(f: &Fakes) -> Router {
     answer!(stats_get, f.stats);
     answer!(remote_clients, f.remote);
     answer!(registry_list, f.registry);
+    answer!(terminal_open, f.terminal);
+    // A terminal stream: two output chunks (seq = byte offset past each), then `exited`
+    // (produced bytes + 1), as ADR-0040 specifies.
+    router.handle::<terminal_subscribe, _, _>(move |_params, ctx| async move {
+        let sender = ctx.open_stream(None)?;
+        let id = sender.id();
+        let mut offset = 0u64;
+        for chunk in ["hi\r\n", "PS C:\\> "] {
+            offset += chunk.len() as u64;
+            sender.send(&TerminalEnvelope {
+                subscription_id: id,
+                seq: offset,
+                item: TerminalItemDto::Output { data: chunk.into() },
+            });
+        }
+        sender.send(&TerminalEnvelope {
+            subscription_id: id,
+            seq: offset + 1,
+            item: TerminalItemDto::Exited { exit_code: Some(0) },
+        });
+        Ok(SubscriptionDto {
+            subscription_id: id,
+            stream: "terminal".into(),
+            last_seq: 0,
+        })
+    });
     // A metrics stream that sends three samples.
     let sample = f.stats.sites[0].clone();
     router.handle::<metrics_subscribe, _, _>(move |_params, ctx| {
@@ -400,6 +461,7 @@ async fn one_method_per_group_round_trips() {
             since_secs: Some(600),
             grep: None,
             limit: None,
+            before_seq: None,
         })
         .await
         .unwrap();
@@ -479,6 +541,58 @@ async fn one_method_per_group_round_trips() {
     }
     seen("metrics.subscribe");
 
+    // The terminal group (API 1.1, ADR-0040): a session and its byte stream.
+    let session = client
+        .terminal_open(TerminalOpenParams {
+            dir: None,
+            site: Some(SiteRef::from("loja.test")),
+            versions: BTreeMap::new(),
+            shell: None,
+            command: vec![],
+            env: BTreeMap::new(),
+            cols: 120,
+            rows: 30,
+            title: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(session, f.terminal);
+    seen("terminal.open");
+    let mut terminal = client
+        .terminal_subscribe(TerminalSubscribeParams {
+            id: session.id,
+            resume_from: None,
+        })
+        .await
+        .unwrap();
+    let mut received = Vec::new();
+    for _ in 0..3 {
+        let envelope = tokio::time::timeout(Duration::from_secs(5), terminal.next())
+            .await
+            .unwrap()
+            .unwrap();
+        received.push((envelope.seq, envelope.item));
+    }
+    assert_eq!(
+        received,
+        vec![
+            (
+                4,
+                TerminalItemDto::Output {
+                    data: "hi\r\n".into()
+                }
+            ),
+            (
+                12,
+                TerminalItemDto::Output {
+                    data: "PS C:\\> ".into()
+                }
+            ),
+            (13, TerminalItemDto::Exited { exit_code: Some(0) }),
+        ]
+    );
+    seen("terminal.subscribe");
+
     let all: BTreeSet<&str> = METHODS.iter().map(|m| m.group()).collect();
     assert_eq!(groups, all, "every API group is exercised");
 }
@@ -515,6 +629,7 @@ async fn long_running_methods_answer_with_a_job_and_report_through_events() {
             specs: vec![ToolSpec::from("php@8.3")],
             variant: None,
             yes: true,
+            target: None,
         })
         .await
         .unwrap();
