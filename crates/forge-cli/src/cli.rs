@@ -1110,6 +1110,60 @@ mod tests {
     }
 
     #[test]
+    fn logs_list_and_paging_flags() {
+        let cli = Cli::try_parse_from(["forge", "logs", "--list"]).unwrap();
+        match cli.command {
+            Command::Logs(args) => assert!(args.list && args.target.is_none()),
+            other => panic!("{other:?}"),
+        }
+        let cli = Cli::try_parse_from(["forge", "logs", "daemon", "--before", "42"]).unwrap();
+        match cli.command {
+            Command::Logs(args) => {
+                assert_eq!(args.target.as_deref(), Some("daemon"));
+                assert_eq!(args.before, Some(42));
+            }
+            other => panic!("{other:?}"),
+        }
+        for bad in [
+            &["forge", "logs"][..],
+            &["forge", "logs", "--list", "daemon"],
+            &["forge", "logs", "--list", "-f"],
+            &["forge", "logs", "daemon", "-f", "--before", "1"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mail_show_attachment_flags() {
+        assert!(Cli::try_parse_from(["forge", "mail", "show", "x", "--attachment", "2"]).is_ok());
+        for bad in [
+            &["forge", "mail", "show", "x", "-o", "a.pdf"][..],
+            &[
+                "forge",
+                "mail",
+                "show",
+                "x",
+                "--keep-unread",
+                "--attachment",
+                "2",
+            ],
+            &["forge", "mail", "read"],
+            &["forge", "mail", "delete"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
     fn invalid_tool_ids_are_usage_errors() {
         let err = Cli::try_parse_from(["forge", "tool", "info", "PHP!"]).unwrap_err();
         assert_eq!(err.exit_code(), 2);
