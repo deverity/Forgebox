@@ -67,7 +67,12 @@ ulid = { workspace = true }
 # (INetworkCostManager) and detached start of a new daemon (daemon.restart); the desktop
 # shell's system appearance (M2-E1-T5): HKCU Personalize/DWM values, DwmGetColorizationColor,
 # SystemParametersInfoW(SPI_GETHIGHCONTRAST), GetSystemMetrics(SM_REMOTESESSION) and
-# RtlGetVersion (declared locally in windows/appearance.rs).
+# RtlGetVersion (declared locally in windows/appearance.rs); the pseudo consoles of the
+# daemon's terminal sessions (M2-E3-T3): CreatePipe, Create/Resize/ClosePseudoConsole and
+# PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE; the machine counters and process image names
+# (M2-E5-T10): GetSystemTimes, GlobalMemoryStatusEx, GetDiskFreeSpaceExW and
+# QueryFullProcessImageNameW (features already listed: System_Threading,
+# System_SystemInformation, Storage_FileSystem).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
@@ -92,6 +97,7 @@ windows = { workspace = true, features = [
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
     "Win32_System_Ole",
+    "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
     "Win32_System_SystemInformation",
@@ -105,3 +111,8 @@ windows = { workspace = true, features = [
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+
+# Test-only Win32 (unit tests under platform/windows): the process snapshot that finds a
+# shell's descendants and the console host of a pseudo console (M2-E3-T3).
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = ["Win32_System_Diagnostics_ToolHelp"] }

@@ -4,13 +4,12 @@ import i18next from "i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Progress } from "./Progress";
 import { Skeleton, SkeletonSlot } from "./Skeleton";
-import { mockReducedMotion, restoreMotion } from "./testUtils";
+import { mockReducedMotion } from "../../test/matchMedia";
 import { ToastViewport } from "./Toast";
 import { toast } from "./toastStore";
 import { Tooltip } from "./Tooltip";
 import { surfaceMotion } from "./useSurfaceMotion";
 
-restoreMotion();
 afterEach(() => {
   act(() => {
     toast.clear();

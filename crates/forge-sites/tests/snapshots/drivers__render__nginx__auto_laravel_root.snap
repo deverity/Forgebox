@@ -1,0 +1,5 @@
+---
+source: crates/forge-sites/tests/drivers.rs
+expression: root_line(&auto_conf)
+---
+root "C:/fb-test/www/shop/public";

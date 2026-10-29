@@ -2,22 +2,23 @@
 //! installed versions (docs/09 §tool).
 
 use forge_ipc::api::methods::{
-    tools_add_local, tools_check_updates, tools_discover, tools_install, tools_remove,
-    tools_rollback, tools_update,
+    tools_add_local, tools_check_updates, tools_discover, tools_history, tools_install, tools_plan,
+    tools_releases, tools_remove, tools_rollback, tools_update,
 };
 use forge_ipc::api::{Ack, ToolVersionDto};
 use forge_ipc::api::{
-    ToolAddLocalParams, ToolDiscoverDto, ToolDto, ToolInstallParams, ToolInstallResultDto,
-    ToolListParams, ToolParams, ToolPolicyParams, ToolRemoveParams, ToolRollbackParams,
+    ToolAddLocalParams, ToolDiscoverDto, ToolDto, ToolHistoryParams, ToolInstallParams,
+    ToolInstallResultDto, ToolListParams, ToolParams, ToolPlanDto, ToolPlanParams, ToolPlanReason,
+    ToolPolicyParams, ToolReleasesDto, ToolReleasesParams, ToolRemoveParams, ToolRollbackParams,
     ToolSearchParams, ToolSpec, ToolUpdateParams, ToolUpdatesDto, ToolUseParams, ToolWhichParams,
-    UpdatePolicy,
+    UpdateHistoryDto, UpdatePolicy, UpdateStatusDto, UpdateTriggerDto,
 };
 
 use crate::cli::{PolicyArg, SearchArgs, ToolCmd, UseArgs, WhichArgs};
 use crate::context::Context;
 use crate::error::{CliError, CliResult};
 use crate::messages::Msg;
-use crate::output::{DIM, GREEN, YELLOW, or_dash, paint};
+use crate::output::{DIM, GREEN, Output, RED, YELLOW, format_bytes, or_dash, paint};
 use crate::parse;
 use crate::render;
 
@@ -100,19 +101,70 @@ pub async fn search(ctx: &Context, args: SearchArgs) -> CliResult<()> {
 pub async fn run(ctx: &Context, command: ToolCmd) -> CliResult<()> {
     match command {
         ToolCmd::List { installed, updates } => list(ctx, installed, updates).await,
-        ToolCmd::Info { tool } => info(ctx, tool).await,
-        ToolCmd::Install { specs, variant } => install(ctx, specs, variant).await,
+        ToolCmd::Info {
+            tool,
+            versions,
+            channel,
+            history,
+            series,
+            limit,
+        } => {
+            if versions {
+                releases(ctx, ToolReleasesParams { tool, channel }).await
+            } else if history {
+                update_history(
+                    ctx,
+                    ToolHistoryParams {
+                        tool,
+                        series,
+                        limit,
+                    },
+                )
+                .await
+            } else {
+                info(ctx, tool).await
+            }
+        }
+        ToolCmd::Install {
+            specs,
+            variant,
+            target,
+            dry_run,
+        } => {
+            let specs = specs
+                .iter()
+                .map(|s| spec(s))
+                .collect::<CliResult<Vec<_>>>()?;
+            let target = target.as_deref().map(spec).transpose()?;
+            if dry_run {
+                plan(
+                    ctx,
+                    ToolPlanParams {
+                        specs,
+                        stack: None,
+                        variant,
+                        target,
+                    },
+                )
+                .await
+            } else {
+                install(ctx, specs, variant, target).await
+            }
+        }
         ToolCmd::Remove {
             spec: text,
             keep_config,
+            target,
         } => {
             let spec = spec(&text)?;
+            let target = target.as_deref().map(self::spec).transpose()?;
             ctx.confirm(&ctx.out.tf(Msg::ConfirmRemoveTool, &[&spec]))?;
             let ack: Ack = ctx
                 .job::<tools_remove, Ack>(ToolRemoveParams {
                     spec: spec.clone(),
                     keep_config,
                     confirm: true,
+                    target,
                 })
                 .await?;
             ctx.out
@@ -288,16 +340,18 @@ async fn info(ctx: &Context, tool: forge_ipc::base::ids::ToolId) -> CliResult<()
     Ok(())
 }
 
-async fn install(ctx: &Context, specs: Vec<String>, variant: Option<String>) -> CliResult<()> {
-    let specs = specs
-        .iter()
-        .map(|s| spec(s))
-        .collect::<CliResult<Vec<_>>>()?;
+async fn install(
+    ctx: &Context,
+    specs: Vec<ToolSpec>,
+    variant: Option<String>,
+    target: Option<ToolSpec>,
+) -> CliResult<()> {
     let result: ToolInstallResultDto = ctx
         .job::<tools_install, ToolInstallResultDto>(ToolInstallParams {
             specs,
             variant,
             yes: ctx.global.yes,
+            target,
         })
         .await?;
     ctx.out.emit(&result, |out| {
@@ -306,6 +360,179 @@ async fn install(ctx: &Context, specs: Vec<String>, variant: Option<String>) -> 
         }
     });
     Ok(())
+}
+
+/// `forge tool info <tool> --versions`: the provider releases (`tools.releases`, a job).
+async fn releases(ctx: &Context, params: ToolReleasesParams) -> CliResult<()> {
+    let found: ToolReleasesDto = ctx.job::<tools_releases, ToolReleasesDto>(params).await?;
+    ctx.out.emit(&found, |out| releases_table(out, &found));
+    Ok(())
+}
+
+fn releases_table(out: &Output, found: &ToolReleasesDto) {
+    if found.stale {
+        let when = found
+            .fetched_at
+            .map_or_else(|| "-".to_owned(), render::time_cell);
+        out.warn(out.tf(Msg::ReleasesStale, &[&when]));
+    }
+    let rows = found
+        .releases
+        .iter()
+        .map(|r| {
+            vec![
+                r.version.clone(),
+                r.series.clone(),
+                or_dash(r.channel.as_deref()),
+                r.variants
+                    .iter()
+                    .map(|v| v.variant.values().cloned().collect::<Vec<_>>().join("-"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                or_dash(r.size_bytes.map(format_bytes)),
+                if r.installed {
+                    paint(GREEN, out.t(Msg::Yes))
+                } else {
+                    String::new()
+                },
+            ]
+        })
+        .collect();
+    out.table(
+        &[
+            out.t(Msg::HVersion),
+            out.t(Msg::HSeries),
+            out.t(Msg::HChannel),
+            out.t(Msg::HVariants),
+            out.t(Msg::HSize),
+            out.t(Msg::HInstalled),
+        ],
+        rows,
+        Msg::NoResults,
+    );
+}
+
+/// `forge tool info <tool> --history`: updates and rollbacks (`tools.history`).
+async fn update_history(ctx: &Context, params: ToolHistoryParams) -> CliResult<()> {
+    let history: UpdateHistoryDto = ctx.call::<tools_history>(params).await?;
+    ctx.out.emit(&history, |out| history_table(out, &history));
+    Ok(())
+}
+
+fn history_table(out: &Output, history: &UpdateHistoryDto) {
+    let rows = history
+        .entries
+        .iter()
+        .map(|e| {
+            let status = match e.status {
+                UpdateStatusDto::Started => paint(YELLOW, out.t(Msg::UpdateStatusStarted)),
+                UpdateStatusDto::Completed => paint(GREEN, out.t(Msg::UpdateStatusCompleted)),
+                UpdateStatusDto::Failed => paint(RED, out.t(Msg::UpdateStatusFailed)),
+                UpdateStatusDto::RolledBack => out.t(Msg::UpdateStatusRolledBack).to_owned(),
+            };
+            vec![
+                render::time_cell(e.started_at),
+                or_dash(e.from.as_deref()),
+                e.to.clone(),
+                out.t(match e.trigger {
+                    UpdateTriggerDto::Auto => Msg::UpdateTriggerAuto,
+                    UpdateTriggerDto::User => Msg::UpdateTriggerUser,
+                    UpdateTriggerDto::Rollback => Msg::UpdateTriggerRollback,
+                })
+                .to_owned(),
+                status,
+                e.error.clone().unwrap_or_default(),
+            ]
+        })
+        .collect();
+    out.table(
+        &[
+            out.t(Msg::HWhen),
+            out.t(Msg::HFrom),
+            out.t(Msg::HTo),
+            out.t(Msg::HTrigger),
+            out.t(Msg::HState),
+            out.t(Msg::HNote),
+        ],
+        rows,
+        Msg::NoHistory,
+    );
+}
+
+/// `forge tool install <specs> --dry-run`: what would be downloaded (`tools.plan`, a job;
+/// nothing is installed).
+async fn plan(ctx: &Context, params: ToolPlanParams) -> CliResult<()> {
+    let plan: ToolPlanDto = ctx.job::<tools_plan, ToolPlanDto>(params).await?;
+    ctx.out.emit(&plan, |out| plan_table(out, &plan));
+    Ok(())
+}
+
+fn plan_table(out: &Output, plan: &ToolPlanDto) {
+    let rows = plan
+        .items
+        .iter()
+        .map(|item| {
+            let size = item.size_bytes.map(|b| {
+                let text = format_bytes(b);
+                if item.size_estimated {
+                    format!("≈ {text}")
+                } else {
+                    text
+                }
+            });
+            let reason = match item.reason {
+                ToolPlanReason::Requested => out.t(Msg::PlanReasonRequested).to_owned(),
+                ToolPlanReason::Dependency => out.t(Msg::PlanReasonDependency).to_owned(),
+                ToolPlanReason::Stack => out.t(Msg::PlanReasonStack).to_owned(),
+                ToolPlanReason::Extension => out.tf(
+                    Msg::PlanReasonExtension,
+                    &[&item.target.as_ref().map_or("-", |t| t.as_str())],
+                ),
+            };
+            vec![
+                item.tool.to_string(),
+                item.canonical_name
+                    .clone()
+                    .unwrap_or_else(|| item.version.clone()),
+                or_dash(size),
+                reason,
+                if item.already_installed {
+                    paint(DIM, out.t(Msg::PlanInstalled))
+                } else {
+                    out.t(Msg::PlanDownload).to_owned()
+                },
+            ]
+        })
+        .collect();
+    out.table(
+        &[
+            out.t(Msg::HTool),
+            out.t(Msg::HVersion),
+            out.t(Msg::HSize),
+            out.t(Msg::HReason),
+            out.t(Msg::HState),
+        ],
+        rows,
+        Msg::NothingToPlan,
+    );
+    let downloads = plan.items.iter().filter(|i| !i.already_installed).count();
+    if downloads > 0 {
+        out.line("");
+        out.line(out.tf(
+            Msg::PlanTotal,
+            &[&format_bytes(plan.total_bytes), &downloads],
+        ));
+        if plan
+            .items
+            .iter()
+            .any(|i| !i.already_installed && i.size_estimated)
+        {
+            out.note(out.t(Msg::PlanEstimated));
+        }
+        if plan.unknown_size > 0 {
+            out.note(out.tf(Msg::PlanUnknownSize, &[&plan.unknown_size]));
+        }
+    }
 }
 
 async fn update(

@@ -78,6 +78,7 @@ async fn read_map(client: &Client, limit: u32) -> (BTreeMap<u64, String>, u64) {
             since_secs: None,
             grep: None,
             limit: Some(limit),
+            before_seq: None,
         })
         .await
         .unwrap();

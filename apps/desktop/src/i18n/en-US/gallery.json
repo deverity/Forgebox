@@ -1,0 +1,76 @@
+{
+  "title": "Component gallery",
+  "intro": "Every primitive with all variants and states. Development and QA only.",
+  "button": {
+    "title": "Button",
+    "primary": "Primary",
+    "secondary": "Secondary",
+    "ghost": "Ghost",
+    "destructive": "Destructive",
+    "disabled": "Disabled",
+    "loadingLabel": "Saving"
+  },
+  "iconButton": {
+    "title": "IconButton",
+    "label": "Refresh",
+    "disabled": "Refresh (disabled)",
+    "loading": "Refresh (loading)"
+  },
+  "toggle": {
+    "title": "Toggle",
+    "off": "Off",
+    "disabled": "Disabled",
+    "autoStart": "Start with Windows"
+  },
+  "select": {
+    "title": "Select",
+    "label": "PHP version",
+    "placeholder": "Choose a version",
+    "disabled": "PHP version (disabled)"
+  },
+  "combobox": {
+    "title": "Combobox",
+    "label": "Site",
+    "placeholder": "Search sites",
+    "empty": "No site found",
+    "disabled": "Site (disabled)"
+  },
+  "segmented": {
+    "title": "SegmentedControl",
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "disabled": "Theme (disabled)"
+  },
+  "slider": {
+    "title": "Slider",
+    "label": "Memory limit",
+    "disabled": "Memory limit (disabled)"
+  },
+  "textField": {
+    "title": "TextField",
+    "label": "Host name",
+    "hint": "Lowercase letters, digits and hyphens",
+    "invalid": "Use lowercase letters, digits and hyphens only",
+    "errorLabel": "Port",
+    "errorMessage": "Port already in use",
+    "disabled": "Disabled"
+  },
+  "badge": {
+    "title": "Badge",
+    "neutral": "Neutral",
+    "accent": "New",
+    "success": "OK",
+    "warning": "Attention",
+    "danger": "Error",
+    "info": "Updating"
+  },
+  "statusDot": {
+    "title": "StatusDot"
+  },
+  "kbd": {
+    "title": "Kbd",
+    "palette": "Open the command palette"
+  }
+}

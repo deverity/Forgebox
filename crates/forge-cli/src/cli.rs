@@ -224,6 +224,21 @@ pub enum ToolCmd {
     Info {
         #[arg(value_parser = parse_tool_id)]
         tool: ToolId,
+        /// Versões publicadas pelos providers (séries, variantes, tamanhos).
+        #[arg(long, conflicts_with = "history")]
+        versions: bool,
+        /// Só este canal (`stable`, `preview`); com --versions.
+        #[arg(long, requires = "versions")]
+        channel: Option<String>,
+        /// Histórico de atualizações e rollbacks.
+        #[arg(long)]
+        history: bool,
+        /// Só esta série (`8.3`); com --history.
+        #[arg(long, requires = "history")]
+        series: Option<String>,
+        /// Número máximo de entradas; com --history.
+        #[arg(long, requires = "history", value_name = "N")]
+        limit: Option<u32>,
     },
     /// Instala (`php@8.3` = última patch da série, `php@8.3.36` = exata).
     Install {
@@ -232,6 +247,12 @@ pub enum ToolCmd {
         /// Variante da build (`ts`, `nts`).
         #[arg(long)]
         variant: Option<String>,
+        /// Extensões: versão da ferramenta estendida onde instalar (`php@8.3`).
+        #[arg(long = "for", value_name = "TOOL@VERSAO")]
+        target: Option<String>,
+        /// Só mostra o plano (o que seria baixado e o tamanho), sem instalar.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Remove uma versão.
     Remove {
@@ -240,6 +261,9 @@ pub enum ToolCmd {
         /// Mantém a configuração em etc/.
         #[arg(long)]
         keep_config: bool,
+        /// Extensões: remove só desta versão da ferramenta estendida (`php@8.4`).
+        #[arg(long = "for", value_name = "TOOL@VERSAO")]
+        target: Option<String>,
     },
     /// Atualiza respeitando as políticas.
     Update {
@@ -328,6 +352,9 @@ pub enum ServiceCmd {
         /// Inicia junto com o daemon.
         #[arg(long)]
         autostart: bool,
+        /// Pasta de dados (padrão: a do manifesto, em data/).
+        #[arg(long, value_name = "DIR")]
+        data_dir: Option<PathBuf>,
     },
     /// Remove uma instância.
     Remove {
@@ -339,20 +366,79 @@ pub enum ServiceCmd {
     },
     /// Abre os arquivos de configuração no editor.
     Config { target: String },
-    /// Ajustes rápidos (`memory_limit=1G`).
+    /// Ajustes rápidos (`memory_limit=1G`); sem pares, lista os ajustes e os valores atuais.
     Set {
         target: String,
-        #[arg(required = true, value_name = "CHAVE=VALOR")]
+        #[arg(value_name = "CHAVE=VALOR")]
         settings: Vec<String>,
+    },
+    /// Configurações avançadas de uma instância (autostart, argumentos, ambiente, reinício,
+    /// versão da mesma série).
+    Update {
+        #[arg(value_name = "TOOL/NOME")]
+        instance: String,
+        /// Inicia junto com o daemon.
+        #[arg(long, conflicts_with = "no_autostart")]
+        autostart: bool,
+        /// Não inicia junto com o daemon.
+        #[arg(long)]
+        no_autostart: bool,
+        /// Argumento extra (repetível; substitui a lista atual).
+        #[arg(
+            long = "arg",
+            value_name = "ARG",
+            allow_hyphen_values = true,
+            conflicts_with = "no_args"
+        )]
+        args: Vec<String>,
+        /// Remove os argumentos extras.
+        #[arg(long)]
+        no_args: bool,
+        /// Variável de ambiente extra `CHAVE=VALOR` (repetível; substitui as atuais).
+        #[arg(long = "env", value_name = "CHAVE=VALOR", conflicts_with = "no_env")]
+        env: Vec<String>,
+        /// Remove as variáveis extras.
+        #[arg(long)]
+        no_env: bool,
+        /// Política de reinício.
+        #[arg(long = "restart", value_enum, value_name = "QUANDO")]
+        restart: Option<RestartArg>,
+        /// Reinícios permitidos na janela (`failure`).
+        #[arg(long, value_name = "N")]
+        restart_max: Option<u32>,
+        /// Janela da contagem de reinícios, em segundos.
+        #[arg(long, value_name = "SEGUNDOS")]
+        restart_window: Option<u32>,
+        /// Outra versão instalada da mesma série (`8.4.14`).
+        #[arg(long = "version", value_name = "VERSAO")]
+        version: Option<String>,
     },
     /// Mapa de portas e donos (inclui conflitos externos).
     Ports,
+    /// Encerra o processo de fora do Forgebox que ocupa uma porta (pede confirmação).
+    KillPort {
+        port: u16,
+        /// PID confirmado; sem ele, o dono atual da porta (`net.port_check`).
+        #[arg(long)]
+        pid: Option<u32>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum RestartArg {
+    Never,
+    Failure,
+    Always,
 }
 
 #[derive(Debug, Args)]
 pub struct LogsArgs {
     /// `nginx`, `nginx.error`, `php@8.3`, `mysql/default`, `site:loja.test`, `app:loja.test/web`.
-    pub target: String,
+    #[arg(required_unless_present = "list")]
+    pub target: Option<String>,
+    /// Lista os alvos de log disponíveis.
+    #[arg(long, conflicts_with_all = ["target", "follow", "since", "grep", "lines", "before"])]
+    pub list: bool,
     /// Acompanha novas linhas.
     #[arg(short, long)]
     pub follow: bool,
@@ -365,6 +451,9 @@ pub struct LogsArgs {
     /// Número máximo de linhas.
     #[arg(short = 'n', long, value_name = "N")]
     pub lines: Option<u32>,
+    /// Só linhas anteriores a este `seq` (páginas para trás).
+    #[arg(long, value_name = "SEQ", conflicts_with = "follow")]
+    pub before: Option<u64>,
 }
 
 // --- php ----------------------------------------------------------------------------
@@ -452,6 +541,12 @@ pub enum SiteCmd {
         #[arg(value_parser = parse_tool_id)]
         server: ToolId,
     },
+    /// Fixa o driver do framework (`laravel`, `wordpress`...) ou `auto` (detecta de novo).
+    Driver {
+        site: String,
+        #[arg(value_name = "DRIVER|auto")]
+        driver: String,
+    },
     /// Aliases de host.
     Alias {
         site: String,
@@ -470,6 +565,13 @@ pub enum SiteCmd {
     },
     /// Diagnóstico: DNS, certificado, pool, root, driver.
     Info { site: String },
+    /// Variáveis do `.env` do site (segredos mascarados).
+    Env {
+        site: String,
+        /// Mostra também os valores secretos (só admin).
+        #[arg(long)]
+        reveal: bool,
+    },
     /// Liga/desliga o modo case-sensitive do site.
     CaseSensitive { site: String, state: OnOff },
     /// Case Mismatch Finder (docs/15 §6).
@@ -674,6 +776,8 @@ pub enum TlsCmd {
         #[arg(long)]
         all: bool,
     },
+    /// Certificados dos sites (validade e confiança).
+    List,
     /// Exporta o certificado de um host.
     Export {
         host: String,
@@ -693,6 +797,12 @@ pub enum TlsCaCmd {
     /// Instala a CA no store de confiança.
     Install {
         /// `user` (CurrentUser\Root, sem admin) ou `machine` (LocalMachine\Root, via helper).
+        #[arg(long, value_enum, default_value = "user")]
+        scope: ScopeArg,
+    },
+    /// Remove a CA do store de confiança.
+    Uninstall {
+        /// `user` (CurrentUser\Root) ou `machine` (LocalMachine\Root, via helper).
         #[arg(long, value_enum, default_value = "user")]
         scope: ScopeArg,
     },
@@ -727,11 +837,40 @@ pub enum MailCmd {
     List {
         #[arg(long)]
         unread: bool,
+        /// Busca (`from:`, `subject:`, texto livre).
+        #[arg(long, value_name = "TEXTO")]
+        search: Option<String>,
         #[arg(long)]
         limit: Option<u32>,
+        /// Pula as N mensagens mais novas (paginação).
+        #[arg(long, value_name = "N")]
+        offset: Option<u32>,
     },
+    /// Mostra uma mensagem (e a marca como lida) ou baixa um anexo.
     Show {
         id: String,
+        /// Não marca como lida.
+        #[arg(long, conflicts_with = "attachment")]
+        keep_unread: bool,
+        /// Parte do anexo (`mail show <id> --json` lista as partes).
+        #[arg(long, value_name = "PARTE")]
+        attachment: Option<String>,
+        /// Arquivo de saída do anexo.
+        #[arg(short, long, requires = "attachment")]
+        output: Option<PathBuf>,
+    },
+    /// Marca mensagens como lidas (ou não lidas).
+    Read {
+        #[arg(required = true, value_name = "ID")]
+        ids: Vec<String>,
+        /// Marca como não lidas.
+        #[arg(long)]
+        unread: bool,
+    },
+    /// Apaga mensagens (pede confirmação).
+    Delete {
+        #[arg(required = true, value_name = "ID")]
+        ids: Vec<String>,
     },
     Clear,
     /// Imprime MAIL_* para o .env.
@@ -970,6 +1109,8 @@ pub enum FrequencyArg {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCmd {
+    /// Toda a configuração (valores efetivos; `--json` traz padrões e o JSON Schema).
+    List,
     Get {
         key: String,
     },
@@ -1049,6 +1190,179 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(Cli::try_parse_from(["forge", "jobs", "watch", "01ABC"]).is_ok());
+    }
+
+    #[test]
+    fn logs_list_and_paging_flags() {
+        let cli = Cli::try_parse_from(["forge", "logs", "--list"]).unwrap();
+        match cli.command {
+            Command::Logs(args) => assert!(args.list && args.target.is_none()),
+            other => panic!("{other:?}"),
+        }
+        let cli = Cli::try_parse_from(["forge", "logs", "daemon", "--before", "42"]).unwrap();
+        match cli.command {
+            Command::Logs(args) => {
+                assert_eq!(args.target.as_deref(), Some("daemon"));
+                assert_eq!(args.before, Some(42));
+            }
+            other => panic!("{other:?}"),
+        }
+        for bad in [
+            &["forge", "logs"][..],
+            &["forge", "logs", "--list", "daemon"],
+            &["forge", "logs", "--list", "-f"],
+            &["forge", "logs", "daemon", "-f", "--before", "1"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mail_show_attachment_flags() {
+        assert!(Cli::try_parse_from(["forge", "mail", "show", "x", "--attachment", "2"]).is_ok());
+        for bad in [
+            &["forge", "mail", "show", "x", "-o", "a.pdf"][..],
+            &[
+                "forge",
+                "mail",
+                "show",
+                "x",
+                "--keep-unread",
+                "--attachment",
+                "2",
+            ],
+            &["forge", "mail", "read"],
+            &["forge", "mail", "delete"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn e2_flags_parse_and_conflict() {
+        // ADR-0041: the new forms of the E2 contract.
+        for ok in [
+            &["forge", "tool", "info", "php", "--versions"][..],
+            &[
+                "forge",
+                "tool",
+                "info",
+                "php",
+                "--versions",
+                "--channel",
+                "preview",
+            ],
+            &[
+                "forge",
+                "tool",
+                "info",
+                "php",
+                "--history",
+                "--series",
+                "8.3",
+                "--limit",
+                "5",
+            ],
+            &["forge", "tool", "install", "php@8.4", "nginx", "--dry-run"],
+            &["forge", "tool", "install", "xdebug", "--for", "php@8.4"],
+            &[
+                "forge",
+                "tool",
+                "remove",
+                "xdebug@3.4.1",
+                "--for",
+                "php@8.4",
+            ],
+            &["forge", "service", "set", "mysql/default"],
+            &[
+                "forge",
+                "service",
+                "create",
+                "mysql@8.4",
+                "x",
+                "--data-dir",
+                r"D:\data",
+            ],
+            &[
+                "forge",
+                "service",
+                "update",
+                "mysql/default",
+                "--no-autostart",
+                "--restart",
+                "always",
+            ],
+            &[
+                "forge",
+                "service",
+                "update",
+                "mysql/default",
+                "--arg",
+                "--skip-grant-tables",
+                "--env",
+                "TZ=UTC",
+            ],
+            &[
+                "forge",
+                "service",
+                "update",
+                "mysql/default",
+                "--version",
+                "8.4.14",
+            ],
+            &["forge", "site", "driver", "loja.test", "auto"],
+            &["forge", "tls", "list"],
+        ] {
+            Cli::try_parse_from(ok).unwrap_or_else(|e| panic!("{ok:?}: {e}"));
+        }
+        for bad in [
+            &["forge", "tool", "info", "php", "--versions", "--history"][..],
+            &["forge", "tool", "info", "php", "--channel", "stable"],
+            &["forge", "tool", "info", "php", "--series", "8.3"],
+            &[
+                "forge",
+                "service",
+                "update",
+                "x",
+                "--autostart",
+                "--no-autostart",
+            ],
+            &["forge", "service", "update", "x", "--arg", "a", "--no-args"],
+            &[
+                "forge", "service", "update", "x", "--env", "A=1", "--no-env",
+            ],
+            &["forge", "site", "driver", "loja.test"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+        // An argument that starts with `-` is the value of --arg, not a flag of forge.
+        let cli = Cli::try_parse_from([
+            "forge",
+            "service",
+            "update",
+            "mysql/default",
+            "--arg",
+            "--skip-grant-tables",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Service(ServiceCmd::Update { args, .. }) => {
+                assert_eq!(args, ["--skip-grant-tables"]);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

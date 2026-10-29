@@ -23,7 +23,8 @@ Forgebox/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── ids.rs            # ToolId (slug [a-z0-9-]) + newtypes ULID: VersionId, InstanceId, SiteId, JobId, EventId,
-│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts)
+│   │       │                     #   PortReservationId, RequestId (re-exportado por forge-ipc; feature `specta` p/ gen-ts),
+│   │       │                     #   TerminalId (sessão de terminal do daemon, ADR-0040)
 │   │       ├── paths.rs          # ForgeRoot + todos os caminhos (bin/, etc/, data/...), discover(), init() com flag CS;
 │   │       │                     #   daemon_lock_file() (state/locks/forgeboxd.lock: evidência de saída limpa, ADR-0034)
 │   │       ├── error.rs          # ForgeError (thiserror), code() estável para API, exit_code() da CLI (docs/09)
@@ -70,8 +71,17 @@ Forgebox/
 │   │                             #   (conexão medida), spawn_detached (daemon.restart); impl em windows/host.rs (CreateMutexW,
 │   │                             #   INetworkCostManager);
 │   │                             #   process.rs: ProcessControl/ProcessGroup (Job Objects, spawn, CTRL_BREAK, WM_CLOSE);
+│   │                             #   pty.rs: PtySpawner/PtyCommand/PtySession/PtyConsole/PtySize (pseudoconsole do terminal
+│   │                             #   integrado, processo membro do ProcessGroup antes de rodar; leitor/escritor bloqueantes,
+│   │                             #   resize e close com prazo; docs/03 §1.6; stub unsupported_platform fora do Windows);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
-│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
+│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI), info(pid) → ProcessInfo
+│   │                             #   (pid, started_at, image_path, image_name), ImageNameCache (nome base da imagem em cache por
+│   │                             #   (pid, started_at); retain/limite de 4.096), FakeProcessStats;
+│   │                             #   system_stats.rs: SystemStats (sample() → MachineSample: CPU ocupada/ociosa acumulada, CPUs
+│   │                             #   lógicas, RAM total/disponível; volume(path) → VolumeSpace {total, free, available}),
+│   │                             #   cpu_pct_since/cpu_share_since, sample_machine/volume_space (spawn_blocking com prazo),
+│   │                             #   FakeSystemStats, UnsupportedSystemStats (fora do Windows);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
 │   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
 │   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;
@@ -83,8 +93,15 @@ Forgebox/
 │   │                             #   trust_store.rs (CertOpenStore SYSTEM_REGISTRY, CertAdd/Find/Delete por SHA-1,
 │   │                             #   motor de cadeia com hExclusiveRoot + CERT_CHAIN_POLICY_SSL),
 │   │                             #   process.rs (Job Objects, CreateProcessW suspenso, pipes, RegisterWaitForSingleObject),
-│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
-│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
+│   │                             #   conpty.rs (CreatePipe, CreatePseudoConsole, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+│   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
+│   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama; limpa a marca
+│   │                             #   "ignorar Ctrl+C" herdada antes do spawn),
+│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount,
+│   │                             #   QueryFullProcessImageNameW: image_path compartilhado com net_table.rs),
+│   │                             #   system_stats.rs (GetSystemTimes: ocupado = kernel − ocioso + usuário, GlobalMemoryStatusEx,
+│   │                             #   GetDiskFreeSpaceExW),
+│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + imagem do dono via process_stats.rs),
 │   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
 │   │                             #   dns_policy.rs (NRPT no registro, DataBasePath do hosts, DnsFlushResolverCache, ops via helper),
 │   │                             #   net_adapters.rs (GetAdaptersAddresses),
@@ -219,7 +236,7 @@ Forgebox/
 │   ├── forge-ipc/                # protocolo: ADR-0015
 │   │   └── src/
 │   │       ├── api/              # contratos: um módulo de DTOs por grupo do docs/09 (daemon, tools, services, logs, php, sites,
-│   │       │                     #   db, net, tls, mail, shell, fs_parity, jobs, stats, remote, registry, system, fs, events) +
+│   │       │                     #   db, net, tls, mail, shell, terminal, fs_parity, jobs, stats, remote, registry, system, fs, events) +
 │   │       │                     #   common.rs (Role, MethodInfo, ApiError, SiteRef...), methods.rs (tabela única METHODS → marcadores,
 │   │       │                     #   Client, methods.ts), contracts.rs (export TS: generated.ts + methods.ts)
 │   │       ├── rpc.rs            # frames JSON-RPC 2.0 (request_id obrigatório, códigos de erro)

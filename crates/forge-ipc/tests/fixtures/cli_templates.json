@@ -84,6 +84,19 @@
     "note": "yes is never rendered"
   },
   {
+    "method": "tools.install",
+    "params": {
+      "specs": [
+        "xdebug"
+      ],
+      "variant": null,
+      "yes": false,
+      "target": "php@8.4"
+    },
+    "expected": "forge tool install xdebug --for php@8.4",
+    "note": "extension target (ADR-0041)"
+  },
+  {
     "method": "tools.remove",
     "params": {
       "spec": "php@8.2.1",
@@ -92,6 +105,16 @@
     },
     "expected": "forge tool remove php@8.2.1 --keep-config",
     "note": "confirm is never rendered"
+  },
+  {
+    "method": "tools.remove",
+    "params": {
+      "spec": "xdebug@3.4.1",
+      "keep_config": false,
+      "confirm": true,
+      "target": "php@8.4"
+    },
+    "expected": "forge tool remove xdebug@3.4.1 --for php@8.4"
   },
   {
     "method": "tools.update",
@@ -167,6 +190,78 @@
     "expected": "forge which node"
   },
   {
+    "method": "tools.releases",
+    "params": {
+      "tool": "php",
+      "channel": null
+    },
+    "expected": "forge tool info php --versions"
+  },
+  {
+    "method": "tools.releases",
+    "params": {
+      "tool": "php",
+      "channel": "preview"
+    },
+    "expected": "forge tool info php --versions --channel preview"
+  },
+  {
+    "method": "tools.plan",
+    "params": {
+      "specs": [
+        "php@8.4",
+        "nginx"
+      ],
+      "stack": null,
+      "variant": null,
+      "target": null
+    },
+    "expected": "forge tool install php@8.4 nginx --dry-run"
+  },
+  {
+    "method": "tools.plan",
+    "params": {
+      "specs": [
+        "xdebug"
+      ],
+      "stack": null,
+      "variant": "nts",
+      "target": "php@8.3"
+    },
+    "expected": "forge tool install xdebug --variant nts --for php@8.3 --dry-run"
+  },
+  {
+    "method": "tools.plan",
+    "params": {
+      "specs": [
+        "php@8.3"
+      ],
+      "stack": "laravel",
+      "variant": null,
+      "target": null
+    },
+    "expected": null,
+    "note": "the plan of a stack has no command (rule [!stack])"
+  },
+  {
+    "method": "tools.history",
+    "params": {
+      "tool": "php",
+      "series": null,
+      "limit": null
+    },
+    "expected": "forge tool info php --history"
+  },
+  {
+    "method": "tools.history",
+    "params": {
+      "tool": "php",
+      "series": "8.3",
+      "limit": 20
+    },
+    "expected": "forge tool info php --history --series 8.3 --limit 20"
+  },
+  {
     "method": "services.start",
     "params": {
       "targets": []
@@ -237,6 +332,18 @@
     "expected": "forge service create redis cache"
   },
   {
+    "method": "services.create",
+    "params": {
+      "tool": "mysql@8.4",
+      "name": "legacy",
+      "port": null,
+      "autostart": false,
+      "data_dir": "D:\\Dados MySQL\\legacy"
+    },
+    "expected": "forge service create mysql@8.4 legacy --data-dir \"D:\\Dados MySQL\\legacy\"",
+    "note": "data dir with a space (ADR-0041)"
+  },
+  {
     "method": "services.remove",
     "params": {
       "instance": "mysql/legacy",
@@ -276,9 +383,87 @@
     "note": "key=value token quoted as a whole"
   },
   {
+    "method": "services.set",
+    "params": {
+      "target": "php@8.3",
+      "settings": {}
+    },
+    "expected": null,
+    "note": "without pairs the command reads the settings (services.settings): no command"
+  },
+  {
+    "method": "services.settings",
+    "params": {
+      "target": "mysql/default"
+    },
+    "expected": "forge service set mysql/default"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "autostart": false,
+      "launch": null,
+      "restart_policy": {
+        "on": "always",
+        "max": null,
+        "window_secs": null
+      },
+      "version": null
+    },
+    "expected": "forge service update mysql/default --no-autostart --restart always"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "autostart": true,
+      "restart_policy": {
+        "on": "failure",
+        "max": 5,
+        "window_secs": 120
+      },
+      "version": "8.4.14"
+    },
+    "expected": "forge service update mysql/default --autostart --restart failure --restart-max 5 --restart-window 120 --version 8.4.14"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "launch": {
+        "args": []
+      }
+    },
+    "expected": null,
+    "note": "launch (args/env) has no command: a cleared list would read as no change"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "launch": {
+        "env": {
+          "TZ": "UTC"
+        }
+      }
+    },
+    "expected": null
+  },
+  {
     "method": "services.ports",
     "params": {},
     "expected": "forge service ports"
+  },
+  {
+    "method": "services.kill_port_holder",
+    "params": {
+      "port": 80,
+      "pid": 4412,
+      "confirm": true
+    },
+    "expected": "forge service kill-port 80 --pid 4412",
+    "note": "confirm is never rendered: the CLI asks"
   },
   {
     "method": "logs.read",
@@ -301,6 +486,18 @@
     "expected": "forge logs daemon"
   },
   {
+    "method": "logs.read",
+    "params": {
+      "target": "nginx.error",
+      "since_secs": null,
+      "grep": null,
+      "limit": 200,
+      "before_seq": 1000
+    },
+    "expected": "forge logs nginx.error -n 200 --before 1000",
+    "note": "paging back (ADR-0040)"
+  },
+  {
     "method": "logs.subscribe",
     "params": {
       "target": "site:loja.test",
@@ -309,6 +506,11 @@
       "resume_from": null
     },
     "expected": "forge logs site:loja.test -f -n 50"
+  },
+  {
+    "method": "logs.targets",
+    "params": {},
+    "expected": "forge logs --list"
   },
   {
     "method": "php.list",
@@ -519,6 +721,23 @@
     "expected": "forge site server loja.test apache"
   },
   {
+    "method": "sites.driver",
+    "params": {
+      "site": "loja.test",
+      "driver": null
+    },
+    "expected": "forge site driver loja.test auto",
+    "note": "null driver = detect again"
+  },
+  {
+    "method": "sites.driver",
+    "params": {
+      "site": "loja.test",
+      "driver": "laravel"
+    },
+    "expected": "forge site driver loja.test laravel"
+  },
+  {
     "method": "sites.alias",
     "params": {
       "site": "loja.test",
@@ -575,6 +794,22 @@
       "site": "loja.test"
     },
     "expected": "forge site info loja.test"
+  },
+  {
+    "method": "sites.env",
+    "params": {
+      "site": "loja.test",
+      "reveal": false
+    },
+    "expected": "forge site env loja.test"
+  },
+  {
+    "method": "sites.env",
+    "params": {
+      "site": "loja.test",
+      "reveal": true
+    },
+    "expected": "forge site env loja.test --reveal"
   },
   {
     "method": "sites.park",
@@ -835,6 +1070,20 @@
     "expected": "forge tls ca install --scope machine"
   },
   {
+    "method": "tls.ca_uninstall",
+    "params": {
+      "scope": "current_user"
+    },
+    "expected": "forge tls ca uninstall --scope user"
+  },
+  {
+    "method": "tls.ca_uninstall",
+    "params": {
+      "scope": "local_machine"
+    },
+    "expected": "forge tls ca uninstall --scope machine"
+  },
+  {
     "method": "tls.ca_export",
     "params": {},
     "expected": "forge tls ca export"
@@ -888,6 +1137,11 @@
     "note": "the password is never rendered"
   },
   {
+    "method": "tls.list",
+    "params": {},
+    "expected": "forge tls list"
+  },
+  {
     "method": "mail.status",
     "params": {},
     "expected": "forge mail status"
@@ -914,11 +1168,78 @@
     "expected": "forge mail list"
   },
   {
+    "method": "mail.list",
+    "params": {
+      "unread": false,
+      "limit": 20,
+      "query": "from:loja pedido",
+      "offset": 40
+    },
+    "expected": "forge mail list --search \"from:loja pedido\" --limit 20 --offset 40"
+  },
+  {
     "method": "mail.show",
     "params": {
       "id": "abc123"
     },
     "expected": "forge mail show abc123"
+  },
+  {
+    "method": "mail.show",
+    "params": {
+      "id": "abc123",
+      "mark_read": true
+    },
+    "expected": "forge mail show abc123"
+  },
+  {
+    "method": "mail.show",
+    "params": {
+      "id": "abc123",
+      "mark_read": false
+    },
+    "expected": "forge mail show abc123 --keep-unread"
+  },
+  {
+    "method": "mail.mark_read",
+    "params": {
+      "ids": [
+        "a1",
+        "b2"
+      ],
+      "read": true
+    },
+    "expected": "forge mail read a1 b2"
+  },
+  {
+    "method": "mail.mark_read",
+    "params": {
+      "ids": [
+        "a1"
+      ],
+      "read": false
+    },
+    "expected": "forge mail read a1 --unread"
+  },
+  {
+    "method": "mail.delete",
+    "params": {
+      "ids": [
+        "a1",
+        "b2"
+      ],
+      "confirm": true
+    },
+    "expected": "forge mail delete a1 b2",
+    "note": "confirm is never rendered: the CLI asks"
+  },
+  {
+    "method": "mail.attachment",
+    "params": {
+      "id": "abc123",
+      "part_id": "2"
+    },
+    "expected": "forge mail show abc123 --attachment 2"
   },
   {
     "method": "mail.clear",
@@ -1268,6 +1589,11 @@
       "key": "ports.http"
     },
     "expected": "forge config get ports.http"
+  },
+  {
+    "method": "system.config_list",
+    "params": {},
+    "expected": "forge config list"
   },
   {
     "method": "system.config_set",

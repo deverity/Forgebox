@@ -45,6 +45,7 @@ const TOOLS: readonly MethodName[] = [
   "tools.info",
   "tools.search",
   "tools.which",
+  "tools.history",
   "php.list",
   "php.ext_list",
 ];
@@ -60,11 +61,12 @@ const JOBS: readonly MethodName[] = ["jobs.list", "jobs.get"];
 const CONFIG: readonly MethodName[] = [
   "services.config",
   "services.config_files",
+  "services.settings",
   "php.ini",
   "fs.read",
 ];
 const DNS: readonly MethodName[] = ["net.dns_status", "net.dns_test"];
-const TLS: readonly MethodName[] = ["tls.ca_status", "sites.info", "sites.list"];
+const TLS: readonly MethodName[] = ["tls.ca_status", "tls.list", "sites.info", "sites.list"];
 
 /** The query groups the event rows use, shared with `JOB_EFFECTS` (effects.ts). */
 export const QUERY_GROUPS = {
@@ -118,12 +120,17 @@ export const EVENT_INVALIDATIONS: Readonly<Record<EventKind, readonly MethodName
   "site.php_changed": [...SITES, ...POOLS],
   "config.rendered": CONFIG,
   "config.drift_detected": CONFIG,
+  "config.changed": ["system.config_get", "system.config_list", "daemon.status"],
   "dns.policy_applied": DNS,
   "tls.ca_created": TLS,
   "tls.leaf_issued": TLS,
   "tls.renewed": TLS,
+  "tls.ca_untrusted": TLS,
   "port.conflict": ["services.ports", "services.status"],
+  "port.holder_killed": ["services.ports", "services.status", "net.port_check"],
   "helper.op": [...DNS, "tls.ca_status", "shell.path_show"],
+  "mail.changed": ["mail.status", "mail.list"],
+  "terminal.exited": ["terminal.list"],
 };
 
 /**

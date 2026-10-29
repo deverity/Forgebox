@@ -74,6 +74,8 @@ pub enum IssueCode {
     RunNotAllowed,
     /// `post_install` writes outside the Forgebox root.
     WriteOutsideRoot,
+    /// A `spec.database` client `exe` that is absolute, has `..` or uses variables.
+    ExeOutsideVersion,
     // Rule 7.
     /// Icon not SVG, missing, larger than 20 KB or with scripts.
     InvalidIcon,
@@ -115,6 +117,7 @@ impl IssueCode {
             IssueCode::RunOutsideVersion => "run_outside_version",
             IssueCode::RunNotAllowed => "run_not_allowed",
             IssueCode::WriteOutsideRoot => "write_outside_root",
+            IssueCode::ExeOutsideVersion => "exe_outside_version",
             IssueCode::InvalidIcon => "invalid_icon",
         }
     }
@@ -128,7 +131,8 @@ impl IssueCode {
             IssueCode::UnknownTemplateVariable | IssueCode::InvalidTemplate => 5,
             IssueCode::RunOutsideVersion
             | IssueCode::RunNotAllowed
-            | IssueCode::WriteOutsideRoot => 6,
+            | IssueCode::WriteOutsideRoot
+            | IssueCode::ExeOutsideVersion => 6,
             IssueCode::InvalidIcon => 7,
             _ => 1,
         }

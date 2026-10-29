@@ -377,6 +377,25 @@
         "sha512"
       ]
     },
+    "ClientCommand": {
+      "description": "A client program: `exe` relative to the version folder (rule 6) and its argv.",
+      "type": "object",
+      "properties": {
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exe": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "exe"
+      ]
+    },
     "CommandProbe": {
       "description": "`health.command`.",
       "type": "object",
@@ -695,6 +714,135 @@
       "additionalProperties": false,
       "required": [
         "dir"
+      ]
+    },
+    "DatabaseProtocol": {
+      "description": "`spec.database.protocol`.",
+      "oneOf": [
+        {
+          "description": "MySQL and MariaDB (backtick identifiers).",
+          "type": "string",
+          "const": "mysql"
+        },
+        {
+          "description": "PostgreSQL (double-quoted identifiers).",
+          "type": "string",
+          "const": "postgresql"
+        }
+      ]
+    },
+    "DatabaseQueries": {
+      "description": "`spec.database.queries`: SQL templates run through `client`.",
+      "type": "object",
+      "properties": {
+        "create": {
+          "description": "Uses `{{ database }}` and may use `{{ charset }}`.",
+          "type": "string"
+        },
+        "drop": {
+          "description": "Uses `{{ database }}`.",
+          "type": "string"
+        },
+        "list": {
+          "description": "One database name per row (first column).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "list",
+        "create",
+        "drop"
+      ]
+    },
+    "DatabaseSpec": {
+      "description": "`spec.database` (docs/04 §1.8): everything the daemon needs to list, create and drop\ndatabases, dump/restore them and build connection strings, without per-tool code.",
+      "type": "object",
+      "properties": {
+        "admin_user": {
+          "description": "Administrative account the client connects with.",
+          "type": "string"
+        },
+        "client": {
+          "description": "Runs one SQL statement: `args` hold `{{ sql }}` and the client prints\ntab-separated rows without a header.",
+          "$ref": "#/$defs/ClientCommand"
+        },
+        "default_charset": {
+          "description": "Value of `{{ charset }}` when the caller gives none (`[A-Za-z0-9_]{1,32}`).",
+          "type": "string"
+        },
+        "dump": {
+          "description": "Writes the dump to stdout (`{{ database }}`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClientCommand"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "env": {
+          "description": "Variables for a project's `.env`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "port": {
+          "description": "Name of a `service.daemon.ports[]` entry (rule 1 `invalid_reference`).",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "Identifier-quoting and validation family.",
+          "$ref": "#/$defs/DatabaseProtocol"
+        },
+        "queries": {
+          "$ref": "#/$defs/DatabaseQueries"
+        },
+        "restore": {
+          "description": "Reads the dump from stdin (`{{ database }}`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClientCommand"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shell": {
+          "description": "Interactive client for `db.shell`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClientCommand"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "system_databases": {
+          "description": "Hidden from `db.list`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "url": {
+          "description": "Connection string (`{{ database }}`, `{{ instance.ports.<n> }}`).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "port",
+        "admin_user",
+        "default_charset",
+        "client",
+        "queries",
+        "url"
       ]
     },
     "Discover": {
@@ -1018,6 +1166,47 @@
       "required": [
         "label",
         "path"
+      ]
+    },
+    "MailApi": {
+      "description": "`spec.mail.api`.",
+      "oneOf": [
+        {
+          "description": "Mailpit REST API v1 (`/api/v1`).",
+          "type": "string",
+          "const": "mailpit-v1"
+        }
+      ]
+    },
+    "MailSpec": {
+      "description": "`spec.mail` (docs/04 §1.9).",
+      "type": "object",
+      "properties": {
+        "api": {
+          "description": "API family the daemon adapter speaks.",
+          "$ref": "#/$defs/MailApi"
+        },
+        "env": {
+          "description": "`MAIL_*` variables for a project's `.env`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "http_port": {
+          "description": "Name of the HTTP/API port in `service.daemon.ports[]`.",
+          "type": "string"
+        },
+        "smtp_port": {
+          "description": "Name of the SMTP port in `service.daemon.ports[]`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "api",
+        "http_port",
+        "smtp_port"
       ]
     },
     "Maintainer": {
@@ -2269,6 +2458,17 @@
         "config": {
           "$ref": "#/$defs/Config"
         },
+        "database": {
+          "description": "Database capability (docs/04 §1.8): the daemon drives the declared client.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DatabaseSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "depends_on": {
           "description": "Other tools that must be installed.",
           "type": "array",
@@ -2288,6 +2488,17 @@
         },
         "install": {
           "$ref": "#/$defs/Install"
+        },
+        "mail": {
+          "description": "Mail-catcher capability (docs/04 §1.9).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MailSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "platforms": {
           "description": "Must not be empty (rule 1).",

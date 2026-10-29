@@ -14,6 +14,7 @@ use super::{ServerInfo, events};
 use crate::api::methods::{
     daemon_status, events_list, events_subscribe, events_unsubscribe, fs_list, fs_read, fs_tail,
     fs_write, jobs_cancel, jobs_get, jobs_list, logs_unsubscribe, metrics_unsubscribe, system_ping,
+    terminal_unsubscribe,
 };
 use crate::api::{
     API_VERSION, Ack, DaemonStatusDto, JobCancelDto, JobDto, JobListDto, PongDto, UnsubscribeParams,
@@ -99,6 +100,9 @@ pub(crate) fn router(info: &Arc<ServerInfo>, fs: Option<FsScope>) -> Router {
     router.handle::<logs_unsubscribe, _, _>(|params, ctx| async move { unsubscribe(params, ctx) });
     router
         .handle::<metrics_unsubscribe, _, _>(|params, ctx| async move { unsubscribe(params, ctx) });
+    router.handle::<terminal_unsubscribe, _, _>(
+        |params, ctx| async move { unsubscribe(params, ctx) },
+    );
 
     if let Some(source) = info.events.clone() {
         let replay_limit = info.config.replay_limit;

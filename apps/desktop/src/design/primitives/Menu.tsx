@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { ContextMenu } from "radix-ui";
 import { type ReactNode, useState } from "react";
 import { surfaceMotion } from "./useSurfaceMotion";
+import { FOCUS_RING } from "./shared";
 
 export type MenuEntry =
   | {
@@ -36,7 +37,7 @@ export function Menu({ entries, children, className }: MenuProps) {
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focus-return target
           tabIndex={0}
           className={[
-            "outline-none focus-visible:outline-2 focus-visible:outline-accent",
+            FOCUS_RING,
             className,
           ]
             .filter(Boolean)

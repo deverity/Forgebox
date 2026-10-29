@@ -42,7 +42,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use forge_core::actor::{
     Actor, ActorHandle, ActorSpec, ActorSupervisor, Context, Reply, RestartInfo, StopOutcome,
@@ -51,7 +51,9 @@ use forge_core::actor::{
 use forge_core::event::{EventBus, EventKind};
 use forge_core::ids::{InstanceId, ToolId, VersionId};
 use forge_core::model::port::{OwnerKind, PortReservations};
-use forge_core::platform::{PortTable, ProcessControl, ProcessStats, RuntimeDep, TcpConnection};
+use forge_core::platform::{
+    PortTable, ProcStats, ProcessControl, ProcessStats, RuntimeDep, TcpConnection,
+};
 use forge_core::runtime::spawn_blocking_timeout;
 use forge_core::{ForgeError, Result, Timestamp};
 use forge_supervisor::{EnvMap, InstanceHandle, JobTree, Supervisor};
@@ -359,7 +361,7 @@ impl PoolState {
 }
 
 /// Snapshot answered by `Status`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PoolStatus {
     pub version_id: VersionId,
     pub tool: ToolId,
@@ -382,6 +384,28 @@ pub struct PoolStatus {
     pub rss_bytes: u64,
     /// Last launch or listener failure.
     pub last_error: Option<String>,
+    /// CPU of the workers as a share of the whole machine (0-100), the sum of
+    /// [`WorkerStatus::cpu_pct`]; `None` until a worker has a measurable window. Absent in
+    /// statuses written before M2-E5-T6.
+    #[serde(default)]
+    pub cpu_pct: Option<f64>,
+}
+
+/// Resource figures of a pool, published on every sampling tick
+/// ([`PoolHandle::subscribe_metrics`]); the metrics service reads it without asking the
+/// actor.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PoolMetrics {
+    /// When the figures were taken (`None` before the first sample).
+    pub sampled_at: Option<Timestamp>,
+    /// Workers in the `Active` phase.
+    pub workers_active: u32,
+    /// Share of the whole machine (0-100) summed over the workers with a measurement.
+    pub cpu_pct: Option<f64>,
+    /// Working sets of the workers.
+    pub rss_bytes: u64,
+    /// Estimated requests served by the run so far.
+    pub requests_total: u64,
 }
 
 impl PoolStatus {
@@ -458,9 +482,30 @@ struct Sample {
     conns: Option<Vec<TcpConnection>>,
     table_error: Option<String>,
     established: HashMap<u16, u32>,
-    /// pid → (alive, working set).
-    procs: HashMap<u32, (bool, Option<u64>)>,
+    /// pid → what the process looked like.
+    procs: HashMap<u32, ProcObs>,
+    /// Logical processors of the machine (divisor of the CPU share).
+    cpus: u32,
 }
+
+/// One worker process as seen by a sample.
+struct ProcObs {
+    alive: bool,
+    /// `None` when the counters could not be read.
+    counters: Option<ProcStats>,
+    at: Instant,
+}
+
+/// Sum of the known shares, `None` when there is none.
+fn sum_cpu(shares: impl Iterator<Item = Option<f64>>) -> Option<f64> {
+    shares
+        .flatten()
+        .fold(None, |acc, v| Some(acc.unwrap_or(0.0) + v))
+}
+
+/// Shortest window a CPU share is computed over (two samples a few ms apart are coarser
+/// than the work done).
+const MIN_CPU_WINDOW: Duration = Duration::from_millis(50);
 
 /// Aborts its task when dropped.
 struct TaskGuard(JoinHandle<()>);
@@ -489,6 +534,7 @@ struct Worker {
     established: u32,
     last_activity: Instant,
     rss_bytes: Option<u64>,
+    cpu_pct: Option<f64>,
     max_conns: u32,
     php_version: Option<String>,
     replaces: Option<u64>,
@@ -511,6 +557,7 @@ impl Worker {
             requests: self.tracker.requests(),
             established: self.established,
             rss_bytes: self.rss_bytes,
+            cpu_pct: self.cpu_pct,
             php_version: self.php_version.clone(),
             replaces: self.replaces,
             replaced_by: self.replaced_by,
@@ -529,6 +576,7 @@ struct Shared {
     processes: Arc<dyn ProcessControl>,
     listener: Option<Arc<dyn UpstreamListener>>,
     upstream_tx: watch::Sender<UpstreamModel>,
+    metrics_tx: watch::Sender<PoolMetrics>,
     /// The pool's job (workers' jobs nest in it).
     jobs: JobTree,
 }
@@ -552,6 +600,8 @@ pub struct PhpPool {
     publish_failures: u32,
     publish_retry: Option<TaskGuard>,
     sampling: Option<TaskGuard>,
+    /// CPU counters of the previous sample per process (`pid` + creation time identify it).
+    cpu_prev: HashMap<(u32, SystemTime), (Duration, Instant)>,
     launch_failures: u32,
     next_launch_at: Option<Instant>,
     pending_start: Vec<Reply<Result<UpstreamModel>>>,
@@ -646,6 +696,7 @@ impl PhpPool {
             publish_failures: 0,
             publish_retry: None,
             sampling: None,
+            cpu_prev: HashMap::new(),
             launch_failures: 0,
             next_launch_at: None,
             pending_start: Vec::new(),
@@ -688,6 +739,7 @@ impl PhpPool {
         });
         let (upstream_tx, upstream_rx) =
             watch::channel(UpstreamModel::empty(spec.upstream.clone(), spec.policy));
+        let (metrics_tx, metrics_rx) = watch::channel(PoolMetrics::default());
         let shared = Arc::new(Shared {
             spec: Arc::clone(&spec),
             launch,
@@ -698,6 +750,7 @@ impl PhpPool {
             processes: Arc::clone(deps.supervisor.jobs().processes()),
             listener: deps.listener,
             upstream_tx,
+            metrics_tx,
             jobs,
         });
         let name = format!("pool/{}/{}", spec.tool, spec.version);
@@ -715,6 +768,7 @@ impl PhpPool {
             handle: Arc::new(handle),
             spec,
             upstream: upstream_rx,
+            metrics: metrics_rx,
         })
     }
 
@@ -761,6 +815,7 @@ impl PhpPool {
             recycled: self.recycled,
             rss_bytes: self.workers.values().filter_map(|w| w.rss_bytes).sum(),
             last_error: self.last_error.clone(),
+            cpu_pct: sum_cpu(self.workers.values().map(|w| w.cpu_pct)),
         }
     }
 
@@ -894,6 +949,7 @@ impl PhpPool {
                 established: 0,
                 last_activity: now,
                 rss_bytes: None,
+                cpu_pct: None,
                 max_conns: 1,
                 php_version: None,
                 replaces,
@@ -1543,14 +1599,22 @@ impl PhpPool {
                 let mut procs = HashMap::new();
                 for (_, pid) in &targets {
                     let alive = processes.is_alive(*pid).unwrap_or(true);
-                    let rss = stats.sample(*pid).ok().map(|s| s.rss_bytes);
-                    procs.insert(*pid, (alive, rss));
+                    let counters = stats.sample(*pid).ok();
+                    procs.insert(
+                        *pid,
+                        ProcObs {
+                            alive,
+                            counters,
+                            at: Instant::now(),
+                        },
+                    );
                 }
                 Ok(Sample {
                     conns,
                     table_error,
                     established,
                     procs,
+                    cpus: stats.logical_cpus(),
                 })
             })
             .await;
@@ -1569,6 +1633,7 @@ impl PhpPool {
         }
         let grace = self.shared.spec.timing.drain_grace;
         let mut exited = Vec::new();
+        let mut seen = Vec::new();
         for w in self.workers.values_mut() {
             if !matches!(
                 w.phase,
@@ -1590,11 +1655,21 @@ impl PhpPool {
             if established > 0 || new > 0 {
                 w.last_activity = now;
             }
-            if let Some((alive, rss)) = sample.procs.get(&pid) {
-                if rss.is_some() {
-                    w.rss_bytes = *rss;
+            if let Some(obs) = sample.procs.get(&pid) {
+                if let Some(stat) = &obs.counters {
+                    w.rss_bytes = Some(stat.rss_bytes);
+                    let key = (stat.pid, stat.started_at);
+                    let share = cpu_share(self.cpu_prev.get(&key), stat, obs.at, sample.cpus);
+                    if share.is_some() {
+                        w.cpu_pct = share;
+                    }
+                    // A window too short to measure keeps the older baseline.
+                    if share.is_some() || !self.cpu_prev.contains_key(&key) {
+                        self.cpu_prev.insert(key, (stat.cpu_total, obs.at));
+                    }
+                    seen.push(key);
                 }
-                if !alive {
+                if !obs.alive {
                     exited.push(w.slot);
                 }
             }
@@ -1608,6 +1683,8 @@ impl PhpPool {
                 }
             }
         }
+        self.cpu_prev.retain(|key, _| seen.contains(key));
+        self.publish_metrics();
         for slot in exited {
             self.worker_exited(slot);
         }
@@ -1621,6 +1698,28 @@ impl PhpPool {
             }
         }
         self.progress_draining(now);
+    }
+
+    /// Publishes the figures of the workers just sampled on the metrics watch.
+    fn publish_metrics(&self) {
+        let active = self
+            .workers
+            .values()
+            .filter(|w| w.phase == WorkerPhase::Active)
+            .count();
+        let metrics = PoolMetrics {
+            sampled_at: Some(Timestamp::now()),
+            workers_active: u32::try_from(active).unwrap_or(u32::MAX),
+            cpu_pct: sum_cpu(self.workers.values().map(|w| w.cpu_pct)),
+            rss_bytes: self.workers.values().filter_map(|w| w.rss_bytes).sum(),
+            requests_total: self.retired_requests
+                + self
+                    .workers
+                    .values()
+                    .map(|w| w.tracker.requests())
+                    .sum::<u64>(),
+        };
+        self.shared.metrics_tx.send_replace(metrics);
     }
 
     fn on_notice(&mut self, notice: Notice) {
@@ -1850,6 +1949,32 @@ impl Actor for PhpPool {
     }
 }
 
+/// CPU share of the machine (0-100) a process used since its previous sample, computed like
+/// the supervisor does: `delta cpu / delta wall / logical_cpus`. A process never sampled
+/// before gets the average over its lifetime. `None` when the window is too short to say.
+fn cpu_share(
+    previous: Option<&(Duration, Instant)>,
+    stat: &ProcStats,
+    at: Instant,
+    cpus: u32,
+) -> Option<f64> {
+    let cpus = f64::from(cpus.max(1));
+    let (used, wall) = match previous {
+        Some((cpu, before)) => {
+            let wall = at.saturating_duration_since(*before);
+            if wall < MIN_CPU_WINDOW {
+                return None;
+            }
+            (stat.cpu_total.saturating_sub(*cpu), wall)
+        }
+        None => (stat.cpu_total, stat.uptime),
+    };
+    if wall.is_zero() {
+        return None;
+    }
+    Some(used.as_secs_f64() / wall.as_secs_f64() / cpus * 100.0)
+}
+
 /// Sends `Tick` every `tick` while the pool lives.
 fn spawn_ticker(me: WeakActorRef<PoolMsg>, tick: Duration) {
     tokio::spawn(async move {
@@ -1899,6 +2024,7 @@ pub struct PoolHandle {
     handle: Arc<ActorHandle<PoolMsg>>,
     spec: Arc<PoolSpec>,
     upstream: watch::Receiver<UpstreamModel>,
+    metrics: watch::Receiver<PoolMetrics>,
 }
 
 impl std::fmt::Debug for PoolHandle {
@@ -1927,6 +2053,11 @@ impl PoolHandle {
     /// Every upstream change, latest first readable (in-process renderers).
     pub fn subscribe_upstream(&self) -> watch::Receiver<UpstreamModel> {
         self.upstream.clone()
+    }
+
+    /// CPU and memory of the pool, updated at every sampling tick (latest value only).
+    pub fn subscribe_metrics(&self) -> watch::Receiver<PoolMetrics> {
+        self.metrics.clone()
     }
 
     async fn ask<R>(&self, make: impl FnOnce(Reply<R>) -> PoolMsg, timeout: Duration) -> Result<R> {

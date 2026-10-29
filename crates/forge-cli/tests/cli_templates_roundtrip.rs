@@ -129,7 +129,18 @@ fn every_golden_command_parses_and_maps_back_to_its_method() {
         };
         let args = split_command_line(&command);
         assert_eq!(args[0], "forge", "{command}");
-        let found = methods_of(&args);
+        let mut found = methods_of(&args);
+        // `forge service set <target>` reads the settings (`services.settings`) and writes
+        // them when `key=value` pairs follow (`services.set`): the CLI picks by the pairs,
+        // so this test does too (ADR-0041).
+        if found == BTreeSet::from(["services.set", "services.settings"]) {
+            let pairs = args.len() > 4;
+            found = BTreeSet::from([if pairs {
+                "services.set"
+            } else {
+                "services.settings"
+            }]);
+        }
         assert!(
             found.contains(entry.method.as_str()),
             "`{command}` maps to {found:?} instead of {}",

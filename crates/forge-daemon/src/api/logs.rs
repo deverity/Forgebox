@@ -242,6 +242,7 @@ fn line_dto(seq: u64, text: String) -> LogLineDto {
         source: LogSource::File,
         level: level_of(&text),
         text,
+        access: None,
     }
 }
 
@@ -270,6 +271,15 @@ async fn blocking<T: Send + 'static>(
 }
 
 async fn read(daemon: Daemon, params: LogsReadParams, _ctx: Ctx) -> Result<LogChunkDto> {
+    if params.before_seq.is_some() {
+        // Ignoring it would answer the newest lines again: a client paging back would
+        // repeat them instead of seeing older ones.
+        return Err(ForgeError::NotImplementedYet {
+            method: "logs.read".into(),
+            task: super::not_implemented::LOGS_BEFORE_SEQ_TASK.into(),
+            what: "paging back with before_seq".into(),
+        });
+    }
     let target = resolve(&daemon, &params.target).await?;
     let set = set_of(&target).clone();
     let limit = params.limit.unwrap_or(DEFAULT_LIMIT).max(1) as usize;
@@ -520,6 +530,7 @@ async fn follow_instance(
                     },
                     level: level_of(&line.text),
                     text: line.text,
+                    access: None,
                 };
                 if !sender.send(&envelope(&sender, dto)) {
                     return;

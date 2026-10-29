@@ -69,6 +69,9 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "tools.add_local": TOOL_VERSIONS,
   "tools.discover": TOOL_VERSIONS,
   "tools.use": TOOL_VERSIONS,
+  // Read-only jobs (ADR-0041): provider releases and install plans change nothing.
+  "tools.releases": NONE,
+  "tools.plan": NONE,
 
   "services.start": LIFECYCLE,
   "services.stop": LIFECYCLE,
@@ -77,6 +80,11 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "services.create": effect(["services"], Q.services, Q.config),
   "services.remove": effect(["services"], Q.services, Q.config),
   "services.set": effect(["services"], Q.services, Q.config),
+  "services.update": effect(["services"], Q.services, Q.config, Q.pools),
+  "services.kill_port_holder": effect(
+    ["services"],
+    ["services.ports", "services.status", "net.port_check"],
+  ),
 
   "php.ext_enable": PHP_RUNTIME,
   "php.ext_disable": PHP_RUNTIME,
@@ -87,6 +95,7 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "sites.php": SITE_AND_POOLS,
   "sites.secure": effect(["sites"], Q.sites, Q.tls),
   "sites.server": effect(["sites", "services"], Q.sites, Q.services),
+  "sites.driver": effect(["sites"], Q.sites, Q.config),
   "sites.alias": SITE,
   "sites.park": SITE,
   "sites.unpark": SITE,
@@ -108,14 +117,20 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "net.lan_unexpose": LAN,
 
   "tls.ca_install": effect(["ca"], Q.tls),
+  "tls.ca_uninstall": effect(["ca"], Q.tls),
   "tls.ca_rotate": effect(["ca", "sites"], Q.tls),
   "tls.issue": effect([], Q.tls),
   "tls.renew": effect([], Q.tls),
 
   "mail.clear": effect([], ["mail.list", "mail.show", "mail.status"]),
+  "mail.mark_read": effect([], ["mail.list", "mail.show", "mail.status"]),
+  "mail.delete": effect([], ["mail.list", "mail.show", "mail.status"]),
 
   "shell.path_add": effect([], ["shell.path_show"]),
   "shell.path_remove": effect([], ["shell.path_show"]),
+
+  "terminal.open": effect([], ["terminal.list"]),
+  "terminal.close": effect([], ["terminal.list"]),
 
   "fs_parity.case_enable": CASE,
   "fs_parity.case_disable": CASE,

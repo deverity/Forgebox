@@ -74,6 +74,7 @@ async fn installs_mailpit_and_runs_it_as_a_service_online() {
             specs: vec![ToolSpec::from("mailpit@1.32.0")],
             variant: None,
             yes: true,
+            target: None,
         })
         .await
         .unwrap();
