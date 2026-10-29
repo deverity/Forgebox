@@ -319,6 +319,10 @@ export const EVENT_REDUCERS: ReducerRegistry = {
   "config.drift_detected": (tx, payload, event) => {
     tx.attention.put("configDrift", payload.path, { ...payload, ts: event.ts });
   },
+  "config.changed": {
+    ignore:
+      "configuration values are system.config_* queries (EVENT_INVALIDATIONS); live effects publish their own events",
+  },
 
   "dns.policy_applied": (tx, payload) => {
     tx.system.put("dnsPolicies", payload.tld, payload);
@@ -339,6 +343,9 @@ export const EVENT_REDUCERS: ReducerRegistry = {
       ts: event.ts,
     });
   },
+  "tls.ca_untrusted": (tx) => {
+    tx.refresh("ca");
+  },
 
   "port.conflict": (tx, payload, event) => {
     tx.attention.put("portConflicts", `${payload.protocol}/${String(payload.port)}`, {
@@ -346,12 +353,23 @@ export const EVENT_REDUCERS: ReducerRegistry = {
       ts: event.ts,
     });
   },
+  "port.holder_killed": (tx, payload) => {
+    // Only TCP listeners are terminated (services.kill_port_holder).
+    tx.attention.remove("portConflicts", `tcp/${String(payload.port)}`);
+  },
   "helper.op": (tx, payload, event) => {
     if (payload.ok) tx.attention.remove("helperFailures", payload.name);
     else tx.attention.put("helperFailures", payload.name, { ...payload, ts: event.ts });
     // Elevated operations change DNS routing and trust stores.
     tx.refresh("dns");
     tx.refresh("ca");
+  },
+  "mail.changed": {
+    ignore: "the mailbox is mail.* queries (EVENT_INVALIDATIONS); the badge store is M2-E3-T13",
+  },
+  "terminal.exited": {
+    ignore:
+      "terminal sessions belong to the Terminal screen (M2-E3-T15), which follows its streams",
   },
 };
 

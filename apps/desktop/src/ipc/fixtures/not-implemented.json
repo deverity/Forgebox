@@ -36,42 +36,42 @@
   },
   {
     "method": "db.list",
-    "task": "M2-E3",
+    "task": "M2-E3-T5",
     "what": "database management"
   },
   {
     "method": "db.create",
-    "task": "M2-E3",
+    "task": "M2-E3-T5",
     "what": "database management"
   },
   {
     "method": "db.drop",
-    "task": "M2-E3",
+    "task": "M2-E3-T5",
     "what": "database management"
   },
   {
     "method": "db.export",
-    "task": "M2-E3",
+    "task": "M2-E3-T6",
     "what": "database export"
   },
   {
     "method": "db.import",
-    "task": "M2-E3",
+    "task": "M2-E3-T6",
     "what": "database import"
   },
   {
     "method": "db.shell",
-    "task": "M2-E3",
+    "task": "M2-E3-T5",
     "what": "database shell"
   },
   {
     "method": "db.url",
-    "task": "M2-E3",
+    "task": "M2-E3-T5",
     "what": "database URLs"
   },
   {
     "method": "db.open",
-    "task": "M2-E3",
+    "task": "M3-E1",
     "what": "database GUI launch"
   },
   {
@@ -91,38 +91,113 @@
   },
   {
     "method": "mail.status",
-    "task": "M2-E3",
+    "task": "M2-E3-T7",
     "what": "Mailpit integration"
   },
   {
     "method": "mail.open",
-    "task": "M2-E3",
+    "task": "M2-E3-T7",
     "what": "Mailpit integration"
   },
   {
     "method": "mail.list",
-    "task": "M2-E3",
+    "task": "M2-E3-T7",
     "what": "Mailpit integration"
   },
   {
     "method": "mail.show",
-    "task": "M2-E3",
+    "task": "M2-E3-T7",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.mark_read",
+    "task": "M2-E3-T7",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.delete",
+    "task": "M2-E3-T7",
+    "what": "Mailpit integration"
+  },
+  {
+    "method": "mail.attachment",
+    "task": "M2-E3-T7",
     "what": "Mailpit integration"
   },
   {
     "method": "mail.clear",
-    "task": "M2-E3",
+    "task": "M2-E3-T7",
     "what": "Mailpit integration"
   },
   {
     "method": "mail.env",
-    "task": "M2-E3",
+    "task": "M2-E3-T7",
     "what": "Mailpit integration"
   },
   {
+    "method": "logs.targets",
+    "task": "M2-E3-T8",
+    "what": "listing log targets"
+  },
+  {
     "method": "shell.open",
-    "task": "M2-E3",
-    "what": "integrated terminal"
+    "task": "M2-E3-T9",
+    "what": "external terminal launcher"
+  },
+  {
+    "method": "shell.open_editor",
+    "task": "M2-E3-T9",
+    "what": "editor launcher"
+  },
+  {
+    "method": "terminal.open",
+    "task": "M2-E3-T4",
+    "what": "daemon-hosted terminal sessions"
+  },
+  {
+    "method": "terminal.list",
+    "task": "M2-E3-T4",
+    "what": "daemon-hosted terminal sessions"
+  },
+  {
+    "method": "terminal.input",
+    "task": "M2-E3-T4",
+    "what": "daemon-hosted terminal sessions"
+  },
+  {
+    "method": "terminal.resize",
+    "task": "M2-E3-T4",
+    "what": "daemon-hosted terminal sessions"
+  },
+  {
+    "method": "terminal.close",
+    "task": "M2-E3-T4",
+    "what": "daemon-hosted terminal sessions"
+  },
+  {
+    "method": "terminal.subscribe",
+    "task": "M2-E3-T4",
+    "what": "daemon-hosted terminal sessions"
+  },
+  {
+    "method": "system.config_list",
+    "task": "M2-E3-T10",
+    "what": "configuration document with schema"
+  },
+  {
+    "method": "tls.ca_uninstall",
+    "task": "M2-E3-T11",
+    "what": "removing the local CA"
+  },
+  {
+    "method": "services.kill_port_holder",
+    "task": "M2-E3-T11",
+    "what": "terminating a port holder"
+  },
+  {
+    "method": "sites.env",
+    "task": "M2-E3-T11",
+    "what": "masked .env viewer"
   },
   {
     "method": "stats.get",
