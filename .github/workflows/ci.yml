@@ -27,6 +27,8 @@ jobs:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace
 
       - uses: taiki-e/install-action@v2
         with:
@@ -61,35 +63,116 @@ jobs:
           git diff --exit-code
 
   desktop:
-    name: desktop (pnpm build)
+    name: desktop (tokens, lint, typecheck, vitest, Playwright fake suite, tauri debug build)
     runs-on: windows-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v7
 
-      - name: probe desktop app
-        id: probe
-        shell: bash
-        run: |
-          if [ -f apps/desktop/package.json ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-
+      # No `version:` here: pnpm/action-setup reads packageManager from apps/desktop/package.json.
       - uses: pnpm/action-setup@v6
-        if: steps.probe.outputs.present == 'true'
         with:
-          version: 10
+          package_json_file: apps/desktop/package.json
 
       - uses: actions/setup-node@v7
-        if: steps.probe.outputs.present == 'true'
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
 
-      - run: pnpm -C apps/desktop install --frozen-lockfile
-        if: steps.probe.outputs.present == 'true'
+      - uses: dtolnay/rust-toolchain@stable
 
-      - run: pnpm -C apps/desktop build
-        if: steps.probe.outputs.present == 'true'
+      # Same key as the rust job so both reuse the compiled workspace dependencies.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace
+
+      - name: install
+        run: pnpm -C apps/desktop install --frozen-lockfile
+
+      - name: tokens:check
+        run: pnpm -C apps/desktop tokens:check
+
+      - name: icons:check
+        run: pnpm -C apps/desktop icons:check
+
+      - name: lint
+        run: pnpm -C apps/desktop lint
+
+      - name: typecheck
+        run: pnpm -C apps/desktop typecheck
+
+      - name: vitest
+        run: pnpm -C apps/desktop test
+
+      - name: Playwright fake-bridge suite (msedge)
+        run: pnpm -C apps/desktop e2e
+
+      - name: upload Playwright reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-desktop
+          path: |
+            apps/desktop/qa/out/playwright-report
+            apps/desktop/qa/out/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: tauri debug build (no bundle)
+        run: pnpm -C apps/desktop tauri build --debug --no-bundle
+
+  desktop-release:
+    name: desktop-release (release build, real-app e2e, startup perf)
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    runs-on: windows-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: apps/desktop/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-release
+
+      - name: install
+        run: pnpm -C apps/desktop install --frozen-lockfile
+
+      - name: release build (no bundle)
+        run: pnpm -C apps/desktop tauri build --no-bundle
+
+      - name: build forgeboxd (release)
+        run: cargo build --release -p forge-daemon --bin forgeboxd
+
+      - name: real-app e2e
+        shell: pwsh
+        run: ./scripts/e2e-desktop.ps1 -SkipBuild
+
+      # Shared runners are noisy: the assert is 1.5 x 800 ms on the median of the slowest mode.
+      - name: perf:startup (assert 1.5 x 800 ms)
+        shell: bash
+        run: |
+          mkdir -p apps/desktop/qa/out
+          node apps/desktop/scripts/perf-startup.mjs --budget-ms 800 --budget-factor 1.5 | tee apps/desktop/qa/out/perf-startup.json
+
+      - name: upload perf artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-startup
+          path: apps/desktop/qa/out/perf-startup.json
+          if-no-files-found: warn
+          retention-days: 30

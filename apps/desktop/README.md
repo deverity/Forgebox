@@ -109,6 +109,24 @@ both|running|stopped`. Run it only on a quiet machine; the session type (rdp/con
   `window.__FORGEBOX_QA__.bridge`) to `<App bridge={...}/>`; the state layer (M2-E1-T10) must use that
   bridge instead of `createTauriBridge()` whenever the prop is set. Without it `?scenario=` changes nothing.
 
+## CI (M2-E1-T20)
+
+```powershell
+# same steps as the `desktop` job of .github/workflows/ci.yml (install --frozen-lockfile, tokens:check,
+# icons:check, lint, typecheck, vitest, Playwright fake-bridge suite, tauri debug build)
+$env:FORGEBOX_NODE_DIR = '<folder with node 24>'   # optional, prepended to this process PATH only
+powershell -NoProfile -File scripts/ci.ps1 -Desktop
+actionlint .github/workflows/ci.yml                 # workflow lint (local binary, not system-wide)
+```
+
+- `ci.ps1 -Desktop` sets `NODE_OPTIONS=--use-system-ca` and `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` for its
+  own process; no path is hardcoded (use `FORGEBOX_NODE_DIR`).
+- The `rust` job still builds `src-tauri` without Node. The `desktop` job uploads the Playwright HTML
+  report and failure screenshots/traces (`qa/out/playwright-report`, `qa/out/test-results`).
+- `desktop-release` runs only on push to `develop`/`main`: release no-bundle build,
+  `scripts/e2e-desktop.ps1 -SkipBuild`, and `perf:startup --budget-factor 1.5` (assert 1.5 x 800 ms)
+  uploaded as the `perf-startup` artifact.
+
 ## Version pins
 
 - `typescript` 6.0.x: the newest line supported by `typescript-eslint` (peer `<6.1.0`); TypeScript

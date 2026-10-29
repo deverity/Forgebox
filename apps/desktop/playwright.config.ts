@@ -14,13 +14,17 @@ export default defineConfig({
   outputDir: "./qa/out/test-results",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  reporter: [["list"]],
+  // CI also writes an HTML report that the workflow uploads together with test-results.
+  reporter: process.env.CI
+    ? [["list"], ["html", { outputFolder: "./qa/out/playwright-report", open: "never" }]]
+    : [["list"]],
   timeout: 30_000,
   use: {
     baseURL: `http://127.0.0.1:${String(PORT)}`,
     channel: "msedge",
     headless: true,
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   webServer: {
     command: `pnpm build:qa && pnpm preview:qa --port ${String(PORT)}`,
