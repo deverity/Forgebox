@@ -2,7 +2,7 @@
 source: crates/forge-render/tests/snapshots.rs
 expression: content
 ---
-# forgebox:begin main (hash=5512ee67f30689c0)
+# forgebox:begin main (hash=9deb448f3e785904)
 ServerRoot "C:/fb-test/bin/apache/2.4.69"
 ServerName 127.0.0.1
 ServerTokens Prod
@@ -41,6 +41,10 @@ TypesConfig "C:/fb-test/bin/apache/2.4.69/conf/mime.types"
 DirectoryIndex index.php index.html
 AddDefaultCharset UTF-8
 EnableSendfile Off
+# Quick settings (docs/04 section 1.3).
+KeepAlive On
+Timeout 300
+LimitRequestBody 0
 Mutex default
 SSLProtocol -all +TLSv1.2 +TLSv1.3
 SSLSessionCache "shmcb:C:/fb-test/tmp/apache/ssl_scache(512000)"
