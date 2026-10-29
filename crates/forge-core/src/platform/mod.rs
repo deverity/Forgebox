@@ -29,6 +29,8 @@
 //! the desktop shell's materials) and [`process_creation_time`] (cold-start measurement);
 //! the GUI reaches both through `forge_ipc::base::platform`. M2-E1-T3 added
 //! [`ShellOpener`] (a URL in the default browser, a folder in Explorer; `ShellExecuteExW`).
+//! M2-E3-T3 added [`PtySpawner`] (a process in a pseudo console, inside a
+//! [`ProcessGroup`]; ConPTY) for the daemon's terminal sessions.
 //! On other OSes every operation returns [`ForgeError::UnsupportedPlatform`] until the
 //! Linux/macOS ports (docs/13 §4).
 
@@ -52,6 +54,7 @@ pub mod privileged;
 pub mod probe;
 pub mod process;
 pub mod process_stats;
+pub mod pty;
 pub mod runtime_deps;
 pub mod secure_file;
 pub mod shell_open;
@@ -88,6 +91,10 @@ pub use process::{
     SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
 };
 pub use process_stats::{ProcStats, ProcessStats, process_creation_time, process_stats};
+pub use pty::{
+    PTY_CLOSE_TIMEOUT, PTY_RESIZE_TIMEOUT, PtyCommand, PtyConsole, PtyReader, PtySession, PtySize,
+    PtySpawner, PtyWriter, pty_spawner,
+};
 pub use runtime_deps::{
     RuntimeDep, RuntimeDeps, VCREDIST_INSTALL_ARGS, VCREDIST_PUBLISHER, VCREDIST_X64_URL,
     VcRedistFlavor, VcRuntimeVersion, runtime_deps,
@@ -278,6 +285,7 @@ pub struct Platform {
     net_adapters: Arc<dyn NetAdapters>,
     user_env: Arc<dyn UserEnv>,
     shell_opener: Arc<dyn ShellOpener>,
+    pty: Arc<dyn PtySpawner>,
 }
 
 impl fmt::Debug for Platform {
@@ -291,13 +299,15 @@ impl fmt::Debug for Platform {
 impl Platform {
     /// Assembles a platform from parts (tests use fakes). Process operations default to
     /// [`process_control`] with default options; process counters, code signing, file
-    /// ACLs, the TCP table, runtime detection, elevation, network adapters and the user
-    /// environment to the implementations of the running OS. See
+    /// ACLs, the TCP table, runtime detection, elevation, network adapters, the user
+    /// environment, the shell opener and pseudo consoles to the implementations of the
+    /// running OS. See
     /// [`Platform::with_processes`], [`Platform::with_process_stats`],
     /// [`Platform::with_code_sign`], [`Platform::with_file_acl`],
     /// [`Platform::with_port_table`], [`Platform::with_runtime_deps`],
-    /// [`Platform::with_elevation`], [`Platform::with_net_adapters`] and
-    /// [`Platform::with_user_env`].
+    /// [`Platform::with_elevation`], [`Platform::with_net_adapters`],
+    /// [`Platform::with_user_env`], [`Platform::with_shell_opener`] and
+    /// [`Platform::with_pty_spawner`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -317,6 +327,7 @@ impl Platform {
             net_adapters: net_adapters(),
             user_env: user_env(),
             shell_opener: shell_opener(),
+            pty: pty_spawner(),
         }
     }
 
@@ -377,6 +388,12 @@ impl Platform {
     /// Replaces the shell opener ([`RecordingShellOpener`] in tests).
     pub fn with_shell_opener(mut self, shell_opener: Arc<dyn ShellOpener>) -> Self {
         self.shell_opener = shell_opener;
+        self
+    }
+
+    /// Replaces the pseudo console spawner (fakes in tests).
+    pub fn with_pty_spawner(mut self, pty: Arc<dyn PtySpawner>) -> Self {
+        self.pty = pty;
         self
     }
 
@@ -458,6 +475,11 @@ impl Platform {
     /// into `spawn_blocking`).
     pub fn shell_opener(&self) -> &Arc<dyn ShellOpener> {
         &self.shell_opener
+    }
+
+    /// Starts processes in pseudo consoles (shared, so it can move into `spawn_blocking`).
+    pub fn pty_spawner(&self) -> &Arc<dyn PtySpawner> {
+        &self.pty
     }
 }
 

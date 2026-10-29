@@ -27,6 +27,8 @@
 //!   faster than we read blocks in `WriteFile`, as on a terminal.
 //! * Exit is watched with `RegisterWaitForSingleObject` (OS thread pool) completing a
 //!   oneshot channel: no blocking thread per process.
+//! * The launch helpers (checks, command line, environment block, attribute list, exit
+//!   watch) are shared with the pseudo consoles of `conpty.rs`.
 
 use std::ffi::{OsStr, OsString, c_void};
 use std::future::Future as _;
@@ -139,7 +141,7 @@ pub(crate) fn win32_code(err: &::windows::core::Error) -> Option<u32> {
     (hr & 0xFFFF_0000 == 0x8007_0000).then_some(hr & 0xFFFF)
 }
 
-fn win_err(context: impl Into<String>, err: &::windows::core::Error) -> ForgeError {
+pub(crate) fn win_err(context: impl Into<String>, err: &::windows::core::Error) -> ForgeError {
     ForgeError::io(context, os_error(err))
 }
 
@@ -148,7 +150,7 @@ pub(crate) fn wide(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain(std::iter::once(0)).collect()
 }
 
-fn raw(handle: &OwnedHandle) -> HANDLE {
+pub(crate) fn raw(handle: &OwnedHandle) -> HANDLE {
     HANDLE(handle.as_raw_handle())
 }
 
@@ -156,7 +158,7 @@ fn raw(handle: &OwnedHandle) -> HANDLE {
 ///
 /// # Safety
 /// `handle` must be a valid handle that nobody else closes.
-unsafe fn owned(handle: HANDLE) -> OwnedHandle {
+pub(crate) unsafe fn owned(handle: HANDLE) -> OwnedHandle {
     // SAFETY: guaranteed by the caller.
     unsafe { OwnedHandle::from_raw_handle(handle.0) }
 }
@@ -689,12 +691,12 @@ pub(crate) fn environment_block(env: &[(OsString, OsString)]) -> Result<Vec<u16>
 }
 
 /// Owns an initialized `PROC_THREAD_ATTRIBUTE_LIST`.
-struct AttributeList {
+pub(crate) struct AttributeList {
     buf: Vec<u64>,
 }
 
 impl AttributeList {
-    fn new(count: u32) -> Result<Self> {
+    pub(crate) fn new(count: u32) -> Result<Self> {
         let mut size = 0_usize;
         // SAFETY: sizing call (expected to fail with ERROR_INSUFFICIENT_BUFFER).
         let _ = unsafe { InitializeProcThreadAttributeList(None, count, None, &mut size) };
@@ -710,7 +712,7 @@ impl AttributeList {
         Ok(list)
     }
 
-    fn ptr(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+    pub(crate) fn ptr(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
         LPPROC_THREAD_ATTRIBUTE_LIST(self.buf.as_mut_ptr().cast())
     }
 }
@@ -724,48 +726,56 @@ impl Drop for AttributeList {
     }
 }
 
-fn create_error(cmd: &ProcessCommand, err: &::windows::core::Error) -> ForgeError {
+/// Domain error for a failed `CreateProcessW` of `exe` in `cwd`.
+pub(crate) fn launch_error(exe: &Path, cwd: &Path, err: &::windows::core::Error) -> ForgeError {
     match win32_code(err) {
         Some(code) if code == ERROR_FILE_NOT_FOUND.0 || code == ERROR_PATH_NOT_FOUND.0 => {
-            ForgeError::NotFound(format!("executable {}", cmd.exe.display()))
+            ForgeError::NotFound(format!("executable {}", exe.display()))
         }
         Some(code) if code == ERROR_DIRECTORY.0 => {
-            ForgeError::NotFound(format!("working directory {}", cmd.cwd.display()))
+            ForgeError::NotFound(format!("working directory {}", cwd.display()))
         }
         Some(code) if code == ERROR_ELEVATION_REQUIRED.0 => {
-            ForgeError::NeedsElevation(format!("starting {}", cmd.exe.display()))
+            ForgeError::NeedsElevation(format!("starting {}", exe.display()))
         }
         Some(code) if code == ERROR_BAD_EXE_FORMAT.0 => {
-            ForgeError::InvalidInput(format!("{} is not a valid executable", cmd.exe.display()))
+            ForgeError::InvalidInput(format!("{} is not a valid executable", exe.display()))
         }
-        _ => win_err(format!("starting {}", cmd.exe.display()), err),
+        _ => win_err(format!("starting {}", exe.display()), err),
     }
 }
 
-/// `CreateProcessW` suspended → assign to `job` (and its ancestors) → resume.
-pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<Created> {
-    if !cmd.exe.is_absolute() {
+/// Checks shared by every launch (supervised processes and pseudo consoles): `exe` is
+/// absolute and not a batch file (cmd.exe has its own quoting rules, so arguments could
+/// not be passed safely), `cwd` is an existing folder.
+pub(crate) fn check_launch(exe: &Path, cwd: &Path) -> Result<()> {
+    if !exe.is_absolute() {
         return Err(ForgeError::InvalidInput(format!(
             "executable path must be absolute: {}",
-            cmd.exe.display()
+            exe.display()
         )));
     }
-    let extension = cmd
-        .exe
+    let extension = exe
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase());
     if matches!(extension.as_deref(), Some("bat" | "cmd")) {
         return Err(ForgeError::InvalidInput(format!(
             "batch files cannot be supervised directly (cmd.exe quoting): {}",
-            cmd.exe.display()
+            exe.display()
         )));
     }
-    if !cmd.cwd.is_dir() {
+    if !cwd.is_dir() {
         return Err(ForgeError::NotFound(format!(
             "working directory {}",
-            cmd.cwd.display()
+            cwd.display()
         )));
     }
+    Ok(())
+}
+
+/// `CreateProcessW` suspended → assign to `job` (and its ancestors) → resume.
+pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<Created> {
+    check_launch(&cmd.exe, &cmd.cwd)?;
 
     let app = wide(cmd.exe.as_os_str());
     let mut line = command_line(&cmd.exe, &cmd.args)?;
@@ -841,7 +851,7 @@ pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<
     // Close the child's ends in this process right away: EOF on our pipe ends depends on
     // the child (and its descendants) being the only holders.
     drop((stdin, stdout, stderr));
-    created.map_err(|e| create_error(cmd, &e))?;
+    created.map_err(|e| launch_error(&cmd.exe, &cmd.cwd, &e))?;
 
     // SAFETY: CreateProcessW succeeded; both handles are ours.
     let process = unsafe { owned(pi.hProcess) };
@@ -1001,8 +1011,9 @@ unsafe extern "system" fn on_process_exit(context: *mut c_void, _timed_out: bool
     }
 }
 
-/// [`ExitSource`] for a process handle.
-struct ExitWatch {
+/// [`ExitSource`] for a process handle (also the exit watch of a pseudo console's process,
+/// `conpty.rs`).
+pub(crate) struct ExitWatch {
     // Declared first so it is dropped first: the wait must be unregistered before the
     // process handle it waits on is closed.
     _registration: WaitRegistration,
@@ -1014,7 +1025,8 @@ struct ExitWatch {
 }
 
 impl ExitWatch {
-    fn new(process: OwnedHandle) -> Result<Self> {
+    /// Watches `process`, which needs `SYNCHRONIZE` and query access.
+    pub(crate) fn new(process: OwnedHandle) -> Result<Self> {
         let (sender, receiver) = oneshot::channel();
         let slot = Box::into_raw(Box::new(Some(sender)));
         let mut wait = HANDLE::default();
