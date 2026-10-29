@@ -42,3 +42,41 @@ describe("tailwind default utilities are not used", () => {
     expect(found).toEqual([]);
   });
 });
+
+// Tailwind 4: `outline-hidden`/`outline-none` set --tw-outline-style: none, so
+// `focus-visible:outline-2` alone draws nothing. A focus ring needs `focus-visible:outline-solid`
+// (use FOCUS_RING from design/primitives/shared.ts).
+const NO_RING_ALLOWLIST = [
+  // TODO M2-E4-T6 / M2-E4-T8: T7 chrome controls still compute outline none on focus.
+  "app/shell/Titlebar.tsx",
+  "app/shell/WindowControls.tsx",
+];
+
+function invisibleFocusRings(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/(["'`])([^"'`]*)\1/g)) {
+    const classes = (m[2] ?? "").split(/\s+/);
+    const hides = classes.some((c) => c === "outline-hidden" || c === "outline-none");
+    const ring = classes.includes("focus-visible:outline-2");
+    if (hides && ring && !classes.includes("focus-visible:outline-solid")) out.push(m[2] ?? "");
+  }
+  return out;
+}
+
+describe("focus rings are visible", () => {
+  it("detects an invisible ring (self-check)", () => {
+    expect(invisibleFocusRings(`"outline-hidden focus-visible:outline-2 focus-visible:outline-accent"`)).toHaveLength(1);
+    expect(invisibleFocusRings(`"outline-none focus-visible:outline-solid focus-visible:outline-2"`)).toEqual([]);
+  });
+  it("src/**/*.tsx never pairs outline-hidden/none with focus-visible:outline-2 alone", () => {
+    const found = files(src)
+      .filter((f) => !NO_RING_ALLOWLIST.some((a) => f.replaceAll("\\", "/").endsWith(a)))
+      .flatMap((f) => invisibleFocusRings(readFileSync(f, "utf8")).map((c) => `${f}: ${c}`));
+    expect(found).toEqual([]);
+  });
+  it("shell nav links and status chips use FOCUS_RING", () => {
+    for (const f of ["app/shell/Sidebar.tsx", "app/shell/StatusBar.tsx", "app/hosts.tsx"]) {
+      expect(readFileSync(join(src, f), "utf8")).toContain("${FOCUS_RING}");
+    }
+  });
+});
