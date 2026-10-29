@@ -50,4 +50,5 @@ As contas não fecham com o desenho literal:
 - Depois de um salto para trás do relógio do sistema, janelas de 1m/5m e pontos de 10 s ficam parados até o relógio passar do valor antigo; contagens continuam nos minutos.
 - O formato persistido é o V2 do `hdrhistogram`, interoperável com outras ferramentas HDR; mudar o layout exige outro `FORMAT_VERSION`.
 - Custo: 212 ns por registro em release, com um `advance` a cada 250 registros.
+- CPU/RAM por site usa o tipo da atribuição (`forge_metrics::SiteResources`, M2-E5-T6, [docs/14](../14-observability-metrics.md) §3.3) na API (`set_resources`, `SeriesPoint.resources`), sem tipo paralelo; o ponto de 10 s de 64 B o guarda empacotado (CPU em `f32`, memória em KiB, workers em `u16`, com conversão saturada). `Counters::site_load()` dá o `SiteLoad` de entrada da atribuição a partir de `sums`.
 - Tudo é parametrizável em `AggConfig` (graça, spans, orçamento e teto dos minutos, K, época das rotas, anéis, fila).

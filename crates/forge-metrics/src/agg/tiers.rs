@@ -21,9 +21,8 @@
 
 use std::collections::VecDeque;
 
-use super::{
-    Counters, HOUR, MINUTE, Resources, SeriesPoint, T0, T1, ceil_to, floor_to, secs_to_ts,
-};
+use super::{Counters, HOUR, MINUTE, SeriesPoint, T0, T1, ceil_to, floor_to, secs_to_ts};
+use crate::attribution::SiteResources;
 use crate::hist::{Dense, LatencyHist, Percentiles, compact_raw, push_raw};
 
 /// One record, reduced to what the tiers need.
@@ -217,6 +216,16 @@ const SAMPLED: u8 = 1;
 const HAS_RESOURCES: u8 = 2;
 const APPROX: u8 = 4;
 
+/// CPU % of [`SiteResources`] as stored in a [`Point`]: `f32`, saturated (an `as` cast
+/// would turn a huge value into infinity), NaN and negatives as 0.
+fn pack_cpu(v: f64) -> f32 {
+    if v.is_nan() || v <= 0.0 {
+        0.0
+    } else {
+        v.min(f64::from(f32::MAX)) as f32
+    }
+}
+
 /// A tier 1 point: 10 s of scalars, 64 bytes.
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Point {
@@ -242,12 +251,12 @@ impl Point {
         i64::from(self.period) * T1
     }
 
-    fn resources(&self) -> Option<Resources> {
-        (self.flags & HAS_RESOURCES != 0).then(|| Resources {
-            cpu_pct: self.cpu_pct,
+    fn resources(&self) -> Option<SiteResources> {
+        (self.flags & HAS_RESOURCES != 0).then(|| SiteResources {
+            cpu_pct: f64::from(self.cpu_pct),
             mem_bytes: u64::from(self.mem_kib) * 1024,
             approx: self.flags & APPROX != 0,
-            workers_active: self.workers,
+            workers_active: u32::from(self.workers),
         })
     }
 
@@ -554,11 +563,14 @@ impl SiteTiers {
         &mut self.points[pos]
     }
 
-    pub(crate) fn set_resources(&mut self, at: i64, r: &Resources) {
+    /// Packs `r` into the 64-byte point, saturating: CPU as `f32` (NaN and negatives as 0,
+    /// at most `f32::MAX`), memory in KiB rounded up (at most 4 TiB), workers at most
+    /// `u16::MAX`.
+    pub(crate) fn set_resources(&mut self, at: i64, r: &SiteResources) {
         let point = self.point_mut(floor_to(at, T1));
-        point.cpu_pct = r.cpu_pct;
+        point.cpu_pct = pack_cpu(r.cpu_pct);
         point.mem_kib = u32::try_from(r.mem_bytes.div_ceil(1024)).unwrap_or(u32::MAX);
-        point.workers = r.workers_active;
+        point.workers = u16::try_from(r.workers_active).unwrap_or(u16::MAX);
         point.flags |= HAS_RESOURCES;
         if r.approx {
             point.flags |= APPROX;
@@ -1036,7 +1048,7 @@ impl SiteTiers {
     }
 
     /// Resources of the open 10 s period starting at `start`, if set.
-    pub(crate) fn point_resources(&self, start: i64) -> Option<Resources> {
+    pub(crate) fn point_resources(&self, start: i64) -> Option<SiteResources> {
         let key = u32::try_from(start / T1).ok()?;
         let pos = self.points.partition_point(|p| p.period < key);
         self.points
@@ -1067,21 +1079,21 @@ impl SiteTiers {
     }
 
     /// Mean CPU and memory, max workers, of the 10 s points in `[from, to)` that have them.
-    pub(crate) fn average_resources(&self, from: i64, to: i64) -> Option<Resources> {
+    pub(crate) fn average_resources(&self, from: i64, to: i64) -> Option<SiteResources> {
         let start = self.points.partition_point(|p| p.start() < from);
         let mut n = 0u32;
-        let (mut cpu, mut mem, mut workers, mut approx) = (0f64, 0u128, 0u16, false);
+        let (mut cpu, mut mem, mut workers, mut approx) = (0f64, 0u128, 0u32, false);
         for p in self.points.range(start..).take_while(|p| p.start() < to) {
             if let Some(r) = p.resources() {
                 n += 1;
-                cpu += f64::from(r.cpu_pct);
+                cpu += r.cpu_pct;
                 mem += u128::from(r.mem_bytes);
                 workers = workers.max(r.workers_active);
                 approx |= r.approx;
             }
         }
-        (n > 0).then(|| Resources {
-            cpu_pct: (cpu / f64::from(n)) as f32,
+        (n > 0).then(|| SiteResources {
+            cpu_pct: cpu / f64::from(n),
             mem_bytes: u64::try_from(mem / u128::from(n)).unwrap_or(u64::MAX),
             approx,
             workers_active: workers,
@@ -1148,7 +1160,11 @@ fn series_point(
 }
 
 /// A point built from a plan's totals.
-pub(crate) fn totals_point(start: i64, t: &Totals, resources: Option<Resources>) -> SeriesPoint {
+pub(crate) fn totals_point(
+    start: i64,
+    t: &Totals,
+    resources: Option<SiteResources>,
+) -> SeriesPoint {
     let mut p = series_point(start, &t.counts, t.sampled, t.rt, t.ut);
     p.resources = resources;
     p

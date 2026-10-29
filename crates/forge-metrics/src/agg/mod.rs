@@ -42,6 +42,7 @@ use std::time::Duration;
 use forge_core::ids::SiteId;
 use jiff::Timestamp;
 
+use crate::attribution::{SiteLoad, SiteResources};
 use crate::hist::{Dense, LATENCY, LatencyHist, Percentiles};
 use crate::record::AccessRecord;
 use errors::ErrorRings;
@@ -210,6 +211,15 @@ impl Counters {
     pub fn err5xx(&self) -> u64 {
         self.status[4]
     }
+
+    /// The load of the site for [`attribute`](crate::attribute) (`ut_sum`, `rt_sum` as the
+    /// fallback), from the counters of a bucket ([`Aggregator::sums`]).
+    pub fn site_load(&self) -> SiteLoad {
+        SiteLoad {
+            ut_sum_us: self.ut_sum_us,
+            rt_sum_us: self.rt_sum_us,
+        }
+    }
 }
 
 /// Totals of a window or range.
@@ -227,19 +237,6 @@ pub struct Summary {
     pub ut: Option<Percentiles>,
     /// Some of the records stand for several lines (adaptive sampling of the tailer).
     pub sampled: bool,
-}
-
-/// CPU/RAM attributed to a site for a 10 s period (M2-E5-T6), stored in its tier 1 point.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct Resources {
-    /// CPU %, normalized by the logical CPUs (Task Manager style).
-    pub cpu_pct: f32,
-    /// Memory, in bytes (stored in KiB).
-    pub mem_bytes: u64,
-    /// Apportioned from a shared pool (shown with "≈").
-    pub approx: bool,
-    /// Workers serving the site.
-    pub workers_active: u16,
 }
 
 /// Step of a series.
@@ -288,8 +285,10 @@ pub struct SeriesPoint {
     pub rt: Option<Percentiles>,
     /// Upstream-duration percentiles (not kept by tier 1 points: `None` at 10 s).
     pub ut: Option<Percentiles>,
-    /// CPU/RAM (10 s points; minutes average theirs).
-    pub resources: Option<Resources>,
+    /// CPU/RAM attributed by [`attribute`](crate::attribute) (10 s points; minutes and hours
+    /// average theirs). Read back from the 64-byte point: `cpu_pct` with `f32` precision,
+    /// `mem_bytes` rounded up to KiB, `workers_active` saturated at `u16::MAX`.
+    pub resources: Option<SiteResources>,
     /// Some records stand for several lines.
     pub sampled: bool,
 }
@@ -656,8 +655,9 @@ impl Aggregator {
         (summary, rt, ut)
     }
 
-    /// Counts and time sums only (no histogram work): the input of CPU attribution (T6).
-    /// Clamped like [`Self::range`].
+    /// Counts and time sums only (no histogram work): the input of CPU attribution
+    /// ([`Counters::site_load`] for [`attribute`](crate::attribute)). Clamped like
+    /// [`Self::range`].
     pub fn sums(&mut self, site: SiteId, from: Timestamp, to: Timestamp) -> Counters {
         let (from, to) = self.span(from, to);
         let clock = self.clock;
@@ -738,8 +738,11 @@ impl Aggregator {
         }
     }
 
-    /// Stores the CPU/RAM attributed to `site` for the 10 s period containing `at`.
-    pub fn set_resources(&mut self, site: SiteId, at: Timestamp, resources: Resources) {
+    /// Stores the CPU/RAM attributed to `site` (an entry of [`Attribution::sites`]) for the
+    /// 10 s period containing `at`. The point keeps it packed (see [`SeriesPoint::resources`]).
+    ///
+    /// [`Attribution::sites`]: crate::Attribution::sites
+    pub fn set_resources(&mut self, site: SiteId, at: Timestamp, resources: &SiteResources) {
         let now = self.now_s;
         let secs = ts_floor(at);
         if secs < now - self.cfg.retention {
@@ -749,7 +752,7 @@ impl Aggregator {
             .entry(site)
             .or_insert_with(|| Box::new(SiteAgg::new(now)))
             .tiers
-            .set_resources(secs, &resources);
+            .set_resources(secs, resources);
     }
 
     /// Top routes of the site (one to two route epochs).

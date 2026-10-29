@@ -17,7 +17,8 @@
 //! lines out in batches through a bounded channel (docs/14 section 3.2).
 //!
 //! [`attribute`] splits the CPU/RAM of pools and app processes of one bucket among the sites
-//! (docs/14 section 3.3).
+//! (docs/14 section 3.3); its [`SiteResources`] are what [`Aggregator::set_resources`]
+//! stores in the 10 s points.
 //!
 //! [`Aggregator`] keeps, per site, the tiers of counts and latency histograms (2 s for
 //! 10 min, 10 s points and minutes for 24 h, hours), the top routes and the recent errors,
@@ -34,8 +35,8 @@ mod router;
 pub mod tail;
 
 pub use agg::{
-    AggConfig, AggStats, Aggregator, Counters, MinuteDelta, RecentError, RecentErrors, Resources,
-    RouteStats, RoutesReport, SeriesPoint, Step, Summary,
+    AggConfig, AggStats, Aggregator, Counters, MinuteDelta, RecentError, RecentErrors, RouteStats,
+    RoutesReport, SeriesPoint, Step, Summary,
 };
 pub use attribution::{
     AppSample, Attribution, Bucket, Overhead, PoolMode, PoolRoute, PoolSample, SiteLoad,

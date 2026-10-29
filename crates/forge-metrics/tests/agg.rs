@@ -17,8 +17,8 @@ use forge_core::ids::SiteId;
 use forge_metrics::agg::MAX_RETENTION;
 use forge_metrics::hist::HIGHEST_US;
 use forge_metrics::{
-    AccessRecord, AggConfig, Aggregator, LatencyHist, MinuteDelta, Percentiles, Resources, Step,
-    Summary,
+    AccessRecord, AggConfig, Aggregator, Bucket, LatencyHist, MinuteDelta, Percentiles, PoolMode,
+    PoolRoute, PoolSample, SiteResources, Step, Summary, attribute,
 };
 use hdrhistogram::Histogram;
 use jiff::{SignedDuration, Timestamp};
@@ -761,26 +761,26 @@ fn resources_land_in_tier1_points_and_minutes_average_them() {
     }
     agg.advance(t(80));
     for i in 0..6 {
-        let r = Resources {
-            cpu_pct: 10.0 * (i + 1) as f32,
+        let r = SiteResources {
+            cpu_pct: 10.0 * f64::from(i + 1),
             mem_bytes: 100 << 20,
             approx: true,
-            workers_active: i as u16,
+            workers_active: i as u32,
         };
-        agg.set_resources(site, t(i * 10 + 3), r);
+        agg.set_resources(site, t(i64::from(i) * 10 + 3), &r);
     }
     let points = agg.series(site, t(0), t(60), Step::TenSeconds);
     assert_eq!(points.len(), 6);
-    assert_eq!(points[2].resources.unwrap().cpu_pct, 30.0);
+    assert_eq!(points[2].resources.as_ref().unwrap().cpu_pct, 30.0);
     assert_eq!(points[2].ut_sum_us, 900);
     let minute = &agg.series(site, t(0), t(60), Step::Minute)[0];
-    let r = minute.resources.unwrap();
+    let r = minute.resources.as_ref().unwrap();
     assert_eq!(r.cpu_pct, 35.0);
     assert_eq!(r.mem_bytes, 100 << 20);
     assert!(r.approx);
     assert_eq!(r.workers_active, 5);
     // A period without requests gets a point with resources only.
-    agg.set_resources(site, t(75), Resources::default());
+    agg.set_resources(site, t(75), &SiteResources::default());
     assert_eq!(agg.series(site, t(70), t(80), Step::TenSeconds).len(), 1);
     // Attribution sums.
     let sums = agg.sums(site, t(0), t(60));
@@ -788,6 +788,142 @@ fn resources_land_in_tier1_points_and_minutes_average_them() {
         (sums.requests, sums.ut_sum_us, sums.rt_sum_us),
         (6, 5400, 6000)
     );
+}
+
+#[test]
+fn attribution_output_is_stored_packed_and_saturated() {
+    let site = SiteId::new();
+    let m = (base().as_second() / 60 + 1) * 60;
+    let t = |s: i64| Timestamp::from_second(m + s).unwrap();
+    let mut agg = Aggregator::new(cfg(), t(0));
+    agg.advance(t(60));
+    let cases = [
+        // (stored, read back)
+        (
+            SiteResources {
+                cpu_pct: 33.3,
+                mem_bytes: 1,
+                approx: false,
+                workers_active: 3,
+            },
+            SiteResources {
+                cpu_pct: f64::from(33.3_f32),
+                mem_bytes: 1024,
+                approx: false,
+                workers_active: 3,
+            },
+        ),
+        (
+            SiteResources {
+                cpu_pct: f64::INFINITY,
+                mem_bytes: u64::MAX,
+                approx: true,
+                workers_active: 70_000,
+            },
+            SiteResources {
+                cpu_pct: f64::from(f32::MAX),
+                mem_bytes: u64::from(u32::MAX) * 1024,
+                approx: true,
+                workers_active: u32::from(u16::MAX),
+            },
+        ),
+        (
+            SiteResources {
+                cpu_pct: f64::NAN,
+                mem_bytes: 0,
+                approx: false,
+                workers_active: 0,
+            },
+            SiteResources::default(),
+        ),
+        (
+            SiteResources {
+                cpu_pct: -1.0,
+                mem_bytes: 2048,
+                approx: false,
+                workers_active: 1,
+            },
+            SiteResources {
+                cpu_pct: 0.0,
+                mem_bytes: 2048,
+                approx: false,
+                workers_active: 1,
+            },
+        ),
+    ];
+    for (i, (stored, expected)) in cases.iter().enumerate() {
+        let at = t(i as i64 * 10);
+        agg.set_resources(site, at, stored);
+        let points = agg.series(
+            site,
+            at,
+            at + SignedDuration::from_secs(10),
+            Step::TenSeconds,
+        );
+        assert_eq!(points.len(), 1, "case {i}");
+        assert_eq!(points[0].resources.as_ref(), Some(expected), "case {i}");
+    }
+    // Setting it again replaces the point's resources, `approx` included.
+    agg.set_resources(site, t(10), &SiteResources::default());
+    let points = agg.series(site, t(10), t(20), Step::TenSeconds);
+    assert_eq!(points[0].resources, Some(SiteResources::default()));
+}
+
+/// The T6 -> T5 loop the metrics actor runs every 10 s: the sums of a bucket feed
+/// `attribute`, whose output goes back into the same tier 1 points, with no type in between.
+#[test]
+fn sums_feed_attribution_and_its_output_lands_in_tier1() {
+    let (a, b) = (SiteId::new(), SiteId::new());
+    let m = (base().as_second() / 60 + 1) * 60;
+    let t = |s: i64| Timestamp::from_second(m + s).unwrap();
+    let mut agg = Aggregator::new(cfg(), t(0));
+    // Site a: 3 ms of PHP per request, b: 1 ms, same request count -> 75/25.
+    for i in 0..10 {
+        agg.advance(t(i + 1));
+        agg.record(a, &record(us(t(i)), 4000, Some(3000), 200, "/a"), 1);
+        agg.record(b, &record(us(t(i)), 2000, Some(1000), 200, "/b"), 1);
+    }
+    agg.advance(t(20));
+    let mut bucket = Bucket {
+        length_ms: 10_000,
+        pools: vec![PoolSample {
+            pool: "php_8_3".into(),
+            mode: PoolMode::Shared,
+            cpu_pct: 40.0,
+            mem_bytes: 400 << 20,
+            workers_active: 4,
+            from_ms: 0,
+            to_ms: 10_000,
+        }],
+        ..Bucket::default()
+    };
+    for (site, name) in [(a, "a"), (b, "b")] {
+        let sums = agg.sums(site, t(0), t(10));
+        assert_eq!(sums.requests, 10);
+        bucket.loads.insert(name.into(), sums.site_load());
+        bucket.routes.push(PoolRoute {
+            site: name.into(),
+            pool: "php_8_3".into(),
+            from_ms: 0,
+            to_ms: 10_000,
+        });
+    }
+    let out = attribute(&bucket);
+    for (site, name) in [(a, "a"), (b, "b")] {
+        agg.set_resources(site, t(0), &out.sites[name]);
+    }
+    let ra = agg.series(a, t(0), t(10), Step::TenSeconds)[0]
+        .resources
+        .clone()
+        .unwrap();
+    let rb = agg.series(b, t(0), t(10), Step::TenSeconds)[0]
+        .resources
+        .clone()
+        .unwrap();
+    assert_eq!((ra.cpu_pct, rb.cpu_pct), (30.0, 10.0));
+    assert_eq!((ra.mem_bytes, rb.mem_bytes), (300 << 20, 100 << 20));
+    assert!(ra.approx && rb.approx);
+    assert_eq!((ra.workers_active, rb.workers_active), (3, 1));
 }
 
 #[test]
