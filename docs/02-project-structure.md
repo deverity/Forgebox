@@ -75,7 +75,13 @@ Forgebox/
 │   │                             #   integrado, processo membro do ProcessGroup antes de rodar; leitor/escritor bloqueantes,
 │   │                             #   resize e close com prazo; docs/03 §1.6; stub unsupported_platform fora do Windows);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
-│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
+│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI), info(pid) → ProcessInfo
+│   │                             #   (pid, started_at, image_path, image_name), ImageNameCache (nome base da imagem em cache por
+│   │                             #   (pid, started_at); retain/limite de 4.096), FakeProcessStats;
+│   │                             #   system_stats.rs: SystemStats (sample() → MachineSample: CPU ocupada/ociosa acumulada, CPUs
+│   │                             #   lógicas, RAM total/disponível; volume(path) → VolumeSpace {total, free, available}),
+│   │                             #   cpu_pct_since/cpu_share_since, sample_machine/volume_space (spawn_blocking com prazo),
+│   │                             #   FakeSystemStats, UnsupportedSystemStats (fora do Windows);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
 │   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
 │   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;
@@ -91,8 +97,11 @@ Forgebox/
 │   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
 │   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama; limpa a marca
 │   │                             #   "ignorar Ctrl+C" herdada antes do spawn),
-│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
-│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
+│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount,
+│   │                             #   QueryFullProcessImageNameW: image_path compartilhado com net_table.rs),
+│   │                             #   system_stats.rs (GetSystemTimes: ocupado = kernel − ocioso + usuário, GlobalMemoryStatusEx,
+│   │                             #   GetDiskFreeSpaceExW),
+│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + imagem do dono via process_stats.rs),
 │   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
 │   │                             #   dns_policy.rs (NRPT no registro, DataBasePath do hosts, DnsFlushResolverCache, ops via helper),
 │   │                             #   net_adapters.rs (GetAdaptersAddresses),

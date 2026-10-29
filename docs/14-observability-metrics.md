@@ -80,7 +80,7 @@ Função pura por balde (10 s). Entrada: `PoolSample` (CPU % da máquina, workin
 
 ### 4.2 Dashboard geral
 - Tiles por serviço com sparklines (já em [07](07-ui-ux.md)); nova seção "Projetos" com ranking por CPU/RAM/p99/erros nas últimas 24 h; "Ociosos há > 7 dias" com sugestão de parar processes.
-- Monitor da máquina: CPU/RAM/disco totais vs. parcela do Forgebox.
+- Monitor da máquina: CPU/RAM/disco totais vs. parcela do Forgebox. Fonte: `forge_core::platform::SystemStats` (M2-E5-T10, [03](03-engine.md) §6): CPU da máquina = Δocupado / (Δocupado + Δocioso) entre duas amostras de `GetSystemTimes`; parcela do Forgebox = Σ Δ tempo de CPU dos processos do daemon, das instâncias, dos pools e dos apps sobre a **mesma** capacidade (`MachineSample::cpu_share_since`), nunca acima da máquina; RAM = `GlobalMemoryStatusEx` (total e disponível) vs. Σ working set; disco = `GetDiskFreeSpaceExW` do volume da raiz (e de `data/` se estiver em outro volume). Os nomes de processo do `forge top` vêm de `ProcessStats::info` (`QueryFullProcessImageNameW`) via `ImageNameCache`, em cache por `(pid, started_at)`.
 
 ### 4.3 CLI
 ```
