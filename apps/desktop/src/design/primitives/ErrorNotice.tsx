@@ -9,6 +9,7 @@ import {
   type ErrorTranslate,
 } from "../../ipc/describeError";
 import { Button } from "./Button";
+import { Tooltip } from "./Tooltip";
 
 export interface ErrorNoticeProps {
   error: DescribableError;
@@ -17,6 +18,16 @@ export interface ErrorNoticeProps {
   onRetry?: () => void;
   /** Handler of every other suggested action (start the daemon, show ports...). */
   onAction?: (action: ErrorAction) => void;
+  /**
+   * Whether the caller can run `action` (never called for `retry`). An action without a
+   * handler is not rendered: no inert buttons. Default: every action when `onAction` is set.
+   */
+  canHandle?: (action: ErrorAction) => boolean;
+  /**
+   * Why `action` cannot run now (capability: not implemented, local only, role...). The
+   * button is shown disabled with this text; `undefined` means it is available.
+   */
+  disabledReason?: (action: ErrorAction) => string | undefined;
 }
 
 /**
@@ -29,13 +40,23 @@ export function useErrorTranslate(): ErrorTranslate {
   return t as unknown as ErrorTranslate;
 }
 
-export function ErrorNotice({ error, context, onRetry, onAction }: ErrorNoticeProps) {
+export function ErrorNotice({
+  error,
+  context,
+  onRetry,
+  onAction,
+  canHandle,
+  disabledReason,
+}: ErrorNoticeProps) {
   const { t } = useTranslation(["errors", "common"]);
   const [showDetail, setShowDetail] = useState(false);
   const translate = useErrorTranslate();
   const view = translateError(describeError(error, context), translate);
-  const buttons: { id: string; text: string }[] = view.actions.filter((action) =>
-    action.id === "retry" ? onRetry !== undefined : onAction !== undefined,
+  const buttons: { id: string; text: string; cli?: string | null }[] = view.actions.filter(
+    (action) =>
+      action.id === "retry"
+        ? onRetry !== undefined
+        : onAction !== undefined && (canHandle?.(action) ?? true),
   );
   // A caller that can retry always gets the button, even when describeError had no method to
   // repeat (a plain query failure).
@@ -65,19 +86,39 @@ export function ErrorNotice({ error, context, onRetry, onAction }: ErrorNoticePr
       )}
       {buttons.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {buttons.map((action) => (
-            <Button
-              key={action.id}
-              variant={action.id === "retry" ? "secondary" : "ghost"}
-              data-error-action={action.id}
-              onClick={() => {
-                if (action.id === "retry") onRetry?.();
-                else onAction?.(view.actions.find((a) => a.id === action.id) as ErrorAction);
-              }}
-            >
-              {action.text}
-            </Button>
-          ))}
+          {buttons.map((action) => {
+            const full = view.actions.find((a) => a.id === action.id);
+            const reason = full === undefined ? undefined : disabledReason?.(full);
+            const cli = full?.cli ?? null;
+            return (
+              <Tooltip
+                key={action.id}
+                content={reason ?? action.text}
+                {...(cli === null ? {} : { command: cli })}
+              >
+                <span
+                  data-forge-cli={cli ?? undefined}
+                  data-disabled-reason={reason}
+                  // A disabled button cannot take focus: the wrapper does, so the reason is reachable.
+                  // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+                  tabIndex={reason === undefined ? undefined : 0}
+                  className="inline-flex"
+                >
+                  <Button
+                    variant={action.id === "retry" ? "secondary" : "ghost"}
+                    data-error-action={action.id}
+                    disabled={reason !== undefined}
+                    onClick={() => {
+                      if (action.id === "retry") onRetry?.();
+                      else if (full !== undefined) onAction?.(full);
+                    }}
+                  >
+                    {action.text}
+                  </Button>
+                </span>
+              </Tooltip>
+            );
+          })}
         </div>
       ) : null}
     </div>

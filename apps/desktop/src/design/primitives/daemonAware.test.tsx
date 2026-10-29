@@ -155,6 +155,83 @@ describe("ActionButton", () => {
     );
   });
 
+  const portInUse = {
+    handlers: {
+      "services.start": () =>
+        fakeJob<never>({
+          outcome: {
+            failed: {
+              code: "port_in_use",
+              message: "port 3306 is in use",
+              details: { reason: "port_in_use", args: { port: 3306, owner: "mysqld.exe" } },
+            },
+          },
+        }),
+    },
+  };
+
+  it("offers only the error actions that work (retry) when nobody handles the rest", async () => {
+    const action = startServices();
+    await mount(
+      <ActionButton action={action} input={["mysql"]}>
+        Start
+      </ActionButton>,
+      portInUse,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Start" }));
+    const alert = await screen.findByRole("alert");
+    const ids = [...alert.querySelectorAll("[data-error-action]")].map((el) =>
+      el.getAttribute("data-error-action"),
+    );
+    expect(ids).toEqual(["retry"]);
+  });
+
+  it("calls onErrorAction for an error action with a method and shows its command", async () => {
+    const onErrorAction = vi.fn();
+    const action = startServices();
+    await mount(
+      <ActionButton action={action} input={["mysql"]} onErrorAction={onErrorAction}>
+        Start
+      </ActionButton>,
+      portInUse,
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Start" }));
+    const show = await screen.findByRole("button", { name: "Show ports" });
+    expect(show.closest("[data-forge-cli]")).toHaveAttribute(
+      "data-forge-cli",
+      "forge service ports",
+    );
+    await userEvent.setup().click(show);
+    expect(onErrorAction).toHaveBeenCalledWith(expect.objectContaining({ id: "show_ports" }));
+  });
+
+  it("disables an error action whose method the role forbids", async () => {
+    const action = defineAction({
+      id: "services.stop",
+      method: "services.stop",
+      toParams: (targets: string[]) => ({ targets }),
+    });
+    await mount(
+      <ActionButton action={action} input={["mysql"]} onErrorAction={vi.fn()}>
+        Stop
+      </ActionButton>,
+      {
+        hello: { role: "operator" },
+        handlers: {
+          "services.stop": () =>
+            fakeJob<never>({ outcome: { failed: { code: "unauthorized", message: "no" } } }),
+        },
+      },
+    );
+    await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
+    const restart = await screen.findByRole("button", { name: /restart daemon/i });
+    expect(restart).toBeDisabled();
+    expect(restart.closest("[data-disabled-reason]")).toHaveAttribute(
+      "data-disabled-reason",
+      expect.stringMatching(/role/i),
+    );
+  });
+
   it("shows the CLI in the tooltip and in data-forge-cli", async () => {
     const user = userEvent.setup();
     const action = startServices();
@@ -244,36 +321,66 @@ describe("PortField", () => {
     return <PortField label="Port" value={value} onChange={setValue} />;
   }
 
-  it("sends one request per 250 ms window and shows the holder within 300 ms", async () => {
-    const h = await mount(<Controlled />, {
-      handlers: {
-        "net.port_check": ({ port }) => ({
-          free: false,
-          holder: { pid: 4242, exe: `mysqld.exe (${String(port)})` },
-        }),
-      },
+  // Virtual time: the debounce is measured by the fake clock, never by the machine's load.
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
     });
-    const input = screen.getByLabelText("Port");
-    for (const text of ["3", "33", "330", "3306"]) {
+  const typeKeys = async (input: HTMLElement, texts: string[], gapMs: number) => {
+    for (const text of texts) {
       fireEvent.change(input, { target: { value: text } });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await advance(gapMs);
     }
-    const typedAt = performance.now();
-    await screen.findByText("in use by mysqld.exe (3306) (pid 4242)", {}, { timeout: 300 });
-    expect(performance.now() - typedAt).toBeLessThan(300);
+  };
+  const holderHandlers = {
+    "net.port_check": ({ port }: { port: number }) => ({
+      free: false,
+      holder: { pid: 4242, exe: `mysqld.exe (${String(port)})` },
+    }),
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("sends one request after the last key of a 250 ms window and shows the holder", async () => {
+    const h = await mount(<Controlled />, { handlers: holderHandlers });
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    const input = screen.getByLabelText("Port");
+    await typeKeys(input, ["3", "33", "330", "3306"], 20);
+    // typeKeys already spent 20 ms after the last key: 249 ms in total, nothing sent yet.
+    await advance(229);
+    expect(h.count("net.port_check")).toBe(0);
+    // The 250th ms sends exactly one request, and its answer shows within the 300 ms budget.
+    await advance(1);
+    await advance(50);
     expect(h.count("net.port_check")).toBe(1);
+    expect(screen.getByText("in use by mysqld.exe (3306) (pid 4242)")).toBeInTheDocument();
+    await advance(1000);
+    expect(h.count("net.port_check")).toBe(1);
+  });
+
+  it("sends one request per window when the pauses are longer than 250 ms", async () => {
+    const h = await mount(<Controlled />, { handlers: holderHandlers });
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    const input = screen.getByLabelText("Port");
+    await typeKeys(input, ["8", "80", "808", "8080"], 300);
+    expect(h.count("net.port_check")).toBe(4);
   });
 
   it("says free, and does not ask the daemon about a value that is not a port", async () => {
     const h = await mount(<Controlled />, {
       handlers: { "net.port_check": () => ({ free: true }) },
     });
+    vi.useFakeTimers({ shouldAdvanceTime: false });
     const input = screen.getByLabelText("Port");
     fireEvent.change(input, { target: { value: "70000" } });
-    expect(await screen.findByText("Use a port between 1 and 65535.")).toBeInTheDocument();
+    await advance(500);
+    expect(screen.getByText("Use a port between 1 and 65535.")).toBeInTheDocument();
     expect(h.count("net.port_check")).toBe(0);
     fireEvent.change(input, { target: { value: "8080" } });
-    expect(await screen.findByText("free", {}, { timeout: 400 })).toBeInTheDocument();
+    await advance(300);
+    expect(screen.getByText("free")).toBeInTheDocument();
     expect(h.count("net.port_check")).toBe(1);
   });
 });

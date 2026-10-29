@@ -6,7 +6,7 @@ import type { ErrorAction } from "../../ipc/describeError";
 import { toForgeApiError, type ForgeApiError } from "../../ipc/errors";
 import type { MethodName } from "../../ipc/methods";
 import { newIntent } from "../../ipc/api";
-import { useCapability, useRuntime } from "../../state";
+import { useCapabilities, useCapability, useRuntime } from "../../state";
 import { Button, type ButtonVariant } from "./Button";
 import { ErrorNotice, useErrorTranslate } from "./ErrorNotice";
 import { Tooltip } from "./Tooltip";
@@ -55,6 +55,7 @@ export function ActionButton<M extends MethodName, I = void>({
   const translate = useErrorTranslate();
   const runtime = useRuntime();
   const capability = useCapability(action.method);
+  const capabilities = useCapabilities();
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [failure, setFailure] = useState<ForgeApiError | null>(null);
   const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,6 +107,15 @@ export function ActionButton<M extends MethodName, I = void>({
     if (errorAction.client === "start_daemon") void runtime.api.start();
     else onErrorAction?.(errorAction);
   };
+  // Only what has a handler is offered: start_daemon is ours, the rest is the caller's.
+  const canHandle = (errorAction: ErrorAction) =>
+    errorAction.client === "start_daemon" || onErrorAction !== undefined;
+  // Every action with a method obeys the capabilities (role, local_only, not_implemented).
+  const actionReason = (errorAction: ErrorAction) => {
+    if (errorAction.method === null) return undefined;
+    const { text } = capabilities.can(errorAction.method);
+    return text === null ? undefined : translate(text.key, text.values);
+  };
 
   const label =
     phase === "done" ? (
@@ -153,6 +163,8 @@ export function ActionButton<M extends MethodName, I = void>({
           context={{ method: action.method, params: action.toParams(input as I) }}
           onRetry={run}
           onAction={onAction}
+          canHandle={canHandle}
+          disabledReason={actionReason}
         />
       ) : null}
     </div>
