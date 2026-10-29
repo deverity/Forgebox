@@ -121,9 +121,13 @@ fn table() -> Vec<Case> {
             E("not_found"),
         ),
         case(&["service", "config", "nginx"], E("not_found")),
-        case(&["service", "set", "php@8.3", "memory_limit=1G"], NI),
-        // Without pairs: services.settings (M2-E2-T7).
-        case(&["service", "set", "mysql/default"], NI),
+        // No PHP and no MySQL in this root (quick settings: tests/service_settings.rs).
+        case(
+            &["service", "set", "php@8.3", "memory_limit=1G"],
+            E("not_found"),
+        ),
+        // Without pairs: services.settings.
+        case(&["service", "set", "mysql/default"], E("not_found")),
         case(
             &[
                 "service",
