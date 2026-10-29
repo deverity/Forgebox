@@ -28,6 +28,17 @@ fn payload(site: &Site) -> serde_json::Value {
     })
 }
 
+/// Wire form of `forge_ipc::api::events::SitePhpChangedPayload`.
+fn php_changed_payload(site: &Site, from: Option<&str>, to: &str) -> serde_json::Value {
+    serde_json::json!({
+        "v": PAYLOAD_VERSION,
+        "site_id": site.id,
+        "host": site.host,
+        "from": from,
+        "to": to,
+    })
+}
+
 /// Result of [`SiteService::create`].
 #[derive(Debug, Clone)]
 pub struct Created {
@@ -184,6 +195,16 @@ impl SiteService {
             self.bus.publish(EventKind::SiteUpdated, payload(&site));
         }
         Ok(site)
+    }
+
+    /// Publishes `site.php_changed {from, to}` (resolved PHP versions, `from` is `None`
+    /// when the site had none) once the new version serves the site. The caller decides
+    /// when the swap succeeded; nothing is stored here.
+    pub fn publish_php_changed(&self, site: &Site, from: Option<&str>, to: &str) {
+        self.bus.publish(
+            EventKind::SitePhpChanged,
+            php_changed_payload(site, from, to),
+        );
     }
 
     /// Removes the site; `NotFound` if it does not exist. Emits `site.removed`.

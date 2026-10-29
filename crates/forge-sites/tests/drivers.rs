@@ -290,3 +290,67 @@ fn rendered_configs_keep_the_text_invariants() {
         assert!(!text.contains("~*"), "case-insensitive regex");
     }
 }
+
+#[test]
+fn redetect_finds_the_project_behind_a_stored_document_root() {
+    let laravel = fixture("laravel");
+    let doc_root = laravel.join("public");
+    // auto: the stored root is `public/`, the project (artisan, composer.json) is its parent
+    let auto = drivers::redetect(&doc_root, None).unwrap();
+    assert_eq!(auto.driver.id(), "laravel");
+    assert_eq!(auto.root, doc_root);
+    // override to wordpress: the project folder itself becomes the root
+    let forced = drivers::redetect(&doc_root, Some("wordpress")).unwrap();
+    assert_eq!(forced.driver.id(), "wordpress");
+    assert!(forced.overridden);
+    assert_eq!(forced.root, laravel);
+    // and back from the project folder
+    let again = drivers::redetect(&forced.root, None).unwrap();
+    assert_eq!(again.driver.id(), "laravel");
+    assert_eq!(again.root, doc_root);
+    assert!(drivers::redetect(&doc_root, Some("nope")).is_err());
+}
+
+/// The `root` directive of a rendered vhost.
+fn root_line(config: &str) -> String {
+    config
+        .lines()
+        .filter(|l| l.trim_start().starts_with("root "))
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn rendered_nginx_root_follows_the_driver_override() {
+    // What `sites.driver` does: override, re-detect from the stored root, re-render.
+    let laravel = fixture("laravel");
+    let rel = |root: &Path| {
+        root.strip_prefix(&laravel)
+            .unwrap()
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
+    let forced = drivers::redetect(&laravel.join("public"), Some("wordpress")).unwrap();
+    let forced_conf = render_site(
+        "nginx",
+        "1.30.6",
+        "shop",
+        forced.driver.id(),
+        &rel(&forced.root),
+    );
+    insta::assert_snapshot!(
+        "render__nginx__override_wordpress_root",
+        root_line(&forced_conf)
+    );
+    let auto = drivers::redetect(&forced.root, None).unwrap();
+    let auto_conf = render_site(
+        "nginx",
+        "1.30.6",
+        "shop",
+        auto.driver.id(),
+        &rel(&auto.root),
+    );
+    insta::assert_snapshot!("render__nginx__auto_laravel_root", root_line(&auto_conf));
+    assert_ne!(forced_conf, auto_conf);
+}

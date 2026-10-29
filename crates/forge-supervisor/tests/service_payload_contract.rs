@@ -84,6 +84,7 @@ fn mysql() -> ServiceRef {
         instance_id: InstanceId::new(),
         tool: ToolId::new("mysql").unwrap(),
         instance: "default".into(),
+        site_id: None,
     }
 }
 
@@ -382,4 +383,25 @@ async fn published_service_events_decode_as_service_payload() {
         .map(|s| s.kind().as_str())
         .collect();
     assert_eq!(seen, all, "every service.* state kind was published");
+}
+
+#[test]
+fn app_instances_carry_their_site_id_and_others_omit_it() {
+    let site = forge_core::ids::SiteId::new();
+    let app = ServiceRef {
+        site_id: Some(site),
+        ..mysql()
+    };
+    for payload in [
+        ServiceEventPayload::starting(&app, 1),
+        ServiceEventPayload::running(&app, 1, 5),
+        ServiceEventPayload::maintenance(&app),
+    ] {
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["site_id"], serde_json::json!(site));
+        let api = decode(payload.kind(), &json);
+        assert_eq!(api.site_id, Some(site));
+    }
+    let plain = serde_json::to_value(ServiceEventPayload::starting(&mysql(), 1)).unwrap();
+    assert!(plain.get("site_id").is_none(), "{plain}");
 }

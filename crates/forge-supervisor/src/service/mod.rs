@@ -60,7 +60,7 @@ use forge_core::actor::{
     StopOutcome, TellError, WeakActorRef,
 };
 use forge_core::event::EventBus;
-use forge_core::ids::{InstanceId, ToolId};
+use forge_core::ids::{InstanceId, SiteId, ToolId};
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::{
     PortTable, ProcessControl, ProcessGroup, ProcessStats, RuntimeDeps, SpawnedProcess,
@@ -110,6 +110,9 @@ pub struct InstanceSpec {
     pub metrics: MetricsOptions,
     /// Checked before each run creates its process (docs/03 §1.5); empty by default.
     pub precheck: PrecheckSpec,
+    /// Site whose process this instance runs (app instances); published as `site_id` in
+    /// the `service.*` events so clients follow a site's processes without polling.
+    pub site_id: Option<SiteId>,
 }
 
 impl InstanceSpec {
@@ -128,7 +131,14 @@ impl InstanceSpec {
             restart: RestartPolicy::default(),
             metrics: MetricsOptions::default(),
             precheck: PrecheckSpec::default(),
+            site_id: None,
         }
+    }
+
+    /// Marks the instance as running a process of `site_id`.
+    pub fn for_site(mut self, site_id: SiteId) -> Self {
+        self.site_id = Some(site_id);
+        self
     }
 
     /// Writes the output to `logs/<tool>/<name>.out.log` under `root`.
@@ -1806,6 +1816,7 @@ impl Supervisor {
             instance_id: spec.id,
             tool: spec.tool.clone(),
             instance: spec.name.clone(),
+            site_id: spec.site_id,
         };
         let id = spec.id;
         let tool = spec.tool.clone();

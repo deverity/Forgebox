@@ -6,7 +6,8 @@ use base64::Engine as _;
 use forge_core::error::{ForgeError, Result};
 use forge_core::platform::TrustScope;
 use forge_ipc::api::methods::{
-    tls_ca_export, tls_ca_install, tls_ca_rotate, tls_ca_status, tls_export, tls_issue, tls_renew,
+    tls_ca_export, tls_ca_install, tls_ca_rotate, tls_ca_status, tls_export, tls_issue, tls_list,
+    tls_renew,
 };
 use forge_ipc::api::{
     CaInstallParams, CaRotateParams, CaStatusDto, CertExportDto, CertFormat, CertificateListDto,
@@ -27,6 +28,34 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, tls_issue, issue);
     route!(router, daemon, tls_renew, renew);
     route!(router, daemon, tls_export, export);
+    route!(router, daemon, tls_list, list);
+}
+
+/// `tls.list`: every leaf certificate of `certs/sites/`, expired ones included, soonest
+/// `not_after` first. `trusted` = signed by the current CA, key matching, and that CA
+/// trusted by the current user or the machine; `ca_thumbprint_sha256` is the current CA's
+/// for those it signed (the issuer of a leaf of a rotated-away CA is not recorded).
+async fn list(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<CertificateListDto> {
+    let status = daemon.tls.status().await?;
+    let sites = daemon.sites.list().await.unwrap_or_default();
+    let ca_trusted = status.trusted_current_user || status.trusted_local_machine;
+    let ca_thumbprint = status.ca.as_ref().map(|c| c.thumbprint_sha256.clone());
+    let mut certificates: Vec<_> = status
+        .leaves
+        .iter()
+        .map(|leaf| {
+            let site = sites
+                .iter()
+                .find(|s| s.host == leaf.info.host)
+                .map(|s| s.id);
+            let mut dto = convert::certificate(&leaf.info, site);
+            dto.ca_thumbprint_sha256 = leaf.signed_by_ca.then(|| ca_thumbprint.clone()).flatten();
+            dto.trusted = Some(leaf.signed_by_ca && leaf.key_ok && ca_trusted);
+            dto
+        })
+        .collect();
+    certificates.sort_by(|a, b| a.not_after.cmp(&b.not_after).then(a.host.cmp(&b.host)));
+    Ok(CertificateListDto { certificates })
 }
 
 async fn ca_status(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<CaStatusDto> {

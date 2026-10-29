@@ -170,7 +170,7 @@ fn serve(mut stream: TcpStream, version: &str) -> bool {
     true
 }
 
-fn main() {
+pub fn main() {
     if let Some(code) = env_u64("FAKE_EXIT_CODE") {
         eprintln!("fake php-cgi: exiting with {code}");
         std::process::exit(code as i32);

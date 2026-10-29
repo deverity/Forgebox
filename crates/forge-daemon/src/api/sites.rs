@@ -10,16 +10,16 @@ use forge_core::error::{ForgeError, Result};
 use forge_core::ids::SiteId;
 use forge_core::store::{Site, SiteKind, SitePhp};
 use forge_ipc::api::methods::{
-    sites_add, sites_alias, sites_down, sites_info, sites_list, sites_open, sites_park,
-    sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run, sites_secure,
-    sites_server, sites_unpark, sites_up,
+    sites_add, sites_alias, sites_down, sites_driver, sites_info, sites_list, sites_open,
+    sites_park, sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run,
+    sites_secure, sites_server, sites_unpark, sites_up,
 };
 use forge_ipc::api::{
     Ack, CheckDto, CheckStatus, JobDto, ListAction, NoParams, ParkParams, ParkedDirDto,
     ParkedListDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, SiteAddParams,
-    SiteAliasParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams, SiteOpenTarget,
-    SiteParams, SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams, SiteRef,
-    SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
+    SiteAliasParams, SiteDriverParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams,
+    SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams,
+    SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::apps::AppSite;
@@ -34,6 +34,7 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, sites_add, add);
     route!(router, daemon, sites_remove, remove);
     route!(router, daemon, sites_php, php);
+    route!(router, daemon, sites_driver, driver);
     route!(router, daemon, sites_secure, secure);
     route!(router, daemon, sites_server, server);
     route!(router, daemon, sites_alias, alias);
@@ -49,7 +50,16 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, sites_open, open);
     // The shell may load the browser before it answers; more than the 1 s default.
     router.timeout::<sites_open>(OPEN_BUDGET);
+    // `sites.info` runs the DNS, certificate, pool and folder checks side by side.
+    router.timeout::<sites_info>(INFO_BUDGET);
 }
+
+/// Budget of `sites.info`: each check has its own shorter one, they run in parallel.
+const INFO_BUDGET: std::time::Duration = std::time::Duration::from_secs(8);
+/// Budget of one check of `sites.info`.
+const CHECK_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
+/// `site.certificate` warns below this many days left.
+const CERT_WARN_DAYS: i64 = 30;
 
 /// Budget of the shell call of `sites.open`.
 const OPEN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
@@ -143,8 +153,8 @@ fn processes(site_id: SiteId, status: &forge_sites::apps::SiteAppsStatus) -> Vec
             pid: p.instance.pid,
             port: p.port,
             autostart: p.autostart == "true",
-            // Correlation with the instance's `service.*` events is M2-E2-T6 (ADR-0041).
-            instance_id: None,
+            // The id the instance's `service.*` events carry (with `site_id`).
+            instance_id: Some(p.instance.instance_id),
         })
         .collect()
 }
@@ -295,20 +305,130 @@ where
     )
 }
 
+/// `sites.php`: switches the PHP of a site, blue/green (docs/06 §2.2). The version or
+/// series must be installed (else `not_found` with `version_not_installed` details and
+/// the site untouched). In the job: the target pool is started first (failure: the job
+/// fails and the row is never written), then the row is updated and the web servers
+/// re-rendered and reloaded; a render/reload failure restores the row. `site.php_changed {from, to}` goes out after the swap, before
+/// `job.done`.
 async fn php(daemon: Daemon, params: SitePhpParams, ctx: Ctx) -> Result<JobDto> {
     let selection = php_selection(&params.php)?;
-    update_site(daemon, ctx, &params.site, "sites.php", move |site| {
-        if site.kind != SiteKind::Php {
+    let previous = find(&daemon, &params.site).await?;
+    if previous.kind != SiteKind::Php {
+        return Err(ForgeError::InvalidInput(format!(
+            "{} is not a PHP site",
+            previous.host
+        )));
+    }
+    let requested = selection
+        .exact
+        .clone()
+        .or_else(|| selection.series.clone())
+        .unwrap_or_else(|| params.php.trim().to_owned());
+    daemon.web.require_php(&requested).await?;
+    let d = daemon.clone();
+    daemon.job(
+        &ctx,
+        format!("sites.php {}", previous.host),
+        move |_job| async move {
+            let from = d.web.resolved_php(&previous).await;
+            let mut next = previous.clone();
+            next.php.series = selection.series;
+            next.php.exact = selection.exact;
+            // Blue/green step 1 (docs/06 §2.2): the target pool must be up before the
+            // row is written. On failure nothing was stored, so no `site.updated`, no
+            // concurrent reconcile and the old pool is never drained.
+            d.web.ensure_pool_for(&next).await?;
+            let updated = d.sites.update(next).await?;
+            apply_or_restore(&d, &previous, &updated, "site php changed", true).await?;
+            let to = d.web.resolved_php(&updated).await.unwrap_or(requested);
+            if from.as_deref() != Some(to.as_str()) {
+                d.sites.publish_php_changed(&updated, from.as_deref(), &to);
+            }
+            Ok(dto(&d, &updated).await)
+        },
+    )
+}
+
+/// Re-renders for `updated` and answers for that site only
+/// ([`crate::web::WebManager::reconcile_for`]); on failure the stored row goes back to
+/// `previous` (and the servers are rendered again from it) and the error is returned.
+async fn apply_or_restore(
+    daemon: &Daemon,
+    previous: &Site,
+    updated: &Site,
+    reason: &str,
+    check_pool: bool,
+) -> Result<()> {
+    let Err(err) = daemon.web.reconcile_for(reason, updated, check_pool).await else {
+        return Ok(());
+    };
+    tracing::warn!(site = %updated.host, %err, "change failed; restoring the site");
+    if let Err(restore) = daemon.sites.update(previous.clone()).await {
+        tracing::error!(site = %updated.host, %restore, "could not restore the site");
+    }
+    reconcile_quietly(daemon, "site restored").await;
+    Err(err)
+}
+
+/// `sites.driver`: overrides the framework driver of a site, or detects it again
+/// (`driver: None`/`auto`); the document root follows the driver (`laravel` serves
+/// `public/`). Re-renders the web server; a failure restores the row.
+async fn driver(daemon: Daemon, params: SiteDriverParams, ctx: Ctx) -> Result<JobDto> {
+    let previous = find(&daemon, &params.site).await?;
+    if !matches!(previous.kind, SiteKind::Php | SiteKind::Static) {
+        return Err(ForgeError::InvalidInput(format!(
+            "{} is a proxy or app site: it has no framework driver",
+            previous.host
+        )));
+    }
+    // ParkedSync re-detects parked sites at every boot and folder change, so an
+    // override would be silently reverted (ADR-0041 §9: no marker, no migration).
+    if previous.parked {
+        return Err(ForgeError::Conflict(format!(
+            "{} is a parked site: its driver follows detection; pin it with `forge site add` (explicit site) to choose a driver",
+            previous.host
+        )));
+    }
+    let wanted = params
+        .driver
+        .as_deref()
+        .map(|d| d.trim().to_ascii_lowercase())
+        .filter(|d| !d.is_empty() && d != "auto");
+    if let Some(id) = &wanted {
+        if forge_sites::drivers::by_id(id).is_none() {
+            let known: Vec<&str> = forge_sites::drivers::all().iter().map(|d| d.id()).collect();
             return Err(ForgeError::InvalidInput(format!(
-                "{} is not a PHP site",
-                site.host
+                "unknown driver {id:?}; known: {}",
+                known.join(", ")
             )));
         }
-        site.php.series = selection.series;
-        site.php.exact = selection.exact;
-        Ok(())
-    })
-    .await
+    }
+    let root = previous
+        .root
+        .clone()
+        .filter(|r| !r.is_empty())
+        .ok_or_else(|| ForgeError::InvalidInput(format!("{} has no folder", previous.host)))?;
+    let d = daemon.clone();
+    daemon.job(
+        &ctx,
+        format!("sites.driver {}", previous.host),
+        move |_job| async move {
+            let found = forge_core::runtime::spawn_blocking_timeout(
+                "detecting the driver",
+                std::time::Duration::from_secs(10),
+                move || forge_sites::drivers::redetect(Path::new(&root), wanted.as_deref()),
+            )
+            .await?;
+            let mut next = previous.clone();
+            next.driver = Some(found.driver.id().to_owned());
+            next.kind = found.driver.kind();
+            next.root = Some(forge_core::paths::posix_string(&found.root));
+            let updated = d.sites.update(next).await?;
+            apply_or_restore(&d, &previous, &updated, "site driver changed", false).await?;
+            Ok(dto(&d, &updated).await)
+        },
+    )
 }
 
 async fn secure(daemon: Daemon, params: SiteSecureParams, ctx: Ctx) -> Result<JobDto> {
@@ -350,81 +470,244 @@ async fn alias(daemon: Daemon, params: SiteAliasParams, ctx: Ctx) -> Result<JobD
     .await
 }
 
+/// `sites.info`: the site and its diagnosis, from the checks `site.dns` (the
+/// `net.dns_test` path), `site.root_access`, `site.php_pool` (php sites) and
+/// `site.certificate`. They run side by side, each with its own budget.
 async fn info(daemon: Daemon, params: SiteParams, _ctx: Ctx) -> Result<SiteInfoDto> {
     let site = find(&daemon, &params.site).await?;
-    let mut checks = Vec::new();
-    let root_ok = match &site.root {
-        Some(root) => {
-            let root = PathBuf::from(root);
-            tokio::task::spawn_blocking(move || root.is_dir())
-                .await
-                .unwrap_or(false)
-        }
-        None => true,
-    };
-    checks.push(CheckDto {
-        id: "site.root".into(),
-        status: if root_ok {
-            CheckStatus::Ok
-        } else {
-            CheckStatus::Fail
-        },
-        message: site.root.clone().unwrap_or_else(|| "-".into()),
+    let dto = dto(&daemon, &site).await;
+    let (dns, root, certificate) = tokio::join!(
+        check_dns(&daemon, &site),
+        check_root_access(&daemon, &site),
+        check_certificate(&daemon, &site),
+    );
+    let mut checks = vec![dns, root];
+    if let Some(php) = &dto.php {
+        checks.push(check_php_pool(&daemon, php).await);
+    }
+    checks.push(certificate);
+    Ok(SiteInfoDto { site: dto, checks })
+}
+
+fn check(id: &str, status: CheckStatus, message: impl Into<String>) -> CheckDto {
+    CheckDto {
+        id: id.into(),
+        status,
+        message: message.into(),
         fix: None,
         fix_method: None,
         fix_params: None,
-    });
-    let dto = dto(&daemon, &site).await;
-    if let Some(php) = &dto.php {
-        let running = match &php.upstream {
-            Some(up) => daemon.pools.statuses().await.iter().any(|s| {
-                &s.upstream.name == up || php.resolved.as_deref() == Some(s.version.as_str())
-            }),
-            None => false,
-        };
-        checks.push(CheckDto {
-            id: "site.php_pool".into(),
-            status: if running {
-                CheckStatus::Ok
-            } else {
-                CheckStatus::Warn
-            },
-            message: format!(
-                "PHP {} ({})",
-                php.resolved
-                    .clone()
-                    .unwrap_or_else(|| "not installed".into()),
-                php.upstream.clone().unwrap_or_default()
+    }
+}
+
+/// `site.dns`: does the host resolve to this machine, as the OS resolves it.
+async fn check_dns(daemon: &Daemon, site: &Site) -> CheckDto {
+    let probe = super::net::dns_test_for(daemon, &site.host);
+    match tokio::time::timeout(CHECK_BUDGET, probe).await {
+        Ok(Ok(test)) if test.ok => check(
+            "site.dns",
+            CheckStatus::Ok,
+            format!(
+                "{} resolves to {} (via {})",
+                test.host,
+                test.resolved.join(", "),
+                test.via
             ),
-            fix: (!running).then(|| "forge tool install php".into()),
-            fix_method: None,
-            fix_params: None,
-        });
+        ),
+        Ok(Ok(test)) => CheckDto {
+            fix: Some("forge dns enable".into()),
+            ..check(
+                "site.dns",
+                CheckStatus::Fail,
+                format!(
+                    "{} resolves to [{}], expected [{}] (via {})",
+                    test.host,
+                    test.resolved.join(", "),
+                    test.expected.join(", "),
+                    test.via
+                ),
+            )
+        },
+        Ok(Err(err)) => check(
+            "site.dns",
+            CheckStatus::Warn,
+            format!("could not be checked: {err}"),
+        ),
+        Err(_) => check(
+            "site.dns",
+            CheckStatus::Warn,
+            "could not be checked in time",
+        ),
     }
-    if site.secure {
-        let crt = daemon.root.certs_sites().join(format!("{}.crt", site.host));
-        let exists = tokio::task::spawn_blocking(move || crt.is_file())
-            .await
-            .unwrap_or(false);
-        checks.push(CheckDto {
-            id: "site.certificate".into(),
-            status: if exists {
-                CheckStatus::Ok
-            } else {
-                CheckStatus::Warn
-            },
-            message: if exists {
-                "certificate present"
-            } else {
-                "no certificate yet"
+}
+
+/// `site.root_access`: the folder exists, the daemon can read it, and whether its NTFS
+/// case-sensitivity flag is on (docs/15).
+async fn check_root_access(daemon: &Daemon, site: &Site) -> CheckDto {
+    let Some(root) = site.root.clone().filter(|r| !r.is_empty()) else {
+        return check("site.root_access", CheckStatus::Ok, "no folder (proxy)");
+    };
+    let case_fs = daemon.platform.shared_case_sensitive_fs();
+    let wanted = daemon.config().case_sensitive;
+    let path = PathBuf::from(&root);
+    let probed = forge_core::runtime::spawn_blocking_timeout(
+        "checking the site folder",
+        CHECK_BUDGET,
+        move || {
+            if !path.is_dir() {
+                return Ok(Err("the folder does not exist".to_owned()));
             }
-            .into(),
-            fix: (!exists).then(|| format!("forge tls issue {}", site.host)),
-            fix_method: None,
-            fix_params: None,
-        });
+            if let Err(err) = std::fs::read_dir(&path) {
+                return Ok(Err(format!("the folder cannot be read: {err}")));
+            }
+            Ok(Ok(forge_core::fs::case::status(&*case_fs, &path).ok()))
+        },
+    )
+    .await;
+    match probed {
+        Ok(Err(problem)) => check(
+            "site.root_access",
+            CheckStatus::Fail,
+            format!("{root}: {problem}"),
+        ),
+        Ok(Ok(case)) => {
+            let enabled = case.as_ref().and_then(|c| c.enabled);
+            let state = match enabled {
+                Some(true) => "case-sensitive",
+                Some(false) => "case-insensitive",
+                None => "case sensitivity unavailable",
+            };
+            let message = format!("{root}: readable, {state}");
+            if wanted && enabled == Some(false) {
+                CheckDto {
+                    fix: Some(format!("forge site case-sensitive {} on", site.host)),
+                    ..check("site.root_access", CheckStatus::Warn, message)
+                }
+            } else {
+                check("site.root_access", CheckStatus::Ok, message)
+            }
+        }
+        Err(err) => check(
+            "site.root_access",
+            CheckStatus::Warn,
+            format!("could not be checked: {err}"),
+        ),
     }
-    Ok(SiteInfoDto { site: dto, checks })
+}
+
+/// `site.php_pool`: the PHP version the site resolves to and whether its pool runs.
+async fn check_php_pool(daemon: &Daemon, php: &forge_ipc::api::SitePhpDto) -> CheckDto {
+    let Some(resolved) = &php.resolved else {
+        let wanted = php.exact.clone().or_else(|| php.series.clone());
+        return CheckDto {
+            fix: Some(format!(
+                "forge tool install php{}",
+                wanted.map(|w| format!("@{w}")).unwrap_or_default()
+            )),
+            ..check(
+                "site.php_pool",
+                CheckStatus::Fail,
+                "no installed PHP serves this site",
+            )
+        };
+    };
+    let running = match &php.upstream {
+        Some(up) => daemon
+            .pools
+            .statuses()
+            .await
+            .iter()
+            .any(|s| &s.upstream.name == up || s.version == *resolved),
+        None => false,
+    };
+    let message = format!(
+        "PHP {resolved} ({}){}",
+        php.upstream.clone().unwrap_or_default(),
+        if running { "" } else { ": pool not running" }
+    );
+    if running {
+        check("site.php_pool", CheckStatus::Ok, message)
+    } else {
+        CheckDto {
+            fix: Some("forge up".into()),
+            ..check("site.php_pool", CheckStatus::Warn, message)
+        }
+    }
+}
+
+/// `site.certificate`: expiry of the site's leaf certificate (warns below 30 days).
+async fn check_certificate(daemon: &Daemon, site: &Site) -> CheckDto {
+    if !site.secure {
+        return check(
+            "site.certificate",
+            CheckStatus::Ok,
+            "served over HTTP: no certificate needed",
+        );
+    }
+    let status = match tokio::time::timeout(CHECK_BUDGET, daemon.tls.status()).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(err)) => {
+            return check(
+                "site.certificate",
+                CheckStatus::Warn,
+                format!("could not be checked: {err}"),
+            );
+        }
+        Err(_) => {
+            return check(
+                "site.certificate",
+                CheckStatus::Warn,
+                "could not be checked in time",
+            );
+        }
+    };
+    let host = &site.host;
+    let Some(leaf) = status.leaves.iter().find(|l| &l.info.host == host) else {
+        return CheckDto {
+            fix: Some(format!("forge tls issue {host}")),
+            fix_method: Some("tls.issue".into()),
+            fix_params: Some(serde_json::json!({ "host": host })),
+            ..check("site.certificate", CheckStatus::Warn, "no certificate yet")
+        };
+    };
+    let days = days_left(leaf.info.not_after);
+    let not_after = leaf.info.not_after;
+    let renew = |status, message: String| CheckDto {
+        fix: Some(format!("forge tls renew {host}")),
+        fix_method: Some("tls.renew".into()),
+        fix_params: Some(serde_json::json!({ "host": host })),
+        ..check("site.certificate", status, message)
+    };
+    if days < 0 {
+        renew(
+            CheckStatus::Fail,
+            format!("expired on {not_after} ({} days ago)", -days),
+        )
+    } else if !leaf.signed_by_ca {
+        renew(
+            CheckStatus::Warn,
+            "signed by another CA than the current one".into(),
+        )
+    } else if days < CERT_WARN_DAYS {
+        renew(
+            CheckStatus::Warn,
+            format!("expires on {not_after} ({days} days left)"),
+        )
+    } else {
+        check(
+            "site.certificate",
+            CheckStatus::Ok,
+            format!("expires on {not_after} ({days} days left)"),
+        )
+    }
+}
+
+/// Whole days from now to `not_after` (negative once expired, rounded down).
+pub(super) fn days_left(not_after: jiff::Timestamp) -> i64 {
+    not_after
+        .duration_since(jiff::Timestamp::now())
+        .as_secs()
+        .div_euclid(86_400)
 }
 
 fn parked_path(daemon: &Daemon, dir: &str) -> PathBuf {

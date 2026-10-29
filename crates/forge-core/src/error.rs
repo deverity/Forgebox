@@ -20,6 +20,18 @@ pub enum ForgeError {
     #[error("not found: {0}")]
     NotFound(String),
 
+    /// A tool version or series that is not installed (`sites.php` to PHP 9.9). Same code
+    /// as [`ForgeError::NotFound`]; the pieces travel as structured details
+    /// (`version_not_installed`, ADR-0041 §12) so a client offers to install it.
+    #[error("not found: {tool} {requested} is not installed (installed: {})", installed.join(", "))]
+    VersionNotInstalled {
+        tool: String,
+        requested: String,
+        installed: Vec<String>,
+        /// Command that installs it (`forge tool install php@9.9`).
+        fix: String,
+    },
+
     /// The operation collides with existing state (host taken, link already there...).
     #[error("conflict: {0}")]
     Conflict(String),
@@ -176,7 +188,7 @@ impl ForgeError {
     /// Stable machine-readable code, used by the API and by `forge --json`.
     pub fn code(&self) -> &'static str {
         match self {
-            Self::NotFound(_) => "not_found",
+            Self::NotFound(_) | Self::VersionNotInstalled { .. } => "not_found",
             Self::Conflict(_) => "conflict",
             Self::PortInUse { .. } => "port_in_use",
             Self::NeedsElevation(_) => "needs_elevation",
@@ -209,6 +221,20 @@ impl ForgeError {
             }
             Self::NeedsElevation(detail) => ("needs_elevation", json!({ "detail": detail })),
             Self::NotFound(what) => ("not_found", json!({ "what": what })),
+            Self::VersionNotInstalled {
+                tool,
+                requested,
+                installed,
+                fix,
+            } => (
+                "version_not_installed",
+                json!({
+                    "tool": tool,
+                    "requested": requested,
+                    "installed": installed,
+                    "fix": fix,
+                }),
+            ),
             Self::NotImplemented(what) => ("not_implemented", json!({ "what": what })),
             Self::NotImplementedYet { method, task, what } => (
                 "not_implemented",
@@ -273,6 +299,12 @@ mod tests {
     fn samples() -> Vec<ForgeError> {
         vec![
             ForgeError::NotFound("x".into()),
+            ForgeError::VersionNotInstalled {
+                tool: "php".into(),
+                requested: "9.9".into(),
+                installed: vec!["8.4.27".into()],
+                fix: "forge tool install php@9.9".into(),
+            },
             ForgeError::Conflict("x".into()),
             ForgeError::PortInUse {
                 port: 80,
@@ -384,6 +416,15 @@ mod tests {
         let d = details(ForgeError::NeedsElevation("nrpt.add".into()));
         assert_eq!(d["reason"], "needs_elevation");
         assert_eq!(d["args"]["detail"], "nrpt.add");
+        let d = details(ForgeError::VersionNotInstalled {
+            tool: "php".into(),
+            requested: "9.9".into(),
+            installed: vec!["8.3.36".into(), "8.4.27".into()],
+            fix: "forge tool install php@9.9".into(),
+        });
+        assert_eq!(d["reason"], "version_not_installed");
+        assert_eq!(d["args"]["installed"][1], "8.4.27");
+        assert_eq!(d["args"]["fix"], "forge tool install php@9.9");
         let d = details(ForgeError::NotFound("site loja.test".into()));
         assert_eq!(d["reason"], "not_found");
         assert_eq!(d["args"]["what"], "site loja.test");

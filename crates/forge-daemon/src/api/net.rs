@@ -266,6 +266,11 @@ async fn disable(daemon: Daemon, _params: NoParams, ctx: Ctx) -> Result<JobDto> 
 }
 
 async fn test(daemon: Daemon, params: DnsTestParams, _ctx: Ctx) -> Result<DnsTestDto> {
+    dns_test_for(&daemon, &params.host).await
+}
+
+/// `net.dns_test` for `host`; also the `site.dns` check of `sites.info`.
+pub(super) async fn dns_test_for(daemon: &Daemon, host: &str) -> Result<DnsTestDto> {
     let config = daemon.config();
     let zones = ZoneSet::from_config(&config)?;
     let server = daemon.dns.stats().await.ok().and_then(|s| s.listen);
@@ -274,7 +279,7 @@ async fn test(daemon: Daemon, params: DnsTestParams, _ctx: Ctx) -> Result<DnsTes
         Arc::clone(daemon.platform.port_table()),
         Arc::clone(daemon.platform.net_adapters()),
     );
-    let diagnosis = diagnostics.diagnose(&params.host, &zones, server).await;
+    let diagnosis = diagnostics.diagnose(host, &zones, server).await;
     let via = match diagnosis.mode {
         PolicyMode::Hosts => "hosts",
         PolicyMode::Nrpt => "forgebox-dns",
