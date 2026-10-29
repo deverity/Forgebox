@@ -2,7 +2,7 @@
 source: crates/forge-render/tests/snapshots.rs
 expression: content
 ---
-# forgebox:begin main (hash=df8d752a991d379d)
+# forgebox:begin main (hash=ca643096dd38b5f2)
 worker_processes 1;
 error_log "C:/fb-test/logs/nginx/error.log";
 pid "C:/fb-test/tmp/nginx/nginx.pid";
@@ -16,6 +16,8 @@ http {
     default_type application/octet-stream;
     sendfile off;
     keepalive_timeout 65;
+    # Server-wide body limit (quick setting); each site sets its own in its server block.
+    client_max_body_size 128M;
     server_tokens off;
     server_names_hash_bucket_size 128;
     client_body_temp_path "C:/fb-test/tmp/nginx/client_body";

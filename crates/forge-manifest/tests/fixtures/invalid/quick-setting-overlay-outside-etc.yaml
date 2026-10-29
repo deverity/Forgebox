@@ -1,0 +1,20 @@
+# expect: write_outside_root, invalid_value
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: quick-setting-overlay-outside-etc, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  config:
+    files:
+      # The overlay is a file Forgebox writes: inside etc/ only.
+      - id: main_ini
+        path: "{{ paths.etc }}/fixture/main.ini"
+        format: ini
+        overlay: "{{ paths.data }}/fixture/90-settings.ini"
+      - id: notes
+        path: "{{ paths.etc }}/fixture/notes.txt"
+        format: text
+        overlay: "{{ paths.etc }}/fixture/notes-overlay.txt"

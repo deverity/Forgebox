@@ -153,6 +153,15 @@ async fn status(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<ServiceS
     snapshot(&daemon, None).await
 }
 
+/// `ServiceStatusDto` of only these instances and pools (the answer of a job about them).
+pub(crate) async fn status_of(
+    daemon: &Daemon,
+    instances: Vec<Entry>,
+    pools: Vec<VersionId>,
+) -> Result<ServiceStatusDto> {
+    snapshot(daemon, Some(&Targets { instances, pools })).await
+}
+
 #[derive(Clone, Copy)]
 enum Action {
     Start,

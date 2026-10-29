@@ -233,12 +233,17 @@ pub async fn service(ctx: &Context, command: ServiceCmd) -> CliResult<()> {
                 .collect::<CliResult<_>>()?;
             let status: ServiceStatusDto = ctx
                 .job::<services_set, ServiceStatusDto>(ServiceSetParams {
-                    target: ServiceTarget::from(target),
+                    target: ServiceTarget::from(target.clone()),
                     settings,
                 })
                 .await?;
-            ctx.out
-                .emit(&status, |out| render::service_table(out, &status));
+            ctx.out.emit(&status, |out| {
+                out.success(out.tf(Msg::SettingsApplied, &[&target]));
+                // A series whose pool does not run has nothing to show.
+                if !status.instances.is_empty() || !status.pools.is_empty() {
+                    render::service_table(out, &status);
+                }
+            });
             Ok(())
         }
         ServiceCmd::Ports => {

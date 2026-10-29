@@ -73,30 +73,30 @@ spec:
       - key: max_connections
         label: Max connections
         file: my_ini
-        ini: "mysqld.max_connections"
+        ini: "mysqld/max_connections"
         type: number
         min: 1
         max: 100000
-        default: 151
+        default: 200
       - key: innodb_buffer_pool_size
         label: InnoDB buffer pool
         file: my_ini
-        ini: "mysqld.innodb_buffer_pool_size"
+        ini: "mysqld/innodb_buffer_pool_size"
         type: select
         options: [128M, 256M, 512M, 1G, 2G]
         default: 256M
       - key: max_allowed_packet
         label: Max allowed packet
         file: my_ini
-        ini: "mysqld.max_allowed_packet"
+        ini: "mysqld/max_allowed_packet"
         type: select
         options: [16M, 64M, 256M, 512M, 1G]
-        default: 64M
-        also_set: { "mysqldump.max_allowed_packet": "{{ value }}" }
+        default: 256M
+        also_set: { "mysqldump/max_allowed_packet": "{{ value }}" }
       - key: innodb_flush_log_at_trx_commit
         label: Durabilidade (innodb_flush_log_at_trx_commit)
         file: my_ini
-        ini: "mysqld.innodb_flush_log_at_trx_commit"
+        ini: "mysqld/innodb_flush_log_at_trx_commit"
         type: select
         options: [0, 1, 2]
         default: 2

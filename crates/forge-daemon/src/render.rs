@@ -4,9 +4,11 @@
 //!   from `forgebox.toml`, the `php` model when the manifest declares
 //!   `config.extensions`).
 //! * [`apply_target`]: renders the `forge-render` target of a tool (when there is one)
-//!   into `etc/`, only touching managed blocks and generated files, and publishes
-//!   `config.rendered` / `config.drift_detected` (docs/03 §8). Files the user edited
-//!   inside a managed block are kept (drift), never overwritten here.
+//!   into `etc/`, with the quick settings written into the rendered files (or into their
+//!   overlay / `settings` block when no target renders them, ADR-0042), only touching
+//!   managed blocks and generated files, and publishes `config.rendered` /
+//!   `config.drift_detected` (docs/03 §8). Files the user edited inside a managed block
+//!   are kept (drift), never overwritten here.
 //! * [`DaemonRenderer`]: the [`TemplateRenderer`] of the layout engine
 //!   (`post_install[].render`), over the same engine.
 
@@ -25,6 +27,7 @@ use forge_manifest::version::Version;
 use forge_provider::layout::{RenderRequest, TemplateRenderer};
 use forge_registry::Registry;
 use forge_render::managed::{CommentStyle, WriteOutcome, with_generated_header, write_atomic};
+use forge_render::settings::SettingsFile;
 use forge_render::targets;
 use forge_render::{Engine, PhpModel, RenderContext};
 
@@ -112,20 +115,35 @@ fn fs_path(root: &ForgeRoot, path: &Path) -> Option<String> {
 }
 
 /// Renders the target of `ctx.tool.id` into `etc/` (blocking file I/O: call from
-/// `spawn_blocking`). Tools without a target render nothing. `owner` names what the
-/// files configure in the events (`nginx`, `php@8.3`).
+/// `spawn_blocking`) with the quick `settings` of the tool written in: into the rendered
+/// file they belong to, else into their overlay or a `settings` block of their file
+/// ([`forge_render::settings`]). Tools without a target only get their settings files.
+/// `owner` names what the files configure in the events (`nginx`, `php@8.3`).
 pub fn apply_target(
     root: &ForgeRoot,
     engine: &Engine,
     bus: &EventBus,
     ctx: &RenderContext,
     owner: &str,
+    settings: &[SettingsFile],
 ) -> Result<Applied> {
-    let Some(target) = targets::by_id(&ctx.tool.id) else {
-        return Ok(Applied::default());
-    };
     let etc = root.etc();
-    let (outcomes, drifts) = target.apply(engine, ctx, &etc, false)?;
+    let mut files = match targets::by_id(&ctx.tool.id) {
+        Some(target) => {
+            let files = target.render(engine, ctx)?;
+            target.ensure_dirs(&etc)?;
+            files
+        }
+        None => Vec::new(),
+    };
+    let rest = forge_render::settings::apply_to_rendered(&mut files, &etc, settings)?;
+    for index in rest {
+        files.push(forge_render::settings::standalone(&settings[index], &etc)?);
+    }
+    if files.is_empty() {
+        return Ok(Applied::default());
+    }
+    let (outcomes, drifts) = targets::apply_all(&files, &etc, false)?;
     let mut applied = Applied::default();
     for (relative, outcome) in outcomes {
         let path = etc.join(&relative);
@@ -306,7 +324,8 @@ mod tests {
         let bus = EventBus::new();
         let mut events = bus.subscribe();
         let ctx = base_context(&root, &ForgeConfig::default(), &manifest, &row("8.4.27"));
-        let applied = apply_target(&root, &Engine::embedded_only(), &bus, &ctx, "php@8.4").unwrap();
+        let applied =
+            apply_target(&root, &Engine::embedded_only(), &bus, &ctx, "php@8.4", &[]).unwrap();
         assert_eq!(applied.written, ["php/8.4/conf.d/10-forgebox.ini"]);
         let text =
             std::fs::read_to_string(root.etc().join("php/8.4/conf.d/10-forgebox.ini")).unwrap();
@@ -318,7 +337,79 @@ mod tests {
             event.payload["fs_path"],
             "etc/php/8.4/conf.d/10-forgebox.ini"
         );
-        let again = apply_target(&root, &Engine::embedded_only(), &bus, &ctx, "php@8.4").unwrap();
+        let again =
+            apply_target(&root, &Engine::embedded_only(), &bus, &ctx, "php@8.4", &[]).unwrap();
         assert!(!again.changed());
+    }
+
+    #[test]
+    fn settings_go_to_the_overlay_and_into_rendered_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = ForgeRoot::new(dir.path()).unwrap();
+        let bus = EventBus::new();
+        let mut events = bus.subscribe();
+        let engine = Engine::embedded_only();
+        let manifest = php_manifest();
+        let row = row("8.4.27");
+        let ctx = base_context(&root, &ForgeConfig::default(), &manifest, &row);
+        let stored = BTreeMap::from([("memory_limit".to_owned(), "1G".to_owned())]);
+        let vars = crate::vars::RuntimeVars::new(forge_provider::layout::TemplateVars {
+            tool: "php".into(),
+            version: row.version.clone(),
+            series: "8.4".into(),
+            canonical_name: row.canonical_name.clone(),
+            variant: BTreeMap::new(),
+            paths: forge_provider::layout::PathVars::new(&root, Path::new(&row.path)),
+        });
+        let plans = crate::settings::plans(&manifest, &stored, &vars).unwrap();
+        // The user's php.ini, never touched.
+        let user_ini = root.etc().join("php/8.4/php.ini");
+        std::fs::create_dir_all(user_ini.parent().unwrap()).unwrap();
+        std::fs::write(&user_ini, "; mine\r\nmemory_limit=64M\r\n").unwrap();
+        let applied = apply_target(&root, &engine, &bus, &ctx, "php@8.4", &plans).unwrap();
+        assert_eq!(
+            applied.written,
+            [
+                "php/8.4/conf.d/10-forgebox.ini",
+                "php/8.4/conf.d/90-forgebox-settings.ini"
+            ]
+        );
+        assert_eq!(
+            std::fs::read(&user_ini).unwrap(),
+            b"; mine\r\nmemory_limit=64M\r\n"
+        );
+        let overlay =
+            std::fs::read_to_string(root.etc().join("php/8.4/conf.d/90-forgebox-settings.ini"))
+                .unwrap();
+        assert!(overlay.starts_with("; generated by forgebox"), "{overlay}");
+        assert!(overlay.contains("\nmemory_limit = 1G\n"), "{overlay}");
+        let kinds: Vec<EventKind> = std::iter::from_fn(|| events.try_recv())
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            [EventKind::ConfigRendered, EventKind::ConfigRendered]
+        );
+
+        // A tool without a render target: a `settings` block in its own file, the user's
+        // lines around it byte for byte.
+        let mut other = php_manifest();
+        other.metadata.id = ToolId::new("fake-db").unwrap();
+        let file = &mut other.spec.config.files[0];
+        file.overlay = None;
+        file.path = "{{ paths.etc }}/fake/my.ini".into();
+        let plans = crate::settings::plans(&other, &stored, &vars).unwrap();
+        let own = root.etc().join("fake/my.ini");
+        std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+        std::fs::write(&own, "[client]\r\nport=1\r\n").unwrap();
+        let mut ctx = ctx.clone();
+        ctx.tool.id = "fake-db".into();
+        apply_target(&root, &engine, &bus, &ctx, "fake-db/default", &plans).unwrap();
+        let text = std::fs::read_to_string(&own).unwrap();
+        assert!(
+            text.starts_with("[client]\r\nport=1\r\n\n; forgebox:begin settings (hash="),
+            "{text}"
+        );
+        assert!(text.contains("\nmemory_limit = 1G\n"), "{text}");
     }
 }

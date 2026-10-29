@@ -332,7 +332,7 @@ impl From<&forge_core::ForgeError> for ApiError {
     fn from(err: &forge_core::ForgeError) -> Self {
         let mut details = err.details();
         if let (
-            forge_core::ForgeError::PortInUse { port, owner },
+            forge_core::ForgeError::PortInUse { port, owner, .. },
             Some(serde_json::Value::Object(map)),
         ) = (err, details.as_mut())
         {
@@ -591,6 +591,8 @@ mod tests {
         let err = ApiError::from(forge_core::ForgeError::PortInUse {
             port: 80,
             owner: Some("httpd.exe".into()),
+            pid: None,
+            exe: None,
         });
         assert_eq!(err.code, "port_in_use");
         assert_eq!(err.exit_code(), 4);
@@ -608,6 +610,8 @@ mod tests {
                 ForgeError::PortInUse {
                     port: 3306,
                     owner: None,
+                    pid: None,
+                    exe: None,
                 },
                 "port_in_use",
             ),

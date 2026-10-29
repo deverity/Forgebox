@@ -38,7 +38,8 @@ Forgebox/
 │   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
 │   │       │                     #   ports.rs (PortRepo: reservas de porta), update_history.rs (UpdateHistoryRepo: updates e rollbacks),
-│   │       │                     #   instances.rs (InstanceRepo: instâncias de serviço, desired_state, settings)
+│   │       │                     #   instances.rs (InstanceRepo: instâncias de serviço, desired_state, settings),
+│   │       │                     #   tool_series_settings.rs (quick settings por (tool, série): pools de PHP, migration 0004)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder e o trait
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
@@ -189,6 +190,7 @@ Forgebox/
 │   │       ├── engine.rs         # minijinja env, filtros (win_path, posix_path, quote...)
 │   │       ├── managed.rs        # blocos "# forgebox:begin/end", preservação de edições do usuário
 │   │       ├── drift.rs          # hash do render vs arquivo em disco
+│   │       ├── settings.rs       # quick settings: um escritor por formato (ini, conf-directive, yaml, json, args), overlay
 │   │       └── targets/          # um módulo por tool conhecida: o que renderiza e para onde
 │   ├── forge-sites/
 │   │   └── src/
@@ -258,6 +260,7 @@ Forgebox/
 │   │   │                         #   diários em logs/forgeboxd.log.<data>), boot.rs (docs/01 §5.1), daemon.rs (componentes),
 │   │   │                         #   event_log.rs (eventos → tabela events), catalog.rs (manifestos + versões instaladas),
 │   │   │                         #   vars.rs (variáveis de execução dos manifestos), services.rs (instâncias ← service.daemon),
+│   │   │                         #   settings.rs (quick settings: validação, valores efetivos, planos por arquivo; ADR-0042),
 │   │   │                         #   pools.rs (pools ← service.pool, por VersionId), web.rs (sites → pools → servidores web,
 │   │   │                         #   UpstreamListener), render.rs (alvos do forge-render, TemplateRenderer do layout),
 │   │   │                         #   install.rs (tools.install: provider → download → layout), scheduler.rs (tarefas periódicas

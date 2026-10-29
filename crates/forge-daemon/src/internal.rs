@@ -159,6 +159,8 @@ pub async fn serve(port: u16, apps: AppManager, stop: CancellationToken) -> Resu
             .map_err(|e| ForgeError::PortInUse {
                 port,
                 owner: Some(e.to_string()),
+                pid: None,
+                exe: None,
             })?;
     let bound = listener.local_addr().map(|a| a.port()).unwrap_or(port);
     tokio::spawn(async move {

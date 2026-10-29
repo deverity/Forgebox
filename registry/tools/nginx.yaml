@@ -81,7 +81,7 @@ spec:
         directive: "worker_processes"
         type: select
         options: [auto, 1, 2, 4]
-        default: auto
+        default: 1
         apply: restart
       - key: client_max_body_size
         label: Tamanho máximo do corpo (client_max_body_size)

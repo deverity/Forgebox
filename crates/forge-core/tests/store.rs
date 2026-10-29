@@ -16,6 +16,7 @@ const TABLES: &[&str] = &[
     "ports",
     "events",
     "update_history",
+    "tool_series_settings",
 ];
 
 fn tables(store: &Store) -> Vec<String> {
@@ -281,4 +282,66 @@ fn migration_0002_adds_the_registry_loader_columns() {
         )
         .unwrap();
     assert_eq!((unsigned, ttl), (0, 3600));
+}
+
+/// A database left at schema 3 (the 0.1.0 release) with an instance and a PHP version:
+/// opening it applies 0004 after a backup, keeps the rows and adds an empty
+/// `tool_series_settings` that works with the existing `tools` rows.
+#[test]
+fn migration_0004_upgrades_a_schema_3_database() {
+    use forge_core::ids::ToolId;
+    use forge_core::store::ToolSeriesSettingsRepo;
+    use std::collections::BTreeMap;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("forgebox.db");
+    {
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        let report = migrations::apply(&mut conn, &MIGRATIONS[..3], None).unwrap();
+        assert_eq!(report.to_version, 3);
+        conn.execute_batch(
+            r#"INSERT INTO tools (id, name, created_at, updated_at)
+                 VALUES ('php', 'PHP', 't', 't'), ('mysql', 'MySQL', 't', 't');
+               INSERT INTO tool_versions (id, tool_id, version, canonical_name, path, state, source, created_at, updated_at)
+                 VALUES ('01J00000000000000000000001', 'mysql', '8.4.6', '8.4.6', 'C:/fb/bin/mysql/8.4.6', 'installed', 'registry', 't', 't');
+               INSERT INTO instances (id, tool_id, version_id, name, settings, created_at, updated_at)
+                 VALUES ('01J00000000000000000000002', 'mysql', '01J00000000000000000000001', 'default',
+                         '{"max_connections":"300"}', 't', 't');"#,
+        )
+        .unwrap();
+        assert!(
+            conn.prepare("SELECT 1 FROM tool_series_settings").is_err(),
+            "schema 3 has no settings table"
+        );
+    }
+    let store = Store::open(&path).unwrap();
+    let report = store.migration_report();
+    assert_eq!(report.from_version, 3);
+    assert_eq!(report.applied, vec![4]);
+    assert!(report.backup.is_some(), "backed up before migrating");
+    let settings: String = store
+        .conn()
+        .query_row("SELECT settings FROM instances", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(settings, r#"{"max_connections":"300"}"#);
+    let php = ToolId::new("php").unwrap();
+    let repo = ToolSeriesSettingsRepo::new(store.conn());
+    assert!(repo.get(&php, "8.4").unwrap().is_empty());
+    let stored = repo
+        .apply(
+            &php,
+            "8.4",
+            &BTreeMap::from([("memory_limit".to_owned(), Some("1G".to_owned()))]),
+        )
+        .unwrap();
+    assert_eq!(stored["memory_limit"], "1G");
+    // The key shape is enforced by the table too, not only by the repository.
+    let err = store
+        .conn()
+        .execute(
+            "INSERT INTO tool_series_settings VALUES ('php', '8.4', 'Bad.Key', 'x', 't')",
+            [],
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("CHECK"), "{err}");
 }

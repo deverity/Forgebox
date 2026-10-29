@@ -105,10 +105,29 @@ impl FailureReason {
     /// Reason for an error returned while starting (spawn, pre-checks).
     pub fn from_error(err: &ForgeError) -> Self {
         match err {
-            ForgeError::PortInUse { port, owner } => Self::PortInUse {
-                port: *port,
-                pid: None,
-                exe: owner.clone(),
+            ForgeError::PortInUse {
+                port,
+                owner,
+                pid,
+                exe,
+            } => match (exe, owner) {
+                (Some(exe), _) => Self::PortInUse {
+                    port: *port,
+                    pid: *pid,
+                    exe: Some(exe.clone()),
+                },
+                // Without the executable, the owner text (`mysqld.exe (PID 1)`, which
+                // already names the pid) says more than nothing.
+                (None, Some(owner)) => Self::PortInUse {
+                    port: *port,
+                    pid: None,
+                    exe: Some(owner.clone()),
+                },
+                (None, None) => Self::PortInUse {
+                    port: *port,
+                    pid: *pid,
+                    exe: None,
+                },
             },
             ForgeError::ConfigInvalid(stderr) => Self::ConfigInvalid {
                 stderr: stderr.clone(),
@@ -275,6 +294,8 @@ impl FailureReason {
                     (None, Some(pid)) => Some(format!("PID {pid}")),
                     (None, None) => None,
                 },
+                pid: *pid,
+                exe: exe.clone(),
             },
             Self::MissingDll { .. } | Self::MissingRuntime { .. } => {
                 ForgeError::NotFound(self.message())
@@ -932,8 +953,33 @@ mod tests {
         let reason = FailureReason::from_error(&ForgeError::PortInUse {
             port: 3306,
             owner: Some("mysqld.exe (PID 4412)".into()),
+            pid: Some(4412),
+            exe: Some(r"C:\xampp\mysql\bin\mysqld.exe".into()),
         });
         assert_eq!(reason.kind(), "port_in_use");
+        assert_eq!(
+            reason,
+            FailureReason::PortInUse {
+                port: 3306,
+                pid: Some(4412),
+                exe: Some(r"C:\xampp\mysql\bin\mysqld.exe".into()),
+            },
+            "the holder of the error reaches the reason"
+        );
+        // Back to an error: the same holder, and the owner text for API 1.0 clients.
+        match reason.to_error() {
+            ForgeError::PortInUse {
+                pid, exe, owner, ..
+            } => {
+                assert_eq!(pid, Some(4412));
+                assert_eq!(exe.as_deref(), Some(r"C:\xampp\mysql\bin\mysqld.exe"));
+                assert_eq!(
+                    owner.as_deref(),
+                    Some(r"C:\xampp\mysql\bin\mysqld.exe (PID 4412)")
+                );
+            }
+            other => panic!("{other:?}"),
+        }
         let reason = FailureReason::from_error(&ForgeError::NeedsElevation("x".into()));
         assert_eq!(reason.kind(), "permission");
         let reason = FailureReason::from_error(&ForgeError::io(
