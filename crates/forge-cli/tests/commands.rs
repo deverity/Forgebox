@@ -183,8 +183,9 @@ fn table() -> Vec<Case> {
         case(&["site", "secure", "demo.test"], OK),
         case(&["site", "unsecure", "demo.test"], OK),
         case(&["site", "server", "demo.test", "apache"], OK),
-        case(&["site", "driver", "demo.test", "auto"], NI),
-        case(&["site", "driver", "demo.test", "laravel"], NI),
+        // Forcing laravel moves the root to demo/public; auto brings it back.
+        case(&["site", "driver", "demo.test", "laravel"], OK),
+        case(&["site", "driver", "demo.test", "auto"], OK),
         case(&["site", "alias", "demo.test", "add", "www.demo.test"], OK),
         // Plain `site open` would launch a real browser; the editor target stays not_implemented.
         case(&["site", "open", "demo.test", "--editor"], NI),
@@ -245,7 +246,7 @@ fn table() -> Vec<Case> {
             E("needs_elevation"),
         ),
         case(&["tls", "issue", "cert.test"], OK),
-        case(&["tls", "list"], NI),
+        case(&["tls", "list"], OK),
         case(&["tls", "ca", "export"], OK),
         case(&["tls", "renew", "--all"], OK),
         case(&["tls", "export", "cert.test"], OK),

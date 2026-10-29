@@ -100,9 +100,11 @@ pub struct WebReport {
     pub written: Vec<String>,
     pub reloaded: Vec<String>,
     pub skipped_sites: Vec<String>,
-    /// Why a site was left out of the render, by host (PHP version not installed, pool
-    /// not running, vhost that did not build).
+    /// Why a site's vhost did not build, by host.
     pub site_errors: BTreeMap<String, String>,
+    /// Why a PHP site was left out of the render before building its vhost, by host: its
+    /// version is not installed or its pool is not running.
+    pub unserved: BTreeMap<String, String>,
     /// Web servers whose render or reload failed: `(tool id, error)`.
     pub server_errors: Vec<(String, String)>,
 }
@@ -247,7 +249,9 @@ impl WebManager {
         let tool = catalog::pool_tools(&self.inner.registry)
             .into_iter()
             .next()
-            .ok_or_else(|| ForgeError::NotFound("no PHP tool in the loaded registries".to_owned()))?;
+            .ok_or_else(|| {
+                ForgeError::NotFound("no PHP tool in the loaded registries".to_owned())
+            })?;
         let id = tool.manifest.metadata.id.clone();
         let rows = catalog::installed(&self.inner.reader, &id, Some(&tool.manifest)).await?;
         catalog::pick(&tool.manifest, &rows, requested)
@@ -275,21 +279,34 @@ impl WebManager {
     }
 
     /// [`WebManager::reconcile`] for a change to `target`: the same work, but the result
-    /// answers for that site only. A pool that cannot start for its PHP version, a vhost
-    /// that does not build or a web server that fails to render/reload for it is an
-    /// error; failures of other sites and pools stay in the log (a bad neighbour must
+    /// answers for that site only. A vhost that does not build or a web server that fails
+    /// to render/reload for it is an error, and so is a pool that cannot start for its
+    /// PHP version when `check_pool` (a PHP switch; a driver change does not depend on
+    /// the pool). Failures of other sites and pools stay in the log (a bad neighbour must
     /// not fail someone else's job).
-    pub async fn reconcile_for(&self, reason: &str, target: &Site) -> Result<WebReport> {
-        self.reconcile_scoped(reason, Some(target)).await
+    pub async fn reconcile_for(
+        &self,
+        reason: &str,
+        target: &Site,
+        check_pool: bool,
+    ) -> Result<WebReport> {
+        self.reconcile_scoped(reason, Some((target, check_pool)))
+            .await
     }
 
-    async fn reconcile_scoped(&self, reason: &str, target: Option<&Site>) -> Result<WebReport> {
+    async fn reconcile_scoped(
+        &self,
+        reason: &str,
+        scope: Option<(&Site, bool)>,
+    ) -> Result<WebReport> {
+        let target = scope.map(|(site, _)| site);
+        let check_pool = scope.is_some_and(|(_, check)| check);
         let sites = self.inner.sites.list().await?;
         let plan = self.php_plan(&sites).await?;
         let needed: BTreeSet<VersionId> = plan.values().map(|p| p.version.id).collect();
         let target_version = target.and_then(|t| plan.get(&t.id)).map(|p| p.version.id);
         let mut target_failure: Option<ForgeError> = None;
-        if let Some(t) = target {
+        if let Some(t) = target.filter(|_| check_pool) {
             if t.enabled && t.kind == SiteKind::Php && target_version.is_none() {
                 target_failure = Some(ForgeError::NotFound(format!(
                     "no installed PHP serves {} (php {})",
@@ -325,11 +342,16 @@ impl WebManager {
                 }
             }
         }
-        if let Some(err) = target_failure {
+        if let Some(err) = target_failure.filter(|_| check_pool) {
             return Err(err);
         }
         if let Some(t) = target {
-            if let Some(why) = report.site_errors.get(&t.host) {
+            if let Some(why) = report
+                .unserved
+                .get(&t.host)
+                .filter(|_| check_pool)
+                .or_else(|| report.site_errors.get(&t.host))
+            {
                 return Err(ForgeError::ConfigInvalid(format!(
                     "{} was not rendered: {why}",
                     t.host
@@ -496,14 +518,14 @@ impl WebManager {
                 let Some(php) = plan.get(&site.id) else {
                     report.skipped_sites.push(site.host.clone());
                     report
-                        .site_errors
+                        .unserved
                         .insert(site.host.clone(), "its PHP version is not installed".into());
                     continue;
                 };
                 if !upstreams.iter().any(|u| u.name == php.upstream) {
                     tracing::warn!(site = %site.host, upstream = %php.upstream, "PHP pool not running; site not rendered");
                     report.skipped_sites.push(site.host.clone());
-                    report.site_errors.insert(
+                    report.unserved.insert(
                         site.host.clone(),
                         format!("PHP pool {} is not running", php.upstream),
                     );

@@ -332,10 +332,25 @@ fn rendered_nginx_root_follows_the_driver_override() {
             .replace('\\', "/")
     };
     let forced = drivers::redetect(&laravel.join("public"), Some("wordpress")).unwrap();
-    let forced_conf = render_site("nginx", "1.30.6", "shop", forced.driver.id(), &rel(&forced.root));
-    insta::assert_snapshot!("render__nginx__override_wordpress_root", root_line(&forced_conf));
+    let forced_conf = render_site(
+        "nginx",
+        "1.30.6",
+        "shop",
+        forced.driver.id(),
+        &rel(&forced.root),
+    );
+    insta::assert_snapshot!(
+        "render__nginx__override_wordpress_root",
+        root_line(&forced_conf)
+    );
     let auto = drivers::redetect(&forced.root, None).unwrap();
-    let auto_conf = render_site("nginx", "1.30.6", "shop", auto.driver.id(), &rel(&auto.root));
+    let auto_conf = render_site(
+        "nginx",
+        "1.30.6",
+        "shop",
+        auto.driver.id(),
+        &rel(&auto.root),
+    );
     insta::assert_snapshot!("render__nginx__auto_laravel_root", root_line(&auto_conf));
     assert_ne!(forced_conf, auto_conf);
 }

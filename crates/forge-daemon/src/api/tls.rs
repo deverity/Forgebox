@@ -44,7 +44,10 @@ async fn list(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<Certificat
         .leaves
         .iter()
         .map(|leaf| {
-            let site = sites.iter().find(|s| s.host == leaf.info.host).map(|s| s.id);
+            let site = sites
+                .iter()
+                .find(|s| s.host == leaf.info.host)
+                .map(|s| s.id);
             let mut dto = convert::certificate(&leaf.info, site);
             dto.ca_thumbprint_sha256 = leaf.signed_by_ca.then(|| ca_thumbprint.clone()).flatten();
             dto.trusted = Some(leaf.signed_by_ca && leaf.key_ok && ca_trusted);

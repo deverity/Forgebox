@@ -10,16 +10,16 @@ use forge_core::error::{ForgeError, Result};
 use forge_core::ids::SiteId;
 use forge_core::store::{Site, SiteKind, SitePhp};
 use forge_ipc::api::methods::{
-    sites_add, sites_alias, sites_down, sites_driver, sites_info, sites_list, sites_open, sites_park,
-    sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run, sites_secure,
-    sites_server, sites_unpark, sites_up,
+    sites_add, sites_alias, sites_down, sites_driver, sites_info, sites_list, sites_open,
+    sites_park, sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run,
+    sites_secure, sites_server, sites_unpark, sites_up,
 };
 use forge_ipc::api::{
     Ack, CheckDto, CheckStatus, JobDto, ListAction, NoParams, ParkParams, ParkedDirDto,
     ParkedListDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, SiteAddParams,
-    SiteAliasParams, SiteDriverParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams, SiteOpenTarget,
-    SiteParams, SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams, SiteRef,
-    SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
+    SiteAliasParams, SiteDriverParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams,
+    SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams,
+    SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::apps::AppSite;
@@ -336,7 +336,7 @@ async fn php(daemon: Daemon, params: SitePhpParams, ctx: Ctx) -> Result<JobDto> 
             next.php.series = selection.series;
             next.php.exact = selection.exact;
             let updated = d.sites.update(next).await?;
-            apply_or_restore(&d, &previous, &updated, "site php changed").await?;
+            apply_or_restore(&d, &previous, &updated, "site php changed", true).await?;
             let to = d.web.resolved_php(&updated).await.unwrap_or(requested);
             if from.as_deref() != Some(to.as_str()) {
                 d.sites.publish_php_changed(&updated, from.as_deref(), &to);
@@ -354,8 +354,9 @@ async fn apply_or_restore(
     previous: &Site,
     updated: &Site,
     reason: &str,
+    check_pool: bool,
 ) -> Result<()> {
-    let Err(err) = daemon.web.reconcile_for(reason, updated).await else {
+    let Err(err) = daemon.web.reconcile_for(reason, updated, check_pool).await else {
         return Ok(());
     };
     tracing::warn!(site = %updated.host, %err, "change failed; restoring the site");
@@ -412,7 +413,7 @@ async fn driver(daemon: Daemon, params: SiteDriverParams, ctx: Ctx) -> Result<Jo
             next.kind = found.driver.kind();
             next.root = Some(forge_core::paths::posix_string(&found.root));
             let updated = d.sites.update(next).await?;
-            apply_or_restore(&d, &previous, &updated, "site driver changed").await?;
+            apply_or_restore(&d, &previous, &updated, "site driver changed", false).await?;
             Ok(dto(&d, &updated).await)
         },
     )
@@ -552,7 +553,11 @@ async fn check_root_access(daemon: &Daemon, site: &Site) -> CheckDto {
     )
     .await;
     match probed {
-        Ok(Err(problem)) => check("site.root_access", CheckStatus::Fail, format!("{root}: {problem}")),
+        Ok(Err(problem)) => check(
+            "site.root_access",
+            CheckStatus::Fail,
+            format!("{root}: {problem}"),
+        ),
         Ok(Ok(case)) => {
             let enabled = case.as_ref().and_then(|c| c.enabled);
             let state = match enabled {

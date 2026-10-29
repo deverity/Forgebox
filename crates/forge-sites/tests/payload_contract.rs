@@ -89,7 +89,12 @@ async fn php_changed_decodes_as_its_payload() {
     assert_eq!(event.kind, EventKind::SitePhpChanged);
     let api: SitePhpChangedPayload = serde_json::from_value(event.payload.clone()).unwrap();
     assert_eq!(
-        (api.site_id, api.host.as_str(), api.from.as_deref(), api.to.as_str()),
+        (
+            api.site_id,
+            api.host.as_str(),
+            api.from.as_deref(),
+            api.to.as_str()
+        ),
         (site.id, "loja.test", Some("8.3.36"), "8.4.27")
     );
     let back = serde_json::to_value(&api).unwrap();

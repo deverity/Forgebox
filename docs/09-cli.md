@@ -80,7 +80,7 @@ forge site server loja.test apache
 forge site driver loja.test laravel|auto            # fixa o driver do framework; auto detecta de novo
 forge site alias loja.test add admin.loja.test
 forge site open loja.test [--editor|--terminal|--explorer]
-forge site info loja.test                           # diagnóstico: DNS, cert, pool, root, driver
+forge site info loja.test                           # diagnóstico: site.dns, site.certificate (aviso < 30 dias), site.php_pool, site.root_access
 forge site env loja.test [--reveal]                 # .env/.env.local do site com segredos mascarados (--reveal: só admin)
 forge park <dir> [--tld .test] | forge unpark <dir> | forge parked
 forge link [<dir>] [--host] | forge unlink [<dir>]    # equivalente valet; unlink acha o site pela pasta
@@ -111,7 +111,7 @@ forge db open mysql/default --with heidisql|dbeaver|adminer|phpmyadmin   # M3-E1
 forge dns status | enable | disable | test loja.test    # test sai com 1 se o nome não resolve como esperado
 forge tls ca status | install [--scope user|machine] | uninstall [--scope user|machine] | export [-o ca.crt] | rotate
 forge tls issue loja.test | renew [loja.test|--all] | export loja.test [--pfx [--password x]] [-o arquivo]
-forge tls list                                      # certificados dos sites: validade e se este Windows confia neles
+forge tls list                                      # certificados dos sites: validade (dias restantes) e se este Windows confia neles (`trusted`: assinado pela CA atual e a CA confiada)
 forge lan expose loja.test | unexpose | qr loja.test
 ```
 
@@ -178,7 +178,7 @@ Sem comando da CLI (só a GUI e o protocolo): `tools.icon` (ícone SVG sanitizad
 
 API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md), aditiva na 1.1): os métodos novos (`terminal.*`, `logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`, `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) e os de bancos/e-mail respondem `not_implemented` citando a tarefa dona (`M2-E3-T4`…`T11`; `db.open` → `M3-E1`) até o backend chegar — `system.hello.not_implemented` os lista.
 
-API do E2 ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md), aditiva na 1.1): `tools.releases` e `tools.plan` (jobs, `viewer`; nada é baixado), `tools.history`, `tools.icon`, `services.settings` (`viewer`; o bloco `advanced` só vai para admin), `services.update` (job, `admin`), `sites.driver` (job, `operator`) e `tls.list` respondem `not_implemented` citando a tarefa dona (`M2-E2-T4`…`T10`) até o backend chegar; `tools.install|remove` com `--for` (`target`) citam M2-E2-T8 e `service create --data-dir` cita M2-E2-T10, em vez de ignorar o parâmetro. O plano de uma stack (`tools.plan {stack}`) e os `args`/`env` de `services.update` (`launch`) não têm comando equivalente: a GUI não mostra comando em vez de mostrar um errado.
+API do E2 ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md), aditiva na 1.1): `tools.releases` e `tools.plan` (jobs, `viewer`; nada é baixado), `tools.history`, `tools.icon`, `services.settings` (`viewer`; o bloco `advanced` só vai para admin), `services.update` (job, `admin`) respondem `not_implemented` citando a tarefa dona (`M2-E2-T4`…`T10`) até o backend chegar; `sites.driver` (job, `operator`) e `tls.list` (`viewer`) saíram desse grupo no M2-E2-T6 e funcionam; `tools.install|remove` com `--for` (`target`) citam M2-E2-T8 e `service create --data-dir` cita M2-E2-T10, em vez de ignorar o parâmetro. O plano de uma stack (`tools.plan {stack}`) e os `args`/`env` de `services.update` (`launch`) não têm comando equivalente: a GUI não mostra comando em vez de mostrar um errado.
 
 `forge site open <site>` (`sites.open`, `local_only`): sem opção abre no navegador padrão; `--explorer` abre a pasta do site no Explorer (ambos pelo `ShellOpener` da plataforma, `ShellExecuteExW`); `--editor` e `--terminal` respondem `not_implemented` citando M2-E3-T9 até essa tarefa.
 
@@ -194,7 +194,7 @@ Métodos `local_only` (recusados em conexões remotas): `sites.open`, `db.open`,
 | `not_found` | `not_found` | `what` (o que não existe, em inglês: texto de apoio, não para traduzir) |
 | `not_implemented` | `not_implemented` | `what`; `method` e `task` quando o método ou parte dele é de uma tarefa futura (`sites.open` com `with=editor` → `task: "M2-E3-T9"`; `logs.read` com `before_seq` → `task: "M2-E3-T8"`) |
 | `timeout` | `timeout` | `operation`, `after_ms` |
-| `not_found` | `version_not_installed` | `tool`, `requested`, `installed` (versões instaladas da tool), `fix` (comando que instala); `sites.php` com uma versão ou série não instalada — o site não muda (M2-E2-T6, [ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)) |
+| `not_found` | `version_not_installed` | `tool`, `requested`, `installed` (versões instaladas da tool), `fix` (comando que instala); `sites.php` com uma versão ou série não instalada — o site não muda (implementado no M2-E2-T6, [ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)) |
 | (falha de serviço) | `kind` do diagnóstico (`port_in_use`, `missing_dll`, `missing_runtime`, `config_invalid`, `dependency_not_running`, `permission`, `health_timeout`, `exited_during_start`, `crash_loop`, `other`) | os demais campos do `FailureReasonDto`, que continuam no nível de cima (API 1.0) |
 
 Os demais códigos não têm `details` (a GUI mostra o `code` e a `message`). Implementação: `ForgeError::details()` (`forge-core`) alimenta `ApiError::from` e `JobErrorInfo::from`; `ApiError::with_reason`, `reason()` e `args()` montam e leem a convenção. `system.hello` traz `not_implemented: [métodos]` (a tabela `NOT_IMPLEMENTED` do daemon) para a GUI desabilitar o que ainda não existe sem tentar; `daemon.status` traz `cpu_pct` e `rss_bytes` do próprio daemon.
