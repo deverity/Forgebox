@@ -443,7 +443,8 @@ fn e3_methods_have_the_decided_roles_and_flags() {
         assert!(!m.local_only, "{}", m.name);
         assert!(m.cli.is_empty() && m.cli_template.is_none(), "{}", m.name);
     }
-    // Keystrokes are deduplicated by input_seq, not cached by request_id.
+    // Keystrokes are deduplicated per (terminal, writer) by input_seq, not cached by
+    // request_id (ADR-0040 §2).
     assert!(!info("terminal.input").mutating);
     assert!(!info("terminal.resize").mutating);
     assert!(info("terminal.open").mutating && info("terminal.close").mutating);

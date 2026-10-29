@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::num::NonZeroU64;
 
 use pretty_assertions::assert_eq;
 use serde::Serialize;
@@ -315,11 +316,24 @@ fn terminal_dtos_round_trip() {
         terminals: vec![session.clone()],
     });
     round_trip(&TerminalIdParams { id: session.id });
-    round_trip(&TerminalInputParams {
+    let input = TerminalInputParams {
         id: session.id,
+        writer: TerminalWriterId::new(),
         data: "echo hi\r".into(),
-        input_seq: 9,
-    });
+        input_seq: NonZeroU64::new(9).unwrap(),
+    };
+    let json = round_trip(&input);
+    // The writer key is a plain ULID string on the wire and the counter a plain number:
+    // a retry resends both unchanged, whatever connection it travels on.
+    assert_eq!(
+        json["writer"].as_str().unwrap().parse::<TerminalWriterId>(),
+        Ok(input.writer)
+    );
+    assert_eq!(json["input_seq"], 9);
+    assert_eq!(
+        json.as_object().unwrap().keys().collect::<Vec<_>>(),
+        ["data", "id", "input_seq", "writer"]
+    );
     round_trip(&TerminalResizeParams {
         id: session.id,
         cols: 80,
@@ -366,13 +380,31 @@ fn terminal_open_defaults() {
         (session.exit_code, session.exited_at, session.site_id),
         (None, None, None)
     );
-    // Input without input_seq is refused: dedupe depends on it.
-    assert!(
-        serde_json::from_value::<TerminalInputParams>(
-            json!({"id": TerminalId::new(), "data": "x"})
-        )
-        .is_err()
-    );
+    // Dedupe is keyed by (id, writer) and ordered by input_seq from 1: an input missing
+    // either, with input_seq 0, or whose writer is not a ULID is refused.
+    let (id, writer) = (TerminalId::new(), TerminalWriterId::new());
+    let input: TerminalInputParams = from(json!({
+        "id": id, "writer": writer, "data": "x", "input_seq": 1
+    }));
+    assert_eq!((input.writer, input.input_seq.get()), (writer, 1));
+    for refused in [
+        json!({"id": id, "data": "x"}),
+        json!({"id": id, "data": "x", "input_seq": 1}),
+        json!({"id": id, "writer": writer, "data": "x"}),
+        json!({"id": id, "writer": writer, "data": "x", "input_seq": 0}),
+        json!({"id": id, "writer": writer, "data": "x", "input_seq": -1}),
+        json!({"id": id, "writer": "Forgebox.exe", "data": "x", "input_seq": 1}),
+        json!({"id": id, "writer": "", "data": "x", "input_seq": 1}),
+        json!({"id": id, "writer": "0".repeat(64), "data": "x", "input_seq": 1}),
+    ] {
+        assert!(
+            serde_json::from_value::<TerminalInputParams>(refused.clone()).is_err(),
+            "accepted {refused}"
+        );
+    }
+    // The per-session writer map is bounded, and not so tightly that a few reloads or a
+    // second client evict a live writer.
+    const { assert!(TERMINAL_MAX_WRITERS >= 8 && TERMINAL_MAX_WRITERS <= 256) };
 }
 
 // --- shell, system, doctor, security extras -------------------------------------------
