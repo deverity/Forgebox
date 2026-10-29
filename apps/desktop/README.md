@@ -89,3 +89,14 @@ them (ESLint and Prettier skip them).
 - Release profile: the root `Cargo.toml` has `lto = "thin"`, `codegen-units = 1`; `opt-level = "s"`
   is applied per package to `forgebox-desktop` and the Tauri/wry/tao crates (Cargo does not allow
   profiles or `lto` per package in a member manifest).
+
+## Data layer (`src/state`)
+
+Screens never call the bridge directly for live data: wrap the app in `ForgeStateProvider`
+(`new StateLayer(bridge)`) and read through the hooks (`useInstance`, `useSites`, `useJob`,
+`useMetricsPoll`, `useStatusTotals`, `useCapabilities`, `useForgeQuery`...). Events are reduced
+once per animation frame; `lagged`/`reset`/stale reconnections refetch the snapshots once;
+mutating user actions go through `runtime.queue` (held up to 30 s while reconnecting). Failures
+are shown with `describeError` (`src/ipc/describeError.ts`): a localized cause plus actions, each
+with its `forge` command from `renderCli` (`src/ipc/cli.ts`). Design and trade-offs: ADR-0034,
+addendum M2-E1-T9.
