@@ -1,0 +1,97 @@
+{
+  "$description": "Colours of the Forgebox brand icons (docs/design/brand/README.md). Read by apps/desktop/scripts/gen-icons.mjs; edit here, then run `pnpm -C apps/desktop icons`.",
+  "pixel": {
+    "$description": "One entry per character of the hand-pixeled grids in pixel/*.txt. null = transparent.",
+    ".": null,
+    "B": "#2a63ff",
+    "I": "#3b78ff",
+    "h": "#7fb4ff",
+    "v": "#a98bff",
+    "c": "#46c3ff",
+    "o": "#ffa64d",
+    "P": "#8a55ff",
+    "p": "#5a2be0",
+    "G": "#4cd46e",
+    "g": "#1f9a40",
+    "O": "#ffb02e",
+    "r": "#ee6a0e",
+    "x": "#05070b",
+    "l": "#aab3c4",
+    "K": "#141d31",
+    "k": "#0b0f18",
+    "f": "#5d6679",
+    "W": "#f2f5ff",
+    "L": "#2f6fe0",
+    "R": "#e07a2a",
+    "e": "#2a3040"
+  },
+  "names": {
+    "$description": "What each grid character draws.",
+    "B": "lid, top surface",
+    "I": "lid, lighter inner panel (24/32 px)",
+    "h": "lid, back-left edge (light)",
+    "v": "lid, back-right edge and right band (violet)",
+    "c": "lid, left band (cyan)",
+    "o": "lid, right corner band (orange glow)",
+    "P": "upper plate, top (purple side)",
+    "p": "upper plate, band (purple side)",
+    "G": "upper plate, top (green side) / green layer",
+    "g": "upper plate, band (green side)",
+    "O": "lower plate, top (orange)",
+    "r": "lower plate, band (orange)",
+    "x": "box interior",
+    "l": "box rim lip (metallic)",
+    "K": "box, left face (prompt side)",
+    "k": "box, right face",
+    "f": "box, front vertical edge",
+    "W": "prompt glyph \">_\"",
+    "L": "box, left rim light (blue); theme dependent",
+    "R": "box, right rim light (orange); theme dependent",
+    "e": "box, bottom outline; theme dependent"
+  },
+  "themes": {
+    "$description": "Overrides of \"pixel\" per variant. app = icon.ico and the EXEs (any background); light = tray icons for a light taskbar; dark = tray icons for a dark taskbar (lighter rim so the dark box does not vanish).",
+    "app": {},
+    "light": {
+      "h": "#4d8dff",
+      "v": "#9a74ff",
+      "L": "#2458d6",
+      "R": "#d5691c",
+      "e": "#0d1018"
+    },
+    "dark": {
+      "L": "#5a9bff",
+      "R": "#ffa45c",
+      "e": "#7d879c",
+      "k": "#10141e"
+    }
+  },
+  "badges": {
+    "$description": "Tray state badges: bottom-right, half of the icon, 1 px knock-out ring. Each state has its own shape (dot, ring, square, arrow, triangle, \"!\").",
+    "glyph": "#ffffff",
+    "running": "#28c04c",
+    "starting": {
+      "$description": "Spinner: a 110 degree arc that turns 45 degrees per frame over a full track.",
+      "light": { "track": "#a9cdff", "arc": "#1660e0" },
+      "dark": { "track": "#1f6fe8", "arc": "#b4dcff" }
+    },
+    "stopped": "#e0262b",
+    "updating": "#1668f0",
+    "warning": { "fill": "#f5a00b", "glyph": "#2b1a00" },
+    "error": "#e0262b"
+  },
+  "remote": {
+    "$description": "Remote-context overlay (docs/13 section 5): top-left disc with a centre dot and a 1 px separator ring in the taskbar colour of the variant.",
+    "fill": "#a855f7",
+    "dot": "#ffffff",
+    "ring": { "light": "#f3f3f3", "dark": "#1c1c1c" }
+  },
+  "taskbars": {
+    "$description": "Backgrounds of the contact sheet (approximate Windows taskbar colours).",
+    "white": "#ffffff",
+    "win11-light": "#f3f3f3",
+    "win10-light": "#eeeeee",
+    "win11-dark": "#202020",
+    "win10-dark": "#101010"
+  }
+}

@@ -22,6 +22,10 @@ default = []
 # RUSTFLAGS="--cfg tokio_unstable", docs/03 §7.1). The default build never uses tokio_unstable.
 console = ["forge-core/console"]
 
+# Forgebox icon resource (build.rs, docs/design/brand).
+[build-dependencies]
+embed-resource = { workspace = true }
+
 [dependencies]
 forge-core = { path = "../forge-core" }
 forge-manifest = { path = "../forge-manifest" }

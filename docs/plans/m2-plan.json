@@ -177,7 +177,8 @@
       "question": "ADR and migration numbering",
       "decision": "ADR-0033 is taken by release/0.1.0. M2 assignments:\n- 0034 shell architecture\n- 0035 window chrome\n- 0036 tests and cold start\n- 0037 CLI templates\n- 0038 autostart and updater\n- 0039 error details and shell API\n- 0040 E3 API\n- 0041 E2 API\n- 0042 quick settings\n- 0043 extensions\n- 0044 metrics\n- 0045 security extras\n- 0046-0049 spare\nRe-check docs/adr/README on develop before each merge and renumber the later merge on collision. SQL migrations take the next free number at rebase time, expected 0004 (E2-T7) and 0005 (E5-T7), and are never edited after merge.",
       "adr_in_task": "enforced by the orchestrator at merge time"
-    }
+    },
+    "2026-10-28 user brand art: C:\\apps_src\\Forgebox-wt\\cache\\brand\\forgebox-icon-tray-reference.png is the source of truth for the app/EXE icon and tray state icons (M2-E1-T22) and the tray menu structure (M2-E1-T15, native menu). README screenshots for GitHub requested (M2-E4-T12 after the gate)."
   ],
   "unmapped_before_fix": [
     "docs/07 §5.3 Serviços 'Avançado' (args, env, restart policy), instance 'data dir' on creation, and changing an instance's version: E2 had deferred them and no task covered them. Fixed by adding M2-E2-T10 (services.update + data_dir), with the tab in M2-E2-T13.",
@@ -680,6 +681,48 @@
       ]
     },
     {
+      "id": "M2-E1-T22",
+      "title": "Brand icons: app/EXE icon and tray state icons from the user's reference art",
+      "slug": "brand-icons",
+      "wave": 9,
+      "tier": "opus",
+      "depends_on": [
+        "M2-E1-T1"
+      ],
+      "summary": "The user supplied the brand art: C:\\apps_src\\Forgebox-wt\\cache\\brand\\forgebox-icon-tray-reference.png (1536x1024 mockup on a dark background). It shows:\n- the app icon (stacked glass plates: blue top, purple/green/orange layers, over a dark box with a white \">_\" prompt) at 512/256/128/64/32/16 px;\n- six tray status variants: Em execução = green dot, Iniciando = blue ring, Parado = red stop square, Atualizando = blue download arrow, Erro = red \"!\", Atenção (algum serviço) = orange \"!\";\n- a taskbar preview and the tray menu (used by M2-E1-T15).\nIt is the source of truth for the look. Open it with the Read tool and compare your output against it at every step.\n\n(1) Commit the reference as docs/design/brand/reference-icon-tray.png and write docs/design/brand/README.md (pt-BR): design intent, state -> badge table, how to regenerate.\n(2) Master art: a square, transparent-background master (>= 512 px, 1024 if quality allows) faithful to the reference. The mockup has a dark background and glow, so matting must leave no dark halo: check it composited over white, #f3f3f3, #202020 and the Win10 light/dark taskbar colors. If an extracted raster cannot be made clean, recreate the icon as SVG (docs/design/brand/forgebox-icon.svg) following the reference shapes, gradients and colors, and rasterize it. Either way the sources live in docs/design/brand/.\n(3) Small sizes 16/20/24/32 px are hand-tuned simplified variants (fewer layers, thicker prompt glyph, pixel-aligned), not a plain downscale. The reference 16 px rendering is muddy: improve legibility while staying recognizable.\n(4) App/EXE icon: regenerate apps/desktop/src-tauri/icons/* with `pnpm -C apps/desktop tauri icon <master>`; icon.ico holds 16, 20, 24, 32, 40, 48, 64 and 256, with the hand-tuned small entries replacing plain downsamples. Forgebox.exe, the window/taskbar icon and the future installer use it. Also embed the same .ico in forge.exe (crates/forge-cli), forgeboxd.exe (crates/forge-daemon), forgebox-helper.exe (crates/forge-helper, whose build.rs already embeds the requireAdministrator manifest with embed-manifest: keep it working and verified by its embedded_manifest test), forge-mcp.exe and forgebox-ctrl.exe, through a cfg(windows) build.rs icon resource (e.g. winresource or embed-resource; it must pass cargo deny, and the build must still work when the resource compiler is missing only if that can be detected cleanly, otherwise document the requirement in README Desenvolvimento). If one EXE cannot take it cleanly, document why in the PR and skip it.\n(5) Tray icons for M2-E1-T15: apps/desktop/src-tauri/icons/tray/<state>-<light|dark>.ico for base (no badge), running, starting (animation frames starting-0..starting-7 of the rotating ring), stopped, updating, warning, error, and a remote-context indicator overlay (docs/13 §5). Each .ico holds 16/20/24/32 px (40/48 optional). Light and dark taskbar variants: on dark taskbars the dark box needs a lighter rim; on light taskbars it needs enough contrast. Badges sit bottom-right at about 45-50 % of the icon with a 1 px knock-out ring so they read at 16 px, and always differ by shape too (dot, ring, square, arrow, \"!\"), never by color only.\n(6) Reproducible generator with no Python: apps/desktop/scripts/gen-icons.mjs (Node devDependencies such as sharp + png-to-ico or @resvg/resvg-js) or `cargo xtask icons` (resvg/image), rebuilding every file from the brand sources. `icons:check` (or the xtask equivalent) fails on drift without network and is wired into scripts/ci.ps1 -Desktop.\n(7) Contact sheet: docs/design/brand/contact-sheet.png with every icon at every size over light and dark taskbar colors and at 100/125/150/200 % scale. Look at it yourself (Read tool) before finishing and attach its path to the PR notes.\n(8) Docs: update docs/07 §2.4 (app icon) and §7. The tray state set is now running/starting/stopped/updating/warning/error plus the remote indicator, and the icon path is apps/desktop/src-tauri/icons/tray/. Update docs/08 if it lists icons. Register this task and M2-E4-T12 (README screenshots; take its text from C:\\apps_src\\Forgebox-wt\\cache\\m2-plan-integrated.json) in docs/10, in the M2 lists of their epics, and in docs/STATUS.md (rows in id order within the epic). Refresh docs/plans/m2-plan.json from that same file.",
+      "files": [
+        "docs/design/brand/**",
+        "apps/desktop/src-tauri/icons/**",
+        "apps/desktop/scripts/gen-icons.mjs",
+        "apps/desktop/package.json",
+        "apps/desktop/pnpm-lock.yaml",
+        "crates/{forge-cli,forge-daemon,forge-helper,forge-mcp,forge-supervisor}/{build.rs,Cargo.toml}",
+        "Cargo.toml",
+        "Cargo.lock",
+        "deny.toml",
+        "scripts/ci.ps1",
+        "docs/07-ui-ux.md",
+        "docs/08-release-layout.md",
+        "docs/10-roadmap-and-agent-tasks.md",
+        "docs/STATUS.md",
+        "docs/plans/m2-plan.json",
+        "README.md"
+      ],
+      "docs": [
+        "docs/07-ui-ux.md §2.4, §7",
+        "docs/13-remote-mode.md §5",
+        "docs/08-release-layout.md",
+        "docs/adr/0002-gui-tauri.md"
+      ],
+      "acceptance": [
+        "Every icon file regenerates from docs/design/brand sources with the committed generator (no Python, no network); icons:check passes on a clean tree and fails after a manual edit of one .ico",
+        "pnpm -C apps/desktop tauri build --debug --no-bundle produces Forgebox.exe with the new icon; forge.exe, forgeboxd.exe, forgebox-helper.exe, forge-mcp.exe and forgebox-ctrl.exe carry it (checked by extracting the icon resource), or the PR documents why one is skipped; the helper manifest test still passes",
+        "The contact sheet shows the icons legible at 16 px on light and dark taskbars, no dark halo on light backgrounds, and badges distinguishable by shape alone",
+        "cargo build/clippy -D warnings/test --workspace, cargo deny check and the desktop lint/typecheck/test pass",
+        "docs/07 §2.4 and §7, docs/design/brand/README.md, docs/10, docs/STATUS.md and docs/plans/m2-plan.json updated"
+      ]
+    },
+    {
       "id": "M2-E1-T15",
       "title": "Tray (Rust): state icon, event-driven menu, context line, quick actions, quit flow",
       "slug": "tray",
@@ -690,27 +733,30 @@
         "M2-E1-T8",
         "M2-E1-T3",
         "M2-E1-T5",
-        "M2-E1-T17"
+        "M2-E1-T17",
+        "M2-E1-T22"
       ],
-      "summary": "src-tauri/src/tray: a TrayModel actor (mailbox; every API call has a timeout) per active context, with its own events.subscribe through Contexts. It builds snapshots from services.status, sites.list, php.list and hello, and rebuilds the native menu on events, debounced at 100 ms and deferred while the menu is open. Never polls.\n\nIcon: aggregate state ok / starting (animated) / failed (red dot) / update (blue dot, from tool.updates_available). 16/20/24/32 px .ico files for light and dark taskbars (from SystemAppearance), embedded with include_bytes from src-tauri/icons/tray. Update the docs/07 §7 path.\n\nMenu:\n- '● Local' with a context submenu;\n- Abrir Forgebox; Start/Stop all;\n- Serviços: a check item per instance;\n- Sites: open the URL client-side;\n- PHP CLI: radio items → tools.use php;\n- Mail (n não lidos) and Terminal: hidden until implemented (E3 enables them);\n- Sair: asks whether to stop services (daemon.stop {keep_services:false}, 5 s timeout) or just exit the GUI.\n\nTooltip summary. Left click opens or focuses the window; middle click opens the terminal when implemented. Labels come from the shared i18n tray namespace. With a remote context, the icon shows an indicator.",
+      "summary": "src-tauri/src/tray: a TrayModel actor (mailbox; every API call has a timeout) per active context, with its own events.subscribe through Contexts. It builds snapshots from services.status, sites.list, php.list and hello, and rebuilds the native menu on events, debounced at 100 ms and deferred while the menu is open. Never polls.\n\nIcon (the user's reference art, docs/design/brand/ from M2-E1-T22): the aggregate state is one of:\n- running (green dot);\n- starting (rotating blue ring; frames at about 8 fps only while starting, a static frame under reduced motion);\n- stopped (red square: no service running);\n- updating (blue arrow: tool.updates_available pending, or an install/update job running);\n- warning (orange \"!\": some service failed or is crash-looping while others run);\n- error (red \"!\": daemon unreachable or every enabled service failed).\nPrecedence: error > warning > starting > updating > running > stopped; document it in docs/07 §7. Use the .ico files from apps/desktop/src-tauri/icons/tray (include_bytes). Pick the light/dark variant from SystemAppearance.taskbar_light and the size from the tray DPI. A remote context adds the indicator overlay.\n\nMenu: a native Tauri menu with the structure of the reference mockup, keeping every docs/07 feature:\n- header: IconMenuItem with the app icon, \"Forgebox · <context>\", whose submenu switches context (\"● Local\", disabled \"Adicionar remoto (M6)\");\n- status line (disabled, colored-dot icon): \"Todos os serviços em execução\" / \"n de m serviços em execução\" / \"n com falha\" / \"Daemon indisponível\";\n- Abrir painel;\n- Gerenciar serviços ›: a check item per instance (start/stop) plus \"Abrir Serviços\";\n- Sites ›: opens the URL client-side;\n- PHP CLI ›: radio items → tools.use php;\n- separator; Iniciar todos (shown when any enabled service is stopped) / Reiniciar todos / Parar todos (disabled when nothing runs);\n- separator; Ver logs (navigates the window to /logs); Mail (n não lidos) and Terminal stay hidden until implemented (E3 enables them);\n- separator; Configurações (navigates to /settings); Sair: asks whether to stop services (daemon.stop {keep_services:false}, 5 s timeout) or just exit the GUI.\nMonochrome menu icons (Lucide-like, as in the mockup) where muda supports item icons on Windows, matched to the menu theme. Follow the app light/dark theme for the menu if Tauri/muda allows it; otherwise document the fallback. An exact Fluent-style flyout (custom webview) is out of scope; note it in docs/07 §7 as a possible later enhancement.\n\nTooltip summary. Left click opens or focuses the window; middle click opens the terminal when implemented. Labels come from the shared i18n tray namespace. With a remote context, the icon shows an indicator.",
       "files": [
         "apps/desktop/src-tauri/src/tray/{mod,model,menu,icons}.rs",
-        "apps/desktop/src-tauri/icons/tray/*.ico",
         "apps/desktop/src-tauri/tests/tray_model.rs",
-        "docs/07-ui-ux.md"
+        "docs/07-ui-ux.md",
+        "apps/desktop/src/i18n/{pt-BR,en-US}/tray.json"
       ],
       "docs": [
         "docs/07-ui-ux.md §7",
         "docs/13-remote-mode.md §5",
         "docs/03-engine.md §7.2, §8",
-        "docs/adr/0011-actor-concurrency-model.md"
+        "docs/adr/0011-actor-concurrency-model.md",
+        "docs/design/brand/README.md"
       ],
       "acceptance": [
-        "Reducer unit tests: a service.* event sequence → ok/starting/failed; PHP radio follows tool.current_changed; Mail and Terminal hidden while not implemented",
         "Against a real forge-ipc test server: the menu model is rebuilt within 200 ms of an event; there are no services.status calls besides the initial one and resyncs",
         "Actions use a fresh request_id and the active context id (fake Contexts asserts it)",
         "Quit: 'parar serviços' sends daemon.stop{keep_services:false} and exits after the answer or 5 s; 'manter' exits without a call",
-        "Icons legible on light and dark taskbars (PrintWindow/manual screenshots in the PR; real-console check at the gate)"
+        "Icons legible on light and dark taskbars (PrintWindow/manual screenshots in the PR; real-console check at the gate)",
+        "Reducer unit tests: service.* event sequences and connection loss map to running/starting/stopped/updating/warning/error with the documented precedence; PHP radio follows tool.current_changed; Mail and Terminal hidden while not implemented; Iniciar/Reiniciar/Parar todos enabled per state",
+        "Screenshots of the real tray icon and menu on light and dark taskbars in the PR (PrintWindow or capture script), compared side by side with docs/design/brand/reference-icon-tray.png"
       ]
     },
     {
@@ -3108,6 +3154,37 @@
         "§11 matrix 100 % pass and cli-only.yaml coverage complete; cold-start median < 800 ms with the daemon running and stopped; E5 acceptance numbers recorded",
         "Resilience and release-hardening specs pass; no leftover processes",
         "STATUS marks M2 done only with the user's signed human section"
+      ]
+    },
+    {
+      "id": "M2-E4-T12",
+      "title": "README screenshots for GitHub: hero image, screen gallery and a reproducible capture script",
+      "slug": "readme-screenshots",
+      "wave": 21,
+      "tier": "sonnet",
+      "depends_on": [
+        "M2-E4-T11"
+      ],
+      "summary": "User request: add screenshots of the UI to the root README.md so people on GitHub can see what Forgebox looks like.\n- Capture 5-7 screens of the real app with realistic fixture data from the qa scenarios: Dashboard, Serviços, Sites plus a site detail showing per-vhost PHP, Catálogo, Desempenho (metrics) or Logs, and the command palette. Add the tray menu if it can be captured.\n- Prefer real-window captures (scripts/qa/capture-window.ps1 on the release build) so the titlebar and materials show; otherwise use the qa build through Playwright. Dark theme first, plus one light-theme shot.\n- No personal data: no real user names, paths, host names or IPs; use the qa scenario data only.\n- Store the images as docs/assets/screenshots/<screen>-<theme>.png, optimized: at most 1600 px wide, DPR 1.25-1.5 for crispness, each <= 400 KB.\n- README.md: a hero block under the tagline with the app icon from docs/design/brand and one wide screenshot; a \"Capturas de tela\" section with the gallery and a short pt-BR caption plus an English one-line caption per image.\n- Update the outdated \"Status\" paragraph, which still says \"Fase de especificação\", to summarize what M1 and M2 deliver, and add the desktop commands to \"Desenvolvimento\".\n- Add a reproducible capture command (`pnpm -C apps/desktop qa:readme-shots`, or a script under scripts/qa/) so the images can be refreshed at every release, and document it in docs/08 (release checklist).",
+      "files": [
+        "README.md",
+        "docs/assets/screenshots/**",
+        "apps/desktop/qa/readme-shots.*",
+        "apps/desktop/package.json",
+        "scripts/qa/**",
+        "docs/08-release-layout.md",
+        "docs/STATUS.md"
+      ],
+      "docs": [
+        "docs/07-ui-ux.md §5",
+        "docs/08-release-layout.md",
+        "docs/design/brand/README.md"
+      ],
+      "acceptance": [
+        "README renders on GitHub with every relative image link resolving (checked by a link test or script), the hero image, the gallery and captions",
+        "Each image <= 400 KB and <= 1600 px wide; no personal paths, user names or host names visible",
+        "The capture command reproduces the set from a clean checkout (qa build or release build) and is listed in the docs/08 release checklist",
+        "README Status and Desenvolvimento sections reflect M1 + M2"
       ]
     }
   ]

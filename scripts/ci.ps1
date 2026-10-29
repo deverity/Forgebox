@@ -3,7 +3,11 @@
 # generated-artifacts drift check, which the workflow also runs.
 # -OfflineDeny: for machines where the RustSec advisory DB cannot be fetched (e.g. TLS
 # interception); runs the same steps individually with `cargo deny --offline` (cached DB).
-param([switch]$OfflineDeny)
+# -Desktop: the desktop steps only (apps/desktop, Node >= 24): install, generated-file drift
+# (design tokens, brand icons), lint, typecheck and vitest. FORGEBOX_NODE_DIR, when set, is put
+# first on the PATH of this process only; NODE_OPTIONS=--use-system-ca is set for this process.
+# M2-E1-T20 extends it with the Playwright fake-bridge suite and the Tauri debug build.
+param([switch]$OfflineDeny, [switch]$Desktop)
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 
@@ -11,6 +15,19 @@ function Invoke-Step([string]$Label, [scriptblock]$Block) {
     Write-Host "==> $Label"
     & $Block
     if ($LASTEXITCODE -ne 0) { throw "step failed: $Label (exit $LASTEXITCODE)" }
+}
+
+if ($Desktop) {
+    if ($env:FORGEBOX_NODE_DIR) { $env:Path = "$env:FORGEBOX_NODE_DIR;$env:Path" }
+    $env:NODE_OPTIONS = '--use-system-ca'
+    Invoke-Step 'pnpm install' { pnpm -C apps/desktop install --frozen-lockfile }
+    Invoke-Step 'tokens:check' { pnpm -C apps/desktop tokens:check }
+    Invoke-Step 'icons:check' { pnpm -C apps/desktop icons:check }
+    Invoke-Step 'lint' { pnpm -C apps/desktop lint }
+    Invoke-Step 'typecheck' { pnpm -C apps/desktop typecheck }
+    Invoke-Step 'test' { pnpm -C apps/desktop test }
+    Write-Host 'CI Desktop OK'
+    exit 0
 }
 
 Invoke-Step 'cargo build --workspace' { cargo build --workspace }
