@@ -7,6 +7,7 @@
 //! - [`engine`]: minijinja environment with embedded templates and `etc/templates/` overrides.
 //! - [`managed`]: `# forgebox:begin/end` blocks, text normalization (LF, UTF-8, no BOM).
 //! - [`drift`]: detection of user edits inside managed blocks.
+//! - [`settings`]: quick settings writers, one per config format (docs/04 §1.3).
 //! - [`targets`]: which files each known tool gets and where.
 //!
 //! Everything is blocking CPU/file work: the daemon calls it from `spawn_blocking`.
@@ -15,6 +16,7 @@ pub mod drift;
 pub mod engine;
 pub mod managed;
 pub mod model;
+pub mod settings;
 pub mod targets;
 
 pub use drift::Drift;

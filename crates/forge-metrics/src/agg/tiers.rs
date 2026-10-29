@@ -1,4 +1,4 @@
-//! Per-site tiers (docs/14 section 3.3) and the planner that answers windows and ranges from
+//! Per-site tiers (docs/14 section 3.4) and the planner that answers windows and ranges from
 //! them with whole buckets, aligned outward.
 //!
 //! - **Open buckets**: the 2 s buckets that still accept records (end + grace not reached),

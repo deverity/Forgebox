@@ -1,4 +1,4 @@
-worker_processes 1;
+worker_processes {{ instance.settings.worker_processes | default('1') }};
 error_log "{{ paths.logs }}/nginx/error.log";
 pid "{{ paths.tmp }}/nginx/nginx.pid";
 
@@ -10,7 +10,9 @@ http {
     include "{{ tool.dir }}/conf/mime.types";
     default_type application/octet-stream;
     sendfile off;
-    keepalive_timeout 65;
+    keepalive_timeout {{ instance.settings.keepalive_timeout | default('65') }};
+    # Server-wide body limit (quick setting); each site sets its own in its server block.
+    client_max_body_size {{ instance.settings.client_max_body_size | default('128M') }};
     server_tokens off;
     server_names_hash_bucket_size 128;
     client_body_temp_path "{{ paths.tmp }}/nginx/client_body";

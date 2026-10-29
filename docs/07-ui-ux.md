@@ -34,6 +34,7 @@ Fonte única: [`docs/design/tokens.json`](design/tokens.json) (DTCG). `pnpm -C a
 --bg-sidebar       material lateral (Acrylic) / sólido
 --bg-surface       cards, listas            --bg-surface-2  surfaces elevadas
 --fg-primary       texto principal          --fg-secondary  texto secundário  --fg-tertiary labels
+--fg-on-accent     texto/ícone sobre fundo --accent (4,5:1; branco no light, preto no dark e alto contraste)
 --stroke           divisores (alpha 8–12%)
 --accent           cor do sistema Windows (`SystemAppearance.accent` do forge-core; o `AccentColor` do CSS não é confiável no WebView2) com fallback #0A84FF
 --state-running    #30D158   --state-starting #FFD60A   --state-stopped #8E8E93   --state-failed #FF453A   --state-updating #64D2FF

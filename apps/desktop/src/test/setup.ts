@@ -10,3 +10,19 @@ beforeAll(async () => {
 
 // Vitest globals are off, so Testing Library cannot register its own cleanup.
 afterEach(cleanup);
+
+// jsdom lacks these browser APIs, which Radix (Select, Slider) relies on.
+/* eslint-disable @typescript-eslint/no-empty-function, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/unbound-method */
+if (typeof Element !== "undefined") {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= ResizeObserverStub;
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+}
+/* eslint-enable @typescript-eslint/no-empty-function, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/unbound-method */

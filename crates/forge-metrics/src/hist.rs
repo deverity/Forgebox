@@ -1,4 +1,4 @@
-//! Latency histograms (docs/14 section 3.3): the HDR log-linear layout of the `hdrhistogram`
+//! Latency histograms (docs/14 section 3.4): the HDR log-linear layout of the `hdrhistogram`
 //! crate, stored sparsely so the thousands of histograms of the aggregator fit in a site's
 //! memory budget, and merged exactly (counts add up index by index; percentiles are never
 //! averaged).

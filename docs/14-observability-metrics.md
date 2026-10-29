@@ -9,7 +9,7 @@ Uma aba **Desempenho** em cada site e um dashboard geral mostrando, por vhost e 
 |---|---|---|
 | Latência por request, status, bytes, host, URI, upstream usado | **Access log estruturado** do web server, gerado pelos nossos templates: Nginx `log_format forgebox escape=json '{"t":"$msec","host":"$host","s":$status,"rt":$request_time,"ut":"$upstream_response_time","b":$body_bytes_sent,"m":"$request_method","u":"$uri","up":"$upstream_addr"}'`; Apache `LogFormat "{\"t\":\"%{msec}t\",\"host\":\"%{Host}i\",\"s\":%s,\"rt_us\":%D,\"b\":%B,\"m\":\"%m\",\"u\":\"%U\",\"up\":\"%{BALANCER_WORKER_NAME}e\"}" forgebox_json` (tempo em **µs** na chave `rt_us`, `%B` em vez de `%b` para nunca emitir `-` fora de JSON válido; o parser do daemon é por servidor); Caddy JSON log nativo. O daemon faz *tail* (polling + leitura incremental, §3.2) e agrega. | Exata, por request |
 | Tempo de PHP (sem rede/servidor) | `$upstream_response_time` (Nginx) / `%{..}` do mod_proxy | Exata |
-| req/s, p50/p90/p99 por janela | Agregação no daemon em histogramas **HDR** (layout do crate `hdrhistogram`: 1 µs a 10 min, 3 dígitos significativos) por site, em camadas de 2 s, 10 s, 1 min e 1 h (§3.3) | Exata a 3 dígitos (erro ≤ 1/1024 do valor) |
+| req/s, p50/p90/p99 por janela | Agregação no daemon em histogramas **HDR** (layout do crate `hdrhistogram`: 1 µs a 10 min, 3 dígitos significativos) por site, em camadas de 2 s, 10 s, 1 min e 1 h (§3.4) | Exata a 3 dígitos (erro ≤ 1/1024 do valor) |
 | CPU/RSS por **processo** | `GetProcessTimes`/`PROCESS_MEMORY_COUNTERS_EX`/`GetProcessHandleCount` a cada 2 s, somados por Job da instância (`forge_supervisor::metrics`, [03](03-engine.md) §6; CPU % normalizado pelas CPUs lógicas, como o Gerenciador de Tarefas) | Exata por PID (±10 % de `Get-Process`, teste de aceite) |
 | CPU/RSS por **vhost** | Atribuição: workers de um pool são compartilhados entre sites da mesma versão de PHP. Dois modos: **(a) `pool_mode: shared`** (padrão) → o custo do pool é rateado entre sites proporcionalmente ao `upstream_response_time` somado na janela (estimativa, marcada como "≈"); **(b) `pool_mode: dedicated`** por site → pool exclusivo, atribuição exata. Processes (`web`, `queue`) de um site são sempre exatos (PIDs próprios). | (a) estimativa, (b) exata |
 | Memória pico por request PHP | Opcional: `conf.d/30-forgebox-metrics.ini` com `auto_prepend_file` que registra `memory_get_peak_usage()` e tempo em um ring buffer compartilhado (arquivo mmap em `tmp/metrics/php_<ver>.bin`) via extensão ou header `X-Forgebox-Mem` ecoado pelo servidor no log. **Opt-in** por site (toggle "instrumentação profunda"); overhead < 0,1 ms. | Exata quando ligado |
@@ -24,14 +24,14 @@ tail(access.log) ─▶ parse json ─▶ roteia por host→site ─▶ agrega (
 proc sampler (2 s) ─▶ (pid→owner) ─▶ agrega por Instance/Pool/App ─▶ rateio por site (modo shared)
                                              │
                                              ▼
-    camadas em memória (§3.3): 2 s por 10 min, pontos de 10 s (8.640/site) e minutos por 24 h, horas
+    camadas em memória (§3.4): 2 s por 10 min, pontos de 10 s (8.640/site) e minutos por 24 h, horas
                                              │
             ┌────────────────────────────────┼────────────────────────────┐
             ▼                                ▼                            ▼
    SQLite `metrics_1m` (7 dias)    stream IPC `metrics.site{site, window}`   export OpenMetrics
    `metrics_1h` (90 dias)          (GUI/CLI assinam com filtro)              `/_forgebox/metrics`
 ```
-- Percentis são calculados sobre histogramas HDR (layout e codificação V2 do crate `hdrhistogram`) por janela; merge de janelas é exato (não se faz média de percentis). Ver §3.3.
+- Percentis são calculados sobre histogramas HDR (layout e codificação V2 do crate `hdrhistogram`) por janela; merge de janelas é exato (não se faz média de percentis). Ver §3.4.
 - Custo alvo: < 2 % de CPU do daemon a 1.000 req/s; se o log crescer mais rápido que o tail, amostragem adaptativa (marcada na UI).
 - Rotação dos access logs feita pelo daemon (`logs/nginx/access.json.1`), tail segue a rotação.
 - Tudo é **desligável** por site ou global (`prefs.metrics.enabled`), e desligado em `portable.flag` por padrão.
@@ -61,7 +61,15 @@ Um `Tailer` por arquivo, task própria (`tail::spawn`, ou `Tailer::new` + `run` 
 - **Status e ciclo de vida:** `watch` com estado (`Starting`, `Waiting`, `Following`, `Orphaned`, `Stopped`, `Failed`), resultado da partida, offset, tamanho, `k` e contadores (linhas, itens, escalado, rejeitadas, longas, bytes, rotações, truncamentos, lotes, ticks adiados). Não segurar o `Ref` do `watch` através de `.await` (é uma trava de leitura do canal). Tick em pânico → `Failed`, e o dono reinicia do `delivered`. `TailerHandle::stop(timeout)` para e devolve o status final; soltar o handle também para.
 - **Medido** (`crates/forge-metrics/tests/tail.rs`, build debug, máquina com outros builds rodando): com os valores de produção, backlog de 50 MiB (373 mil linhas nginx, `AccessParser` de verdade) alcançado em ~1,5 s em 13 ticks, maior `poll` do tailer no runtime entre 0,08 e 0,7 ms em 15 execuções (orçamento: 50 ms), lotes amostrados até `k = 16` e contagem escalada a ≤ 0,001 % da real; ~86 mil linhas atravessando 6 rotações estilo nginx (rename, linhas atrasadas no arquivo antigo, reabertura) com escrita contínua chegam exatamente uma vez.
 
-### 3.3 Agregador (`forge_metrics::agg`, M2-E5-T5, [ADR-0048](adr/0048-metrics-aggregator-sparse-hdr-tiers-routes.md))
+### 3.3 Atribuição por vhost (`forge_metrics::attribute`, M2-E5-T6)
+Função pura por balde (10 s). Entrada: `PoolSample` (CPU % da máquina, working set, workers ativos, intervalo de vida no balde, modo `Shared`/`Dedicated(site)`), `AppSample` (processos do site), `PoolRoute` (qual site apontava para qual pool e quando) e `SiteLoad` (`ut_sum`, com `rt_sum` de reserva). Saída: `SiteResources {cpu_pct, mem_bytes, approx, workers_active}` por site e `Overhead` por pool.
+- Pool dedicado e processos de app: 100 % para o dono, `approx = false`; apps do mesmo site são somados.
+- Pool compartilhado: rateio pela fatia de `ut` (3:1 vira 75/25), `approx = true`.
+- Pool compartilhado sem nenhum `ut`/`rt` no balde (regra de tráfego zero): nada é atribuído; CPU e memória viram `Overhead`.
+- Mudanças no meio do balde (swap blue/green, troca de `pool_mode`): CPU e memória de um pool são escaladas pela fração do balde em que ele existiu, e a carga de um site é repartida entre os pools para onde apontou, proporcionalmente ao tempo em cada um.
+- A amostragem de CPU do pool vem de `PoolStatus.cpu_pct` / `PoolHandle::subscribe_metrics()` (`forge-fcgi`): `Δcpu_total / Δrelógio / CPUs lógicas` por (pid, criação), como o supervisor; medido a 0,2 % de `Get-Process`.
+
+### 3.4 Agregador (`forge_metrics::agg`, M2-E5-T5, [ADR-0048](adr/0048-metrics-aggregator-sparse-hdr-tiers-routes.md))
 `Aggregator` de dono único (o ator de métricas do T8 o possui): código síncrono, sem I/O e sem relógio próprio (o `now` vem de quem chama, em `advance`). Um site sem registros custa ~1 KiB.
 
 - **Histogramas (`forge_metrics::hist`).** Layout HDR do crate `hdrhistogram` com valor mínimo 1 µs, máximo 10 min (valores maiores são limitados a 10 min) e 3 dígitos significativos: 2.048 sub-buckets por potência de 2, erro ≤ 1/1024 do valor, exato abaixo de 2.048 µs. Em memória cada histograma (`LatencyHist`) é a lista esparsa dos índices não vazios em varints LEB128 (`gap << 1 | (count == 1)`, mais `count - 2` quando a contagem passa de 1): 2 a 3 bytes por milissegundo distinto, contra 168 KiB de um array denso. Merge exato (soma índice a índice). Percentil com a definição do `value_at_quantile` do crate: posto `max(1, ceil(q·n))`, maior valor equivalente do índice; com contagens exatas é exatamente o `highest_equivalent` do percentil por força bruta. Persistência pelo crate: `to_v2`/`from_v2` (HDR V2 sem DEFLATE, `FORMAT_VERSION = 1`). As rotas usam 2 dígitos (erro ≤ 1/128).
@@ -83,13 +91,13 @@ Um `Tailer` por arquivo, task própria (`tail::spawn`, ou `Tailer::new` + `run` 
 ### 4.1 Aba "Desempenho" do site
 - Cabeçalho: req/s atual · p50 / p90 / p99 (últimos 5 min) · taxa de erro · CPU ≈ · RAM ≈ · workers ativos.
 - Gráficos (60 s / 1 h / 24 h / 7 d): latência (bandas p50–p90–p99), throughput + erros empilhados, CPU/RAM atribuídos, memória pico por request (se instrumentação ligada).
-- Tabela "Rotas mais lentas" (por `uri` normalizado: IDs numéricos → `{id}`; v1: top-K das últimas 12 a 24 h, §3.3), "Erros recentes" (v1: últimos 50 5xx e 50 4xx do access log, §3.3; linhas do error_log com link para o editor depois), "Consultas lentas" (se habilitado).
+- Tabela "Rotas mais lentas" (por `uri` normalizado: IDs numéricos → `{id}`; v1: top-K das últimas 12 a 24 h, §3.4), "Erros recentes" (v1: últimos 50 5xx e 50 4xx do access log, §3.4; linhas do error_log com link para o editor depois), "Consultas lentas" (se habilitado).
 - Marcadores de eventos no gráfico: troca de versão de PHP, restart, mudança de config, update. Permite ver "o p99 caiu depois de habilitar OPcache".
 - Botão **"Instrumentação profunda"** (toggle, explica overhead) e **"Pool dedicado"** (muda `pool_mode`).
 
 ### 4.2 Dashboard geral
 - Tiles por serviço com sparklines (já em [07](07-ui-ux.md)); nova seção "Projetos" com ranking por CPU/RAM/p99/erros nas últimas 24 h; "Ociosos há > 7 dias" com sugestão de parar processes.
-- Monitor da máquina: CPU/RAM/disco totais vs. parcela do Forgebox.
+- Monitor da máquina: CPU/RAM/disco totais vs. parcela do Forgebox. Fonte: `forge_core::platform::SystemStats` (M2-E5-T10, [03](03-engine.md) §6): CPU da máquina = Δocupado / (Δocupado + Δocioso) entre duas amostras de `GetSystemTimes`; parcela do Forgebox = Σ Δ tempo de CPU dos processos do daemon, das instâncias, dos pools e dos apps sobre a **mesma** capacidade (`MachineSample::cpu_share_since`), nunca acima da máquina; RAM = `GlobalMemoryStatusEx` (total e disponível) vs. Σ working set; disco = `GetDiskFreeSpaceExW` do volume da raiz (e de `data/` se estiver em outro volume). Os nomes de processo do `forge top` vêm de `ProcessStats::info` (`QueryFullProcessImageNameW`) via `ImageNameCache`, em cache por `(pid, started_at)`.
 
 ### 4.3 CLI
 ```

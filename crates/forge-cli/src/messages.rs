@@ -290,6 +290,7 @@ messages! {
     // services
     InstanceCreated => ("Instância criada: {0}/{1}", "Instance created: {0}/{1}"),
     InstanceUpdated => ("Instância atualizada: {0}/{1}", "Instance updated: {0}/{1}"),
+    SettingsApplied => ("Ajustes aplicados: {0}", "Settings applied: {0}"),
     SettingsHint => (
         "Altere com `forge service set {0} chave=valor` (portas: `ports.<nome>=<porta>`).",
         "Change with `forge service set {0} key=value` (ports: `ports.<name>=<port>`)."

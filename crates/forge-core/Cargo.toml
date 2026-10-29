@@ -69,7 +69,10 @@ ulid = { workspace = true }
 # SystemParametersInfoW(SPI_GETHIGHCONTRAST), GetSystemMetrics(SM_REMOTESESSION) and
 # RtlGetVersion (declared locally in windows/appearance.rs); the pseudo consoles of the
 # daemon's terminal sessions (M2-E3-T3): CreatePipe, Create/Resize/ClosePseudoConsole and
-# PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE.
+# PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE; the machine counters and process image names
+# (M2-E5-T10): GetSystemTimes, GlobalMemoryStatusEx, GetDiskFreeSpaceExW and
+# QueryFullProcessImageNameW (features already listed: System_Threading,
+# System_SystemInformation, Storage_FileSystem).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [

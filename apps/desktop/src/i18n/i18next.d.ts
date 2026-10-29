@@ -1,6 +1,7 @@
 import "i18next";
 import type common from "./en-US/common.json";
 import type errors from "./en-US/errors.json";
+import type gallery from "./en-US/gallery.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
 import type shell from "./en-US/shell.json";
@@ -17,6 +18,7 @@ export interface Resources {
   tray: typeof tray;
   notifications: typeof notifications;
   palette: typeof palette;
+  gallery: typeof gallery;
 }
 
 declare module "i18next" {

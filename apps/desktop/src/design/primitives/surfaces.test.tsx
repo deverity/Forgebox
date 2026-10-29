@@ -4,9 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Menu } from "./Menu";
 import { Popover } from "./Popover";
 import { Sheet } from "./Sheet";
-import { mockReducedMotion, restoreMotion } from "./testUtils";
+import { mockReducedMotion } from "../../test/matchMedia";
 
-restoreMotion();
 
 describe("Sheet", () => {
   function setup() {

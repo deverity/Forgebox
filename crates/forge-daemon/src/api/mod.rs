@@ -15,6 +15,7 @@ pub mod not_implemented;
 mod php;
 mod registry;
 mod services;
+mod settings;
 mod shell;
 mod sites;
 mod system;
@@ -46,6 +47,7 @@ pub fn router(daemon: &Daemon) -> Router {
     daemon_api::register(&mut router, daemon);
     tools::register(&mut router, daemon);
     services::register(&mut router, daemon);
+    settings::register(&mut router, daemon);
     sites::register(&mut router, daemon);
     php::register(&mut router, daemon);
     net::register(&mut router, daemon);

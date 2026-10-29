@@ -19,12 +19,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("tools.plan", "M2-E2-T5", "install plans"),
     ("tools.history", "M2-E2-T4", "update history"),
     ("tools.icon", "M2-E2-T4", "catalog icons"),
-    (
-        "services.set",
-        "M2-E2-T7",
-        "quick settings written into the managed config files",
-    ),
-    ("services.settings", "M2-E2-T7", "reading quick settings"),
     ("services.update", "M2-E2-T10", "advanced instance settings"),
     (
         "php.ext_enable",
@@ -286,8 +280,6 @@ mod tests {
             ("tools.plan", "M2-E2-T5"),
             ("tools.history", "M2-E2-T4"),
             ("tools.icon", "M2-E2-T4"),
-            ("services.settings", "M2-E2-T7"),
-            ("services.set", "M2-E2-T7"),
             ("services.update", "M2-E2-T10"),
             ("php.ext_enable", "M2-E2-T9"),
             ("php.ext_disable", "M2-E2-T9"),
@@ -302,8 +294,15 @@ mod tests {
             assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
             assert_eq!(err.details().unwrap()["args"]["method"], method);
         }
-        // Partial methods (they work without the new parameter) stay out of the table.
-        for method in ["tools.install", "tools.remove", "services.create"] {
+        // Partial methods (they work without the new parameter) stay out of the table, and
+        // so do the ones whose backend landed (M2-E2-T7: quick settings).
+        for method in [
+            "tools.install",
+            "tools.remove",
+            "services.create",
+            "services.settings",
+            "services.set",
+        ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
         assert_eq!(EXTENSION_TARGET_TASK, "M2-E2-T8");

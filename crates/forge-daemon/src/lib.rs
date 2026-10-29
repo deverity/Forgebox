@@ -5,7 +5,7 @@
 //! * [`api`]: one handler per method of `forge_ipc::api::METHODS`, delegating to the
 //!   domain actors; methods of later roadmap tasks answer `not_implemented`;
 //! * [`services`], [`pools`], [`web`]: instances from manifests, PHP pools, sites rendered
-//!   into the web servers;
+//!   into the web servers; [`settings`]: the quick settings of a manifest (docs/04 §1.3);
 //! * [`scheduler`]: periodic work with jitter (updates, registry, `tmp/`, ports) and the
 //!   reactions to site/TLS events;
 //! * [`shutdown`]: graceful stop in cascade with a global budget;
@@ -30,6 +30,7 @@ pub mod pools;
 pub mod render;
 pub mod scheduler;
 pub mod services;
+pub mod settings;
 pub mod shutdown;
 pub mod update_feed;
 pub mod vars;

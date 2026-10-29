@@ -25,16 +25,6 @@
     "what": "catalog icons"
   },
   {
-    "method": "services.set",
-    "task": "M2-E2-T7",
-    "what": "quick settings written into the managed config files"
-  },
-  {
-    "method": "services.settings",
-    "task": "M2-E2-T7",
-    "what": "reading quick settings"
-  },
-  {
     "method": "services.update",
     "task": "M2-E2-T10",
     "what": "advanced instance settings"

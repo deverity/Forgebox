@@ -817,6 +817,79 @@ impl ServiceManager {
         }
     }
 
+    /// Stores quick-setting `changes` of `id` (`Some` = value, `None` = back to the
+    /// default) in `instances.settings` and in the cached entry, so the next render writes
+    /// them (ADR-0042). Returns the settings now stored.
+    pub async fn update_settings(
+        &self,
+        id: InstanceId,
+        changes: BTreeMap<String, Option<String>>,
+    ) -> Result<BTreeMap<String, String>> {
+        let stored = self
+            .inner
+            .writer
+            .execute(move |conn| InstanceRepo::new(conn).update_settings(id, &changes))
+            .await?;
+        if let Some(entry) = self.inner.table.lock().get_mut(&id) {
+            entry.row.settings = stored.clone();
+        }
+        Ok(stored)
+    }
+
+    /// Renders the configuration of `id` now (its target and its quick settings) without
+    /// touching the process.
+    pub async fn render(&self, id: InstanceId) -> Result<()> {
+        let entry = self
+            .get(id)
+            .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+        match self.inner.renderer.get().cloned() {
+            Some(renderer) => renderer.render_instance(&entry).await,
+            None => Ok(()),
+        }
+    }
+
+    /// Whether `id` runs (or is starting) right now.
+    pub async fn is_running(&self, id: InstanceId) -> bool {
+        let Some(handle) = self.get(id).and_then(|e| e.handle) else {
+            return false;
+        };
+        handle
+            .status(QUICK_ASK_TIMEOUT)
+            .await
+            .is_ok_and(|s| matches!(s.state, InstanceState::Running | InstanceState::Starting))
+    }
+
+    /// Rebuilds the actor of `id` from its row and the current port reservations (a port
+    /// moved: the arguments, health probe and pre-checks name it). A running instance is
+    /// stopped through its cascade first and started again on the new spec (rendering its
+    /// configuration); a stopped one only gets its configuration rendered. The old actor
+    /// is shut down once the new one is in the table.
+    pub async fn rebuild(&self, id: InstanceId) -> Result<()> {
+        let was_running = self.is_running(id).await;
+        {
+            let _turn = self.turn().await?;
+            let entry = self
+                .get(id)
+                .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+            if let (Some(handle), true) = (&entry.handle, was_running) {
+                handle.stop(entry.stop_worst_case + START_SLACK).await?;
+            }
+            let fresh = self.build(entry.row.clone()).await;
+            if let Some(err) = &fresh.error {
+                tracing::warn!(instance = %fresh.label(), %err, "rebuilt instance not runnable");
+            }
+            self.inner.table.lock().insert(id, fresh);
+            if let Some(handle) = &entry.handle {
+                handle.shutdown().await;
+            }
+        }
+        if was_running {
+            self.start(id).await.map(|_| ())
+        } else {
+            self.render(id).await
+        }
+    }
+
     /// Records one daemon-owned key of `instances.settings` (`forgebox.*`) in the store and
     /// in the cached entry, so the next render sees it.
     pub async fn record_setting(&self, id: InstanceId, key: &str, value: &str) -> Result<()> {

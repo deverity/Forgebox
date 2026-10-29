@@ -254,6 +254,46 @@ impl<'c> InstanceRepo<'c> {
         Ok(())
     }
 
+    /// Applies quick-setting `changes` to `settings` (`Some` = store this text, `None` =
+    /// forget the key, back to the manifest's default) and returns the settings now
+    /// stored; other keys (the daemon's `forgebox.*`) and columns are left alone. Keys must
+    /// have the shape of a quick setting key ([`super::is_setting_key`]): a `forgebox.*`
+    /// key is never changed through here. `not_found` when the row is gone.
+    pub fn update_settings(
+        &self,
+        id: InstanceId,
+        changes: &BTreeMap<String, Option<String>>,
+    ) -> Result<BTreeMap<String, String>> {
+        if let Some(bad) = changes
+            .keys()
+            .find(|k| !super::tool_series_settings::is_setting_key(k))
+        {
+            return Err(ForgeError::InvalidInput(format!(
+                "invalid setting key {bad:?} ([a-z][a-z0-9_]*)"
+            )));
+        }
+        let mut row = self
+            .get(id)?
+            .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+        for (key, value) in changes {
+            match value {
+                Some(value) => {
+                    row.settings.insert(key.clone(), value.clone());
+                }
+                None => {
+                    row.settings.remove(key);
+                }
+            }
+        }
+        let settings = serde_json::to_string(&row.settings)
+            .map_err(|e| ForgeError::Internal(format!("instance settings: {e}")))?;
+        self.conn.execute(
+            "UPDATE instances SET settings = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, settings, Timestamp::now().to_string()],
+        )?;
+        Ok(row.settings)
+    }
+
     /// Sets only the desired state (what the daemon restores at boot).
     pub fn set_desired_state(&self, id: InstanceId, state: DesiredState) -> Result<()> {
         self.conn.execute(
@@ -407,6 +447,46 @@ mod tests {
         assert_eq!(odd.recorded_case_sensitive(), None);
         assert!(matches!(
             repo.set_setting(InstanceId::new(), CASE_SENSITIVE_KEY, "true"),
+            Err(ForgeError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn update_settings_sets_and_forgets_quick_settings_only() {
+        let store = Store::open_in_memory().unwrap();
+        let (tool, version_id) = version(&store);
+        let mut row = InstanceRow::new(tool, version_id, "default");
+        row.settings
+            .insert(CASE_SENSITIVE_KEY.into(), "true".into());
+        row.settings.insert("max_connections".into(), "200".into());
+        let repo = InstanceRepo::new(store.conn());
+        repo.insert(&row).unwrap();
+        let now = repo
+            .update_settings(
+                row.id,
+                &BTreeMap::from([
+                    ("max_connections".to_owned(), None),
+                    ("max_allowed_packet".to_owned(), Some("256M".to_owned())),
+                ]),
+            )
+            .unwrap();
+        assert_eq!(now.get("max_connections"), None);
+        assert_eq!(now["max_allowed_packet"], "256M");
+        assert_eq!(now[CASE_SENSITIVE_KEY], "true", "daemon keys stay");
+        assert_eq!(repo.get(row.id).unwrap().unwrap().settings, now);
+        let err = repo
+            .update_settings(
+                row.id,
+                &BTreeMap::from([(CASE_SENSITIVE_KEY.to_owned(), None)]),
+            )
+            .unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
+        assert_eq!(
+            repo.get(row.id).unwrap().unwrap().settings[CASE_SENSITIVE_KEY],
+            "true"
+        );
+        assert!(matches!(
+            repo.update_settings(InstanceId::new(), &BTreeMap::new()),
             Err(ForgeError::NotFound(_))
         ));
     }

@@ -391,10 +391,18 @@ impl ActorSupervisor {
         let children = self.inner.children.lock().clone();
         children
             .iter()
-            .map(|child| ChildStatus {
-                name: child.name.to_string(),
-                status: child.status.borrow().clone(),
-                finished: child.is_finished(),
+            .map(|child| {
+                // One read of the `watch`, released before anything else: the `Ref` of
+                // a field initializer lives until the struct is built, and borrowing
+                // again (`is_finished`) while the actor queues `send_replace` deadlocks
+                // both (the lock is fair to the queued writer, never re-entrant).
+                let status = child.status.borrow().clone();
+                let finished = child.abort.is_finished() || status.is_terminal();
+                ChildStatus {
+                    name: child.name.to_string(),
+                    status,
+                    finished,
+                }
             })
             .collect()
     }

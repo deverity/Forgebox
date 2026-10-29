@@ -282,8 +282,12 @@ mod tests {
         let busy = JobErrorInfo::from(&ForgeError::PortInUse {
             port: 3306,
             owner: Some("mysqld.exe (PID 4412)".into()),
+            pid: Some(4412),
+            exe: Some("C:/xampp/mysql/bin/mysqld.exe".into()),
         });
-        assert_eq!(busy.details.unwrap()["args"]["port"], 3306);
+        let busy = busy.details.unwrap();
+        assert_eq!(busy["args"]["port"], 3306);
+        assert_eq!(busy["args"]["pid"], 4412);
         // ...and leave the field out when there are none, so old clients see the same JSON.
         let plain =
             serde_json::to_value(JobErrorInfo::from(&ForgeError::Internal("x".into()))).unwrap();

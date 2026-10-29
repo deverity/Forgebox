@@ -80,6 +80,9 @@ spec:
         format: ini
         label: php.ini
         editable: true
+        # Quick settings go to a file Forgebox owns, scanned after php.ini (PHP_INI_SCAN_DIR):
+        # the user's php.ini is never edited (docs/04 section 1.3).
+        overlay: "{{ paths.etc }}/php/{{ series }}/conf.d/90-forgebox-settings.ini"
     quick_settings:
       - key: memory_limit
         label: Memory limit

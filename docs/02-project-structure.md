@@ -38,7 +38,8 @@ Forgebox/
 │   │       ├── store/            # SQLite: migrations/*.sql (include_str), runner com backup, repos por agregado (events.rs, tool_versions.rs...),
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
 │   │       │                     #   ports.rs (PortRepo: reservas de porta), update_history.rs (UpdateHistoryRepo: updates e rollbacks),
-│   │       │                     #   instances.rs (InstanceRepo: instâncias de serviço, desired_state, settings)
+│   │       │                     #   instances.rs (InstanceRepo: instâncias de serviço, desired_state, settings),
+│   │       │                     #   tool_series_settings.rs (quick settings por (tool, série): pools de PHP, migration 0004)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder e o trait
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
@@ -75,7 +76,13 @@ Forgebox/
 │   │                             #   integrado, processo membro do ProcessGroup antes de rodar; leitor/escritor bloqueantes,
 │   │                             #   resize e close com prazo; docs/03 §1.6; stub unsupported_platform fora do Windows);
 │   │                             #   process_stats.rs: ProcessStats (tempo de CPU, working set, commit privado, handles por PID),
-│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI);
+│   │                             #   process_creation_time(pid) (início da medição de cold start da GUI), info(pid) → ProcessInfo
+│   │                             #   (pid, started_at, image_path, image_name), ImageNameCache (nome base da imagem em cache por
+│   │                             #   (pid, started_at); retain/limite de 4.096), FakeProcessStats;
+│   │                             #   system_stats.rs: SystemStats (sample() → MachineSample: CPU ocupada/ociosa acumulada, CPUs
+│   │                             #   lógicas, RAM total/disponível; volume(path) → VolumeSpace {total, free, available}),
+│   │                             #   cpu_pct_since/cpu_share_since, sample_machine/volume_space (spawn_blocking com prazo),
+│   │                             #   FakeSystemStats, UnsupportedSystemStats (fora do Windows);
 │   │                             #   probe.rs: run_probe (comando de uma execução, saída capturada, timeout, sem janela);
 │   │                             #   net_table.rs: PortTable (listeners TCP v4/v6 com PID/exe, conexões ESTABLISHED por porta,
 │   │                             #   connections(portas): todas as conexões das portas, TIME_WAIT incluído, as duas pontas;
@@ -91,8 +98,11 @@ Forgebox/
 │   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
 │   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama; limpa a marca
 │   │                             #   "ignorar Ctrl+C" herdada antes do spawn),
-│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount),
-│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + QueryFullProcessImageNameW),
+│   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount,
+│   │                             #   QueryFullProcessImageNameW: image_path compartilhado com net_table.rs),
+│   │                             #   system_stats.rs (GetSystemTimes: ocupado = kernel − ocioso + usuário, GlobalMemoryStatusEx,
+│   │                             #   GetDiskFreeSpaceExW),
+│   │                             #   net_table.rs (GetExtendedTcpTable/GetExtendedUdpTable + imagem do dono via process_stats.rs),
 │   │                             #   elevation.rs (ShellExecuteExW runas + arquivos de troca com DACL usuário+Administrators),
 │   │                             #   dns_policy.rs (NRPT no registro, DataBasePath do hosts, DnsFlushResolverCache, ops via helper),
 │   │                             #   net_adapters.rs (GetAdaptersAddresses),
@@ -180,6 +190,7 @@ Forgebox/
 │   │       ├── engine.rs         # minijinja env, filtros (win_path, posix_path, quote...)
 │   │       ├── managed.rs        # blocos "# forgebox:begin/end", preservação de edições do usuário
 │   │       ├── drift.rs          # hash do render vs arquivo em disco
+│   │       ├── settings.rs       # quick settings: um escritor por formato (ini, conf-directive, yaml, json, args), overlay
 │   │       └── targets/          # um módulo por tool conhecida: o que renderiza e para onde
 │   ├── forge-sites/
 │   │   └── src/
@@ -249,6 +260,7 @@ Forgebox/
 │   │   │                         #   diários em logs/forgeboxd.log.<data>), boot.rs (docs/01 §5.1), daemon.rs (componentes),
 │   │   │                         #   event_log.rs (eventos → tabela events), catalog.rs (manifestos + versões instaladas),
 │   │   │                         #   vars.rs (variáveis de execução dos manifestos), services.rs (instâncias ← service.daemon),
+│   │   │                         #   settings.rs (quick settings: validação, valores efetivos, planos por arquivo; ADR-0042),
 │   │   │                         #   pools.rs (pools ← service.pool, por VersionId), web.rs (sites → pools → servidores web,
 │   │   │                         #   UpstreamListener), render.rs (alvos do forge-render, TemplateRenderer do layout),
 │   │   │                         #   install.rs (tools.install: provider → download → layout), scheduler.rs (tarefas periódicas

@@ -5,6 +5,9 @@
 //! nginx (its `nginx -t` pre-check passes); an HTTP request with `Host: app.test` runs the
 //! site's PHP through the pool. Then `sites.php app.test 8.3` switches the site live to
 //! PHP 8.3.36 while requests keep coming (none may fail) and the 8.4 pool is drained.
+//! Quick settings on the real nginx (M2-E2-T7): `services.set nginx/default` rewrites the
+//! directives inside the managed block of `nginx.conf` (the `http {}` ones in place) and
+//! the reload / restart (each validated by `nginx -t`) keeps serving.
 //! `daemon.stop` leaves neither nginx nor php-cgi running.
 //!
 //! `cargo test -p forge-daemon --test web_nginx_php_online -- --ignored --nocapture`.
@@ -20,9 +23,12 @@ use forge_core::store::{
     InstanceRepo, InstanceRow, NewToolVersion, PortRepo, Site, SiteKind, SiteRepo, Store,
     ToolVersionRepo, VersionSource, VersionState,
 };
-use forge_ipc::api::methods::{jobs_get, php_pool_status, services_status, sites_list, sites_php};
+use forge_ipc::api::methods::{
+    jobs_get, php_pool_status, services_set, services_status, sites_list, sites_php,
+};
 use forge_ipc::api::{
-    JobIdParams, JobState, NoParams, PhpPoolStatusParams, ServiceState, SitePhpParams, SiteRef,
+    JobIdParams, JobState, NoParams, PhpPoolStatusParams, ServiceSetParams, ServiceState,
+    SitePhpParams, SiteRef,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -204,6 +210,55 @@ async fn boot_renders_and_starts_nginx_in_front_of_the_php_pool_online() {
         sites.sites[0].php.as_ref().unwrap().resolved.as_deref(),
         Some("8.4.27")
     );
+
+    // Quick settings on the real nginx: `reload` keys (`nginx -s reload`), then a
+    // `restart` key (`worker_processes`, validated by `nginx -t` before the stop).
+    for (pairs, wanted) in [
+        (
+            vec![("client_max_body_size", "1G"), ("keepalive_timeout", "30")],
+            vec!["    client_max_body_size 1G;", "    keepalive_timeout 30;"],
+        ),
+        (vec![("worker_processes", "2")], vec!["worker_processes 2;"]),
+    ] {
+        let job = client
+            .call::<services_set>(ServiceSetParams {
+                target: "nginx/default".into(),
+                settings: pairs
+                    .iter()
+                    .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                    .collect(),
+            })
+            .await
+            .unwrap();
+        let started = Instant::now();
+        loop {
+            let job = client
+                .call::<jobs_get>(JobIdParams { job_id: job.id })
+                .await
+                .unwrap();
+            if job.state == JobState::Done {
+                break;
+            }
+            assert!(
+                !job.state.is_terminal(),
+                "services.set {pairs:?}: {:?}",
+                job.error
+            );
+            assert!(started.elapsed() < Duration::from_secs(60));
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let main = std::fs::read_to_string(etc.join("nginx.conf")).unwrap();
+        for line in wanted {
+            assert!(main.lines().any(|l| l == line), "{line:?} in:\n{main}");
+        }
+        assert_eq!(
+            main.matches("client_max_body_size").count(),
+            1,
+            "one directive, never a duplicate:\n{main}"
+        );
+        let answer = http_get(http, "app.test", "/").await;
+        assert!(answer.starts_with("HTTP/1.1 200"), "{answer}");
+    }
 
     // Live switch of the site's PHP (docs/06 §2.2) while requests keep coming: the 8.3
     // pool starts, nginx is re-rendered and reloaded, the 8.4 pool is drained.

@@ -1,6 +1,6 @@
 # ADR-0048 — Agregador de métricas: HDR esparso, minutos com histograma por orçamento sobre horas exatas, rotas por Filtered Space-Saving
 
-**Status:** aceito · **Data:** 2026-10-29 · Implementa o agregador do desenho de métricas v1 ([docs/14](../14-observability-metrics.md) §3.3; a ADR das métricas v1, M2-E5-T1, o referencia). Segue a [ADR-0011](0011-actor-concurrency-model.md): o agregador é estado de um único dono (o ator de métricas do M2-E5-T8), síncrono e sem I/O.
+**Status:** aceito · **Data:** 2026-10-29 · Implementa o agregador do desenho de métricas v1 ([docs/14](../14-observability-metrics.md) §3.4; a ADR das métricas v1, M2-E5-T1, o referencia). Segue a [ADR-0011](0011-actor-concurrency-model.md): o agregador é estado de um único dono (o ator de métricas do M2-E5-T8), síncrono e sem I/O.
 
 ## Contexto
 O plano do M2-E5 pediu, por site: buckets de 2 s com histogramas HDR de rt e ut por 10 min, pontos escalares de 10 s (~64 B) por 24 h, histogramas HDR compactos de 1 min por 24 h, top-K (K = 100) de rotas com HDR de 2 dígitos e os últimos 50 5xx e 50 4xx; HDR com 3 dígitos significativos de 1 µs a 10 min; merges exatos (nunca média de percentis); e orçamentos de memória: site ativo a 1.000 req/s por 24 h ≤ 2 MiB, ocioso ≤ 16 KiB, 50 sites mistos ≤ 40 MiB, ≤ 1 µs por registro, top-20 verdadeiro sempre presente com Zipf.

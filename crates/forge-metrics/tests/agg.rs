@@ -1,4 +1,4 @@
-//! Aggregator acceptance (M2-E5-T5, docs/14 section 3.3, ADR-0048).
+//! Aggregator acceptance (M2-E5-T5, docs/14 section 3.4, ADR-0048).
 //!
 //! Window/range percentiles against brute force, exact merges, late and future records,
 //! series, the persistence hooks, top routes and recent errors. Memory is measured with a

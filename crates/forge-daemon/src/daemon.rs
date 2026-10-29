@@ -136,6 +136,9 @@ pub struct Inner {
     pub started_at: Timestamp,
     pub server: OnceLock<ServerHandle>,
     pub endpoint: String,
+    /// `services.set` stores and renders one change at a time (the restart that follows
+    /// runs outside it), so two clients never interleave writes of the same files.
+    pub settings_turn: Arc<tokio::sync::Semaphore>,
 }
 
 /// Handle on the composed daemon. Cheap to clone.

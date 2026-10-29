@@ -1,4 +1,4 @@
-//! Per-site aggregation of access records (docs/14 sections 3 and 3.3, ADR-0048).
+//! Per-site aggregation of access records (docs/14 sections 3 and 3.4, ADR-0048).
 //!
 //! [`Aggregator`] is single-owner, synchronous code: the metrics actor (M2-E5-T8) owns one,
 //! feeds it the records of the tailers ([`Aggregator::record`]), moves its clock
@@ -99,7 +99,7 @@ fn secs(d: Duration) -> i64 {
     i64::try_from(d.as_secs()).unwrap_or(i64::MAX / 4)
 }
 
-/// Knobs of the aggregator. The defaults are the v1 design (docs/14 section 3.3).
+/// Knobs of the aggregator. The defaults are the v1 design (docs/14 section 3.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AggConfig {
     /// How long after its end a 2 s bucket still accepts records (whole seconds).

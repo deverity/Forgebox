@@ -8,7 +8,9 @@
   "status": {
     "running": "Running",
     "stopped": "Stopped",
-    "starting": "Starting"
+    "starting": "Starting",
+    "failed": "Failed",
+    "updating": "Updating"
   },
   "language": {
     "label": "Language",
