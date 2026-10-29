@@ -792,8 +792,18 @@ fn routes_have_errors_and_percentiles_and_age_out() {
         );
     }
     agg.record(site, &record(us(base()), 5000, None, 200, "/"), 1);
+    // Same concatenation, different pairs: two routes.
+    let mut odd = record(us(base()), 5000, None, 200, "T/");
+    odd.method = "GE".into();
+    agg.record(site, &odd, 1);
     let report = agg.routes(site).unwrap();
-    assert_eq!(report.routes.len(), 2);
+    assert_eq!(report.routes.len(), 3);
+    assert!(
+        report
+            .routes
+            .iter()
+            .any(|r| (r.method.as_str(), r.route.as_str()) == ("GE", "T/"))
+    );
     let users = &report.routes[0];
     assert_eq!(
         (users.method.as_str(), users.route.as_str()),
@@ -819,7 +829,7 @@ fn routes_have_errors_and_percentiles_and_age_out() {
     }
     // Still there one epoch later (previous generation), gone after two.
     agg.advance(base() + SignedDuration::from_secs(3601));
-    assert_eq!(agg.routes(site).unwrap().routes.len(), 2);
+    assert_eq!(agg.routes(site).unwrap().routes.len(), 3);
     agg.advance(base() + SignedDuration::from_secs(7202));
     assert!(agg.routes(site).unwrap().routes.is_empty());
 }

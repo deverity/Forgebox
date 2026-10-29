@@ -281,7 +281,7 @@ impl RouteTable {
     }
 
     pub(crate) fn report(&self, k: usize) -> RoutesReport {
-        let mut merged: HashMap<&str, (RouteStats, RouteHist)> = HashMap::new();
+        let mut merged: HashMap<(&str, &str), (RouteStats, RouteHist)> = HashMap::new();
         let gens = self.previous.iter().chain(std::iter::once(&self.current));
         let mut total = 0u64;
         let mut since = self.current.since;
@@ -289,22 +289,24 @@ impl RouteTable {
             total = total.saturating_add(g.total);
             since = since.min(g.since);
             for (slot, &count) in g.slots.iter().zip(&g.counts) {
-                let e = merged.entry(&slot.key).or_insert_with(|| {
-                    (
-                        RouteStats {
-                            method: slot.method().to_string(),
-                            route: slot.route().to_string(),
-                            count: 0,
-                            overcount: 0,
-                            observed: 0,
-                            err4xx: 0,
-                            err5xx: 0,
-                            rt_sum_us: 0,
-                            rt: None,
-                        },
-                        RouteHist::default(),
-                    )
-                });
+                let e = merged
+                    .entry((slot.method(), slot.route()))
+                    .or_insert_with(|| {
+                        (
+                            RouteStats {
+                                method: slot.method().to_string(),
+                                route: slot.route().to_string(),
+                                count: 0,
+                                overcount: 0,
+                                observed: 0,
+                                err4xx: 0,
+                                err5xx: 0,
+                                rt_sum_us: 0,
+                                rt: None,
+                            },
+                            RouteHist::default(),
+                        )
+                    });
                 e.0.count = e.0.count.saturating_add(count);
                 e.0.overcount = e.0.overcount.saturating_add(slot.overcount);
                 e.0.err4xx += slot.err4xx;
