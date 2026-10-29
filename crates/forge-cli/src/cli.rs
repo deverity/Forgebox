@@ -224,6 +224,21 @@ pub enum ToolCmd {
     Info {
         #[arg(value_parser = parse_tool_id)]
         tool: ToolId,
+        /// Versões publicadas pelos providers (séries, variantes, tamanhos).
+        #[arg(long, conflicts_with = "history")]
+        versions: bool,
+        /// Só este canal (`stable`, `preview`); com --versions.
+        #[arg(long, requires = "versions")]
+        channel: Option<String>,
+        /// Histórico de atualizações e rollbacks.
+        #[arg(long)]
+        history: bool,
+        /// Só esta série (`8.3`); com --history.
+        #[arg(long, requires = "history")]
+        series: Option<String>,
+        /// Número máximo de entradas; com --history.
+        #[arg(long, requires = "history", value_name = "N")]
+        limit: Option<u32>,
     },
     /// Instala (`php@8.3` = última patch da série, `php@8.3.36` = exata).
     Install {
@@ -232,6 +247,12 @@ pub enum ToolCmd {
         /// Variante da build (`ts`, `nts`).
         #[arg(long)]
         variant: Option<String>,
+        /// Extensões: versão da ferramenta estendida onde instalar (`php@8.3`).
+        #[arg(long = "for", value_name = "TOOL@VERSAO")]
+        target: Option<String>,
+        /// Só mostra o plano (o que seria baixado e o tamanho), sem instalar.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Remove uma versão.
     Remove {
@@ -240,6 +261,9 @@ pub enum ToolCmd {
         /// Mantém a configuração em etc/.
         #[arg(long)]
         keep_config: bool,
+        /// Extensões: remove só desta versão da ferramenta estendida (`php@8.4`).
+        #[arg(long = "for", value_name = "TOOL@VERSAO")]
+        target: Option<String>,
     },
     /// Atualiza respeitando as políticas.
     Update {
@@ -328,6 +352,9 @@ pub enum ServiceCmd {
         /// Inicia junto com o daemon.
         #[arg(long)]
         autostart: bool,
+        /// Pasta de dados (padrão: a do manifesto, em data/).
+        #[arg(long, value_name = "DIR")]
+        data_dir: Option<PathBuf>,
     },
     /// Remove uma instância.
     Remove {
@@ -339,11 +366,52 @@ pub enum ServiceCmd {
     },
     /// Abre os arquivos de configuração no editor.
     Config { target: String },
-    /// Ajustes rápidos (`memory_limit=1G`).
+    /// Ajustes rápidos (`memory_limit=1G`); sem pares, lista os ajustes e os valores atuais.
     Set {
         target: String,
-        #[arg(required = true, value_name = "CHAVE=VALOR")]
+        #[arg(value_name = "CHAVE=VALOR")]
         settings: Vec<String>,
+    },
+    /// Configurações avançadas de uma instância (autostart, argumentos, ambiente, reinício,
+    /// versão da mesma série).
+    Update {
+        #[arg(value_name = "TOOL/NOME")]
+        instance: String,
+        /// Inicia junto com o daemon.
+        #[arg(long, conflicts_with = "no_autostart")]
+        autostart: bool,
+        /// Não inicia junto com o daemon.
+        #[arg(long)]
+        no_autostart: bool,
+        /// Argumento extra (repetível; substitui a lista atual).
+        #[arg(
+            long = "arg",
+            value_name = "ARG",
+            allow_hyphen_values = true,
+            conflicts_with = "no_args"
+        )]
+        args: Vec<String>,
+        /// Remove os argumentos extras.
+        #[arg(long)]
+        no_args: bool,
+        /// Variável de ambiente extra `CHAVE=VALOR` (repetível; substitui as atuais).
+        #[arg(long = "env", value_name = "CHAVE=VALOR", conflicts_with = "no_env")]
+        env: Vec<String>,
+        /// Remove as variáveis extras.
+        #[arg(long)]
+        no_env: bool,
+        /// Política de reinício.
+        #[arg(long = "restart", value_enum, value_name = "QUANDO")]
+        restart: Option<RestartArg>,
+        /// Reinícios permitidos na janela (`failure`).
+        #[arg(long, value_name = "N")]
+        restart_max: Option<u32>,
+        /// Janela da contagem de reinícios, em segundos.
+        #[arg(long, value_name = "SEGUNDOS")]
+        restart_window: Option<u32>,
+        /// Outra versão instalada da mesma série (`8.4.14`).
+        #[arg(long = "version", value_name = "VERSAO")]
+        version: Option<String>,
     },
     /// Mapa de portas e donos (inclui conflitos externos).
     Ports,
@@ -354,6 +422,13 @@ pub enum ServiceCmd {
         #[arg(long)]
         pid: Option<u32>,
     },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum RestartArg {
+    Never,
+    Failure,
+    Always,
 }
 
 #[derive(Debug, Args)]
@@ -465,6 +540,12 @@ pub enum SiteCmd {
         site: String,
         #[arg(value_parser = parse_tool_id)]
         server: ToolId,
+    },
+    /// Fixa o driver do framework (`laravel`, `wordpress`...) ou `auto` (detecta de novo).
+    Driver {
+        site: String,
+        #[arg(value_name = "DRIVER|auto")]
+        driver: String,
     },
     /// Aliases de host.
     Alias {
@@ -695,6 +776,8 @@ pub enum TlsCmd {
         #[arg(long)]
         all: bool,
     },
+    /// Certificados dos sites (validade e confiança).
+    List,
     /// Exporta o certificado de um host.
     Export {
         host: String,
@@ -1160,6 +1243,125 @@ mod tests {
                 2,
                 "{bad:?}"
             );
+        }
+    }
+
+    #[test]
+    fn e2_flags_parse_and_conflict() {
+        // ADR-0041: the new forms of the E2 contract.
+        for ok in [
+            &["forge", "tool", "info", "php", "--versions"][..],
+            &[
+                "forge",
+                "tool",
+                "info",
+                "php",
+                "--versions",
+                "--channel",
+                "preview",
+            ],
+            &[
+                "forge",
+                "tool",
+                "info",
+                "php",
+                "--history",
+                "--series",
+                "8.3",
+                "--limit",
+                "5",
+            ],
+            &["forge", "tool", "install", "php@8.4", "nginx", "--dry-run"],
+            &["forge", "tool", "install", "xdebug", "--for", "php@8.4"],
+            &[
+                "forge",
+                "tool",
+                "remove",
+                "xdebug@3.4.1",
+                "--for",
+                "php@8.4",
+            ],
+            &["forge", "service", "set", "mysql/default"],
+            &[
+                "forge",
+                "service",
+                "create",
+                "mysql@8.4",
+                "x",
+                "--data-dir",
+                r"D:\data",
+            ],
+            &[
+                "forge",
+                "service",
+                "update",
+                "mysql/default",
+                "--no-autostart",
+                "--restart",
+                "always",
+            ],
+            &[
+                "forge",
+                "service",
+                "update",
+                "mysql/default",
+                "--arg",
+                "--skip-grant-tables",
+                "--env",
+                "TZ=UTC",
+            ],
+            &[
+                "forge",
+                "service",
+                "update",
+                "mysql/default",
+                "--version",
+                "8.4.14",
+            ],
+            &["forge", "site", "driver", "loja.test", "auto"],
+            &["forge", "tls", "list"],
+        ] {
+            Cli::try_parse_from(ok).unwrap_or_else(|e| panic!("{ok:?}: {e}"));
+        }
+        for bad in [
+            &["forge", "tool", "info", "php", "--versions", "--history"][..],
+            &["forge", "tool", "info", "php", "--channel", "stable"],
+            &["forge", "tool", "info", "php", "--series", "8.3"],
+            &[
+                "forge",
+                "service",
+                "update",
+                "x",
+                "--autostart",
+                "--no-autostart",
+            ],
+            &["forge", "service", "update", "x", "--arg", "a", "--no-args"],
+            &[
+                "forge", "service", "update", "x", "--env", "A=1", "--no-env",
+            ],
+            &["forge", "site", "driver", "loja.test"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+        // An argument that starts with `-` is the value of --arg, not a flag of forge.
+        let cli = Cli::try_parse_from([
+            "forge",
+            "service",
+            "update",
+            "mysql/default",
+            "--arg",
+            "--skip-grant-tables",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Service(ServiceCmd::Update { args, .. }) => {
+                assert_eq!(args, ["--skip-grant-tables"]);
+            }
+            other => panic!("{other:?}"),
         }
     }
 

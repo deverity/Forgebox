@@ -4,18 +4,23 @@
 use std::path::Path;
 
 use forge_ipc::api::methods::{
-    fs_parity_lint_case, fs_parity_site_case, sites_add, sites_alias, sites_down, sites_new,
-    sites_php, sites_proxy_add, sites_remove, sites_run, sites_secure, sites_server, sites_share,
-    sites_up,
+    fs_parity_lint_case, fs_parity_site_case, sites_add, sites_alias, sites_down, sites_driver,
+    sites_new, sites_php, sites_proxy_add, sites_remove, sites_run, sites_secure, sites_server,
+    sites_share, sites_up,
 };
 use forge_ipc::api::{
     Ack, CaseFixChoice, CaseLintReportDto, LintCaseParams, ListAction, NoParams, ParkParams,
     ParkedDirDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, ShareDto,
-    SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDto, SiteEnvDto, SiteEnvParams,
-    SiteNewParams, SiteOpenParams, SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto,
-    SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
-    SiteShareParams,
+    SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDriverParams, SiteDto, SiteEnvDto,
+    SiteEnvParams, SiteNewParams, SiteOpenParams, SiteOpenTarget, SiteParams, SitePhpParams,
+    SiteProcessDto, SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams,
+    SiteServerParams, SiteShareParams,
 };
+
+/// `forge site driver <site> auto` detects again (`driver: None`, ADR-0041).
+fn driver_param(word: &str) -> Option<String> {
+    (!word.eq_ignore_ascii_case("auto")).then(|| word.to_owned())
+}
 
 use crate::cli::{
     AliasAction, DirArg, LinkArgs, NewArgs, OnOff, OptDirArg, ParkArgs, PsArgs, RunAction, RunArgs,
@@ -105,6 +110,18 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                 .job::<sites_server, SiteDto>(SiteServerParams {
                     site: SiteRef::from(site),
                     server,
+                })
+                .await?;
+            ctx.out.emit(&site, |out| {
+                out.success(out.tf(Msg::SiteUpdated, &[&site.host]))
+            });
+            Ok(())
+        }
+        SiteCmd::Driver { site, driver } => {
+            let site: SiteDto = ctx
+                .job::<sites_driver, SiteDto>(SiteDriverParams {
+                    site: SiteRef::from(site),
+                    driver: driver_param(&driver),
                 })
                 .await?;
             ctx.out.emit(&site, |out| {
@@ -572,5 +589,12 @@ mod tests {
         let sites = [site];
         assert!(site_of_dir(&sites, r"C:\Forgebox\www\loja\").is_some());
         assert!(site_of_dir(&sites, r"C:\Forgebox\www\outra").is_none());
+    }
+
+    #[test]
+    fn driver_auto_detects_again() {
+        assert_eq!(driver_param("auto"), None);
+        assert_eq!(driver_param("AUTO"), None);
+        assert_eq!(driver_param("laravel").as_deref(), Some("laravel"));
     }
 }

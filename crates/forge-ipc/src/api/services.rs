@@ -151,6 +151,16 @@ pub struct InstanceDto {
     pub restarts: u32,
     /// Diagnosis of `failed`/`crashed` (`port_in_use`, `config_invalid`...).
     pub last_error: Option<ApiError>,
+    /// Data folder of the instance (informative path, `/` separators), when the manifest
+    /// declares `service.daemon.data` or the instance references an external one. API 1.1
+    /// (ADR-0041).
+    #[serde(default)]
+    pub data_dir: Option<String>,
+    /// Size of `data_dir` on disk, from a periodic scan off the actor (M2-E2-T10); `None`
+    /// until the first scan. API 1.1 (ADR-0041).
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Number>)]
+    pub size_bytes: Option<u64>,
 }
 
 /// A PHP FastCGI pool (docs/03 §2).
@@ -210,6 +220,12 @@ pub struct ServiceCreateParams {
     pub port: Option<u16>,
     #[serde(default)]
     pub autostart: bool,
+    /// Data folder on the daemon's machine (absolute; inside the root or a folder the user
+    /// chose, never inside `bin/`); default: the manifest's `service.daemon.data.dir`. CLI
+    /// `--data-dir`. API 1.1 (ADR-0041); answers `not_implemented` (M2-E2-T10) until the
+    /// backend lands.
+    #[serde(default)]
+    pub data_dir: Option<String>,
 }
 
 /// Params of `services.remove`.
@@ -265,4 +281,208 @@ pub struct KillPortHolderParams {
     /// Destructive: must be `true`.
     #[serde(default)]
     pub confirm: bool,
+}
+
+// --- API 1.1: quick settings and advanced settings (ADR-0041) --------------------------
+
+/// Control of a quick setting: `config.quick_settings[].type` (docs/04 §1.3), a closed
+/// grammar of the manifest schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickSettingKind {
+    Toggle,
+    Select,
+    Number,
+    Text,
+    Path,
+    Port,
+    /// `min`/`max` (and `step`) always set.
+    Slider,
+    /// Checkboxes over `options`.
+    Multi,
+}
+
+/// What applying a setting takes (`apply`, docs/04 §1.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SettingApply {
+    /// Graceful reload (recycle of the PHP pool, `nginx -s reload`).
+    Reload,
+    /// Restart of the service.
+    Restart,
+    /// Nothing (read on the next start or per request).
+    None,
+}
+
+/// Value of a quick setting, typed by its kind: `toggle` → boolean; `number`, `slider`,
+/// `port` → number; `multi` → list of option texts; `select`, `text`, `path` → text.
+/// `services.set` takes the text form of each (`true`/`false`, decimal numbers, `multi`
+/// items joined by `,`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[serde(untagged)]
+pub enum SettingValueDto {
+    Bool(bool),
+    Int(#[specta(type = specta_typescript::Number)] i64),
+    Float(#[specta(type = specta_typescript::Number)] f64),
+    Text(String),
+    List(Vec<String>),
+}
+
+/// One quick setting of a service or pool with its current value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct QuickSettingDto {
+    /// Key for `services.set` (`memory_limit`).
+    pub key: String,
+    /// `label` of the manifest (`Memory limit`); clients fall back to `key`.
+    #[serde(default)]
+    pub label: Option<String>,
+    pub kind: QuickSettingKind,
+    /// Choices of `select`/`multi`, as text (`[128M, 256M, -1]`).
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// Bounds of `number`/`slider`.
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub step: Option<f64>,
+    /// Current value (the stored one, else `default`); `None` when neither exists.
+    #[serde(default)]
+    pub value: Option<SettingValueDto>,
+    #[serde(default)]
+    pub default: Option<SettingValueDto>,
+    /// `value` is the default (nothing stored for this key).
+    #[serde(default)]
+    pub is_default: bool,
+    pub apply: SettingApply,
+    /// `config.files[].id` the setting writes (the `role` of a `files` entry).
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Other keys written with the same value (`post_max_size`).
+    #[serde(default)]
+    pub also_set: Vec<String>,
+    /// `port`: reserved in the port allocator (Xdebug 9003).
+    #[serde(default)]
+    pub reserve: bool,
+}
+
+/// A named port of an instance, changed with `services.set {"ports.<name>": "<port>"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ServicePortSettingDto {
+    /// Name in the manifest (`main`, `smtp`, `ui`).
+    pub name: String,
+    /// Port reserved now; `None` before the first reservation.
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// The manifest's default.
+    #[serde(default)]
+    pub default: Option<u16>,
+    pub protocol: PortProtocol,
+    /// Range it is allocated from (`databases`).
+    #[serde(default)]
+    pub range: Option<String>,
+}
+
+/// When an instance is restarted after it exits (`restart_policy`, docs/04 §1.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RestartOn {
+    Never,
+    /// After an unexpected exit, at most `max` times in `window_secs`.
+    Failure,
+    /// After any exit, without a limit.
+    Always,
+}
+
+/// A restart policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct RestartPolicyDto {
+    pub on: RestartOn,
+    /// Restarts allowed inside the window (`failure`).
+    pub max: u32,
+    pub window_secs: u32,
+}
+
+/// Advanced settings of an instance (the "Avançado" tab, docs/07 §5.3): what
+/// `services.update` changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct InstanceAdvancedDto {
+    pub autostart: bool,
+    /// Extra arguments, after the manifest's.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Extra environment variables.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Policy in effect (the instance's, else the manifest's).
+    pub restart_policy: RestartPolicyDto,
+    /// The manifest's policy (the "padrão").
+    pub restart_policy_default: RestartPolicyDto,
+    /// Installed versions of the instance's series it can move to with
+    /// `services.update.version`, newest first.
+    #[serde(default)]
+    pub versions: Vec<String>,
+}
+
+/// Result of `services.settings` (`forge service set <target>` without pairs): the quick
+/// settings of a target with their current values, its config files and named ports.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct ServiceSettingsDto {
+    /// The target as resolved (`mysql/default`, `php@8.3`).
+    pub target: ServiceTarget,
+    pub tool: ToolId,
+    /// In manifest order.
+    pub settings: Vec<QuickSettingDto>,
+    /// Config files (`role` = `config.files[].id`), as `services.config_files`.
+    #[serde(default)]
+    pub files: Vec<FileRefDto>,
+    /// Named ports (instances; empty for pools, whose ports come from a range).
+    #[serde(default)]
+    pub ports: Vec<ServicePortSettingDto>,
+    /// Instances only, and only on `admin` connections (it holds the extra environment,
+    /// which may carry secrets; changing it needs `admin` anyway).
+    #[serde(default)]
+    pub advanced: Option<InstanceAdvancedDto>,
+}
+
+/// `services.update.restart_policy`: absent fields keep their current value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct RestartPolicyPatchDto {
+    #[serde(default)]
+    pub on: Option<RestartOn>,
+    #[serde(default)]
+    pub max: Option<u32>,
+    #[serde(default)]
+    pub window_secs: Option<u32>,
+}
+
+/// `services.update.launch`: how the process is started. A present field replaces the
+/// current value (`[]`/`{}` clear it); an absent one keeps it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct LaunchPatchDto {
+    /// Extra arguments, after the manifest's `args`.
+    #[serde(default)]
+    pub args: Option<Vec<String>>,
+    /// Extra environment variables (over the manifest's `env`).
+    #[serde(default)]
+    pub env: Option<BTreeMap<String, String>>,
+}
+
+/// Params of `services.update` (job): the advanced settings of an instance. Absent fields
+/// keep their value. The instance is re-rendered and, when running, restarted. Ports
+/// change with `services.set {"ports.<name>": ...}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ServiceUpdateParams {
+    pub instance: InstanceRef,
+    #[serde(default)]
+    pub autostart: Option<bool>,
+    #[serde(default)]
+    pub launch: Option<LaunchPatchDto>,
+    #[serde(default)]
+    pub restart_policy: Option<RestartPolicyPatchDto>,
+    /// Another installed version of the **same series** (`8.4.13` → `8.4.14`): data dirs
+    /// are not migrated, so a series change is refused (`invalid_input`).
+    #[serde(default)]
+    pub version: Option<String>,
 }

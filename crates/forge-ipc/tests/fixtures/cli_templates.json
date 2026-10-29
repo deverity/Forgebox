@@ -84,6 +84,19 @@
     "note": "yes is never rendered"
   },
   {
+    "method": "tools.install",
+    "params": {
+      "specs": [
+        "xdebug"
+      ],
+      "variant": null,
+      "yes": false,
+      "target": "php@8.4"
+    },
+    "expected": "forge tool install xdebug --for php@8.4",
+    "note": "extension target (ADR-0041)"
+  },
+  {
     "method": "tools.remove",
     "params": {
       "spec": "php@8.2.1",
@@ -92,6 +105,16 @@
     },
     "expected": "forge tool remove php@8.2.1 --keep-config",
     "note": "confirm is never rendered"
+  },
+  {
+    "method": "tools.remove",
+    "params": {
+      "spec": "xdebug@3.4.1",
+      "keep_config": false,
+      "confirm": true,
+      "target": "php@8.4"
+    },
+    "expected": "forge tool remove xdebug@3.4.1 --for php@8.4"
   },
   {
     "method": "tools.update",
@@ -167,6 +190,78 @@
     "expected": "forge which node"
   },
   {
+    "method": "tools.releases",
+    "params": {
+      "tool": "php",
+      "channel": null
+    },
+    "expected": "forge tool info php --versions"
+  },
+  {
+    "method": "tools.releases",
+    "params": {
+      "tool": "php",
+      "channel": "preview"
+    },
+    "expected": "forge tool info php --versions --channel preview"
+  },
+  {
+    "method": "tools.plan",
+    "params": {
+      "specs": [
+        "php@8.4",
+        "nginx"
+      ],
+      "stack": null,
+      "variant": null,
+      "target": null
+    },
+    "expected": "forge tool install php@8.4 nginx --dry-run"
+  },
+  {
+    "method": "tools.plan",
+    "params": {
+      "specs": [
+        "xdebug"
+      ],
+      "stack": null,
+      "variant": "nts",
+      "target": "php@8.3"
+    },
+    "expected": "forge tool install xdebug --variant nts --for php@8.3 --dry-run"
+  },
+  {
+    "method": "tools.plan",
+    "params": {
+      "specs": [
+        "php@8.3"
+      ],
+      "stack": "laravel",
+      "variant": null,
+      "target": null
+    },
+    "expected": null,
+    "note": "the plan of a stack has no command (rule [!stack])"
+  },
+  {
+    "method": "tools.history",
+    "params": {
+      "tool": "php",
+      "series": null,
+      "limit": null
+    },
+    "expected": "forge tool info php --history"
+  },
+  {
+    "method": "tools.history",
+    "params": {
+      "tool": "php",
+      "series": "8.3",
+      "limit": 20
+    },
+    "expected": "forge tool info php --history --series 8.3 --limit 20"
+  },
+  {
     "method": "services.start",
     "params": {
       "targets": []
@@ -237,6 +332,18 @@
     "expected": "forge service create redis cache"
   },
   {
+    "method": "services.create",
+    "params": {
+      "tool": "mysql@8.4",
+      "name": "legacy",
+      "port": null,
+      "autostart": false,
+      "data_dir": "D:\\Dados MySQL\\legacy"
+    },
+    "expected": "forge service create mysql@8.4 legacy --data-dir \"D:\\Dados MySQL\\legacy\"",
+    "note": "data dir with a space (ADR-0041)"
+  },
+  {
     "method": "services.remove",
     "params": {
       "instance": "mysql/legacy",
@@ -274,6 +381,74 @@
     },
     "expected": "forge service set php@8.3 \"error_log=C:\\My Logs\\php.log\"",
     "note": "key=value token quoted as a whole"
+  },
+  {
+    "method": "services.set",
+    "params": {
+      "target": "php@8.3",
+      "settings": {}
+    },
+    "expected": null,
+    "note": "without pairs the command reads the settings (services.settings): no command"
+  },
+  {
+    "method": "services.settings",
+    "params": {
+      "target": "mysql/default"
+    },
+    "expected": "forge service set mysql/default"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "autostart": false,
+      "launch": null,
+      "restart_policy": {
+        "on": "always",
+        "max": null,
+        "window_secs": null
+      },
+      "version": null
+    },
+    "expected": "forge service update mysql/default --no-autostart --restart always"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "autostart": true,
+      "restart_policy": {
+        "on": "failure",
+        "max": 5,
+        "window_secs": 120
+      },
+      "version": "8.4.14"
+    },
+    "expected": "forge service update mysql/default --autostart --restart failure --restart-max 5 --restart-window 120 --version 8.4.14"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "launch": {
+        "args": []
+      }
+    },
+    "expected": null,
+    "note": "launch (args/env) has no command: a cleared list would read as no change"
+  },
+  {
+    "method": "services.update",
+    "params": {
+      "instance": "mysql/default",
+      "launch": {
+        "env": {
+          "TZ": "UTC"
+        }
+      }
+    },
+    "expected": null
   },
   {
     "method": "services.ports",
@@ -544,6 +719,23 @@
       "server": "apache"
     },
     "expected": "forge site server loja.test apache"
+  },
+  {
+    "method": "sites.driver",
+    "params": {
+      "site": "loja.test",
+      "driver": null
+    },
+    "expected": "forge site driver loja.test auto",
+    "note": "null driver = detect again"
+  },
+  {
+    "method": "sites.driver",
+    "params": {
+      "site": "loja.test",
+      "driver": "laravel"
+    },
+    "expected": "forge site driver loja.test laravel"
   },
   {
     "method": "sites.alias",
@@ -943,6 +1135,11 @@
     },
     "expected": "forge tls export loja.test --pfx",
     "note": "the password is never rendered"
+  },
+  {
+    "method": "tls.list",
+    "params": {},
+    "expected": "forge tls list"
   },
   {
     "method": "mail.status",

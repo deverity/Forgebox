@@ -158,6 +158,8 @@ fn fakes() -> Fakes {
                 rss_bytes: Some(400 << 20),
                 restarts: 0,
                 last_error: None,
+                data_dir: Some("C:/Forgebox/data/mysql/default".into()),
+                size_bytes: None,
             }],
             pools: vec![pool_dto()],
         },
@@ -627,6 +629,7 @@ async fn long_running_methods_answer_with_a_job_and_report_through_events() {
             specs: vec![ToolSpec::from("php@8.3")],
             variant: None,
             yes: true,
+            target: None,
         })
         .await
         .unwrap();

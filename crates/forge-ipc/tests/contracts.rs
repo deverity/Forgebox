@@ -21,7 +21,10 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge search",
     "forge tool list",
     "forge tool info",
+    "forge tool info --versions",
+    "forge tool info --history",
     "forge tool install",
+    "forge tool install --dry-run",
     "forge tool remove",
     "forge tool update",
     "forge tool update --check",
@@ -42,6 +45,7 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge service remove",
     "forge service config",
     "forge service set",
+    "forge service update",
     "forge service ports",
     "forge service kill-port",
     "forge logs",
@@ -64,6 +68,7 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge site secure",
     "forge site unsecure",
     "forge site server",
+    "forge site driver",
     "forge site alias",
     "forge site open",
     "forge site info",
@@ -95,6 +100,7 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge dns enable",
     "forge dns disable",
     "forge dns test",
+    "forge tls list",
     "forge tls ca status",
     "forge tls ca install",
     "forge tls ca uninstall",
@@ -486,4 +492,104 @@ fn e3_methods_have_the_decided_roles_and_flags() {
         assert!(!m.local_only, "{name}");
     }
     assert_eq!(info("db.shell").result, "ShellCommandDto");
+}
+
+/// Kinds, roles and flags of the methods added by the E2 contract (ADR-0041).
+#[test]
+fn e2_methods_have_the_decided_roles_and_flags() {
+    let info = |name: &str| method_info(name).unwrap_or_else(|| panic!("{name} missing"));
+    // (method, kind, role, mutating, served commands)
+    for (name, kind, role, mutating, cli) in [
+        (
+            "tools.releases",
+            MethodKind::Job,
+            Role::Viewer,
+            false,
+            "forge tool info --versions",
+        ),
+        (
+            "tools.plan",
+            MethodKind::Job,
+            Role::Viewer,
+            false,
+            "forge tool install --dry-run",
+        ),
+        (
+            "tools.history",
+            MethodKind::Call,
+            Role::Viewer,
+            false,
+            "forge tool info --history",
+        ),
+        ("tools.icon", MethodKind::Call, Role::Viewer, false, ""),
+        (
+            "services.settings",
+            MethodKind::Call,
+            Role::Viewer,
+            false,
+            "forge service set",
+        ),
+        (
+            "services.update",
+            MethodKind::Job,
+            Role::Admin,
+            true,
+            "forge service update",
+        ),
+        (
+            "sites.driver",
+            MethodKind::Job,
+            Role::Operator,
+            true,
+            "forge site driver",
+        ),
+        (
+            "tls.list",
+            MethodKind::Call,
+            Role::Viewer,
+            false,
+            "forge tls list",
+        ),
+    ] {
+        let m = info(name);
+        assert_eq!(
+            (m.kind, m.min_role, m.mutating, m.cli),
+            (kind, role, mutating, cli),
+            "{name}"
+        );
+        // Nothing of the E2 contract depends on the caller's machine.
+        assert!(!m.local_only, "{name}");
+        assert_eq!(m.cli_template.is_some(), !cli.is_empty(), "{name}");
+    }
+    assert_eq!(info("tools.releases").job_result, Some("ToolReleasesDto"));
+    assert_eq!(info("tools.plan").job_result, Some("ToolPlanDto"));
+    assert_eq!(info("tools.history").result, "UpdateHistoryDto");
+    assert_eq!(info("tools.icon").params, "ToolParams");
+    assert_eq!(info("tools.icon").result, "IconDto");
+    assert_eq!(info("services.settings").result, "ServiceSettingsDto");
+    assert_eq!(info("services.update").job_result, Some("InstanceDto"));
+    assert_eq!(info("sites.driver").job_result, Some("SiteDto"));
+    assert_eq!(info("tls.list").result, "CertificateListDto");
+    // The methods that gained a parameter keep their role and flags.
+    for (name, role) in [
+        ("tools.install", Role::Admin),
+        ("tools.remove", Role::Admin),
+        ("services.create", Role::Admin),
+    ] {
+        let m = info(name);
+        assert_eq!((m.min_role, m.mutating, m.local_only), (role, true, false));
+    }
+    // Every new param that reaches the CLI is in its template.
+    for (name, fields) in [
+        ("tools.install", &["{target=--for}"][..]),
+        ("tools.remove", &["{target=--for}"]),
+        ("services.create", &["{data_dir=--data-dir}"]),
+        ("tools.plan", &["[!stack]", "{target=--for}", "--dry-run"]),
+        ("services.update", &["[!launch]", "{version=--version}"]),
+    ] {
+        let template = info(name).cli_template.unwrap();
+        for field in fields {
+            assert!(template.contains(field), "{name}: {template}");
+        }
+    }
 }

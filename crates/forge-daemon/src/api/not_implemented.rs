@@ -15,14 +15,29 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "M3-E1",
         "installing a local zip or folder as a tool version",
     ),
+    ("tools.releases", "M2-E2-T5", "listing provider releases"),
+    ("tools.plan", "M2-E2-T5", "install plans"),
+    ("tools.history", "M2-E2-T4", "update history"),
+    ("tools.icon", "M2-E2-T4", "catalog icons"),
     (
         "services.set",
-        "M2-E2",
+        "M2-E2-T7",
         "quick settings written into the managed config files",
     ),
-    ("php.ext_enable", "M2-E2", "per-version extension toggles"),
-    ("php.ext_disable", "M2-E2", "per-version extension toggles"),
-    ("php.xdebug", "M2-E2", "Xdebug toggle per PHP version"),
+    ("services.settings", "M2-E2-T7", "reading quick settings"),
+    ("services.update", "M2-E2-T10", "advanced instance settings"),
+    (
+        "php.ext_enable",
+        "M2-E2-T9",
+        "per-version extension toggles",
+    ),
+    (
+        "php.ext_disable",
+        "M2-E2-T9",
+        "per-version extension toggles",
+    ),
+    ("php.xdebug", "M2-E2-T9", "Xdebug toggle per PHP version"),
+    ("sites.driver", "M2-E2-T6", "driver override"),
     (
         "sites.share",
         "M3-E3",
@@ -96,6 +111,7 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "configuration document with schema",
     ),
     ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
+    ("tls.list", "M2-E2-T6", "listing leaf certificates"),
     (
         "services.kill_port_holder",
         "M2-E3-T11",
@@ -132,6 +148,13 @@ pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
 /// Roadmap task of `logs.read {before_seq}` (paging back; `logs.read` itself works, so it
 /// is not in the table).
 pub const LOGS_BEFORE_SEQ_TASK: &str = "M2-E3-T8";
+
+/// Roadmap task of `tools.install|remove {target}` (extensions into a version of the tool
+/// they extend, `--for`; ADR-0041). The methods work without it.
+pub const EXTENSION_TARGET_TASK: &str = "M2-E2-T8";
+
+/// Roadmap task of `services.create {data_dir}` (ADR-0041). The method works without it.
+pub const SERVICES_DATA_DIR_TASK: &str = "M2-E2-T10";
 
 /// The method names of the table, in table order: what `system.hello` reports as
 /// `not_implemented` (API 1.1) so clients can disable the matching controls.
@@ -255,6 +278,46 @@ mod tests {
         // terminal.unsubscribe is a server built-in (closes any stream of the connection).
         assert!(!methods().iter().any(|m| m == "terminal.unsubscribe"));
         assert!(crate::api::SERVER_BUILTINS.contains(&"terminal.unsubscribe"));
+    }
+
+    #[test]
+    fn e2_methods_name_their_task() {
+        // The E2 contract (ADR-0041): each backend task owns its methods.
+        for (method, task) in [
+            ("tools.releases", "M2-E2-T5"),
+            ("tools.plan", "M2-E2-T5"),
+            ("tools.history", "M2-E2-T4"),
+            ("tools.icon", "M2-E2-T4"),
+            ("services.settings", "M2-E2-T7"),
+            ("services.set", "M2-E2-T7"),
+            ("services.update", "M2-E2-T10"),
+            ("php.ext_enable", "M2-E2-T9"),
+            ("php.ext_disable", "M2-E2-T9"),
+            ("php.xdebug", "M2-E2-T9"),
+            ("sites.driver", "M2-E2-T6"),
+            ("tls.list", "M2-E2-T6"),
+        ] {
+            let err = error(method);
+            assert_eq!(err.code(), "not_implemented", "{method}");
+            assert!(
+                err.to_string().contains(&format!("(roadmap {task})")),
+                "{method}: {err}"
+            );
+            assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+            assert_eq!(err.details().unwrap()["args"]["method"], method);
+        }
+        // Partial methods (they work without the new parameter) stay out of the table.
+        for method in ["tools.install", "tools.remove", "services.create"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        assert_eq!(EXTENSION_TARGET_TASK, "M2-E2-T8");
+        assert_eq!(SERVICES_DATA_DIR_TASK, "M2-E2-T10");
+        // Every E2 row names its task, not only the epic.
+        for (method, task, _) in NOT_IMPLEMENTED {
+            if task.starts_with("M2-E2") {
+                assert!(task.starts_with("M2-E2-T"), "{method}: {task}");
+            }
+        }
     }
 
     #[test]

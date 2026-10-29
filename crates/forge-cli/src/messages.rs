@@ -197,6 +197,14 @@ messages! {
     HKey => ("CHAVE", "KEY"),
     HValue => ("VALOR", "VALUE"),
     HAttachments => ("Anexos", "Attachments"),
+    HChannel => ("CANAL", "CHANNEL"),
+    HReason => ("MOTIVO", "REASON"),
+    HWhen => ("QUANDO", "WHEN"),
+    HTrigger => ("ORIGEM", "TRIGGER"),
+    HDefault => ("PADRÃO", "DEFAULT"),
+    HApply => ("APLICAR", "APPLY"),
+    HTrusted => ("CONFIÁVEL", "TRUSTED"),
+    HRange => ("FAIXA", "RANGE"),
     // empty results
     NoServices => ("Nenhum serviço instalado ainda. Use `forge tool install`.", "No services installed yet. Use `forge tool install`."),
     NoSites => ("Nenhum site. Use `forge site add <pasta>` ou `forge park <pasta>`.", "No sites. Use `forge site add <dir>` or `forge park <dir>`."),
@@ -213,6 +221,9 @@ messages! {
     NoProcesses => ("Nenhum processo.", "No processes."),
     NoDatabases => ("Nenhum banco de dados.", "No databases."),
     NoCertificates => ("Nenhum certificado.", "No certificates."),
+    NoHistory => ("Nenhuma atualização registrada.", "No updates recorded."),
+    NoSettings => ("Sem ajustes rápidos.", "No quick settings."),
+    NothingToPlan => ("Nada a instalar.", "Nothing to install."),
     NoMail => ("Nenhuma mensagem.", "No messages."),
     NoStats => ("Sem métricas ainda.", "No metrics yet."),
     NoRegistries => ("Nenhum registry.", "No registries."),
@@ -278,6 +289,42 @@ messages! {
     ),
     // services
     InstanceCreated => ("Instância criada: {0}/{1}", "Instance created: {0}/{1}"),
+    InstanceUpdated => ("Instância atualizada: {0}/{1}", "Instance updated: {0}/{1}"),
+    SettingsHint => (
+        "Altere com `forge service set {0} chave=valor` (portas: `ports.<nome>=<porta>`).",
+        "Change with `forge service set {0} key=value` (ports: `ports.<name>=<port>`)."
+    ),
+    ApplyReload => ("recarregar", "reload"),
+    ApplyRestart => ("reiniciar", "restart"),
+    ApplyNone => ("nada", "nothing"),
+    // catalog (API 1.1)
+    ReleasesStale => (
+        "Sem acesso aos providers: lista em cache ({0}).",
+        "Providers unreachable: cached list ({0})."
+    ),
+    PlanTotal => ("Total a baixar: {0} em {1} item(ns).", "To download: {0} in {1} item(s)."),
+    PlanEstimated => (
+        "≈ inclui estimativas do manifesto (tamanho real só no download).",
+        "≈ includes manifest estimates (the real size is known at download)."
+    ),
+    PlanUnknownSize => (
+        "{0} item(ns) sem tamanho conhecido (fora do total).",
+        "{0} item(s) of unknown size (not in the total)."
+    ),
+    PlanInstalled => ("já instalado", "already installed"),
+    PlanDownload => ("baixar", "download"),
+    PlanReasonRequested => ("pedido", "requested"),
+    PlanReasonDependency => ("dependência", "dependency"),
+    PlanReasonStack => ("stack", "stack"),
+    PlanReasonExtension => ("extensão para {0}", "extension for {0}"),
+    UpdateTriggerAuto => ("automática", "automatic"),
+    UpdateTriggerUser => ("usuário", "user"),
+    UpdateTriggerRollback => ("rollback", "rollback"),
+    UpdateStatusStarted => ("em andamento", "in progress"),
+    UpdateStatusCompleted => ("concluída", "completed"),
+    UpdateStatusFailed => ("falhou", "failed"),
+    UpdateStatusRolledBack => ("desfeita", "rolled back"),
+    TrustUnknown => ("?", "?"),
     InstanceRemoved => ("Instância removida: {0}", "Instance removed: {0}"),
     ConfirmRemoveInstance => ("Remover a instância {0}?", "Remove instance {0}?"),
     ConfirmRemoveInstanceData => (

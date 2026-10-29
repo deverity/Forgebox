@@ -5,24 +5,59 @@
     "what": "installing a local zip or folder as a tool version"
   },
   {
+    "method": "tools.releases",
+    "task": "M2-E2-T5",
+    "what": "listing provider releases"
+  },
+  {
+    "method": "tools.plan",
+    "task": "M2-E2-T5",
+    "what": "install plans"
+  },
+  {
+    "method": "tools.history",
+    "task": "M2-E2-T4",
+    "what": "update history"
+  },
+  {
+    "method": "tools.icon",
+    "task": "M2-E2-T4",
+    "what": "catalog icons"
+  },
+  {
     "method": "services.set",
-    "task": "M2-E2",
+    "task": "M2-E2-T7",
     "what": "quick settings written into the managed config files"
   },
   {
+    "method": "services.settings",
+    "task": "M2-E2-T7",
+    "what": "reading quick settings"
+  },
+  {
+    "method": "services.update",
+    "task": "M2-E2-T10",
+    "what": "advanced instance settings"
+  },
+  {
     "method": "php.ext_enable",
-    "task": "M2-E2",
+    "task": "M2-E2-T9",
     "what": "per-version extension toggles"
   },
   {
     "method": "php.ext_disable",
-    "task": "M2-E2",
+    "task": "M2-E2-T9",
     "what": "per-version extension toggles"
   },
   {
     "method": "php.xdebug",
-    "task": "M2-E2",
+    "task": "M2-E2-T9",
     "what": "Xdebug toggle per PHP version"
+  },
+  {
+    "method": "sites.driver",
+    "task": "M2-E2-T6",
+    "what": "driver override"
   },
   {
     "method": "sites.share",
@@ -188,6 +223,11 @@
     "method": "tls.ca_uninstall",
     "task": "M2-E3-T11",
     "what": "removing the local CA"
+  },
+  {
+    "method": "tls.list",
+    "task": "M2-E2-T6",
+    "what": "listing leaf certificates"
   },
   {
     "method": "services.kill_port_holder",

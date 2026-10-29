@@ -59,5 +59,5 @@ pub use tools::*;
 pub use crate::transport::TransportKind;
 pub use forge_core::ids::{
     ClientId, EventId, InstanceId, JobId, PortReservationId, RequestId, SessionId, SiteId,
-    SubscriptionId, TerminalId, TerminalWriterId, ToolId, VersionId,
+    SubscriptionId, TerminalId, TerminalWriterId, ToolId, UpdateId, VersionId,
 };

@@ -225,6 +225,42 @@ fn certificates_table(out: &Output, certificates: &[CertificateDto]) {
     );
 }
 
+/// `forge tls list`: every leaf certificate with its expiry (red when past, yellow within
+/// 30 days) and whether this machine trusts it.
+fn certificate_list_table(out: &Output, certificates: &[CertificateDto]) {
+    let now = forge_ipc::base::Timestamp::now();
+    let soon = now
+        .checked_add(std::time::Duration::from_secs(30 * 86_400))
+        .unwrap_or(now);
+    let rows = certificates
+        .iter()
+        .map(|c| {
+            let expires = render::time_cell(c.not_after);
+            vec![
+                c.host.clone(),
+                c.sans.join(", "),
+                if c.not_after <= now {
+                    paint(RED, expires)
+                } else if c.not_after <= soon {
+                    paint(YELLOW, expires)
+                } else {
+                    expires
+                },
+                match c.trusted {
+                    Some(true) => paint(GREEN, out.t(Msg::Yes)),
+                    Some(false) => paint(RED, out.t(Msg::No)),
+                    None => out.t(Msg::TrustUnknown).to_owned(),
+                },
+            ]
+        })
+        .collect();
+    out.table(
+        &["HOST", "SAN", out.t(Msg::HExpires), out.t(Msg::HTrusted)],
+        rows,
+        Msg::NoCertificates,
+    );
+}
+
 /// Writes `bytes` to `path` and tells the user.
 fn write_output(ctx: &Context, path: &std::path::Path, bytes: &[u8]) -> CliResult<()> {
     std::fs::write(path, bytes).map_err(|e| CliError::io(format!("{}: {e}", path.display())))?;
@@ -236,6 +272,14 @@ fn write_output(ctx: &Context, path: &std::path::Path, bytes: &[u8]) -> CliResul
 pub async fn tls(ctx: &Context, command: TlsCmd) -> CliResult<()> {
     match command {
         TlsCmd::Ca(ca) => tls_ca(ctx, ca).await,
+        TlsCmd::List => {
+            let list = ctx
+                .call::<forge_ipc::api::methods::tls_list>(NoParams {})
+                .await?;
+            ctx.out
+                .emit(&list, |out| certificate_list_table(out, &list.certificates));
+            Ok(())
+        }
         TlsCmd::Issue { host } => {
             let cert: CertificateDto = ctx
                 .job::<tls_issue, CertificateDto>(TlsHostParams { host })

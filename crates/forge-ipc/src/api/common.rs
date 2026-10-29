@@ -38,8 +38,13 @@ impl fmt::Display for ApiVersion {
 /// `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`, the
 /// events `mail.changed`, `terminal.exited`, `config.changed`, `tls.ca_untrusted`,
 /// `port.holder_killed` and new optional fields. `db.shell` answers a `ShellCommandDto`
-/// instead of `Ack` (never implemented before). Peers accept any `minor` of the same
-/// `major`.
+/// instead of `Ack` (never implemented before). Then (ADR-0041) `tools.releases`,
+/// `tools.plan`, `tools.history`, `tools.icon`, `services.settings`, `services.update`,
+/// `sites.driver`, `tls.list`, the catalog metadata of `CatalogEntryDto`/`ToolInfoDto`,
+/// the extension `target` of `tools.install|remove`, `ServiceCreateParams.data_dir`,
+/// `InstanceDto.data_dir|size_bytes`, `SiteProcessDto.instance_id`,
+/// `ServicePayload.site_id` and `CertificateDto.trusted|ca_thumbprint_sha256`. Peers
+/// accept any `minor` of the same `major`.
 pub const API_VERSION: ApiVersion = ApiVersion { major: 1, minor: 1 };
 
 /// Authorization profile of a connection (ADR-0009, rule 7; docs/13 §3.3). Ordered:

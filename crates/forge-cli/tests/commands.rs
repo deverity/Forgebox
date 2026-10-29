@@ -68,6 +68,28 @@ fn table() -> Vec<Case> {
         case(&["tool", "list", "--installed", "--updates"], OK),
         case(&["tool", "info", "php"], OK),
         case(&["tool", "info", "nonexistent"], E("not_found")),
+        // The E2 contract (ADR-0041): releases and plans are M2-E2-T5, history M2-E2-T4,
+        // extension targets M2-E2-T8.
+        case(&["tool", "info", "--versions", "php"], NI),
+        case(
+            &["tool", "info", "--versions", "php", "--channel", "preview"],
+            NI,
+        ),
+        case(&["tool", "info", "--history", "php"], NI),
+        case(&["tool", "info", "--history", "php", "--series", "8.3"], NI),
+        case(&["tool", "install", "--dry-run", "php@8.4", "nginx"], NI),
+        case(&["tool", "install", "xdebug", "--for", "php@8.4"], NI),
+        case(
+            &[
+                "tool",
+                "remove",
+                "xdebug@3.4.1",
+                "--for",
+                "php@8.4",
+                "--yes",
+            ],
+            NI,
+        ),
         case(
             &["tool", "install", "nonexistent@1.0", "--yes"],
             E("not_found"),
@@ -100,6 +122,35 @@ fn table() -> Vec<Case> {
         ),
         case(&["service", "config", "nginx"], E("not_found")),
         case(&["service", "set", "php@8.3", "memory_limit=1G"], NI),
+        // Without pairs: services.settings (M2-E2-T7).
+        case(&["service", "set", "mysql/default"], NI),
+        case(
+            &[
+                "service",
+                "create",
+                "mysql@8.4",
+                "legacy",
+                "--data-dir",
+                "{TMP}/mysql-legacy",
+            ],
+            NI,
+        ),
+        case(
+            &["service", "update", "mysql/default", "--no-autostart"],
+            NI,
+        ),
+        case(
+            &[
+                "service",
+                "update",
+                "mysql/default",
+                "--arg",
+                "--skip-name-resolve",
+                "--restart",
+                "always",
+            ],
+            NI,
+        ),
         case(&["service", "ports"], OK),
         // Port 1 is free: without --pid there is nothing to terminate; with one, the CLI
         // asks (no terminal: usage error) and the daemon answers not_implemented (E3-T11).
@@ -132,6 +183,8 @@ fn table() -> Vec<Case> {
         case(&["site", "secure", "demo.test"], OK),
         case(&["site", "unsecure", "demo.test"], OK),
         case(&["site", "server", "demo.test", "apache"], OK),
+        case(&["site", "driver", "demo.test", "auto"], NI),
+        case(&["site", "driver", "demo.test", "laravel"], NI),
         case(&["site", "alias", "demo.test", "add", "www.demo.test"], OK),
         // Plain `site open` would launch a real browser; the editor target stays not_implemented.
         case(&["site", "open", "demo.test", "--editor"], NI),
@@ -192,6 +245,7 @@ fn table() -> Vec<Case> {
             E("needs_elevation"),
         ),
         case(&["tls", "issue", "cert.test"], OK),
+        case(&["tls", "list"], NI),
         case(&["tls", "ca", "export"], OK),
         case(&["tls", "renew", "--all"], OK),
         case(&["tls", "export", "cert.test"], OK),
