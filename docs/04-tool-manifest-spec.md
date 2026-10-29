@@ -307,7 +307,7 @@ logs:
 | `options` | `select`, `multi` | obrigatório nesses tipos; proibido nos demais |
 | `on` / `off` | `toggle` | valor gravado; ausentes = booleano nativo do formato (`On`/`Off` em ini, `on`/`off` em conf-directive, `true`/`false` em yaml/json, presença da flag em args) |
 | `min` / `max` / `step` | `number`, `slider` | `slider` exige `min` e `max`; `min <= max`; `step > 0` (o valor é `min` + n × `step`) |
-| `reserve` | `port` | reserva a porta no alocador (Xdebug 9003) |
+| `reserve` | `port` | reserva a porta no alocador (Xdebug 9003; ligado ao alocador com as extensões, M2-E2-T9) |
 | `default` | todos | `toggle`: true/false/on/off; `select`: um de `options`; `multi`: lista contida em `options`; `port`: 1–65535; `number`/`slider`: dentro de min/max |
 | `apply` | todos | `reload` \| `restart` (padrão) \| `none` |
 | `also_set` | todos | outros alvos **do mesmo arquivo**, na sintaxe do alvo (`post_max_size`, `mysqldump/max_allowed_packet`), gravados com `{{ value }}` = o texto escrito |
