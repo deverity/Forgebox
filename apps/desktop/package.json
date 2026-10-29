@@ -11,6 +11,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173 --strictPort",
+    "dev:qa": "vite --mode qa --port 1421 --strictPort",
+    "build:qa": "tsc --noEmit && vite build --mode qa",
+    "preview:qa": "vite preview --outDir dist-qa --host 127.0.0.1 --port 4174 --strictPort",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && stylelint \"src/**/*.css\"",
     "tokens": "node scripts/gen-tokens.mjs",
@@ -18,6 +21,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:real": "playwright test -c playwright.real.config.ts",
+    "perf:startup": "node scripts/perf-startup.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -35,7 +41,9 @@
     "zustand": "5.0.16"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
     "@eslint/js": "9.39.5",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "4.3.3",
     "@tauri-apps/cli": "2.12.4",
     "@testing-library/dom": "10.4.2",

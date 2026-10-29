@@ -26,8 +26,20 @@ function render(root: HTMLElement) {
   void followAppearance();
 }
 
+// QA builds (`vite build --mode qa`, ADR-0036) install the scenario-driven fake bridge first.
+// `MODE` is a build-time constant: production builds drop the branch and the whole src/qa tree.
+const qa =
+  import.meta.env.MODE === "qa"
+    ? import("./qa/bootstrap").then((m) => m.bootQa())
+    : Promise.resolve(null);
+
 // Render even if i18n init fails: the UI must never stay blank because of it.
-initI18n({ allowPseudo: import.meta.env.MODE !== "production" })
+qa.then((handle) =>
+  initI18n({
+    allowPseudo: import.meta.env.MODE !== "production",
+    ...(handle?.locale ? { override: handle.locale } : {}),
+  }),
+)
   .catch((error: unknown) => {
     console.warn("i18n init failed", error);
   })

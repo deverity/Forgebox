@@ -6,3 +6,7 @@ src/ipc/generated.ts
 src/ipc/methods.ts
 src/design/tokens.css
 src/design/tokens.ts
+dist-qa
+qa/out
+test-results
+playwright-report

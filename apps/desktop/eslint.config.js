@@ -11,6 +11,10 @@ export default defineConfig([
   // Build output, dependencies, Rust target and generated IPC contracts (cargo xtask gen-ts).
   globalIgnores([
     "dist",
+    "dist-qa",
+    "qa/out",
+    "test-results",
+    "playwright-report",
     "node_modules",
     "src-tauri",
     "src/ipc/generated.ts",

@@ -20,5 +20,13 @@
     "noEmit": true,
     "allowJs": true
   },
-  "include": ["src", "vite.config.ts", "eslint.i18n.js", "eslint.colors.js"]
+  "include": [
+    "src",
+    "qa",
+    "e2e",
+    "playwright.config.ts",
+    "vite.config.ts",
+    "eslint.i18n.js",
+    "eslint.colors.js"
+  ]
 }
