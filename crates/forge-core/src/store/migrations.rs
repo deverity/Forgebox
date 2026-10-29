@@ -52,6 +52,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "update_history_rollback",
         sql: include_str!("migrations/0003_update_history_rollback.sql"),
     },
+    Migration {
+        version: 4,
+        name: "tool_series_settings",
+        sql: include_str!("migrations/0004_tool_series_settings.sql"),
+    },
 ];
 
 /// Highest schema version this build knows.
