@@ -102,3 +102,16 @@ spec:
     color: "#2F8CF5"
     actions:
       - { label: "Abrir caixa de e-mail", icon: mail, browse: "http://127.0.0.1:{{ instance.ports.http }}" }
+
+  # Mail capability (docs/04 section 1.9): the daemon adapter for the `mailpit-v1` API family.
+  mail:
+    api: mailpit-v1
+    http_port: http
+    smtp_port: smtp
+    env:
+      MAIL_MAILER: smtp
+      MAIL_HOST: "127.0.0.1"
+      MAIL_PORT: "{{ instance.ports.smtp }}"
+      MAIL_USERNAME: "null"
+      MAIL_PASSWORD: "null"
+      MAIL_ENCRYPTION: "null"

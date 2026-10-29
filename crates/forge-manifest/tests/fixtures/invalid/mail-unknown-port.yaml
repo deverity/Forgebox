@@ -1,0 +1,21 @@
+# expect: invalid_reference
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: mail-unknown-port, name: Fixture, category: mail }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  service:
+    kind: daemon
+    daemon:
+      exe: mailpit.exe
+      ports:
+        - { name: smtp, default: 1025, range: mail }
+  mail:
+    api: mailpit-v1
+    http_port: web
+    smtp_port: smtp
+    env:
+      MAIL_PORT: "{{ instance.ports.smtp }}"

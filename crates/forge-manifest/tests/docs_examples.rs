@@ -77,3 +77,38 @@ fn docs_04_daemon_fragment_is_a_valid_service_block() {
     let issues = validate(&manifest);
     assert!(issues.is_empty(), "{issues:#?}");
 }
+
+/// Wraps a `spec` capability fragment (§1.8, §1.9) in a daemon tool with the ports it uses.
+fn capability_manifest(fragment: &str) -> String {
+    let indented: String = fragment.lines().map(|l| format!("  {l}\n")).collect();
+    format!(
+        "apiVersion: forgebox.dev/v1\nkind: Tool\n\
+         metadata: {{ id: capability, name: Capability, category: database }}\n\
+         spec:\n  platforms: [windows-x64]\n  source:\n    providers:\n      - type: mariadb\n\
+         \x20 service:\n    kind: daemon\n    daemon:\n      exe: bin/server.exe\n      ports:\n\
+         \x20       - {{ name: main, default: 3306, range: databases }}\n\
+         \x20       - {{ name: http, default: 8025, range: mail }}\n\
+         \x20       - {{ name: smtp, default: 1025, range: mail }}\n\
+         {indented}"
+    )
+}
+
+#[test]
+fn docs_04_capability_fragments_are_valid_blocks() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/04-tool-manifest-spec.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let mut seen = Vec::new();
+    for fragment in yaml_blocks(&markdown) {
+        let first = fragment.lines().next().unwrap_or_default();
+        if first != "database:" && first != "mail:" {
+            continue;
+        }
+        let text = capability_manifest(&fragment);
+        let manifest = load_str(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
+        let issues = validate(&manifest);
+        assert!(issues.is_empty(), "{issues:#?}\n{text}");
+        seen.push(first.to_owned());
+    }
+    assert_eq!(seen, ["database:", "mail:"]);
+}

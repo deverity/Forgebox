@@ -147,3 +147,62 @@ spec:
     actions:
       - { label: "my.ini", icon: file-text, open: config:my_ini }
       - { label: "Cliente mysql", icon: terminal, shell: { path_prepend: ["{{ paths.version }}/bin"] } }
+
+  # Database capability (docs/04 section 1.8): the daemon drives these clients (M2-E3-T5).
+  # Names are validated by the daemon ([A-Za-z0-9_]{1,64}) before substitution; the runner prints
+  # tab-separated rows without a header (--batch --skip-column-names).
+  database:
+    protocol: mysql
+    port: main
+    admin_user: root
+    default_charset: utf8mb4
+    system_databases: [information_schema, mysql, performance_schema, sys]
+    client:
+      exe: bin/mysql.exe
+      args:
+        - "--protocol=tcp"
+        - "--host=127.0.0.1"
+        - "--port={{ instance.ports.main }}"
+        - "--user=root"
+        - "--batch"
+        - "--skip-column-names"
+        - "--execute={{ sql }}"
+    queries:
+      list: "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name"
+      create: "CREATE DATABASE `{{ database }}` CHARACTER SET {{ charset }}"
+      drop: "DROP DATABASE `{{ database }}`"
+    dump:
+      exe: bin/mysqldump.exe
+      args:
+        - "--protocol=tcp"
+        - "--host=127.0.0.1"
+        - "--port={{ instance.ports.main }}"
+        - "--user=root"
+        - "--single-transaction"
+        - "--routines"
+        - "--events"
+        - "--triggers"
+        - "{{ database }}"
+    restore:
+      exe: bin/mysql.exe
+      args:
+        - "--protocol=tcp"
+        - "--host=127.0.0.1"
+        - "--port={{ instance.ports.main }}"
+        - "--user=root"
+        - "{{ database }}"
+    shell:
+      exe: bin/mysql.exe
+      args:
+        - "--protocol=tcp"
+        - "--host=127.0.0.1"
+        - "--port={{ instance.ports.main }}"
+        - "--user=root"
+    url: "mysql://root@127.0.0.1:{{ instance.ports.main }}/{{ database }}"
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: "127.0.0.1"
+      DB_PORT: "{{ instance.ports.main }}"
+      DB_DATABASE: "{{ database }}"
+      DB_USERNAME: root
+      DB_PASSWORD: ""
