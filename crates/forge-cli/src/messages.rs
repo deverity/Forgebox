@@ -190,6 +190,13 @@ messages! {
     HOfficial => ("OFICIAL", "OFFICIAL"),
     HImported => ("IMPORTADO", "IMPORTED"),
     HNote => ("NOTA", "NOTE"),
+    HGroup => ("GRUPO", "GROUP"),
+    HFormat => ("FORMATO", "FORMAT"),
+    HLive => ("AO VIVO", "LIVE"),
+    HFile => ("ARQUIVO", "FILE"),
+    HKey => ("CHAVE", "KEY"),
+    HValue => ("VALOR", "VALUE"),
+    HAttachments => ("Anexos", "Attachments"),
     // empty results
     NoServices => ("Nenhum serviço instalado ainda. Use `forge tool install`.", "No services installed yet. Use `forge tool install`."),
     NoSites => ("Nenhum site. Use `forge site add <pasta>` ou `forge park <pasta>`.", "No sites. Use `forge site add <dir>` or `forge park <dir>`."),
@@ -212,6 +219,8 @@ messages! {
     NoProfiles => ("Nenhum perfil.", "No profiles."),
     NoClients => ("Nenhum cliente pareado.", "No paired clients."),
     NoLogLines => ("(sem linhas)", "(no lines)"),
+    NoLogTargets => ("Nenhum alvo de log.", "No log targets."),
+    NoDotenv => ("O site não tem arquivo .env.", "The site has no .env file."),
     NothingToDiscover => ("Nada novo em bin/.", "Nothing new in bin/."),
     NothingImported => ("Nada importado.", "Nothing imported."),
     ImportDryRun => ("Simulação: nada foi gravado.", "Dry run: nothing was written."),
@@ -277,6 +286,18 @@ messages! {
     ),
     LogsLagged => ("{0} linhas perdidas (consumo lento)", "{0} lines lost (slow consumer)"),
     XdebugSet => ("Xdebug do PHP {0}: {1}", "Xdebug of PHP {0}: {1}"),
+    ConfirmKillPortHolder => (
+        "Encerrar {0} (PID {1}), que ocupa a porta {2}?",
+        "Terminate {0} (PID {1}), which holds port {2}?"
+    ),
+    PortHolderKilled => (
+        "Processo {0} encerrado; a porta {1} foi liberada.",
+        "Process {0} terminated; port {1} was released."
+    ),
+    PortHolderNone => (
+        "nenhum processo de fora do Forgebox ocupa a porta {0}",
+        "no process outside Forgebox holds port {0}"
+    ),
     NotOpenedNoTerminal => (
         "Sem terminal: o arquivo não foi aberto no editor.",
         "No terminal: the file was not opened in the editor."
@@ -293,6 +314,7 @@ messages! {
         "Remove site {0}? (project files are not deleted)"
     ),
     NoSiteForDir => ("nenhum site usa a pasta {0}", "no site uses the folder {0}"),
+    DotenvMasked => ("****** (segredo; --reveal mostra)", "****** (secret; --reveal shows it)"),
     Parked => ("Pasta registrada: {0} ({1} sites)", "Folder parked: {0} ({1} sites)"),
     Unparked => ("Pasta removida.", "Folder unparked."),
     ProjectDown => ("Projeto parado.", "Project stopped."),
@@ -373,6 +395,17 @@ messages! {
     LanUnexposed => ("Acesso pela rede local desligado.", "LAN access turned off."),
     ConfirmClearMail => ("Apagar todas as mensagens?", "Delete all messages?"),
     MailCleared => ("Mensagens apagadas.", "Messages deleted."),
+    MailPage => (
+        "{0} a {1} de {2} (use --offset para ver mais)",
+        "{0} to {1} of {2} (use --offset to see more)"
+    ),
+    MailMarkedRead => ("{0} mensagem(ns) marcada(s) como lida(s).", "{0} message(s) marked read."),
+    MailMarkedUnread => (
+        "{0} mensagem(ns) marcada(s) como não lida(s).",
+        "{0} message(s) marked unread."
+    ),
+    ConfirmDeleteMail => ("Apagar {0} mensagem(ns)?", "Delete {0} message(s)?"),
+    MailDeleted => ("{0} mensagem(ns) apagada(s).", "{0} message(s) deleted."),
     // shell
     ExecNeedsCommand => ("Faltou o comando depois de `--`.", "Missing the command after `--`."),
     ExecFailed => ("não foi possível executar {0}: {1}", "could not run {0}: {1}"),
@@ -402,6 +435,7 @@ messages! {
     RegistryRemoved => ("Registry removido: {0}", "Registry removed: {0}"),
     ArtifactWritten => ("{0} ({1}, sha256 {2})", "{0} ({1}, sha256 {2})"),
     BackupScheduled => ("Backup agendado: {0} {1}", "Backup scheduled: {0} {1}"),
+    ConfigDefault => ("(padrão)", "(default)"),
     SelfUpdated => ("Forgebox atualizado.", "Forgebox updated."),
     RestartRequired => ("Reinicie o Forgebox para usar a nova versão.", "Restart Forgebox to use the new version."),
 }

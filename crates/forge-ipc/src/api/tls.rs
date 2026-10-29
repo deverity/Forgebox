@@ -42,6 +42,14 @@ pub struct CaInstallParams {
     pub scope: TrustScopeDto,
 }
 
+/// Params of `tls.ca_uninstall`: removes the Forgebox CA from one trust store
+/// (`local_machine` through `forgebox-helper`, with the same validation as the install).
+/// Idempotent. API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct CaUninstallParams {
+    pub scope: TrustScopeDto,
+}
+
 /// Params of `tls.ca_rotate`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct CaRotateParams {

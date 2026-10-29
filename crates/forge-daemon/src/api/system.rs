@@ -148,6 +148,7 @@ async fn get(daemon: Daemon, params: ConfigGetParams, _ctx: Ctx) -> Result<Confi
         key: params.key,
         is_default: default.as_ref() == Some(&value),
         value,
+        requires: Vec::new(),
     })
 }
 
@@ -168,6 +169,7 @@ async fn set(daemon: Daemon, params: ConfigSetParams, _ctx: Ctx) -> Result<Confi
         key: params.key,
         is_default: default.as_ref() == Some(&value),
         value,
+        requires: Vec::new(),
     })
 }
 

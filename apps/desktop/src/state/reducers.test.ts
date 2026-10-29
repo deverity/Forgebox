@@ -408,6 +408,54 @@ describe("tool, site and system reducers", () => {
     expect(resyncs).toEqual(["daemon_ready"]);
   });
 
+  it("reduces the E3 events (ADR-0040) and leaves the rest to queries", () => {
+    const { apply, stores, refreshed } = setup();
+    apply([
+      event("port.conflict", {
+        v: 1,
+        port: 80,
+        protocol: "tcp",
+        owner_name: "nginx/default",
+        instance_id: null,
+        holder: { pid: 4412, exe: "httpd.exe" },
+      } satisfies T.PortConflictPayload),
+    ]);
+    expect(Object.keys(stores.attention.getState().portConflicts)).toEqual(["tcp/80"]);
+    const reduced = apply([
+      event("port.holder_killed", {
+        v: 1,
+        port: 80,
+        pid: 4412,
+        exe: "httpd.exe",
+        client: "Forgebox.exe",
+      } satisfies T.PortHolderKilledPayload),
+      event("tls.ca_untrusted", {
+        v: 1,
+        scope: "current_user",
+        thumbprint_sha1: "AB".repeat(20),
+      } satisfies T.TlsCaUntrustedPayload),
+      event("mail.changed", {
+        v: 1,
+        instance_id: IDS.mysql,
+        messages: 3,
+        unread: 1,
+        new_messages: 1,
+      } satisfies T.MailChangedPayload),
+      event("terminal.exited", {
+        v: 1,
+        terminal_id: "01JTERM0000000000000000001",
+        exit_code: 0,
+      } satisfies T.TerminalExitedPayload),
+      event("config.changed", { v: 1, keys: ["tld"] } satisfies T.ConfigChangedPayload),
+    ]);
+    expect(stores.attention.getState().portConflicts).toEqual({});
+    expect(refreshed).toEqual(["ca"]);
+    expect(reduced).toBeGreaterThan(0);
+    expect(EVENT_INVALIDATIONS["mail.changed"]).toEqual(["mail.status", "mail.list"]);
+    expect(EVENT_INVALIDATIONS["terminal.exited"]).toEqual(["terminal.list"]);
+    expect(EVENT_INVALIDATIONS["config.changed"]).toContain("system.config_list");
+  });
+
   it("keeps certificates and DNS policies by key", () => {
     const { apply, stores, refreshed } = setup();
     apply([

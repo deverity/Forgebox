@@ -252,3 +252,17 @@ pub struct ExternalPortDto {
     pub protocol: PortProtocol,
     pub holder: PortHolderDto,
 }
+
+/// Params of `services.kill_port_holder`: terminates the process holding a port (the
+/// "Encerrar" of a port conflict). The daemon re-checks that `pid` still holds `port` and
+/// is not a Forgebox process, the daemon itself, a system/critical process or a service,
+/// then publishes `port.holder_killed`. Admin, local only. API 1.1 (ADR-0040).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct KillPortHolderParams {
+    pub port: u16,
+    /// The process the user confirmed (from `net.port_check` or `services.ports`).
+    pub pid: u32,
+    /// Destructive: must be `true`.
+    #[serde(default)]
+    pub confirm: bool,
+}

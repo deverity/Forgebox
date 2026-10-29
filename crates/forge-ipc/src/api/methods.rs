@@ -51,10 +51,12 @@ macro_rules! api_methods {
             call "services.config_files" services_config_files(ServiceTargetParams) -> ConfigFilesDto [Viewer] "";
             job "services.set" services_set(ServiceSetParams) -> ServiceStatusDto [Admin, mutating] "forge service set" => "forge service set {target} {settings...}";
             call "services.ports" services_ports(NoParams) -> PortMapDto [Viewer] "forge service ports" => "forge service ports";
+            call "services.kill_port_holder" services_kill_port_holder(KillPortHolderParams) -> Ack [Admin, mutating, local_only] "forge service kill-port" => "forge service kill-port {port} {pid=--pid}";
             // logs
-            call "logs.read" logs_read(LogsReadParams) -> LogChunkDto [Viewer] "forge logs; forge daemon logs" => "forge logs {target} {since_secs=--since} {grep=--grep} {limit=-n}";
+            call "logs.read" logs_read(LogsReadParams) -> LogChunkDto [Viewer] "forge logs; forge daemon logs" => "forge logs {target} {since_secs=--since} {grep=--grep} {limit=-n} {before_seq=--before}";
             stream "logs.subscribe" logs_subscribe(LogsSubscribeParams) -> LogEnvelope [Viewer, notify("logs.line", "logs.lagged")] "forge logs -f; forge daemon logs -f" => "forge logs {target} -f {grep=--grep} {tail=-n}";
             call "logs.unsubscribe" logs_unsubscribe(UnsubscribeParams) -> Ack [Viewer] "";
+            call "logs.targets" logs_targets(NoParams) -> LogTargetListDto [Viewer] "forge logs --list" => "forge logs --list";
             // php
             call "php.list" php_list(NoParams) -> PhpVersionListDto [Viewer] "forge php list" => "forge php list";
             call "php.pool_status" php_pool_status(PhpPoolStatusParams) -> PoolListDto [Viewer] "forge php pool status" => "forge php pool status {version}";
@@ -74,6 +76,7 @@ macro_rules! api_methods {
             job "sites.alias" sites_alias(SiteAliasParams) -> SiteDto [Operator, mutating] "forge site alias" => "forge site alias {site} {action} {alias}";
             call "sites.open" sites_open(SiteOpenParams) -> Ack [Operator, local_only] "forge site open" => "[with=editor] forge site open {site} --editor | [with=terminal] forge site open {site} --terminal | [with=explorer] forge site open {site} --explorer | forge site open {site}";
             call "sites.info" sites_info(SiteParams) -> SiteInfoDto [Viewer] "forge site info" => "forge site info {site}";
+            call "sites.env" sites_env(SiteEnvParams) -> SiteEnvDto [Operator] "forge site env" => "forge site env {site} {reveal?--reveal}";
             call "sites.park" sites_park(ParkParams) -> ParkedDirDto [Operator, mutating] "forge park" => "forge park {dir} {tld=--tld}";
             call "sites.unpark" sites_unpark(ParkParams) -> Ack [Operator, mutating] "forge unpark" => "forge unpark {dir}";
             call "sites.parked" sites_parked(NoParams) -> ParkedListDto [Viewer] "forge parked" => "forge parked";
@@ -90,7 +93,7 @@ macro_rules! api_methods {
             call "db.drop" db_drop(DbDropParams) -> Ack [Operator, mutating] "forge db drop" => "forge db drop {name} {instance=--on}";
             job "db.export" db_export(DbExportParams) -> DbExportDto [Operator, mutating] "forge db export" => "forge db export {name} {instance=--on} {output=--output}";
             job "db.import" db_import(DbImportParams) -> Ack [Operator, mutating] "forge db import" => "forge db import {name} {file} {instance=--on}";
-            call "db.shell" db_shell(DbShellParams) -> Ack [Operator, local_only] "forge db shell" => "forge db shell {instance} {database}";
+            call "db.shell" db_shell(DbShellParams) -> ShellCommandDto [Operator, local_only] "forge db shell" => "forge db shell {instance} {database}";
             call "db.url" db_url(DbUrlParams) -> DbUrlDto [Operator] "forge db url" => "forge db url {instance} {database}";
             call "db.open" db_open(DbOpenParams) -> Ack [Operator, local_only] "forge db open" => "forge db open {instance} {with=--with} {database}";
             // net
@@ -105,6 +108,7 @@ macro_rules! api_methods {
             // tls
             call "tls.ca_status" tls_ca_status(NoParams) -> CaStatusDto [Viewer] "forge tls ca status" => "forge tls ca status";
             job "tls.ca_install" tls_ca_install(CaInstallParams) -> CaStatusDto [Admin, mutating] "forge tls ca install" => "[scope=local_machine] forge tls ca install --scope machine | forge tls ca install --scope user";
+            job "tls.ca_uninstall" tls_ca_uninstall(CaUninstallParams) -> CaStatusDto [Admin, mutating] "forge tls ca uninstall" => "[scope=local_machine] forge tls ca uninstall --scope machine | forge tls ca uninstall --scope user";
             call "tls.ca_export" tls_ca_export(NoParams) -> PemDto [Viewer] "forge tls ca export" => "forge tls ca export";
             job "tls.ca_rotate" tls_ca_rotate(CaRotateParams) -> CaStatusDto [Admin, mutating] "forge tls ca rotate" => "forge tls ca rotate";
             job "tls.issue" tls_issue(TlsHostParams) -> CertificateDto [Operator, mutating] "forge tls issue" => "forge tls issue {host}";
@@ -113,16 +117,28 @@ macro_rules! api_methods {
             // mail
             call "mail.status" mail_status(NoParams) -> MailStatusDto [Viewer] "forge mail status" => "forge mail status";
             call "mail.open" mail_open(NoParams) -> Ack [Viewer, local_only] "forge mail open" => "forge mail open";
-            call "mail.list" mail_list(MailListParams) -> MailListDto [Viewer] "forge mail list" => "forge mail list {unread?--unread} {limit=--limit}";
-            call "mail.show" mail_show(MailShowParams) -> MailMessageDto [Viewer] "forge mail show" => "forge mail show {id}";
+            call "mail.list" mail_list(MailListParams) -> MailListDto [Viewer] "forge mail list" => "forge mail list {unread?--unread} {query=--search} {limit=--limit} {offset=--offset}";
+            call "mail.show" mail_show(MailShowParams) -> MailMessageDto [Viewer] "forge mail show" => "forge mail show {id} {mark_read?:--keep-unread}";
+            call "mail.mark_read" mail_mark_read(MailMarkReadParams) -> Ack [Operator, mutating] "forge mail read" => "forge mail read {ids...} {read?:--unread}";
+            call "mail.delete" mail_delete(MailDeleteParams) -> Ack [Operator, mutating] "forge mail delete" => "forge mail delete {ids...}";
+            call "mail.attachment" mail_attachment(MailAttachmentParams) -> MailAttachmentContentDto [Viewer] "forge mail show --attachment" => "forge mail show {id} --attachment {part_id}";
             call "mail.clear" mail_clear(MailClearParams) -> Ack [Operator, mutating] "forge mail clear" => "forge mail clear";
             call "mail.env" mail_env(NoParams) -> EnvVarsDto [Viewer] "forge mail env" => "forge mail env";
             // shell / env
             call "shell.open" shell_open(ShellOpenParams) -> Ack [Operator, local_only] "forge shell" => "forge shell {dir}";
+            call "shell.open_editor" shell_open_editor(ShellOpenEditorParams) -> Ack [Operator, local_only] "";
             call "shell.env" shell_env(ShellEnvParams) -> ShellEnvDto [Viewer, local_only] "forge env; forge exec" => "[format=cmd] forge env {dir} --cmd | [format=bash] forge env {dir} --bash | [format=json] forge env {dir} --json | forge env {dir} --powershell";
             call "shell.path_show" shell_path_show(NoParams) -> UserPathDto [Viewer] "forge path show" => "forge path show";
             call "shell.path_add" shell_path_add(NoParams) -> UserPathDto [Admin, mutating] "forge path add" => "forge path add";
             call "shell.path_remove" shell_path_remove(NoParams) -> UserPathDto [Admin, mutating] "forge path remove" => "forge path remove";
+            // terminal (daemon-hosted sessions, ADR-0040): GUI only; the equivalent shown is `forge shell`
+            call "terminal.open" terminal_open(TerminalOpenParams) -> TerminalDto [Admin, mutating] "";
+            call "terminal.list" terminal_list(NoParams) -> TerminalListDto [Admin] "";
+            call "terminal.input" terminal_input(TerminalInputParams) -> Ack [Admin] "";
+            call "terminal.resize" terminal_resize(TerminalResizeParams) -> Ack [Admin] "";
+            call "terminal.close" terminal_close(TerminalIdParams) -> Ack [Admin, mutating] "";
+            stream "terminal.subscribe" terminal_subscribe(TerminalSubscribeParams) -> TerminalEnvelope [Admin, notify("terminal.output", "terminal.lagged")] "";
+            call "terminal.unsubscribe" terminal_unsubscribe(UnsubscribeParams) -> Ack [Admin] "";
             // fs / Linux parity
             call "fs_parity.case_status" fs_parity_case_status(CaseDirParams) -> CaseSensitivityDto [Viewer] "forge fs case-sensitive status" => "forge fs case-sensitive status {dir}";
             call "fs_parity.case_enable" fs_parity_case_enable(CaseDirParams) -> CaseSensitivityDto [Admin, mutating] "forge fs case-sensitive enable" => "forge fs case-sensitive enable {dir}";
@@ -159,6 +175,7 @@ macro_rules! api_methods {
             job "system.backup_now" system_backup_now(BackupNowParams) -> BackupReportDto [Operator, mutating] "forge backup now" => "forge backup now {instance}";
             call "system.backup_schedule" system_backup_schedule(BackupScheduleDto) -> BackupScheduleDto [Admin, mutating] "forge backup schedule" => "forge backup schedule {frequency} {at}";
             call "system.config_get" system_config_get(ConfigGetParams) -> ConfigValueDto [Viewer] "forge config get" => "forge config get {key}";
+            call "system.config_list" system_config_list(NoParams) -> ConfigDocumentDto [Viewer] "forge config list" => "forge config list";
             call "system.config_set" system_config_set(ConfigSetParams) -> ConfigValueDto [Admin, mutating] "forge config set" => "forge config set {key} {value}";
             job "system.self_update" system_self_update(SelfUpdateParams) -> SelfUpdateDto [Admin, mutating] "forge self-update" => "forge self-update {check?--check} {channel=--channel}";
             // fs (restricted to etc/, logs/, www/)

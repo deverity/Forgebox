@@ -43,8 +43,10 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge service config",
     "forge service set",
     "forge service ports",
+    "forge service kill-port",
     "forge logs",
     "forge logs -f",
+    "forge logs --list",
     // php
     "forge php list",
     "forge php pool status",
@@ -65,6 +67,7 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge site alias",
     "forge site open",
     "forge site info",
+    "forge site env",
     "forge park",
     "forge unpark",
     "forge parked",
@@ -94,6 +97,7 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge dns test",
     "forge tls ca status",
     "forge tls ca install",
+    "forge tls ca uninstall",
     "forge tls ca export",
     "forge tls ca rotate",
     "forge tls issue",
@@ -107,6 +111,9 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge mail open",
     "forge mail list",
     "forge mail show",
+    "forge mail show --attachment",
+    "forge mail read",
+    "forge mail delete",
     "forge mail clear",
     "forge mail env",
     // shell / env
@@ -146,6 +153,7 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge bundle import",
     "forge backup now",
     "forge backup schedule",
+    "forge config list",
     "forge config get",
     "forge config set",
     "forge self-update",
@@ -168,14 +176,20 @@ const CLIENT_SIDE: &[&str] = &[
 const LOCAL_ONLY: &[&str] = &[
     "tools.add_local",
     "services.config",
+    "services.kill_port_holder",
     "php.ini_open",
     "sites.open",
     "db.shell",
     "db.open",
     "mail.open",
     "shell.open",
+    "shell.open_editor",
     "shell.env",
 ];
+
+/// Methods that "open" something in the daemon, not on the caller's machine: allowed on
+/// remote connections (a terminal session runs on the daemon's machine, ADR-0040).
+const OPENS_ON_THE_DAEMON: &[&str] = &["terminal.open"];
 
 /// Groups of docs/09 (plus the stream groups `logs`, `metrics`, `events`).
 const GROUPS: &[&str] = &[
@@ -190,6 +204,7 @@ const GROUPS: &[&str] = &[
     "tls",
     "mail",
     "shell",
+    "terminal",
     "fs_parity",
     "jobs",
     "stats",
@@ -289,9 +304,11 @@ fn os_dependent_methods_are_local_only() {
         .map(|m| m.name)
         .collect();
     assert_eq!(marked, LOCAL_ONLY.iter().copied().collect());
-    // Anything that "opens" something is local.
+    // Anything that "opens" something on the caller's machine is local.
     for m in METHODS {
-        if m.action() == "open" || m.action().ends_with("_open") {
+        if (m.action() == "open" || m.action().ends_with("_open"))
+            && !OPENS_ON_THE_DAEMON.contains(&m.name)
+        {
             assert!(m.local_only, "{}", m.name);
         }
     }
@@ -369,9 +386,11 @@ fn destructive_methods_require_confirm() {
     for name in [
         "tools.remove",
         "services.remove",
+        "services.kill_port_holder",
         "sites.remove",
         "db.drop",
         "mail.clear",
+        "mail.delete",
         "tls.ca_rotate",
     ] {
         let params = method_info(name).unwrap().params;
@@ -397,4 +416,74 @@ fn generated_typescript_is_up_to_date() {
             "{path} is stale: run `cargo xtask gen-ts` and commit the result"
         );
     }
+}
+
+/// Roles and flags of the methods added by the E3 contract (ADR-0040).
+#[test]
+fn e3_methods_have_the_decided_roles_and_flags() {
+    let info = |name: &str| method_info(name).unwrap_or_else(|| panic!("{name} missing"));
+    // Terminal sessions: admin only (a shell is full control of the machine), never
+    // local_only (they run on the daemon's machine, like SSH), no CLI.
+    let terminal: Vec<_> = METHODS.iter().filter(|m| m.group() == "terminal").collect();
+    let names: BTreeSet<&str> = terminal.iter().map(|m| m.name).collect();
+    assert_eq!(
+        names,
+        BTreeSet::from([
+            "terminal.open",
+            "terminal.list",
+            "terminal.input",
+            "terminal.resize",
+            "terminal.close",
+            "terminal.subscribe",
+            "terminal.unsubscribe",
+        ])
+    );
+    for m in &terminal {
+        assert_eq!(m.min_role, Role::Admin, "{}", m.name);
+        assert!(!m.local_only, "{}", m.name);
+        assert!(m.cli.is_empty() && m.cli_template.is_none(), "{}", m.name);
+    }
+    // Keystrokes are deduplicated per (terminal, writer) by input_seq, not cached by
+    // request_id (ADR-0040 §2).
+    assert!(!info("terminal.input").mutating);
+    assert!(!info("terminal.resize").mutating);
+    assert!(info("terminal.open").mutating && info("terminal.close").mutating);
+    let subscribe = info("terminal.subscribe");
+    assert_eq!(subscribe.kind, MethodKind::Stream);
+    assert_eq!(subscribe.notification, Some("terminal.output"));
+    assert_eq!(subscribe.lagged_notification, Some("terminal.lagged"));
+    assert_eq!(subscribe.item, Some("TerminalEnvelope"));
+
+    let editor = info("shell.open_editor");
+    assert_eq!(editor.min_role, Role::Operator);
+    assert!(editor.local_only && !editor.mutating);
+    assert!(editor.cli.is_empty() && editor.cli_template.is_none());
+
+    let kill = info("services.kill_port_holder");
+    assert_eq!(kill.min_role, Role::Admin);
+    assert!(kill.local_only && kill.mutating);
+    assert_eq!(kill.kind, MethodKind::Call);
+
+    // sites.env: operators see masked values; `reveal` is checked against admin by the
+    // handler (the table has one role per method).
+    let env = info("sites.env");
+    assert_eq!(env.min_role, Role::Operator);
+    assert!(!env.local_only && !env.mutating);
+
+    let uninstall = info("tls.ca_uninstall");
+    assert_eq!(uninstall.min_role, Role::Admin);
+    assert!(uninstall.mutating && uninstall.long_running);
+
+    for (name, role, mutating) in [
+        ("mail.mark_read", Role::Operator, true),
+        ("mail.delete", Role::Operator, true),
+        ("mail.attachment", Role::Viewer, false),
+        ("logs.targets", Role::Viewer, false),
+        ("system.config_list", Role::Viewer, false),
+    ] {
+        let m = info(name);
+        assert_eq!((m.min_role, m.mutating), (role, mutating), "{name}");
+        assert!(!m.local_only, "{name}");
+    }
+    assert_eq!(info("db.shell").result, "ShellCommandDto");
 }

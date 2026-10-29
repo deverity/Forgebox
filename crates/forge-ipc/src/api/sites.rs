@@ -313,3 +313,47 @@ pub struct SiteNewParams {
     #[serde(default)]
     pub dir: Option<String>,
 }
+
+/// Params of `sites.env` (the site's `.env` files, read by the daemon). `operator`;
+/// `reveal: true` needs `admin`. API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SiteEnvParams {
+    pub site: SiteRef,
+    /// Also send the values of secret keys.
+    #[serde(default)]
+    pub reveal: bool,
+}
+
+/// One variable of a `.env` file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct DotenvVarDto {
+    pub key: String,
+    /// `None` when the key is secret (`*PASS*`, `*SECRET*`, `*KEY*`, `*TOKEN*`, a DSN with
+    /// credentials) and `reveal` was not asked: masked values never leave the daemon.
+    pub value: Option<String>,
+    /// The key matches a secret pattern.
+    pub secret: bool,
+    /// 1-based line in the file.
+    pub line: u32,
+}
+
+/// A `.env` file of a site (`.env`, `.env.local`), in the order they apply.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct DotenvFileDto {
+    /// File name (`.env.local`).
+    pub name: String,
+    /// Informative absolute path (for `shell.open_editor`).
+    pub path: String,
+    pub vars: Vec<DotenvVarDto>,
+}
+
+/// Result of `sites.env`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SiteEnvDto {
+    pub site_id: SiteId,
+    pub host: String,
+    /// Only the files that exist; empty when the site has none.
+    pub files: Vec<DotenvFileDto>,
+    /// Secret values are included (`reveal` by an admin).
+    pub revealed: bool,
+}

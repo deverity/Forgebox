@@ -118,12 +118,17 @@ export const EVENT_INVALIDATIONS: Readonly<Record<EventKind, readonly MethodName
   "site.php_changed": [...SITES, ...POOLS],
   "config.rendered": CONFIG,
   "config.drift_detected": CONFIG,
+  "config.changed": ["system.config_get", "system.config_list", "daemon.status"],
   "dns.policy_applied": DNS,
   "tls.ca_created": TLS,
   "tls.leaf_issued": TLS,
   "tls.renewed": TLS,
+  "tls.ca_untrusted": TLS,
   "port.conflict": ["services.ports", "services.status"],
+  "port.holder_killed": ["services.ports", "services.status", "net.port_check"],
   "helper.op": [...DNS, "tls.ca_status", "shell.path_show"],
+  "mail.changed": ["mail.status", "mail.list"],
+  "terminal.exited": ["terminal.list"],
 };
 
 /**

@@ -55,6 +55,8 @@ fn check(id: &str, status: CheckStatus, message: impl Into<String>, fix: Option<
         status,
         message: message.into(),
         fix: fix.map(str::to_owned),
+        fix_method: None,
+        fix_params: None,
     }
 }
 

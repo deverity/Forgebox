@@ -347,12 +347,23 @@ pub enum ServiceCmd {
     },
     /// Mapa de portas e donos (inclui conflitos externos).
     Ports,
+    /// Encerra o processo de fora do Forgebox que ocupa uma porta (pede confirmação).
+    KillPort {
+        port: u16,
+        /// PID confirmado; sem ele, o dono atual da porta (`net.port_check`).
+        #[arg(long)]
+        pid: Option<u32>,
+    },
 }
 
 #[derive(Debug, Args)]
 pub struct LogsArgs {
     /// `nginx`, `nginx.error`, `php@8.3`, `mysql/default`, `site:loja.test`, `app:loja.test/web`.
-    pub target: String,
+    #[arg(required_unless_present = "list")]
+    pub target: Option<String>,
+    /// Lista os alvos de log disponíveis.
+    #[arg(long, conflicts_with_all = ["target", "follow", "since", "grep", "lines", "before"])]
+    pub list: bool,
     /// Acompanha novas linhas.
     #[arg(short, long)]
     pub follow: bool,
@@ -365,6 +376,9 @@ pub struct LogsArgs {
     /// Número máximo de linhas.
     #[arg(short = 'n', long, value_name = "N")]
     pub lines: Option<u32>,
+    /// Só linhas anteriores a este `seq` (páginas para trás).
+    #[arg(long, value_name = "SEQ", conflicts_with = "follow")]
+    pub before: Option<u64>,
 }
 
 // --- php ----------------------------------------------------------------------------
@@ -470,6 +484,13 @@ pub enum SiteCmd {
     },
     /// Diagnóstico: DNS, certificado, pool, root, driver.
     Info { site: String },
+    /// Variáveis do `.env` do site (segredos mascarados).
+    Env {
+        site: String,
+        /// Mostra também os valores secretos (só admin).
+        #[arg(long)]
+        reveal: bool,
+    },
     /// Liga/desliga o modo case-sensitive do site.
     CaseSensitive { site: String, state: OnOff },
     /// Case Mismatch Finder (docs/15 §6).
@@ -696,6 +717,12 @@ pub enum TlsCaCmd {
         #[arg(long, value_enum, default_value = "user")]
         scope: ScopeArg,
     },
+    /// Remove a CA do store de confiança.
+    Uninstall {
+        /// `user` (CurrentUser\Root) ou `machine` (LocalMachine\Root, via helper).
+        #[arg(long, value_enum, default_value = "user")]
+        scope: ScopeArg,
+    },
     /// Exporta o certificado da CA.
     Export {
         #[arg(short, long)]
@@ -727,11 +754,40 @@ pub enum MailCmd {
     List {
         #[arg(long)]
         unread: bool,
+        /// Busca (`from:`, `subject:`, texto livre).
+        #[arg(long, value_name = "TEXTO")]
+        search: Option<String>,
         #[arg(long)]
         limit: Option<u32>,
+        /// Pula as N mensagens mais novas (paginação).
+        #[arg(long, value_name = "N")]
+        offset: Option<u32>,
     },
+    /// Mostra uma mensagem (e a marca como lida) ou baixa um anexo.
     Show {
         id: String,
+        /// Não marca como lida.
+        #[arg(long, conflicts_with = "attachment")]
+        keep_unread: bool,
+        /// Parte do anexo (`mail show <id> --json` lista as partes).
+        #[arg(long, value_name = "PARTE")]
+        attachment: Option<String>,
+        /// Arquivo de saída do anexo.
+        #[arg(short, long, requires = "attachment")]
+        output: Option<PathBuf>,
+    },
+    /// Marca mensagens como lidas (ou não lidas).
+    Read {
+        #[arg(required = true, value_name = "ID")]
+        ids: Vec<String>,
+        /// Marca como não lidas.
+        #[arg(long)]
+        unread: bool,
+    },
+    /// Apaga mensagens (pede confirmação).
+    Delete {
+        #[arg(required = true, value_name = "ID")]
+        ids: Vec<String>,
     },
     Clear,
     /// Imprime MAIL_* para o .env.
@@ -970,6 +1026,8 @@ pub enum FrequencyArg {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCmd {
+    /// Toda a configuração (valores efetivos; `--json` traz padrões e o JSON Schema).
+    List,
     Get {
         key: String,
     },
@@ -1049,6 +1107,60 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(Cli::try_parse_from(["forge", "jobs", "watch", "01ABC"]).is_ok());
+    }
+
+    #[test]
+    fn logs_list_and_paging_flags() {
+        let cli = Cli::try_parse_from(["forge", "logs", "--list"]).unwrap();
+        match cli.command {
+            Command::Logs(args) => assert!(args.list && args.target.is_none()),
+            other => panic!("{other:?}"),
+        }
+        let cli = Cli::try_parse_from(["forge", "logs", "daemon", "--before", "42"]).unwrap();
+        match cli.command {
+            Command::Logs(args) => {
+                assert_eq!(args.target.as_deref(), Some("daemon"));
+                assert_eq!(args.before, Some(42));
+            }
+            other => panic!("{other:?}"),
+        }
+        for bad in [
+            &["forge", "logs"][..],
+            &["forge", "logs", "--list", "daemon"],
+            &["forge", "logs", "--list", "-f"],
+            &["forge", "logs", "daemon", "-f", "--before", "1"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mail_show_attachment_flags() {
+        assert!(Cli::try_parse_from(["forge", "mail", "show", "x", "--attachment", "2"]).is_ok());
+        for bad in [
+            &["forge", "mail", "show", "x", "-o", "a.pdf"][..],
+            &[
+                "forge",
+                "mail",
+                "show",
+                "x",
+                "--keep-unread",
+                "--attachment",
+                "2",
+            ],
+            &["forge", "mail", "read"],
+            &["forge", "mail", "delete"],
+        ] {
+            assert_eq!(
+                Cli::try_parse_from(bad).unwrap_err().exit_code(),
+                2,
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]
