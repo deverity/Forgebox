@@ -102,6 +102,10 @@ camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"
 insta = "1.49.0"
+# Latency histograms of forge-metrics (docs/14, ADR-0048): the HDR layout and the V2 encoding
+# of the persisted minute/hour blobs. Only `serialization` (V2 + base64/flate2/nom); not
+# `sync` (crossbeam), the aggregator is single-owner. MIT OR Apache-2.0.
+hdrhistogram = { version = "7.5.4", default-features = false, features = ["serialization"] }
 # Filesystem watcher of parked directories (forge-sites). CC0-1.0, allowed by deny.toml.
 notify = { version = "8.2.0", default-features = false }
 # DNS server for the local zones (forge-net::dns, ADR-0004). No default features: plain UDP/TCP

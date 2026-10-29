@@ -2164,6 +2164,7 @@ name = "forge-metrics"
 version = "0.1.0"
 dependencies = [
  "forge-core",
+ "hdrhistogram",
  "insta",
  "jiff",
  "serde",
