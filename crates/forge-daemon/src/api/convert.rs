@@ -8,11 +8,12 @@ use forge_core::store::{
 };
 use forge_fcgi::{PoolState, PoolStatus, WorkerPhase};
 use forge_ipc::api::{
-    ApiError, CaStatusDto, CertificateDto, FailureReasonDto, InstanceDto, PoolDto, PortDto,
-    PortHolderDto, PortOwnerKind, PortProtocol, PortState, RegistryDto, RegistryKind, ServiceState,
-    SiteDto, SiteKind, SitePhpDto, SiteXdebug, ToolVersionDto, ToolVersionSource, ToolVersionState,
-    UpdatePolicy, XdebugMode,
+    ApiError, CaStatusDto, CatalogKind, CertificateDto, FailureReasonDto, InstanceDto, PoolDto,
+    PortDto, PortHolderDto, PortOwnerKind, PortProtocol, PortState, RegistryDto, RegistryKind,
+    ServiceState, SiteDto, SiteKind, SitePhpDto, SiteXdebug, ToolVersionDto, ToolVersionSource,
+    ToolVersionState, UpdatePolicy, XdebugMode,
 };
+use forge_manifest::schema::Kind;
 use forge_registry::RegistryInfo;
 use forge_supervisor::{FailureReason, InstanceState, InstanceStatus};
 use forge_tls::{LeafInfo, PermittedSubtree, TlsStatus};
@@ -34,6 +35,16 @@ pub fn version_source(source: VersionSource) -> ToolVersionSource {
         VersionSource::Registry => ToolVersionSource::Registry,
         VersionSource::Manual => ToolVersionSource::Manual,
         VersionSource::Import => ToolVersionSource::Import,
+    }
+}
+
+/// `kind` of a catalog manifest (only tools, extensions and stacks are catalog entries;
+/// the other kinds never reach the catalog and read as tools).
+pub fn catalog_kind(kind: Kind) -> CatalogKind {
+    match kind {
+        Kind::Extension => CatalogKind::Extension,
+        Kind::Stack => CatalogKind::Stack,
+        Kind::Tool | Kind::Project | Kind::Registry => CatalogKind::Tool,
     }
 }
 
@@ -218,6 +229,9 @@ pub fn instance(
         rss_bytes: metrics.map(|m| m.rss_bytes),
         restarts,
         last_error,
+        data_dir: entry.row.data_dir.as_ref().map(|d| d.replace('\\', "/")),
+        // The periodic data-dir scan is M2-E2-T10.
+        size_bytes: None,
     }
 }
 
@@ -328,6 +342,9 @@ pub fn certificate(leaf: &LeafInfo, site_id: Option<forge_core::ids::SiteId>) ->
         not_before: leaf.not_before,
         not_after: leaf.not_after,
         thumbprint_sha256: leaf.thumbprint_sha256.clone(),
+        // Checked by `tls.list` (M2-E2-T6); `tls.issue`/`tls.renew` do not check.
+        ca_thumbprint_sha256: None,
+        trusted: None,
     }
 }
 

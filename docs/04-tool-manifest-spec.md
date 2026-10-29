@@ -299,6 +299,8 @@ logs:
 | `apply` | todos | `reload` \| `restart` (padrão) \| `none` |
 | `also_set` | todos | outras chaves gravadas com o mesmo valor (`{{ value }}`) |
 
+Na API ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)), `services.settings` devolve cada quick setting com `kind`, opções, limites, `apply`, `also_set` e o valor atual/padrão tipado pelo `type` (toggle → booleano; number/slider/port → número; multi → lista; select/text/path → texto); `services.set` recebe o **texto** de cada um (`true`/`false`, números decimais, itens de `multi` separados por `,`) e as portas como `ports.<nome>=<porta>` (M2-E2-T7).
+
 ### 1.4 Contexto de template nos manifestos
 Strings dos manifestos só **substituem variáveis**: `{{ caminho.da.variavel }}`, com filtros opcionais (`{{ paths.etc | posix_path }}`). Literais, operadores e blocos `{% %}` são erro (regra 5). Variáveis permitidas:
 

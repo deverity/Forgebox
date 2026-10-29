@@ -45,6 +45,7 @@ const TOOLS: readonly MethodName[] = [
   "tools.info",
   "tools.search",
   "tools.which",
+  "tools.history",
   "php.list",
   "php.ext_list",
 ];
@@ -60,11 +61,12 @@ const JOBS: readonly MethodName[] = ["jobs.list", "jobs.get"];
 const CONFIG: readonly MethodName[] = [
   "services.config",
   "services.config_files",
+  "services.settings",
   "php.ini",
   "fs.read",
 ];
 const DNS: readonly MethodName[] = ["net.dns_status", "net.dns_test"];
-const TLS: readonly MethodName[] = ["tls.ca_status", "sites.info", "sites.list"];
+const TLS: readonly MethodName[] = ["tls.ca_status", "tls.list", "sites.info", "sites.list"];
 
 /** The query groups the event rows use, shared with `JOB_EFFECTS` (effects.ts). */
 export const QUERY_GROUPS = {

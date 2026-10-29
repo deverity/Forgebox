@@ -29,8 +29,8 @@ macro_rules! api_methods {
             call "tools.search" tools_search(ToolSearchParams) -> CatalogSearchDto [Viewer] "forge search" => "forge search {text} {category=--category}";
             call "tools.list" tools_list(ToolListParams) -> ToolListDto [Viewer] "forge tool list" => "forge tool list {installed?--installed} {updates?--updates}";
             call "tools.info" tools_info(ToolParams) -> ToolInfoDto [Viewer] "forge tool info" => "forge tool info {tool}";
-            job "tools.install" tools_install(ToolInstallParams) -> ToolInstallResultDto [Admin, mutating] "forge tool install" => "forge tool install {specs...} {variant=--variant}";
-            job "tools.remove" tools_remove(ToolRemoveParams) -> Ack [Admin, mutating] "forge tool remove" => "forge tool remove {spec} {keep_config?--keep-config}";
+            job "tools.install" tools_install(ToolInstallParams) -> ToolInstallResultDto [Admin, mutating] "forge tool install" => "forge tool install {specs...} {variant=--variant} {target=--for}";
+            job "tools.remove" tools_remove(ToolRemoveParams) -> Ack [Admin, mutating] "forge tool remove" => "forge tool remove {spec} {keep_config?--keep-config} {target=--for}";
             job "tools.update" tools_update(ToolUpdateParams) -> ToolUpdatesDto [Admin, mutating] "forge tool update" => "[tool] forge tool update {tool} | forge tool update --all";
             job "tools.check_updates" tools_check_updates(ToolUpdateParams) -> ToolUpdatesDto [Viewer] "forge tool update --check" => "[tool] forge tool update {tool} --check | forge tool update --check";
             job "tools.rollback" tools_rollback(ToolRollbackParams) -> ToolVersionDto [Admin, mutating] "forge tool rollback" => "forge tool rollback {spec}";
@@ -39,17 +39,27 @@ macro_rules! api_methods {
             job "tools.discover" tools_discover(NoParams) -> ToolDiscoverDto [Admin, mutating] "forge tool discover" => "forge tool discover";
             call "tools.use" tools_use(ToolUseParams) -> ToolVersionDto [Operator, mutating] "forge use" => "forge use {tool} {version}";
             call "tools.which" tools_which(ToolWhichParams) -> WhichDto [Viewer] "forge which" => "forge which {tool}";
+            // catalog screens (ADR-0041): provider releases and the install plan are jobs (network); the
+            // plan of a stack has no command (`[!stack]`: no alternative applies)
+            job "tools.releases" tools_releases(ToolReleasesParams) -> ToolReleasesDto [Viewer] "forge tool info --versions" => "forge tool info {tool} --versions {channel=--channel}";
+            job "tools.plan" tools_plan(ToolPlanParams) -> ToolPlanDto [Viewer] "forge tool install --dry-run" => "[!stack] forge tool install {specs...} {variant=--variant} {target=--for} --dry-run";
+            call "tools.history" tools_history(ToolHistoryParams) -> UpdateHistoryDto [Viewer] "forge tool info --history" => "forge tool info {tool} --history {series=--series} {limit=--limit}";
+            call "tools.icon" tools_icon(ToolParams) -> IconDto [Viewer] "";
             // services / instances
             job "services.start" services_start(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge start" => "forge start {targets...}";
             job "services.stop" services_stop(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge stop" => "forge stop {targets...}";
             job "services.restart" services_restart(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge restart" => "forge restart {targets...}";
             job "services.reload" services_reload(ServiceTargetParams) -> ServiceStatusDto [Operator, mutating] "forge reload" => "forge reload {target}";
             call "services.status" services_status(NoParams) -> ServiceStatusDto [Viewer] "forge status" => "forge status";
-            job "services.create" services_create(ServiceCreateParams) -> InstanceDto [Admin, mutating] "forge service create" => "forge service create {tool} {name} {port=--port} {autostart?--autostart}";
+            job "services.create" services_create(ServiceCreateParams) -> InstanceDto [Admin, mutating] "forge service create" => "forge service create {tool} {name} {port=--port} {autostart?--autostart} {data_dir=--data-dir}";
             job "services.remove" services_remove(ServiceRemoveParams) -> Ack [Admin, mutating] "forge service remove" => "forge service remove {instance} {delete_data?--delete-data}";
             call "services.config" services_config(ServiceTargetParams) -> ConfigFilesDto [Operator, local_only] "forge service config" => "forge service config {target}";
             call "services.config_files" services_config_files(ServiceTargetParams) -> ConfigFilesDto [Viewer] "";
-            job "services.set" services_set(ServiceSetParams) -> ServiceStatusDto [Admin, mutating] "forge service set" => "forge service set {target} {settings...}";
+            job "services.set" services_set(ServiceSetParams) -> ServiceStatusDto [Admin, mutating] "forge service set" => "[settings] forge service set {target} {settings...}";
+            // `forge service set <target>` without pairs reads the settings (ADR-0041); `launch` (args/env) has no
+            // command: arguments start with `-` and a cleared list would render as "no change"
+            call "services.settings" services_settings(ServiceTargetParams) -> ServiceSettingsDto [Viewer] "forge service set" => "forge service set {target}";
+            job "services.update" services_update(ServiceUpdateParams) -> InstanceDto [Admin, mutating] "forge service update" => "[!launch] forge service update {instance} {autostart?--autostart:--no-autostart} {restart_policy.on=--restart} {restart_policy.max=--restart-max} {restart_policy.window_secs=--restart-window} {version=--version}";
             call "services.ports" services_ports(NoParams) -> PortMapDto [Viewer] "forge service ports" => "forge service ports";
             call "services.kill_port_holder" services_kill_port_holder(KillPortHolderParams) -> Ack [Admin, mutating, local_only] "forge service kill-port" => "forge service kill-port {port} {pid=--pid}";
             // logs
@@ -73,6 +83,7 @@ macro_rules! api_methods {
             job "sites.php" sites_php(SitePhpParams) -> SiteDto [Operator, mutating] "forge site php" => "forge site php {site} {php}";
             job "sites.secure" sites_secure(SiteSecureParams) -> SiteDto [Operator, mutating] "forge site secure; forge site unsecure" => "forge site {secure?secure:unsecure} {site}";
             job "sites.server" sites_server(SiteServerParams) -> SiteDto [Operator, mutating] "forge site server" => "forge site server {site} {server}";
+            job "sites.driver" sites_driver(SiteDriverParams) -> SiteDto [Operator, mutating] "forge site driver" => "[!driver] forge site driver {site} auto | forge site driver {site} {driver}";
             job "sites.alias" sites_alias(SiteAliasParams) -> SiteDto [Operator, mutating] "forge site alias" => "forge site alias {site} {action} {alias}";
             call "sites.open" sites_open(SiteOpenParams) -> Ack [Operator, local_only] "forge site open" => "[with=editor] forge site open {site} --editor | [with=terminal] forge site open {site} --terminal | [with=explorer] forge site open {site} --explorer | forge site open {site}";
             call "sites.info" sites_info(SiteParams) -> SiteInfoDto [Viewer] "forge site info" => "forge site info {site}";
@@ -114,6 +125,7 @@ macro_rules! api_methods {
             job "tls.issue" tls_issue(TlsHostParams) -> CertificateDto [Operator, mutating] "forge tls issue" => "forge tls issue {host}";
             job "tls.renew" tls_renew(TlsRenewParams) -> CertificateListDto [Operator, mutating] "forge tls renew" => "forge tls renew {host} {all?--all}";
             call "tls.export" tls_export(TlsExportParams) -> CertExportDto [Admin] "forge tls export" => "[format=pfx] forge tls export {host} --pfx | forge tls export {host}";
+            call "tls.list" tls_list(NoParams) -> CertificateListDto [Viewer] "forge tls list" => "forge tls list";
             // mail
             call "mail.status" mail_status(NoParams) -> MailStatusDto [Viewer] "forge mail status" => "forge mail status";
             call "mail.open" mail_open(NoParams) -> Ack [Viewer, local_only] "forge mail open" => "forge mail open";

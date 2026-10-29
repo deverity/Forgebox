@@ -311,11 +311,17 @@ export type CaseSensitivityDto = {
 	reason: string | null,
 };
 
-/**  A catalog entry (`forge search`). */
+/**
+ *  A catalog entry (`forge search`).
+ * 
+ *  The fields after `installed` are API 1.1 (ADR-0041, filled by M2-E2-T4); a 1.0 daemon
+ *  sends none of them and they read as their defaults.
+ */
 export type CatalogEntryDto = {
 	id: ToolId,
 	name: string,
 	category: string | null,
+	/**  The one-line `metadata.summary` (API 1.0 name; the same text as `summary`). */
 	description: string | null,
 	tags: string[],
 	/**  Registry the manifest comes from. */
@@ -323,7 +329,48 @@ export type CatalogEntryDto = {
 	/**  Versions offered for this platform, newest first. */
 	versions: string[],
 	installed: boolean,
+	kind?: CatalogKind,
+	/**  `metadata.summary`: the line under the name on a card. */
+	summary?: string | null,
+	/**  `ui.color` (`#777BB4`). */
+	color?: string | null,
+	/**
+	 *  SHA-256 (hex) of the sanitized SVG served by `tools.icon`; `None` without an icon.
+	 *  Clients cache icons by it.
+	 */
+	icon_sha256?: string | null,
+	/**  `spec.platforms` (`windows-x64`...). */
+	platforms?: string[],
+	/**
+	 *  Runs natively on the daemon's platform (the "nativo Windows" badge); `false` for a
+	 *  tool that would need WSL (v2). `true` when a 1.0 daemon does not say.
+	 */
+	native?: boolean,
+	/**
+	 *  The manifest comes from the official, signed registry (`false` for third-party
+	 *  registries, and when a 1.0 daemon does not say).
+	 */
+	official?: boolean,
+	/**  Newest stable version known to the registry. */
+	latest?: string | null,
+	/**  Newer version for an installed series, when one is known. */
+	update_available?: string | null,
+	/**
+	 *  `install.size_estimate_mb` in bytes (an estimate: real sizes come from
+	 *  `tools.releases`/`tools.plan`). Stacks: the sum of their tools.
+	 */
+	size_estimate_bytes?: number | null,
 };
+
+/**
+ *  What a catalog entry is: the `kind` of its manifest (docs/04: `Tool`, `Extension`,
+ *  `Stack`). API 1.1 (ADR-0041); entries of 1.0 daemons are tools.
+ */
+export type CatalogKind = "tool" | 
+/**  Installed inside a version of another tool (`extends`, docs/04 §2). */
+"extension" | 
+/**  Preset of tools, instances and a site template (docs/04 §3). */
+"stack";
 
 /**  Result of `tools.search`. */
 export type CatalogSearchDto = {
@@ -349,9 +396,23 @@ export type CertificateDto = {
 	not_before: string,
 	not_after: string,
 	thumbprint_sha256: string,
+	/**
+	 *  SHA-256 thumbprint of the CA that issued it: a leaf of a CA rotated away differs
+	 *  from `CaStatusDto.thumbprint_sha256`. API 1.1 (ADR-0041); `None` when not checked.
+	 */
+	ca_thumbprint_sha256?: string | null,
+	/**
+	 *  Browsers on this machine accept it: issued by the current local CA and that CA is
+	 *  trusted (current user or machine store). `None` when not checked (`tls.issue`,
+	 *  `tls.renew`, API 1.0). API 1.1 (ADR-0041), filled by `tls.list`.
+	 */
+	trusted?: boolean | null,
 };
 
-/**  Result of the `tls.renew` job. */
+/**
+ *  Result of the `tls.renew` job and of `tls.list` (every leaf certificate of `certs/`,
+ *  expired ones included, soonest `not_after` first; API 1.1, ADR-0041).
+ */
 export type CertificateListDto = {
 	certificates: CertificateDto[],
 };
@@ -1080,6 +1141,21 @@ export type HelperOpPayload = {
 	reason?: string | null,
 };
 
+/**
+ *  Result of `tools.icon` (params: `ToolParams` with any catalog id): the icon of a
+ *  catalog entry from the daemon's verified registry cache, sanitized (at most 64 KiB; no
+ *  scripts, `foreignObject`, event attributes or references other than `#id` and `data:`).
+ *  Clients show it only as an `<img>` data URI, never as inline SVG. `not_found` when the
+ *  entry has no icon.
+ */
+export type IconDto = {
+	tool: ToolId,
+	/**  The SVG document (UTF-8 text). */
+	svg: string,
+	/**  SHA-256 (hex) of `svg`: the `CatalogEntryDto.icon_sha256` of the entry. */
+	sha256: string,
+};
+
 /**  One imported item. */
 export type ImportItemDto = {
 	/**
@@ -1118,6 +1194,27 @@ export type ImportReportDto = {
 	items: ImportItemDto[],
 };
 
+/**
+ *  Advanced settings of an instance (the "Avançado" tab, docs/07 §5.3): what
+ *  `services.update` changes.
+ */
+export type InstanceAdvancedDto = {
+	autostart: boolean,
+	/**  Extra arguments, after the manifest's. */
+	args?: string[],
+	/**  Extra environment variables. */
+	env?: { [key in string]: string },
+	/**  Policy in effect (the instance's, else the manifest's). */
+	restart_policy: RestartPolicyDto,
+	/**  The manifest's policy (the "padrão"). */
+	restart_policy_default: RestartPolicyDto,
+	/**
+	 *  Installed versions of the instance's series it can move to with
+	 *  `services.update.version`, newest first.
+	 */
+	versions?: string[],
+};
+
 /**  A service instance (`mysql 8.4 "default"`). */
 export type InstanceDto = {
 	id: InstanceId,
@@ -1135,6 +1232,17 @@ export type InstanceDto = {
 	restarts: number,
 	/**  Diagnosis of `failed`/`crashed` (`port_in_use`, `config_invalid`...). */
 	last_error: ApiError | null,
+	/**
+	 *  Data folder of the instance (informative path, `/` separators), when the manifest
+	 *  declares `service.daemon.data` or the instance references an external one. API 1.1
+	 *  (ADR-0041).
+	 */
+	data_dir?: string | null,
+	/**
+	 *  Size of `data_dir` on disk, from a periodic scan off the actor (M2-E2-T10); `None`
+	 *  until the first scan. API 1.1 (ADR-0041).
+	 */
+	size_bytes?: number | null,
 };
 
 /**  A service instance of a tool version (`mysql 8.4 "default"`). */
@@ -1305,6 +1413,17 @@ export type LanAccessDto = {
 /**  Params of `net.lan_expose`, `net.lan_unexpose`, `net.lan_qr`. */
 export type LanSiteParams = {
 	site: SiteRef,
+};
+
+/**
+ *  `services.update.launch`: how the process is started. A present field replaces the
+ *  current value (`[]`/`{}` clear it); an absent one keeps it.
+ */
+export type LaunchPatchDto = {
+	/**  Extra arguments, after the manifest's `args`. */
+	args?: string[] | null,
+	/**  Extra environment variables (over the manifest's `env`). */
+	env?: { [key in string]: string } | null,
 };
 
 /**  Params of `fs_parity.lint_case`. */
@@ -1919,6 +2038,43 @@ export type ProxyAddParams = {
 	secure?: boolean | null,
 };
 
+/**  One quick setting of a service or pool with its current value. */
+export type QuickSettingDto = {
+	/**  Key for `services.set` (`memory_limit`). */
+	key: string,
+	/**  `label` of the manifest (`Memory limit`); clients fall back to `key`. */
+	label?: string | null,
+	kind: QuickSettingKind,
+	/**  Choices of `select`/`multi`, as text (`[128M, 256M, -1]`). */
+	options?: string[],
+	/**  Bounds of `number`/`slider`. */
+	min?: number | null,
+	max?: number | null,
+	step?: number | null,
+	/**  Current value (the stored one, else `default`); `None` when neither exists. */
+	value?: SettingValueDto | null,
+	default?: SettingValueDto | null,
+	/**  `value` is the default (nothing stored for this key). */
+	is_default?: boolean,
+	apply: SettingApply,
+	/**  `config.files[].id` the setting writes (the `role` of a `files` entry). */
+	file?: string | null,
+	/**  Other keys written with the same value (`post_max_size`). */
+	also_set?: string[],
+	/**  `port`: reserved in the port allocator (Xdebug 9003). */
+	reserve?: boolean,
+};
+
+/**
+ *  Control of a quick setting: `config.quick_settings[].type` (docs/04 §1.3), a closed
+ *  grammar of the manifest schema.
+ */
+export type QuickSettingKind = "toggle" | "select" | "number" | "text" | "path" | "port" | 
+/**  `min`/`max` (and `step`) always set. */
+"slider" | 
+/**  Checkboxes over `options`. */
+"multi";
+
 /**  Params of `registry.add`. */
 export type RegistryAddParams = {
 	url: string,
@@ -1949,6 +2105,18 @@ export type RegistryListDto = {
 /**  Params of `registry.remove`. */
 export type RegistryRemoveParams = {
 	name: string,
+};
+
+/**  One build of a release: a combination of variant values. */
+export type ReleaseVariantDto = {
+	/**  `{ts: "nts", compiler: "vs17", arch: "x64"}`. */
+	variant: { [key in string]: string },
+	/**  Folder the build installs to (`8.3.37-nts-vs17-x64`, docs/08 §5). */
+	canonical_name: string,
+	/**  Download size reported by the provider. */
+	size_bytes?: number | null,
+	/**  This exact build is in `bin/`. */
+	installed?: boolean,
 };
 
 /**  A paired client. */
@@ -1988,6 +2156,28 @@ export type RemoteTlsMode =
 /**  Idempotency key present in every API operation (ADR-0009, rule 4): a ULID string. */
 export type RequestId = string;
 
+/**  When an instance is restarted after it exits (`restart_policy`, docs/04 §1.2). */
+export type RestartOn = "never" | 
+/**  After an unexpected exit, at most `max` times in `window_secs`. */
+"failure" | 
+/**  After any exit, without a limit. */
+"always";
+
+/**  A restart policy. */
+export type RestartPolicyDto = {
+	on: RestartOn,
+	/**  Restarts allowed inside the window (`failure`). */
+	max: number,
+	window_secs: number,
+};
+
+/**  `services.update.restart_policy`: absent fields keep their current value. */
+export type RestartPolicyPatchDto = {
+	on?: RestartOn | null,
+	max?: number | null,
+	window_secs?: number | null,
+};
+
 /**
  *  Authorization profile of a connection (ADR-0009, rule 7; docs/13 §3.3). Ordered:
  *  `viewer < operator < admin`. Local connections are always `admin`.
@@ -2026,6 +2216,13 @@ export type ServiceCreateParams = {
 	/**  Main port; allocated from the tool's range when absent. */
 	port?: number | null,
 	autostart?: boolean,
+	/**
+	 *  Data folder on the daemon's machine (absolute; inside the root or a folder the user
+	 *  chose, never inside `bin/`); default: the manifest's `service.daemon.data.dir`. CLI
+	 *  `--data-dir`. API 1.1 (ADR-0041); answers `not_implemented` (M2-E2-T10) until the
+	 *  backend lands.
+	 */
+	data_dir?: string | null,
 };
 
 /**
@@ -2109,6 +2306,25 @@ export type ServicePayload = {
 	restart_in_ms?: number | null,
 	/**  `service.failed`: structured diagnosis. */
 	reason?: FailureReasonDto | null,
+	/**
+	 *  Site whose process the instance runs (app instances of `sites.run`/`forge up`,
+	 *  docs/06 §6), so `EventFilter.site_id` matches its `service.*` events. API 1.1
+	 *  (ADR-0041), published from M2-E2-T6.
+	 */
+	site_id?: SiteId | null,
+};
+
+/**  A named port of an instance, changed with `services.set {"ports.<name>": "<port>"}`. */
+export type ServicePortSettingDto = {
+	/**  Name in the manifest (`main`, `smtp`, `ui`). */
+	name: string,
+	/**  Port reserved now; `None` before the first reservation. */
+	port?: number | null,
+	/**  The manifest's default. */
+	default?: number | null,
+	protocol: PortProtocol,
+	/**  Range it is allocated from (`databases`). */
+	range?: string | null,
 };
 
 /**  Params of `services.remove`. */
@@ -2123,6 +2339,27 @@ export type ServiceRemoveParams = {
 export type ServiceSetParams = {
 	target: ServiceTarget,
 	settings: { [key in string]: string },
+};
+
+/**
+ *  Result of `services.settings` (`forge service set <target>` without pairs): the quick
+ *  settings of a target with their current values, its config files and named ports.
+ */
+export type ServiceSettingsDto = {
+	/**  The target as resolved (`mysql/default`, `php@8.3`). */
+	target: ServiceTarget,
+	tool: ToolId,
+	/**  In manifest order. */
+	settings: QuickSettingDto[],
+	/**  Config files (`role` = `config.files[].id`), as `services.config_files`. */
+	files?: FileRefDto[],
+	/**  Named ports (instances; empty for pools, whose ports come from a range). */
+	ports?: ServicePortSettingDto[],
+	/**
+	 *  Instances only, and only on `admin` connections (it holds the extra environment,
+	 *  which may carry secrets; changing it needs `admin` anyway).
+	 */
+	advanced?: InstanceAdvancedDto | null,
 };
 
 /**  State of an instance or pool (docs/03 §1.4). */
@@ -2153,8 +2390,42 @@ export type ServiceTargetsParams = {
 	targets?: ServiceTarget[],
 };
 
+/**
+ *  Params of `services.update` (job): the advanced settings of an instance. Absent fields
+ *  keep their value. The instance is re-rendered and, when running, restarted. Ports
+ *  change with `services.set {"ports.<name>": ...}`.
+ */
+export type ServiceUpdateParams = {
+	instance: InstanceRef,
+	autostart?: boolean | null,
+	launch?: LaunchPatchDto | null,
+	restart_policy?: RestartPolicyPatchDto | null,
+	/**
+	 *  Another installed version of the **same series** (`8.4.13` → `8.4.14`): data dirs
+	 *  are not migrated, so a series change is refused (`invalid_input`).
+	 */
+	version?: string | null,
+};
+
 /**  An authenticated API connection (returned by `system.hello`). */
 export type SessionId = string;
+
+/**  What applying a setting takes (`apply`, docs/04 §1.3). */
+export type SettingApply = 
+/**  Graceful reload (recycle of the PHP pool, `nginx -s reload`). */
+"reload" | 
+/**  Restart of the service. */
+"restart" | 
+/**  Nothing (read on the next start or per request). */
+"none";
+
+/**
+ *  Value of a quick setting, typed by its kind: `toggle` → boolean; `number`, `slider`,
+ *  `port` → number; `multi` → list of option texts; `select`, `text`, `path` → text.
+ *  `services.set` takes the text form of each (`true`/`false`, decimal numbers, `multi`
+ *  items joined by `,`).
+ */
+export type SettingValueDto = boolean | number | string | string[];
 
 /**  Result of the `sites.share` job. */
 export type ShareDto = {
@@ -2251,6 +2522,17 @@ export type SiteAliasParams = {
 export type SiteCaseParams = {
 	site: SiteRef,
 	enabled: boolean,
+};
+
+/**
+ *  Params of `sites.driver` (job): overrides the framework driver of a site, or detects it
+ *  again (`driver: None`, CLI `auto`) and stores the result; then re-renders. API 1.1
+ *  (ADR-0041).
+ */
+export type SiteDriverParams = {
+	site: SiteRef,
+	/**  `laravel`, `wordpress`, `generic-php`...; `None` = detect from the project files. */
+	driver?: string | null,
 };
 
 /**  A site (vhost or proxy), docs/06 §1. */
@@ -2395,6 +2677,12 @@ export type SiteProcessDto = {
 	pid: number | null,
 	port: number | null,
 	autostart: boolean,
+	/**
+	 *  Instance that runs the process: the `instance_id` of its `service.*` events (which
+	 *  also carry `site_id`), so a client follows the state live. `None` before the first
+	 *  start. API 1.1 (ADR-0041).
+	 */
+	instance_id?: InstanceId | null,
 };
 
 /**  Result of `sites.ps`. */
@@ -2479,6 +2767,24 @@ export type SiteUsageDto = {
 
 /**  Per-site Xdebug setting (docs/06 §1). */
 export type SiteXdebug = "inherit" | "off" | "trigger" | "always";
+
+/**  What a stack installs (`tools.info` of a stack). API 1.1 (ADR-0041). */
+export type StackDto = {
+	tools: StackToolDto[],
+};
+
+/**  A tool of a stack (`spec.tools[]`, docs/04 §3). */
+export type StackToolDto = {
+	id: ToolId,
+	/**  Series (`8.4`); `None` = latest stable. */
+	series?: string | null,
+	/**  Exact version, when the stack pins one. */
+	version?: string | null,
+	/**  Instance created for a service (`default`). */
+	instance?: string | null,
+	/**  Extensions installed into this tool (`[xdebug]`). */
+	extensions?: ToolId[],
+};
 
 /**  Result of `stats.get`. */
 export type StatsDto = {
@@ -2769,6 +3075,15 @@ export type ToolDto = {
 	has_service: boolean,
 };
 
+/**  Params of `tools.history`. */
+export type ToolHistoryParams = {
+	tool: ToolId,
+	/**  Only this series (`8.3`). */
+	series?: string | null,
+	/**  Newest first; default 50, at most 500. */
+	limit?: number | null,
+};
+
 /**
  *  Slug of a tool manifest: `[a-z0-9-]`, starts and ends with `[a-z0-9]`, at most 64 chars.
  * 
@@ -2776,11 +3091,32 @@ export type ToolDto = {
  */
 export type ToolId = string;
 
-/**  Result of `tools.info`. */
+/**
+ *  Result of `tools.info` (a tool, an extension or a stack of the catalog).
+ * 
+ *  The fields after `used_by` are API 1.1 (ADR-0041, filled by M2-E2-T4).
+ */
 export type ToolInfoDto = {
 	tool: ToolDto,
 	available: AvailableVersionDto[],
 	used_by: SiteUsageDto[],
+	kind?: CatalogKind,
+	/**  `metadata.description`: Markdown, untrusted (clients render it without raw HTML). */
+	description_md?: string | null,
+	homepage?: string | null,
+	docs?: string | null,
+	/**  Upstream changelog / release notes. */
+	changelog_url?: string | null,
+	/**  SPDX id (`PHP-3.01`). */
+	license?: string | null,
+	/**  Build dimensions, in folder-name order. */
+	variants?: VariantDefDto[],
+	/**  `spec.suggests`: offered after installing. */
+	suggests?: ToolId[],
+	/**  Extensions: the tool they install into (`php`). */
+	extends?: ToolId | null,
+	/**  Stacks: what they install. */
+	stack?: StackDto | null,
 };
 
 /**  Params of `tools.install`. */
@@ -2791,6 +3127,13 @@ export type ToolInstallParams = {
 	variant?: string | null,
 	/**  Accept dependent installs without asking (CLI `--yes`). */
 	yes?: boolean,
+	/**
+	 *  Extensions (`xdebug`): the installed version of the extended tool to install into
+	 *  (`php@8.3`, `php@8.3.36`); `None` = every compatible installed version. CLI
+	 *  `--for`. API 1.1 (ADR-0041); answers `not_implemented` (M2-E2-T8) until the
+	 *  extension install lands.
+	 */
+	target?: ToolSpec | null,
 };
 
 /**
@@ -2840,10 +3183,110 @@ export type ToolParams = {
 	tool: ToolId,
 };
 
+/**  Result of the `tools.plan` job. */
+export type ToolPlanDto = {
+	/**  In install order (dependencies first). */
+	items: ToolPlanItemDto[],
+	/**
+	 *  Sum of `size_bytes` of the items to download, estimates included (show "≈" when
+	 *  any of them has `size_estimated`).
+	 */
+	total_bytes: number,
+	/**  Items to download without any size (left out of `total_bytes`). */
+	unknown_size?: number,
+};
+
+/**  One version the install would download (or finds already installed). */
+export type ToolPlanItemDto = {
+	tool: ToolId,
+	kind?: CatalogKind,
+	/**  What the item resolves (`php@8.4`): what to pass to `tools.install`. */
+	spec: ToolSpec,
+	/**  Exact version chosen (`8.4.14`). */
+	version: string,
+	/**  Build chosen (`{ts: "nts", ...}`). */
+	variant?: { [key in string]: string },
+	/**  Folder it installs to, when known (`8.4.14-nts-vs17-x64`). */
+	canonical_name?: string | null,
+	/**  Download size: the provider's, else the manifest estimate (`size_estimated`). */
+	size_bytes?: number | null,
+	size_estimated?: boolean,
+	/**  Already in `bin/`: nothing to download. */
+	already_installed?: boolean,
+	reason: ToolPlanReason,
+	/**  Extensions: the version of the extended tool it goes into (`php@8.4`). */
+	target?: ToolSpec | null,
+};
+
+/**
+ *  Params of `tools.plan` (job): what `tools.install` would do, without doing it.
+ * 
+ *  `specs`, or `stack` (a stack id: its tools and their extensions). With a stack, `specs`
+ *  replace the stack's entry of the same tool (`php@8.3` instead of the stack's 8.4) and
+ *  add the others, so a client can plan again after the user adjusts versions.
+ */
+export type ToolPlanParams = {
+	specs?: ToolSpec[],
+	stack?: string | null,
+	/**  Build variant, as in `tools.install`. */
+	variant?: string | null,
+	/**  Extension target, as in `tools.install`. */
+	target?: ToolSpec | null,
+};
+
+/**  Why an item is in the plan: a closed set of the resolver. */
+export type ToolPlanReason = 
+/**  Asked for in `specs`. */
+"requested" | 
+/**  `spec.depends_on` of another item. */
+"dependency" | 
+/**  A tool of the planned stack. */
+"stack" | 
+/**  An extension of the stack or of `specs`, installed into `target`. */
+"extension";
+
 /**  Params of `tools.policy`. */
 export type ToolPolicyParams = {
 	tool: ToolId,
 	policy: UpdatePolicy,
+};
+
+/**  A version published by the providers. */
+export type ToolReleaseDto = {
+	/**  `8.3.37`. */
+	version: string,
+	/**  `8.3` (`versioning.series_key`). */
+	series: string,
+	/**  Channel of the version (`stable`, `preview`). */
+	channel?: string | null,
+	published_at?: string | null,
+	/**  Size of the preferred build (the first of `variants`). */
+	size_bytes?: number | null,
+	/**  Some build of this version is installed. */
+	installed?: boolean,
+	/**  Builds offered for this platform, preferred first (docs/04 §1.6). */
+	variants?: ReleaseVariantDto[],
+};
+
+/**  Result of the `tools.releases` job. */
+export type ToolReleasesDto = {
+	tool: ToolId,
+	/**  Newest first (by the tool's version scheme); clients group them by `series`. */
+	releases: ToolReleaseDto[],
+	/**  The providers could not be reached (offline, timeout): this is the cached list. */
+	stale?: boolean,
+	/**  When the list was fetched from the providers. */
+	fetched_at?: string | null,
+};
+
+/**  Params of `tools.releases` (job: asks the providers; nothing is downloaded). */
+export type ToolReleasesParams = {
+	tool: ToolId,
+	/**
+	 *  Only this channel (`stable`, `preview`: `versioning.channels`); `None` = every
+	 *  channel the manifest declares, each release naming its own.
+	 */
+	channel?: string | null,
 };
 
 /**  Params of `tools.remove`. */
@@ -2852,6 +3295,12 @@ export type ToolRemoveParams = {
 	keep_config?: boolean,
 	/**  Destructive: must be `true` (CLI `--yes`, MCP `confirm`). */
 	confirm?: boolean,
+	/**
+	 *  Extensions: remove only from this version of the extended tool (`php@8.4`); `None`
+	 *  = from every version that has it. CLI `--for`. API 1.1 (ADR-0041); answers
+	 *  `not_implemented` (M2-E2-T8) until the extension install lands.
+	 */
+	target?: ToolSpec | null,
 };
 
 /**  Params of `tools.rollback`. */
@@ -3004,11 +3453,56 @@ export type UnsubscribeParams = {
 	subscription_id: SubscriptionId,
 };
 
+/**  Result of `tools.history`. */
+export type UpdateHistoryDto = {
+	tool: ToolId,
+	/**  Newest first. */
+	entries: UpdateHistoryEntryDto[],
+};
+
+/**  One update or rollback of a tool (`update_history`, docs/05 §4). */
+export type UpdateHistoryEntryDto = {
+	id: UpdateId,
+	/**  Series of the replaced version (`8.3`). */
+	series?: string | null,
+	/**  Version before (`8.3.36`), as text: it outlives the removal of the version. */
+	from?: string | null,
+	to: string,
+	/**  `None` once the version was removed. */
+	from_version_id?: VersionId | null,
+	to_version_id?: VersionId | null,
+	/**  Policy in effect. */
+	policy?: UpdatePolicy | null,
+	trigger: UpdateTriggerDto,
+	status: UpdateStatusDto,
+	/**  Why it failed (English, like logs). */
+	error?: string | null,
+	job_id?: JobId | null,
+	/**  Rollback rows: the update undone. */
+	rollback_of?: UpdateId | null,
+	started_at: string,
+	finished_at?: string | null,
+};
+
 /**  A row of `update_history` (an update or the rollback of one, docs/05 §4). */
 export type UpdateId = string;
 
 /**  Update policy of a tool (docs/05 §4). */
 export type UpdatePolicy = "manual" | "notify" | "auto-patch" | "auto-minor" | "auto";
+
+/**  State of a history row (`update_history.status`). */
+export type UpdateStatusDto = "started" | "completed" | "failed" | 
+/**  A completed update that a later rollback undid. */
+"rolled_back";
+
+/**  Who started an update (`update_history.triggered_by`). */
+export type UpdateTriggerDto = 
+/**  The scheduler, under an `auto-*` policy. */
+"auto" | 
+/**  `forge tool update`, the GUI. */
+"user" | 
+/**  A rollback row. */
+"rollback";
 
 /**  Result of `shell.path_show|path_add|path_remove` (user `PATH`). */
 export type UserPathDto = {
@@ -3017,6 +3511,26 @@ export type UserPathDto = {
 	forgebox_entries: string[],
 	/**  Forgebox entries that should be there and are not. */
 	missing: string[],
+};
+
+/**
+ *  A build dimension of a tool (`versioning.variants[]`, docs/04 §1.6), for the variant
+ *  picker of the catalog. API 1.1 (ADR-0041).
+ */
+export type VariantDefDto = {
+	/**  `ts`, `compiler`, `arch`. */
+	key: string,
+	/**  Values in order of preference (`[nts, ts]`). */
+	values: string[],
+	/**  Preferred value (`nts`). */
+	default?: string | null,
+	/**
+	 *  Human labels per value (`{nts: "Non Thread Safe"}`), as the manifest writes them
+	 *  (not translated; clients may have their own).
+	 */
+	labels?: { [key in string]: string },
+	/**  The provider decides the value (`derive: from_provider`): shown, not chosen. */
+	derived?: boolean,
 };
 
 /**  An installed version of a tool (`tool_versions` row, `bin/<tool>/<version>`). */

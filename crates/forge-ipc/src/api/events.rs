@@ -367,6 +367,11 @@ pub struct ServicePayload {
     /// `service.failed`: structured diagnosis.
     #[serde(default)]
     pub reason: Option<FailureReasonDto>,
+    /// Site whose process the instance runs (app instances of `sites.run`/`forge up`,
+    /// docs/06 §6), so `EventFilter.site_id` matches its `service.*` events. API 1.1
+    /// (ADR-0041), published from M2-E2-T6.
+    #[serde(default)]
+    pub site_id: Option<SiteId>,
 }
 
 /// `service.metrics`: periodic CPU/memory sample of an instance (sum over the processes

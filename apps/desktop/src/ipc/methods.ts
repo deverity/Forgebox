@@ -28,8 +28,8 @@ export const METHODS = {
   "tools.search": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge search"], cli_template: "forge search {text} {category=--category}", notification: null, lagged_notification: null },
   "tools.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool list"], cli_template: "forge tool list {installed?--installed} {updates?--updates}", notification: null, lagged_notification: null },
   "tools.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool info"], cli_template: "forge tool info {tool}", notification: null, lagged_notification: null },
-  "tools.install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool install"], cli_template: "forge tool install {specs...} {variant=--variant}", notification: null, lagged_notification: null },
-  "tools.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool remove"], cli_template: "forge tool remove {spec} {keep_config?--keep-config}", notification: null, lagged_notification: null },
+  "tools.install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool install"], cli_template: "forge tool install {specs...} {variant=--variant} {target=--for}", notification: null, lagged_notification: null },
+  "tools.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool remove"], cli_template: "forge tool remove {spec} {keep_config?--keep-config} {target=--for}", notification: null, lagged_notification: null },
   "tools.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool update"], cli_template: "[tool] forge tool update {tool} | forge tool update --all", notification: null, lagged_notification: null },
   "tools.check_updates": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool update --check"], cli_template: "[tool] forge tool update {tool} --check | forge tool update --check", notification: null, lagged_notification: null },
   "tools.rollback": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool rollback"], cli_template: "forge tool rollback {spec}", notification: null, lagged_notification: null },
@@ -38,16 +38,22 @@ export const METHODS = {
   "tools.discover": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool discover"], cli_template: "forge tool discover", notification: null, lagged_notification: null },
   "tools.use": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge use"], cli_template: "forge use {tool} {version}", notification: null, lagged_notification: null },
   "tools.which": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge which"], cli_template: "forge which {tool}", notification: null, lagged_notification: null },
+  "tools.releases": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool info --versions"], cli_template: "forge tool info {tool} --versions {channel=--channel}", notification: null, lagged_notification: null },
+  "tools.plan": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool install --dry-run"], cli_template: "[!stack] forge tool install {specs...} {variant=--variant} {target=--for} --dry-run", notification: null, lagged_notification: null },
+  "tools.history": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool info --history"], cli_template: "forge tool info {tool} --history {series=--series} {limit=--limit}", notification: null, lagged_notification: null },
+  "tools.icon": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
   "services.start": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge start"], cli_template: "forge start {targets...}", notification: null, lagged_notification: null },
   "services.stop": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge stop"], cli_template: "forge stop {targets...}", notification: null, lagged_notification: null },
   "services.restart": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge restart"], cli_template: "forge restart {targets...}", notification: null, lagged_notification: null },
   "services.reload": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge reload"], cli_template: "forge reload {target}", notification: null, lagged_notification: null },
   "services.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge status"], cli_template: "forge status", notification: null, lagged_notification: null },
-  "services.create": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service create"], cli_template: "forge service create {tool} {name} {port=--port} {autostart?--autostart}", notification: null, lagged_notification: null },
+  "services.create": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service create"], cli_template: "forge service create {tool} {name} {port=--port} {autostart?--autostart} {data_dir=--data-dir}", notification: null, lagged_notification: null },
   "services.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service remove"], cli_template: "forge service remove {instance} {delete_data?--delete-data}", notification: null, lagged_notification: null },
   "services.config": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge service config"], cli_template: "forge service config {target}", notification: null, lagged_notification: null },
   "services.config_files": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
-  "services.set": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service set"], cli_template: "forge service set {target} {settings...}", notification: null, lagged_notification: null },
+  "services.set": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service set"], cli_template: "[settings] forge service set {target} {settings...}", notification: null, lagged_notification: null },
+  "services.settings": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge service set"], cli_template: "forge service set {target}", notification: null, lagged_notification: null },
+  "services.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service update"], cli_template: "[!launch] forge service update {instance} {autostart?--autostart:--no-autostart} {restart_policy.on=--restart} {restart_policy.max=--restart-max} {restart_policy.window_secs=--restart-window} {version=--version}", notification: null, lagged_notification: null },
   "services.ports": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge service ports"], cli_template: "forge service ports", notification: null, lagged_notification: null },
   "services.kill_port_holder": { kind: "call", min_role: "admin", local_only: true, long_running: false, mutating: true, cli: ["forge service kill-port"], cli_template: "forge service kill-port {port} {pid=--pid}", notification: null, lagged_notification: null },
   "logs.read": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs", "forge daemon logs"], cli_template: "forge logs {target} {since_secs=--since} {grep=--grep} {limit=-n} {before_seq=--before}", notification: null, lagged_notification: null },
@@ -68,6 +74,7 @@ export const METHODS = {
   "sites.php": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site php"], cli_template: "forge site php {site} {php}", notification: null, lagged_notification: null },
   "sites.secure": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site secure", "forge site unsecure"], cli_template: "forge site {secure?secure:unsecure} {site}", notification: null, lagged_notification: null },
   "sites.server": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site server"], cli_template: "forge site server {site} {server}", notification: null, lagged_notification: null },
+  "sites.driver": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site driver"], cli_template: "[!driver] forge site driver {site} auto | forge site driver {site} {driver}", notification: null, lagged_notification: null },
   "sites.alias": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site alias"], cli_template: "forge site alias {site} {action} {alias}", notification: null, lagged_notification: null },
   "sites.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge site open"], cli_template: "[with=editor] forge site open {site} --editor | [with=terminal] forge site open {site} --terminal | [with=explorer] forge site open {site} --explorer | forge site open {site}", notification: null, lagged_notification: null },
   "sites.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge site info"], cli_template: "forge site info {site}", notification: null, lagged_notification: null },
@@ -106,6 +113,7 @@ export const METHODS = {
   "tls.issue": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls issue"], cli_template: "forge tls issue {host}", notification: null, lagged_notification: null },
   "tls.renew": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls renew"], cli_template: "forge tls renew {host} {all?--all}", notification: null, lagged_notification: null },
   "tls.export": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: ["forge tls export"], cli_template: "[format=pfx] forge tls export {host} --pfx | forge tls export {host}", notification: null, lagged_notification: null },
+  "tls.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls list"], cli_template: "forge tls list", notification: null, lagged_notification: null },
   "mail.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail status"], cli_template: "forge mail status", notification: null, lagged_notification: null },
   "mail.open": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge mail open"], cli_template: "forge mail open", notification: null, lagged_notification: null },
   "mail.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail list"], cli_template: "forge mail list {unread?--unread} {query=--search} {limit=--limit} {offset=--offset}", notification: null, lagged_notification: null },
@@ -191,6 +199,10 @@ export interface ApiMethods {
   "tools.discover": { params: T.NoParams; result: T.JobDto; job_result: T.ToolDiscoverDto };
   "tools.use": { params: T.ToolUseParams; result: T.ToolVersionDto };
   "tools.which": { params: T.ToolWhichParams; result: T.WhichDto };
+  "tools.releases": { params: T.ToolReleasesParams; result: T.JobDto; job_result: T.ToolReleasesDto };
+  "tools.plan": { params: T.ToolPlanParams; result: T.JobDto; job_result: T.ToolPlanDto };
+  "tools.history": { params: T.ToolHistoryParams; result: T.UpdateHistoryDto };
+  "tools.icon": { params: T.ToolParams; result: T.IconDto };
   "services.start": { params: T.ServiceTargetsParams; result: T.JobDto; job_result: T.ServiceStatusDto };
   "services.stop": { params: T.ServiceTargetsParams; result: T.JobDto; job_result: T.ServiceStatusDto };
   "services.restart": { params: T.ServiceTargetsParams; result: T.JobDto; job_result: T.ServiceStatusDto };
@@ -201,6 +213,8 @@ export interface ApiMethods {
   "services.config": { params: T.ServiceTargetParams; result: T.ConfigFilesDto };
   "services.config_files": { params: T.ServiceTargetParams; result: T.ConfigFilesDto };
   "services.set": { params: T.ServiceSetParams; result: T.JobDto; job_result: T.ServiceStatusDto };
+  "services.settings": { params: T.ServiceTargetParams; result: T.ServiceSettingsDto };
+  "services.update": { params: T.ServiceUpdateParams; result: T.JobDto; job_result: T.InstanceDto };
   "services.ports": { params: T.NoParams; result: T.PortMapDto };
   "services.kill_port_holder": { params: T.KillPortHolderParams; result: T.Ack };
   "logs.read": { params: T.LogsReadParams; result: T.LogChunkDto };
@@ -221,6 +235,7 @@ export interface ApiMethods {
   "sites.php": { params: T.SitePhpParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.secure": { params: T.SiteSecureParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.server": { params: T.SiteServerParams; result: T.JobDto; job_result: T.SiteDto };
+  "sites.driver": { params: T.SiteDriverParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.alias": { params: T.SiteAliasParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.open": { params: T.SiteOpenParams; result: T.Ack };
   "sites.info": { params: T.SiteParams; result: T.SiteInfoDto };
@@ -259,6 +274,7 @@ export interface ApiMethods {
   "tls.issue": { params: T.TlsHostParams; result: T.JobDto; job_result: T.CertificateDto };
   "tls.renew": { params: T.TlsRenewParams; result: T.JobDto; job_result: T.CertificateListDto };
   "tls.export": { params: T.TlsExportParams; result: T.CertExportDto };
+  "tls.list": { params: T.NoParams; result: T.CertificateListDto };
   "mail.status": { params: T.NoParams; result: T.MailStatusDto };
   "mail.open": { params: T.NoParams; result: T.Ack };
   "mail.list": { params: T.MailListParams; result: T.MailListDto };

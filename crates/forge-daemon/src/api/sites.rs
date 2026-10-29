@@ -143,6 +143,8 @@ fn processes(site_id: SiteId, status: &forge_sites::apps::SiteAppsStatus) -> Vec
             pid: p.instance.pid,
             port: p.port,
             autostart: p.autostart == "true",
+            // Correlation with the instance's `service.*` events is M2-E2-T6 (ADR-0041).
+            instance_id: None,
         })
         .collect()
 }
