@@ -278,7 +278,10 @@ Forgebox/
 │       ├── src/
 │       │   ├── main.tsx / App.tsx / index.css   # casca placeholder; Tailwind com `source("./")` (não varre src-tauri/target)
 │       │   ├── App.test.tsx / test/setup.ts     # vitest + Testing Library
-│       │   ├── app/              # (M2-E1-T10) roteamento (tanstack-router), shell (sidebar, titlebar, command palette)
+│       │   ├── app/              # appearance.ts (M2-E1-T7: data-theme/data-vibrancy/data-effect/data-contrast em <html>,
+│       │   │                     #   boot por window.__FORGEBOX_SHELL__ + evento forge://appearance); shell/ (M2-E1-T7: Titlebar.tsx,
+│       │   │                     #   WindowControls.tsx, windowApi.ts = janela Tauri lazy + `ready` após duplo rAF);
+│       │   │                     #   (M2-E1-T10) roteamento (tanstack-router), sidebar, command palette
 │       │   ├── design/           # (M2-E1-T6, T11) tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
 │       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`;
@@ -322,7 +325,15 @@ Forgebox/
 │       │       │                 #   (política pura de auto-start), streams.rs (bomba: quadros ≤ 16 ms/≤ 256, janela de 4
 │       │       │                 #   confirmados, lagged/reset/end; registro de streams), errors.rs (ClientError → ApiError)
 │       │       ├── tray.rs       # (M2-E1-T15) ícone/menu de bandeja, estados, ações rápidas
-│       │       ├── window.rs     # (M2-E1-T7) vibrancy/mica, titlebar custom, lembrar posição
+│       │       ├── window.rs     # (M2-E1-T7, ADR-0035) janela escondida até `ready`, choose_effect (Mica/Acrylic/opaco)
+│       │       │                 #   aplicado por window-vibrancy, reavaliação em tema/foco/prefs, fechar → bandeja,
+│       │       │                 #   segunda instância foca (tauri-plugin-single-instance), comandos ready/appearance_get
+│       │       ├── window_state.rs # posição/tamanho/maximizada por monitor (window-state.json), mínimo min(960×600, área)
+│       │       ├── data_dir.rs   # dados da GUI: FORGE_GUI_DATA_DIR → <raiz>/state/gui (portátil) → %LOCALAPPDATA%\Forgebox\gui;
+│       │       │                 #   root_initialized (state/ só com gui/ não conta)
+│       │       ├── prefs.rs      # prefs.json (theme, vibrancy, win10_acrylic, close_to_tray + chaves de outras features),
+│       │       │                 #   comandos gui_prefs_get/gui_prefs_set
+│       │       ├── perf.rs       # criação do processo → `ready` (perf_startup, `--perf-startup` imprime JSON e sai)
 │       │       └── autostart.rs  # (M2-E1-T18)
 │       └── public/               # (quando houver assets estáticos)
 │

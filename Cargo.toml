@@ -118,6 +118,12 @@ embed-manifest = "1.5.1"
 # Default features: wry/WebView2, common-controls-v6 (manifest), compression of embedded assets.
 tauri = "2.12.5"
 tauri-build = "2.7.4"
+# Window chrome (ADR-0035): the material is applied by window-vibrancy (same version Tauri
+# itself links) and its Result decides the opaque fallback; Tauri's set_effects is not used.
+window-vibrancy = "0.8.1"
+# A second Forgebox.exe focuses the running one (ADR-0035). Plugins may link Win32 themselves;
+# src-tauri still has no direct windows/windows-sys dependency (cargo xtask arch-guard).
+tauri-plugin-single-instance = "2.4.5"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

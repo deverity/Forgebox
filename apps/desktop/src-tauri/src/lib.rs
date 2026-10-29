@@ -1,25 +1,52 @@
 //! Forgebox desktop shell: a thin Tauri host over the `forgeboxd` API (ADR-0002, ADR-0034).
 //!
 //! No domain logic lives here; this crate may depend on `forge-ipc` only (see
-//! `cargo xtask arch-guard`). The webview reaches daemons through the generic commands
-//! of [`bridge`]; every command handler is `async` (docs/03 §7.5).
+//! `cargo xtask arch-guard`) and has no Win32 of its own (ADR-0035). The webview reaches
+//! daemons through the generic commands of [`bridge`]; every command handler is `async`
+//! (docs/03 §7.5). The window itself (chrome, materials, placement, first frame, single
+//! instance) is [`window`]; GUI-only files live in the [`data_dir`].
 
 pub mod bridge;
 pub mod commands;
+pub mod data_dir;
 pub mod i18n;
+pub mod perf;
+pub mod prefs;
+pub mod window;
+pub mod window_state;
 
 use std::sync::Arc;
 
-use tauri::Manager;
 use tauri::webview::PageLoadEvent;
+use tauri::{Manager, RunEvent};
 
 use crate::bridge::commands::TauriConnectionSink;
 use crate::bridge::{Bridge, BridgeOptions};
+use crate::perf::StartupClock;
+use crate::window::{Boot, EFFECT_OVERRIDE_ENV, Effect, LaunchArgs, MAIN_LABEL, WindowShell};
 
-/// Starts the Tauri application and blocks until the last window closes.
+/// Starts the Tauri application and blocks until it exits.
 pub fn run() {
-    tauri::Builder::default()
-        .setup(|app| {
+    let clock = StartupClock::for_current_process();
+    let launch = LaunchArgs::from_env();
+    let forced = std::env::var(EFFECT_OVERRIDE_ENV)
+        .ok()
+        .and_then(|value| Effect::parse(&value));
+    // Data dir, preferences, placement and the appearance snapshot are blocking reads: they
+    // run on a helper thread while Tauri builds its runtime.
+    let appearance = forge_ipc::base::platform::system_appearance();
+    let boot_source = appearance.clone();
+    let boot = std::thread::Builder::new()
+        .name("forgebox-boot".to_owned())
+        .spawn(move || Boot::load(boot_source.as_ref()))
+        .expect("spawning the boot thread");
+
+    let app = tauri::Builder::default()
+        // First plugin, so a second launch exits before anything else starts.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            window::on_second_instance(app, &argv);
+        }))
+        .setup(move |app| {
             // The bridge's actor and the forge-ipc clients live on Tauri's tokio runtime.
             // Nothing connects here: a context opens on the first command naming it,
             // after the shell's first paint.
@@ -27,6 +54,14 @@ pub fn run() {
             let _guard = runtime.inner().enter();
             let sink = Arc::new(TauriConnectionSink(app.handle().clone()));
             app.manage(Bridge::new(sink, BridgeOptions::default()));
+
+            let boot = boot
+                .join()
+                .unwrap_or_else(|_| Boot::load(appearance.as_ref()));
+            let shell = Arc::new(WindowShell::new(launch, clock, boot, appearance, forced));
+            app.manage(shell.clone());
+            window::create_main_window(app.handle(), &shell)?;
+            window::spawn_ready_watchdog(app.handle());
             Ok(())
         })
         .on_page_load(|webview, payload| {
@@ -49,9 +84,26 @@ pub fn run() {
             bridge::commands::ipc_ack,
             bridge::commands::ipc_unsubscribe,
             bridge::commands::ipc_start,
+            window::ready,
+            window::appearance_get,
+            perf::perf_startup,
+            prefs::gui_prefs_get,
+            prefs::gui_prefs_set,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the Forgebox desktop application");
+        .build(tauri::generate_context!())
+        .expect("error while building the Forgebox desktop application");
+
+    app.run(|app, event| {
+        if let RunEvent::Exit = event {
+            // Closing already saved it; this covers exits without a close (tray "Sair").
+            if let (Some(shell), Some(window)) = (
+                app.try_state::<Arc<WindowShell>>(),
+                app.get_webview_window(MAIN_LABEL),
+            ) {
+                shell.save_placement(&window);
+            }
+        }
+    });
 }
 
 #[cfg(test)]

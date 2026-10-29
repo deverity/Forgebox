@@ -56,7 +56,8 @@ pub const CLIENT_NAME: &str = "forgebox-desktop";
 pub enum ConnectionStatus {
     /// Not connected, nothing in progress.
     Idle,
-    /// The root is not initialized (no `state/`): onboarding, no automatic start.
+    /// The root is not initialized (no `state/`, or only the GUI's `state/gui`): onboarding, no
+    /// automatic start.
     Uninitialized,
     /// The bridge is starting the daemon.
     Starting,
@@ -204,7 +205,8 @@ impl Connector for LocalConnector {
                     Some(root) => root,
                     None => ForgeRoot::discover(None).map_err(ApiError::from)?.0,
                 };
-                let initialized = root.state().is_dir();
+                // `state/gui` alone (the GUI's own folder in portable mode) does not count.
+                let initialized = crate::data_dir::root_initialized(&root);
                 Ok::<_, ApiError>((root, initialized))
             })
             .await
@@ -241,9 +243,9 @@ impl Endpoint for LocalEndpoint {
     }
 
     fn initialized(&self) -> BoxFuture<'static, bool> {
-        let state = self.root.state();
+        let root = self.root.clone();
         async move {
-            tokio::task::spawn_blocking(move || state.is_dir())
+            tokio::task::spawn_blocking(move || crate::data_dir::root_initialized(&root))
                 .await
                 .unwrap_or(false)
         }
