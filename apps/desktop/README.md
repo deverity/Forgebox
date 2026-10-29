@@ -60,8 +60,14 @@ pnpm -C apps/desktop build         # tsc + vite build -> dist/
 
 pnpm -C apps/desktop tauri dev                      # Vite on :1420 + window "Forgebox"
 pnpm -C apps/desktop tauri build --debug --no-bundle  # target/debug/Forgebox.exe (dist embedded)
-pnpm -C apps/desktop tauri icon src-tauri/app-icon.png # regenerate icons (delete icons/android and icons/ios)
+pnpm -C apps/desktop icons          # regenerate src-tauri/icons (app + tray) from docs/design/brand
+pnpm -C apps/desktop icons:check    # fail if a committed icon differs from the brand sources
 ```
+
+Icons: never edit `src-tauri/icons/**` or run `tauri icon` by hand. `scripts/gen-icons.mjs` renders
+the master SVG and the hand-pixeled grids of `docs/design/brand` (see its README), runs the pinned
+`tauri icon` for the platform set, composes `icon.ico` and the tray icons and writes the contact
+sheet. The Rust EXEs pick the new `icon.ico` up on the next `cargo build`.
 
 The cold debug build of `src-tauri` takes about 3 minutes (2-4x more while other worktrees compile).
 The binary lands in the workspace `target/`, not in `src-tauri/target`.
@@ -76,6 +82,9 @@ them (ESLint and Prettier skip them).
 - `eslint` 9.x: `eslint-plugin-jsx-a11y` supports up to 9. Revisit when it supports 10.
 - `tauri` 2.12.x / `tauri-build` 2.7 (Rust) and `@tauri-apps/cli`/`@tauri-apps/api` 2.12.4. Never
   Tauri 3 alpha.
+- `@resvg/resvg-js` 2.6.x (devDependency of `scripts/gen-icons.mjs`): prebuilt per-platform binary,
+  no install script. Its PNG encoder makes the icon files byte-stable, so a bump means running
+  `pnpm icons` and committing the result.
 
 ## Notes
 

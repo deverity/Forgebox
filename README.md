@@ -23,7 +23,7 @@ MIT (núcleo). Ferramentas de terceiros mantêm suas licenças.
 
 ## Desenvolvimento
 
-Pré-requisitos: Windows 10 (1809+) x64. O `rust-toolchain.toml` instala a toolchain stable com `rustfmt` e `clippy`. Para `cargo deny`, instale com `cargo install cargo-deny`.
+Pré-requisitos: Windows 10 (1809+) x64. O `rust-toolchain.toml` instala a toolchain stable com `rustfmt` e `clippy`. Para `cargo deny`, instale com `cargo install cargo-deny`. Os binários Windows embutem o ícone da marca como recurso (`build.rs` do `forge`, `forgeboxd`, `forgebox-helper`, `forge-mcp`, `forgebox-ctrl` e o do Tauri no `Forgebox.exe`), compilado pelo `rc.exe` do **Windows SDK** — o mesmo SDK que a toolchain MSVC já usa (Build Tools do Visual Studio, carga "Desenvolvimento para desktop com C++"); sem ele o build falha com uma mensagem apontando para cá. O ícone e os da bandeja são gerados de [`docs/design/brand`](docs/design/brand/README.md) com `pnpm -C apps/desktop icons` (conferência: `icons:check`).
 
 ```
 cargo build --workspace                                    # compila todos os crates e binários
