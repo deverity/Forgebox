@@ -45,7 +45,7 @@ Código puro (sem I/O nem async), usado pelo pipeline de métricas e pelo alvo `
 - **`UriNormalizer`**: remove query e fragmento (nunca armazenados, §7); segmentos só de dígitos, UUID ou hexadecimais com 16 ou mais caracteres viram `{id}`; no máximo 8 segmentos e 256 bytes; a caixa é preservada ([15](15-linux-parity-case-sensitivity.md) §7: caminhos são case-sensitive). O `request.uri` do Caddy chega percent-encoded e o `$uri` do nginx decodificado; o normalizador não decodifica.
 - **Fixtures** de `crates/forge-metrics/tests/fixtures/`: linhas capturadas de nginx 1.30.6, Apache 2.4.69 e Caddy 2.11.7 reais rodando as configurações de log de `crates/forge-render/templates`. **Vazão** (teste ignorado `throughput_at_least_200k_lines_per_second`, release, uma thread, meta de 200 mil linhas/s): nginx ~1,1 M, Caddy ~0,73 M e Apache ~0,35 M linhas/s (o pré-passe de escapes custa) na máquina de desenvolvimento (i5-1135G7) com outros builds rodando; a medição oficial em máquina quieta fica para o E5-T13.
 
-### 3.2 Tail do access log (`forge_metrics::tail`, M2-E5-T4)
+### 3.2 Tail do access log (`forge_metrics::tail`, M2-E5-T4, [ADR-0047](adr/0047-access-log-tailer-identity-checkpoints-sampling.md))
 Um `Tailer` por arquivo, task própria (`tail::spawn`, ou `Tailer::new` + `run` para quem quer embrulhar o future), que entrega lotes decodificados (`TailBatch`) a um canal `mpsc` limitado do consumidor (o agregador, T8).
 
 - **Ritmo:** tick de 250 ms ± 10 % de jitter; sem novidade o intervalo dobra até 1 s; depois de um tick que bateu o teto de leitura, o próximo vem em 50 ms. A cada tick o estado de leitura vai para `spawn_blocking` (no máximo **4 MiB por tick**, somando todos os arquivos, em leituras de 64 KiB); no runtime só roda a contabilidade entre ticks.

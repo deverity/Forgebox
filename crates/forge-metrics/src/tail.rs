@@ -15,14 +15,16 @@
 //! share mode `READ | WRITE | DELETE`, so the server or the daemon can rename or delete the
 //! file while it is tailed.
 //!
-//! The open handle is the file being read; the path is looked at (opened, `metadata`, first
-//! [`HEAD_BYTES`] bytes) on every tick to see whether it still names that file:
+//! The open handle is the file being read. Every tick checks it first (size and first
+//! [`HEAD_BYTES`] bytes, see *Truncated*), then whether the path still names it:
 //!
-//! - **Same file**: same creation time and the first bytes of the path are a prefix of the
-//!   first bytes of the handle, read right after. The creation time alone is not enough:
-//!   NTFS *tunneling* gives a file created under a name removed less than 15 s earlier the
-//!   creation time of the removed one, which is exactly what a rename + reopen or a delete +
-//!   recreate does (measured on Windows 10 19045, docs/14 section 3.2).
+//! - **Same file**: the path's `metadata` (no read access asked, so antivirus filters do not
+//!   rescan the log) has the creation time, size and last write time of the handle. When they
+//!   differ (or a write fell between the two queries) the path is opened: same creation time
+//!   and its first bytes a prefix of the handle's, read right after. The creation time alone
+//!   is not enough: NTFS *tunneling* gives a file created under a name removed less than 15 s
+//!   earlier the creation time of the removed one, which is exactly what a rename + reopen or
+//!   a delete + recreate does (measured on Windows 10 19045, docs/14 section 3.2).
 //! - **Replaced** (rename + new file, delete + recreate, a server that rolls its own file):
 //!   the old handle is *retired* and drained first on every tick until it has been at its
 //!   end for `retire_grace` (2 s: workers that have not reopened yet still write to it);
