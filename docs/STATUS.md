@@ -107,7 +107,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E5-T7 | Persistência de métricas (migration, flush, rollup, prune, rehidratação) | todo | — | |
 | M2-E5-T8 | Ator `MetricsCollector` + integração ao daemon + `stats.get` + `metrics.subscribe` | todo | — | |
 | M2-E5-T9 | Handlers `stats.series`, `stats.routes`, `stats.export`, `stats.top` + CLI | todo | — | |
-| M2-E5-T10 | Plataforma: estatísticas da máquina (CPU/RAM/disco) e nomes de imagem de processo | todo | — | |
+| M2-E5-T10 | Plataforma: estatísticas da máquina (CPU/RAM/disco) e nomes de imagem de processo | doing | feature/M2-E5-T10-machine-stats | |
 | M2-E5-T11 | Pool PHP dedicado por site + toggle de métricas por site (API + CLI) | todo | — | |
 | M2-E5-T12 | Rotação dos access logs pelo daemon + validação empírica por servidor | todo | — | |
 | M2-E5-T13 | Gate de aceite do E5: 1.000 req/s com < 2 % de CPU do daemon e p50/p90/p99 a ±5 % do `oha` | todo | — | |
