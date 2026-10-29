@@ -12,7 +12,7 @@ use crate::record::AccessRecord;
 /// has a query string (docs/14 section 7).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecentError {
-    /// When the request finished.
+    /// When the request finished (its `end_ts`, at most the aggregator clock).
     pub at: Timestamp,
     /// HTTP status (`400..=599`).
     pub status: u16,
@@ -101,14 +101,15 @@ fn prune(ring: &mut VecDeque<Entry>, before: Timestamp) {
 }
 
 impl ErrorRings {
-    pub(crate) fn push(&mut self, rec: &AccessRecord, cap: usize) {
+    /// Keeps `rec` as ending at `at`: its `end_ts` clamped to the aggregator clock.
+    pub(crate) fn push(&mut self, rec: &AccessRecord, at: Timestamp, cap: usize) {
         let ring = match rec.status {
             500..=599 => &mut self.server,
             400..=499 => &mut self.client,
             _ => return,
         };
         let entry = Entry {
-            at: rec.end_ts,
+            at,
             status: rec.status,
             duration_us: rec.duration_us,
             upstream_us: rec.upstream_us,

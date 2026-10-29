@@ -16,6 +16,9 @@
 //! - **Late accumulators**: records whose 2 s bucket already closed, per minute. They go to
 //!   tier 2 only: merged when their minute closes, or into the closed minute and its hour.
 //!   Tier 0 and tier 1 never change after closing.
+//! - **Restored minutes** (boot rehydration) that are still open for the clock wait apart
+//!   from the late records: they join the minute when it closes but not the delta it emits,
+//!   since persistence already has them.
 //!
 //! Nothing is allocated for a period without records.
 
@@ -35,7 +38,8 @@ pub(crate) struct Sample {
     pub(crate) bytes: u64,
 }
 
-/// Counts of a bucket. `u32` request counts hold an hour at a million requests per second.
+/// Counts of a stored bucket. `u32` request counts hold an hour at a million requests per
+/// second; query totals over many buckets are summed into the `u64` [`Counters`] instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Counts {
     status: [u32; 5],
@@ -73,6 +77,19 @@ impl Counts {
 
     pub(crate) fn requests(&self) -> u64 {
         self.status.iter().map(|c| u64::from(*c)).sum()
+    }
+
+    /// Adds these counts to the `u64` totals of a query: a range over the whole retention
+    /// (up to 7 d) passes `u32::MAX` requests at ~7,100 req/s, so totals never use `Counts`.
+    fn add_into(&self, acc: &mut Counters) {
+        for (a, b) in acc.status.iter_mut().zip(self.status) {
+            *a = a.saturating_add(u64::from(b));
+        }
+        acc.requests = acc.requests.saturating_add(self.requests());
+        acc.ut_count = acc.ut_count.saturating_add(u64::from(self.ut_count));
+        acc.bytes = acc.bytes.saturating_add(self.bytes);
+        acc.rt_sum_us = acc.rt_sum_us.saturating_add(self.rt_sum);
+        acc.ut_sum_us = acc.ut_sum_us.saturating_add(self.ut_sum);
     }
 
     pub(crate) fn to_public(self) -> Counters {
@@ -357,7 +374,7 @@ fn shrink<T>(d: &mut VecDeque<T>) {
 pub(crate) enum Piece {
     /// Tier 0 and open buckets starting in `[from, to)`.
     Fine(i64, i64),
-    /// The late records of an open minute.
+    /// The late (and restored) records of an open minute.
     Late(i64),
     /// A closed minute (with histograms).
     Minute(i64),
@@ -434,9 +451,9 @@ impl Src<'_> {
     }
 }
 
-/// Totals of a plan.
+/// Totals of a plan (`u64` counts, see [`Counts::add_into`]).
 pub(crate) struct Totals {
-    pub(crate) counts: Counts,
+    pub(crate) counts: Counters,
     pub(crate) sampled: bool,
     pub(crate) rt: Option<Percentiles>,
     pub(crate) ut: Option<Percentiles>,
@@ -448,6 +465,8 @@ pub(crate) struct SiteTiers {
     open: Vec<OpenAcc>,
     t0: VecDeque<Bucket>,
     late: Vec<OpenAcc>,
+    /// Restored minutes still open for the clock (see the module docs).
+    restored: Vec<Bucket>,
     points: VecDeque<Point>,
     minutes: VecDeque<Minute>,
     /// Minutes starting at or after this keep their histograms.
@@ -587,16 +606,15 @@ impl SiteTiers {
         loop {
             let next_t0 = (i < self.t0.len() && self.t0[i].start < cut)
                 .then(|| floor_to(self.t0[i].start, MINUTE));
-            let next_late = self
-                .late
-                .iter()
-                .find(|l| l.start >= from && l.start < cut)
-                .map(|l| l.start);
-            let minute = match (next_t0, next_late) {
-                (Some(a), Some(b)) => a.min(b),
-                (Some(a), None) => a,
-                (None, Some(b)) => b,
-                (None, None) => break,
+            let in_span = |start: i64| start >= from && start < cut;
+            let next_late = self.late.iter().map(|l| l.start).find(|&s| in_span(s));
+            let next_restored = self.restored.iter().map(|r| r.start).find(|&s| in_span(s));
+            let Some(minute) = [next_t0, next_late, next_restored]
+                .into_iter()
+                .flatten()
+                .min()
+            else {
+                break;
             };
             let mut j = i;
             while j < self.t0.len() && self.t0[j].start < minute + MINUTE {
@@ -607,18 +625,28 @@ impl SiteTiers {
                 .iter()
                 .position(|l| l.start == minute)
                 .map(|p| self.late.remove(p));
-            self.close_minute(minute, i..j, late, ctx);
+            let restored = self
+                .restored
+                .iter()
+                .position(|r| r.start == minute)
+                .map(|p| self.restored.remove(p));
+            self.close_minute(minute, i..j, late, restored, ctx);
             i = j;
         }
     }
 
+    /// Closes `minute` from its tier 0 buckets (`range`) and late records, plus what was
+    /// restored for it. The delta emitted for persistence has only the records of this
+    /// aggregator (no delta if the minute was only restored): persistence has the rest.
     fn close_minute(
         &mut self,
         minute: i64,
         range: std::ops::Range<usize>,
         late: Option<OpenAcc>,
+        restored: Option<Bucket>,
         ctx: &mut Ctx<'_>,
     ) {
+        let fresh = !range.is_empty() || late.is_some();
         let mut counts = Counts::default();
         let mut sampled = false;
         for b in self.t0.range(range.clone()) {
@@ -629,6 +657,7 @@ impl SiteTiers {
             counts.add(&l.counts);
             sampled |= l.sampled;
         }
+        // The histogram of this aggregator's records, and the one with the restored too.
         let mut hist = |ut: bool| {
             ctx.dense.clear();
             for b in self.t0.range(range.clone()) {
@@ -637,28 +666,48 @@ impl SiteTiers {
             if let Some(l) = &late {
                 ctx.dense.add_raw(if ut { &l.ut } else { &l.rt });
             }
-            let h = ctx.dense.to_hist();
+            let fresh = ctx.dense.to_hist();
+            let all = restored.as_ref().map(|r| {
+                ctx.dense.add(if ut { &r.ut } else { &r.rt });
+                ctx.dense.to_hist()
+            });
             ctx.dense.clear();
-            h
+            (fresh, all)
         };
-        let rt = hist(false);
-        let ut = hist(true);
+        let (rt, rt_all) = hist(false);
+        let (ut, ut_all) = hist(true);
         if let Some(l) = late {
             l.release(ctx.pool);
         }
-        ctx.emit(|| Delta {
-            start: minute,
-            counts,
-            sampled,
-            rt: rt.clone(),
-            ut: ut.clone(),
-            complete: true,
-        });
-        self.upsert_minute(minute, counts, sampled, rt, ut);
+        if fresh {
+            ctx.emit(|| Delta {
+                start: minute,
+                counts,
+                sampled,
+                rt: rt.clone(),
+                ut: ut.clone(),
+                complete: true,
+            });
+        }
+        match restored {
+            Some(r) => {
+                counts.add(&r.counts);
+                let rt = rt_all.unwrap_or(rt);
+                let ut = ut_all.unwrap_or(ut);
+                self.upsert_minute(minute, counts, sampled || r.sampled, rt, ut);
+            }
+            None => self.upsert_minute(minute, counts, sampled, rt, ut),
+        }
     }
 
     /// Late records of minutes that already closed (`start < cut`) go into those minutes.
     pub(crate) fn fold_late(&mut self, cut: i64, ctx: &mut Ctx<'_>) {
+        // Restored minutes close with their minute (`close_minutes`); one left behind still
+        // goes to tier 2, never to the outbox.
+        while self.restored.first().is_some_and(|r| r.start < cut) {
+            let r = self.restored.remove(0);
+            self.upsert_minute(r.start, r.counts, r.sampled, r.rt, r.ut);
+        }
         while self.late.first().is_some_and(|l| l.start < cut) {
             let mut acc = self.late.remove(0);
             let rt = compact_raw(&mut acc.rt);
@@ -677,24 +726,34 @@ impl SiteTiers {
         }
     }
 
-    /// Restores a persisted minute: tier 2 when it is closed, else as late records.
-    pub(crate) fn restore(&mut self, d: Delta, closed: bool, pool: &mut BufPool) {
+    /// Restores a persisted minute, never emitted again. A minute closed for the clock goes
+    /// into tier 2, and the minute histograms are trimmed to the budget right away, as
+    /// `evict` would, so a 24 h rehydration never holds 1,440 of them at once. A minute still
+    /// open waits apart: it joins the minute when it closes, not the delta the minute emits.
+    pub(crate) fn restore(&mut self, d: Delta, closed: bool, limits: &Limits) {
         if closed {
             self.upsert_minute(d.start, d.counts, d.sampled, d.rt, d.ut);
+            self.trim_hists(limits);
             return;
         }
-        let pos = self.late.partition_point(|o| o.start < d.start);
-        if pos == self.late.len() || self.late[pos].start != d.start {
-            self.late.insert(pos, OpenAcc::new(d.start, pool));
-        }
-        let acc = &mut self.late[pos];
-        acc.counts.add(&d.counts);
-        acc.sampled |= d.sampled;
-        for (i, c) in d.rt.entries() {
-            push_raw(&mut acc.rt, i, c);
-        }
-        for (i, c) in d.ut.entries() {
-            push_raw(&mut acc.ut, i, c);
+        let pos = self.restored.partition_point(|r| r.start < d.start);
+        if pos < self.restored.len() && self.restored[pos].start == d.start {
+            let r = &mut self.restored[pos];
+            r.counts.add(&d.counts);
+            r.sampled |= d.sampled;
+            r.rt = r.rt.merge(&d.rt);
+            r.ut = r.ut.merge(&d.ut);
+        } else {
+            self.restored.insert(
+                pos,
+                Bucket {
+                    start: d.start,
+                    counts: d.counts,
+                    sampled: d.sampled,
+                    rt: d.rt,
+                    ut: d.ut,
+                },
+            );
         }
     }
 
@@ -806,22 +865,14 @@ impl SiteTiers {
         {
             self.late.remove(0).release(pool);
         }
-        if self.hist_bytes > l.hist_budget {
-            // Oldest first: past the budget only the last `minute_hist_keep` is protected,
-            // past the cap nothing is.
-            let mut i = self.minutes.partition_point(|m| m.start < self.hist_from);
-            while i < self.minutes.len()
-                && (self.hist_bytes > l.hist_cap
-                    || (self.hist_bytes > l.hist_budget
-                        && self.minutes[i].start < l.hist_keep_from))
-            {
-                let m = &mut self.minutes[i];
-                self.hist_bytes -= m.hist_bytes();
-                m.hists = None;
-                self.hist_from = m.start + MINUTE;
-                i += 1;
-            }
+        while self
+            .restored
+            .first()
+            .is_some_and(|r| r.start + MINUTE <= l.retain_from)
+        {
+            self.restored.remove(0);
         }
+        self.trim_hists(l);
         shrink(&mut self.t0);
         shrink(&mut self.points);
         shrink(&mut self.minutes);
@@ -832,12 +883,35 @@ impl SiteTiers {
         if self.late.is_empty() && self.late.capacity() > 0 {
             self.late = Vec::new();
         }
+        if self.restored.is_empty() && self.restored.capacity() > 0 {
+            self.restored = Vec::new();
+        }
+    }
+
+    /// Drops minute histograms over the budget, oldest first: past the budget only the last
+    /// `minute_hist_keep` is protected, past the cap nothing is.
+    fn trim_hists(&mut self, l: &Limits) {
+        if self.hist_bytes <= l.hist_budget {
+            return;
+        }
+        let mut i = self.minutes.partition_point(|m| m.start < self.hist_from);
+        while i < self.minutes.len()
+            && (self.hist_bytes > l.hist_cap
+                || (self.hist_bytes > l.hist_budget && self.minutes[i].start < l.hist_keep_from))
+        {
+            let m = &mut self.minutes[i];
+            self.hist_bytes -= m.hist_bytes();
+            m.hists = None;
+            self.hist_from = m.start + MINUTE;
+            i += 1;
+        }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
         self.open.is_empty()
             && self.t0.is_empty()
             && self.late.is_empty()
+            && self.restored.is_empty()
             && self.points.is_empty()
             && self.minutes.is_empty()
             && self.hours.is_empty()
@@ -934,7 +1008,11 @@ impl SiteTiers {
             let (ma, mb) = (a.max(m), b.min(m + MINUTE));
             let (fa, fb) = (floor_to(ma, T0), ceil_to(mb, T0));
             plan.push(Piece::Fine(fa, fb), fa, fb);
-            if ma == m && mb == m + MINUTE && self.late.iter().any(|l| l.start == m) {
+            let whole = ma == m && mb == m + MINUTE;
+            if whole
+                && (self.late.iter().any(|l| l.start == m)
+                    || self.restored.iter().any(|r| r.start == m))
+            {
                 plan.push(Piece::Late(m), m, m + MINUTE);
             }
             m += MINUTE;
@@ -957,6 +1035,9 @@ impl SiteTiers {
                     if let Some(l) = self.late.iter().find(|l| l.start == m) {
                         f(Src::Open(l));
                     }
+                    if let Some(r) = self.restored.iter().find(|r| r.start == m) {
+                        f(Src::Bucket(r));
+                    }
                 }
                 Piece::Minute(m) => {
                     if let Some(i) = self.minute_index(m) {
@@ -972,12 +1053,12 @@ impl SiteTiers {
         }
     }
 
-    /// Counts only (no histogram work).
-    pub(crate) fn sums(&self, plan: &Plan) -> (Counts, bool) {
-        let mut counts = Counts::default();
+    /// Counts only (no histogram work), summed in `u64`.
+    pub(crate) fn sums(&self, plan: &Plan) -> (Counters, bool) {
+        let mut counts = Counters::default();
         let mut sampled = false;
         self.visit(plan, |s| {
-            counts.add(s.counts());
+            s.counts().add_into(&mut counts);
             sampled |= s.sampled();
         });
         (counts, sampled)
@@ -1016,7 +1097,7 @@ impl SiteTiers {
             .map(|x| {
                 series_point(
                     x.start,
-                    &x.counts,
+                    &x.counts.to_public(),
                     x.sampled,
                     x.rt.percentiles(),
                     x.ut.percentiles(),
@@ -1031,7 +1112,13 @@ impl SiteTiers {
             dense.add_raw(&o.ut);
             let ut = dense.percentiles();
             dense.clear();
-            out.push(series_point(o.start, &o.counts, o.sampled, rt, ut));
+            out.push(series_point(
+                o.start,
+                &o.counts.to_public(),
+                o.sampled,
+                rt,
+                ut,
+            ));
         }
         out
     }
@@ -1067,7 +1154,7 @@ impl SiteTiers {
             .map(|m| {
                 let mut p = series_point(
                     m.start,
-                    &m.counts,
+                    &m.counts.to_public(),
                     m.sampled,
                     from_p3(m.rt_p, m.counts.requests() > 0),
                     from_p3(m.ut_p, m.counts.ut_count > 0),
@@ -1100,15 +1187,15 @@ impl SiteTiers {
         })
     }
 
-    /// `true` when tier 0, the open buckets or a late accumulator have data in `[from, to)`.
+    /// `true` when tier 0, the open buckets, a late accumulator or a restored open minute
+    /// have data in `[from, to)`.
     pub(crate) fn has_fine_data(&self, from: i64, to: i64) -> bool {
         let start = self.t0.partition_point(|x| x.start < from);
+        let minute = |s: i64| s >= floor_to(from, MINUTE) && s < to;
         self.t0.get(start).is_some_and(|x| x.start < to)
             || self.open.iter().any(|o| o.start >= from && o.start < to)
-            || self
-                .late
-                .iter()
-                .any(|l| l.start >= floor_to(from, MINUTE) && l.start < to)
+            || self.late.iter().any(|l| minute(l.start))
+            || self.restored.iter().any(|r| minute(r.start))
     }
 
     /// Starts of the hour buckets in `[from, to)`.
@@ -1129,6 +1216,8 @@ impl SiteTiers {
         };
         accs(&self.open)
             + accs(&self.late)
+            + self.restored.capacity() * size_of::<Bucket>()
+            + self.restored.iter().map(Bucket::heap_bytes).sum::<usize>()
             + buckets(&self.t0)
             + buckets(&self.hours)
             + self.points.capacity() * size_of::<Point>()
@@ -1139,19 +1228,19 @@ impl SiteTiers {
 
 fn series_point(
     start: i64,
-    c: &Counts,
+    c: &Counters,
     sampled: bool,
     rt: Option<Percentiles>,
     ut: Option<Percentiles>,
 ) -> SeriesPoint {
     SeriesPoint {
         start: secs_to_ts(start),
-        requests: c.requests(),
-        err4xx: u64::from(c.status[3]),
-        err5xx: u64::from(c.status[4]),
+        requests: c.requests,
+        err4xx: c.err4xx(),
+        err5xx: c.err5xx(),
         bytes: c.bytes,
-        rt_sum_us: c.rt_sum,
-        ut_sum_us: c.ut_sum,
+        rt_sum_us: c.rt_sum_us,
+        ut_sum_us: c.ut_sum_us,
         rt,
         ut,
         resources: None,

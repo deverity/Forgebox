@@ -309,8 +309,10 @@ pub struct MinuteDelta {
     pub rt: LatencyHist,
     /// Upstream-duration histogram to merge into the minute.
     pub ut: LatencyHist,
-    /// `true`: the minute as it closed. `false`: late records to merge into it. Either way
-    /// adding the delta to what is stored is exact.
+    /// `true`: the minute as it closed, with the records this aggregator saw (a minute put
+    /// back by [`Aggregator::restore_minute`] while still open is not repeated in it).
+    /// `false`: late records to merge into a minute that already closed. Either way adding
+    /// the delta to what is stored is exact.
     pub complete: bool,
 }
 
@@ -488,7 +490,8 @@ impl Aggregator {
             );
         }
         if rec.status >= 400 {
-            s.errors.push(rec, self.cfg.errors_kept);
+            // The clamped end, like `last_request_at`: never "in the future" in the UI.
+            s.errors.push(rec, end, self.cfg.errors_kept);
         }
     }
 
@@ -514,13 +517,7 @@ impl Aggregator {
         );
         let periods = (self.clock.next_period, cut10.max(self.clock.next_period));
         let minutes = (self.clock.next_minute, cut60.max(self.clock.next_minute));
-        let limits = Limits {
-            t0_floor: floor_to(now_s - self.cfg.tier0_span, T0),
-            retain_from: now_s - self.cfg.retention,
-            hist_keep_from: floor_to(now_s - self.cfg.minute_hist_keep, MINUTE),
-            hist_budget: self.cfg.minute_hist_budget,
-            hist_cap: self.cfg.minute_hist_cap,
-        };
+        let limits = self.limits();
         let dense = self.dense.get_or_insert_with(|| Box::new(Dense::new()));
         let retain_ts = secs_to_ts(limits.retain_from);
         for (id, s) in &mut self.sites {
@@ -545,6 +542,18 @@ impl Aggregator {
             self.outbox.drain(..excess);
             self.outbox_sites.drain(..excess);
             self.stats.outbox_dropped += excess as u64;
+        }
+    }
+
+    /// Retention limits for the current clock.
+    fn limits(&self) -> Limits {
+        let now_s = self.now_s;
+        Limits {
+            t0_floor: floor_to(now_s - self.cfg.tier0_span, T0),
+            retain_from: now_s - self.cfg.retention,
+            hist_keep_from: floor_to(now_s - self.cfg.minute_hist_keep, MINUTE),
+            hist_budget: self.cfg.minute_hist_budget,
+            hist_cap: self.cfg.minute_hist_cap,
         }
     }
 
@@ -615,7 +624,7 @@ impl Aggregator {
             Summary {
                 from: f,
                 to: e,
-                counters: t.counts.to_public(),
+                counters: t.counts,
                 rt: t.rt,
                 ut: t.ut,
                 sampled: t.sampled,
@@ -665,7 +674,7 @@ impl Aggregator {
             return Counters::default();
         };
         let plan = s.tiers.plan(from, to, &clock);
-        s.tiers.sums(&plan).0.to_public()
+        s.tiers.sums(&plan).0
     }
 
     /// Points of `[from, to)` at `step`; steps without data are left out. Clamped like
@@ -696,7 +705,7 @@ impl Aggregator {
                 if res.is_some() || t.has_fine_data(p, p + width) {
                     let plan = t.plan(p, p + width, &clock);
                     let totals = t.totals(&plan, dense, false);
-                    if totals.counts.requests() > 0 || res.is_some() {
+                    if totals.counts.requests > 0 || res.is_some() {
                         out.push(tiers::totals_point(p, &totals, res));
                     }
                 }
@@ -740,11 +749,13 @@ impl Aggregator {
 
     /// Stores the CPU/RAM attributed to `site` (an entry of [`Attribution::sites`]) for the
     /// 10 s period containing `at`. The point keeps it packed (see [`SeriesPoint::resources`]).
+    /// An `at` after the clock is clamped to it (no point ahead of the clock); one older than
+    /// the retention is ignored.
     ///
     /// [`Attribution::sites`]: crate::Attribution::sites
     pub fn set_resources(&mut self, site: SiteId, at: Timestamp, resources: &SiteResources) {
         let now = self.now_s;
-        let secs = ts_floor(at);
+        let secs = ts_floor(at).min(now);
         if secs < now - self.cfg.retention {
             return;
         }
@@ -795,15 +806,22 @@ impl Aggregator {
             .collect()
     }
 
-    /// Puts a persisted minute back (boot rehydration, M2-E5-T7): into tier 2 when the
-    /// minute is closed for this clock, else as late records of the open minute. Not sent
-    /// to the outbox again.
+    /// Puts a persisted minute back (boot rehydration, M2-E5-T7). Never sent to the outbox
+    /// again, so the deltas of [`Self::take_minutes`] stay exact to add to what is stored.
+    ///
+    /// - A minute closed for this clock goes into tier 2 (minute and hour), and the minute
+    ///   histograms are trimmed to the budget at once (as [`Self::advance`] would): restoring
+    ///   24 h never holds more minute histograms than a running aggregator does.
+    /// - A minute still open (the system clock went back between two boots) is kept apart:
+    ///   queries see it and it joins the minute when the minute closes, but the `complete`
+    ///   delta of that minute only has the records this aggregator saw.
     pub fn restore_minute(&mut self, delta: MinuteDelta) {
         let start = floor_to(ts_floor(delta.start), MINUTE);
         let now = self.now_s;
         if start + MINUTE <= now - self.cfg.retention {
             return;
         }
+        let limits = self.limits();
         let s = self
             .sites
             .entry(delta.site)
@@ -819,7 +837,7 @@ impl Aggregator {
                 complete: delta.complete,
             },
             closed,
-            &mut self.pool,
+            &limits,
         );
     }
 

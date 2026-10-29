@@ -17,8 +17,10 @@
 //! A [`LatencyHist`] is the list of its non-empty indexes in increasing order, each as one
 //! LEB128 varint `gap << 1 | (count == 1)` (`gap` = indexes skipped since the previous one),
 //! followed by a second varint `count - 2` when the count is not 1. Latencies logged with
-//! millisecond resolution (nginx `$request_time`, and in practice every server on Windows)
-//! cost about 2 to 3 bytes per distinct millisecond; a dense array would cost 168 KiB.
+//! millisecond resolution (nginx `$request_time`; Apache on Windows is coarser, on the
+//! 15.6 ms clock tick) cost about 2 to 3 bytes per distinct millisecond; a dense array would
+//! cost 168 KiB. Caddy logs below 1 ms, so almost every request is a distinct index at 3
+//! significant digits and its histograms are several times larger (ADR-0048).
 //!
 //! # Percentiles
 //!

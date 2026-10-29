@@ -527,6 +527,89 @@ fn future_records_are_clamped_and_old_ones_dropped() {
     assert_eq!(agg.now(), base() + SignedDuration::from_secs(1));
 }
 
+/// Errors and resources from the future are clamped like the buckets and
+/// `last_request_at`: nothing is shown or stored ahead of the aggregator clock.
+#[test]
+fn future_errors_and_resources_are_clamped_to_the_clock() {
+    let site = SiteId::new();
+    let m = (base().as_second() / 60 + 1) * 60;
+    let t = |s: i64| Timestamp::from_second(m + s).unwrap();
+    let mut agg = Aggregator::new(cfg(), t(0));
+    agg.advance(t(5));
+    // A server clock an hour or two ahead.
+    agg.record(site, &record(us(t(3600)), 1000, None, 502, "/x"), 1);
+    agg.record(site, &record(us(t(7200)), 1000, None, 404, "/y"), 1);
+    let errors = agg.recent_errors(site);
+    assert_eq!(
+        errors.server[0].at,
+        agg.now(),
+        "5xx at the clock, not in the future"
+    );
+    assert_eq!(
+        errors.client[0].at,
+        agg.now(),
+        "4xx at the clock, not in the future"
+    );
+    assert_eq!(agg.last_request_at(site), Some(agg.now()));
+    // Resources for a period ahead of the clock land in the clock's own period.
+    let r = SiteResources {
+        cpu_pct: 12.0,
+        mem_bytes: 64 << 20,
+        approx: false,
+        workers_active: 1,
+    };
+    agg.set_resources(site, t(3600), &r);
+    let now = agg.series(site, t(0), t(10), Step::TenSeconds);
+    assert_eq!(now.len(), 1);
+    assert_eq!(now[0].start, t(0));
+    assert_eq!(now[0].resources.as_ref(), Some(&r));
+    // An hour later there is still no point at the future period.
+    agg.advance(t(3700));
+    assert!(
+        agg.series(site, t(3590), t(3620), Step::TenSeconds)
+            .is_empty(),
+        "no point was created ahead of the clock"
+    );
+    let then = agg.series(site, t(0), t(10), Step::TenSeconds);
+    assert_eq!(then[0].resources.as_ref(), Some(&r));
+    assert_eq!(then[0].requests, 2);
+}
+
+/// Stored buckets count in `u32` (an hour holds a million requests per second); totals of
+/// queries add them in `u64`, so a long range at a high rate does not stop at 4.29e9.
+#[test]
+fn query_totals_do_not_saturate_at_u32() {
+    const W: u32 = 2_000_000_000;
+    let site = SiteId::new();
+    let h0 = (base().as_second() / 3600 + 1) * 3600;
+    let t = |s: i64| Timestamp::from_second(h0 + s).unwrap();
+    let mut agg = Aggregator::new(cfg(), t(0));
+    // One record standing for 2e9 lines per hour, for 3 hours: each bucket fits in u32.
+    for h in 0..3 {
+        agg.advance(t(h * 3600 + 1));
+        agg.record(site, &record(us(t(h * 3600)), 1000, Some(500), 503, "/"), W);
+    }
+    agg.advance(t(3 * 3600 + 10));
+    let total = 3 * u64::from(W);
+    assert!(total > u64::from(u32::MAX));
+    let check = |what: &str, c: &forge_metrics::Counters| {
+        assert_eq!(c.requests, total, "{what}: requests");
+        assert_eq!(c.err5xx(), total, "{what}: 5xx");
+        assert_eq!(c.ut_count, total, "{what}: ut count");
+        assert_eq!(c.rt_sum_us, 1000 * total, "{what}: rt sum");
+        assert_eq!(c.bytes, 1000 * total, "{what}: bytes");
+    };
+    check(
+        "window",
+        &agg.window(site, Duration::from_secs(86_400)).counters,
+    );
+    check("range", &agg.range(site, t(0), t(3 * 3600)).counters);
+    check("sums", &agg.sums(site, t(0), t(3 * 3600)));
+    let hours = agg.series(site, t(0), t(3 * 3600), Step::Hour);
+    assert_eq!(hours.len(), 3);
+    assert!(hours.iter().all(|p| p.requests == u64::from(W)));
+}
+
 #[test]
 fn weighted_records_scale_counts_and_mark_sampled() {
     let site = SiteId::new();
@@ -954,6 +1037,84 @@ fn restored_minutes_give_the_same_24h_numbers() {
     );
 }
 
+/// The system clock went back between two boots: minutes persisted by the first run are
+/// still open for the second. Restored, they count in queries and in tier 2, but the deltas
+/// of the second run only carry its own records, so adding them to storage stays exact.
+#[test]
+fn a_restored_open_minute_is_not_flushed_twice() {
+    let site = SiteId::new();
+    let m = (base().as_second() / 60 + 1) * 60;
+    let t = |s: i64| Timestamp::from_second(m + s).unwrap();
+    // First run: minutes [0, 60) and [60, 120) close and are persisted.
+    let mut first = Aggregator::new(cfg(), t(0));
+    first.advance(t(11));
+    for i in 0..5 {
+        first.record(site, &record(us(t(10)) + i, 2000, Some(1500), 200, "/a"), 1);
+    }
+    first.advance(t(71));
+    for i in 0..7 {
+        first.record(site, &record(us(t(70)) + i, 8000, None, 500, "/b"), 1);
+    }
+    first.advance(t(125));
+    let persisted = first.take_minutes();
+    assert_eq!(persisted.len(), 2);
+    let mut stored: HashMap<Timestamp, (u64, LatencyHist)> = persisted
+        .iter()
+        .map(|d| (d.start, (d.counters.requests, d.rt.clone())))
+        .collect();
+    // Second run, clock 2 min behind: both minutes are open again.
+    let mut second = Aggregator::new(cfg(), t(15));
+    for d in persisted {
+        second.restore_minute(d);
+    }
+    assert!(
+        second.take_minutes().is_empty(),
+        "restored minutes are not flushed"
+    );
+    second.advance(t(21));
+    for i in 0..3 {
+        second.record(site, &record(us(t(20)) + i, 4000, None, 404, "/c"), 1);
+    }
+    // While open, a range over the whole minute sees the restored records too.
+    second.advance(t(61));
+    let open = second.range(site, t(0), t(60));
+    assert_eq!(open.counters.requests, 5 + 3);
+    assert_eq!(open.counters.err4xx(), 3);
+    // The minutes close.
+    second.advance(t(125));
+    let deltas = second.take_minutes();
+    assert_eq!(
+        deltas.len(),
+        1,
+        "only the minute with new records emits; the only-restored one does not"
+    );
+    let d = &deltas[0];
+    assert!(d.complete);
+    assert_eq!(d.start, t(0));
+    assert_eq!(
+        d.counters.requests, 3,
+        "the delta holds only this run's records"
+    );
+    assert_eq!(d.rt.total(), 3);
+    assert_eq!(d.ut.total(), 0);
+    // Persistence adds the delta to its row: storage and tier 2 agree, nothing twice.
+    let row = stored.get_mut(&d.start).unwrap();
+    row.0 += d.counters.requests;
+    row.1 = row.1.merge(&d.rt);
+    let minutes = second.series(site, t(0), t(120), Step::Minute);
+    assert_eq!(minutes.len(), 2);
+    for p in &minutes {
+        let (requests, rt) = &stored[&p.start];
+        assert_eq!(p.requests, *requests, "minute {}", p.start);
+        assert_eq!(p.rt, rt.percentiles(), "minute {}", p.start);
+    }
+    assert_eq!(minutes[0].requests, 8);
+    assert_eq!(minutes[1].requests, 7);
+    let (s, rt, _) = second.range_hists(site, t(0), t(120));
+    assert_eq!(s.counters.requests, 15);
+    assert_eq!(rt, stored[&t(0)].1.merge(&stored[&t(60)].1));
+}
+
 #[test]
 fn an_undrained_outbox_is_capped() {
     let site = SiteId::new();
@@ -988,29 +1149,47 @@ fn the_aggregator_can_move_into_an_actor() {
 // Routes and recent errors
 // ------------------------------------------------------------------------------------------
 
-fn zipf_run(seed: u64, s: f64, n: usize) {
+/// `n` Zipf(s) requests over 10,000 routes, one per millisecond. With `epoch`, the route
+/// table rotates every `epoch` and the truth is counted over the generations in the report.
+fn zipf_run(seed: u64, s: f64, n: usize, epoch: Option<Duration>) {
     const ROUTES: usize = 10_000;
     let site = SiteId::new();
     let zipf = Zipf::new(ROUTES, s);
     let mut rng = Rng(seed);
     let names: Vec<String> = (0..ROUTES).map(|i| format!("/r{i}")).collect();
-    let mut agg = Aggregator::new(cfg(), base());
-    let mut truth = vec![0u64; ROUTES];
+    let config = AggConfig {
+        route_epoch: epoch.unwrap_or(AggConfig::default().route_epoch),
+        ..cfg()
+    };
+    let mut agg = Aggregator::new(config, base());
+    let mut sent: Vec<(Timestamp, usize)> = Vec::with_capacity(n);
     let mut rec = record(us(base()), 1000, None, 200, "");
     for i in 0..n {
         let k = zipf.sample(&mut rng);
-        truth[k] += 1;
         if i % 1000 == 0 {
             agg.advance(base() + SignedDuration::from_millis(i as i64));
         }
         rec.end_ts = agg.now();
+        sent.push((rec.end_ts, k));
         rec.route.clear();
         rec.route.push_str(&names[k]);
         rec.duration_us = 1000 + k as u64;
         agg.record(site, &rec, 1);
     }
     let report = agg.routes(site).unwrap();
-    assert_eq!(report.total, n as u64);
+    let mut truth = vec![0u64; ROUTES];
+    for &(_, k) in sent.iter().filter(|(at, _)| *at >= report.since) {
+        truth[k] += 1;
+    }
+    assert_eq!(report.total, truth.iter().sum::<u64>());
+    if epoch.is_none() {
+        assert_eq!(report.total, n as u64);
+    } else {
+        assert!(
+            report.since > base() && report.total < n as u64,
+            "rotated: the report starts at the previous generation"
+        );
+    }
     assert!(report.routes.len() <= 100);
     let mut by_count: Vec<usize> = (0..ROUTES).collect();
     by_count.sort_by_key(|&k| std::cmp::Reverse(truth[k]));
@@ -1030,13 +1209,17 @@ fn zipf_run(seed: u64, s: f64, n: usize) {
         );
         assert!(r.observed <= truth[k]);
     }
-    // Every reported route respects the bounds too.
+    // Every reported route respects the bounds too (across generations as well: a route
+    // monitored in only one of them still counts what the other's filter cell holds).
     for r in &report.routes {
         let k: usize = r.route[2..].parse().unwrap();
         assert!(
             r.count >= truth[k] && r.count - r.overcount <= truth[k],
-            "{}",
-            r.route
+            "seed {seed} s={s}: {} count {} overcount {} truth {}",
+            r.route,
+            r.count,
+            r.overcount,
+            truth[k]
         );
     }
 }
@@ -1045,7 +1228,18 @@ fn zipf_run(seed: u64, s: f64, n: usize) {
 fn zipf_true_top20_routes_are_always_present() {
     for s in [0.8, 1.0, 1.2] {
         for seed in 1..=3 {
-            zipf_run(seed, s, 200_000);
+            zipf_run(seed, s, 200_000, None);
+        }
+    }
+}
+
+/// 200 s of requests with 60 s route epochs: the report merges two generations, and the
+/// bounds and the top 20 hold over both.
+#[test]
+fn zipf_bounds_hold_across_route_generations() {
+    for s in [0.8, 1.0, 1.2] {
+        for seed in 1..=3 {
+            zipf_run(seed, s, 200_000, Some(Duration::from_secs(60)));
         }
     }
 }
@@ -1055,8 +1249,60 @@ fn zipf_true_top20_routes_are_always_present() {
 fn zipf_true_top20_routes_are_always_present_1m_requests() {
     for s in [0.7, 0.8, 0.9, 1.0, 1.1, 1.2] {
         for seed in 1..=10 {
-            zipf_run(seed, s, 1_000_000);
+            zipf_run(seed, s, 1_000_000, None);
+            zipf_run(seed, s, 1_000_000, Some(Duration::from_secs(300)));
         }
+    }
+}
+
+/// A route monitored in the previous generation only: its misses in the current one (kept
+/// by the admission filter) still count, so `count` stays an upper bound of the truth.
+#[test]
+fn a_route_monitored_in_one_generation_keeps_the_other_ones_count() {
+    let site = SiteId::new();
+    let config = AggConfig {
+        routes_k: 4,
+        route_epoch: Duration::from_secs(60),
+        ..cfg()
+    };
+    let t = |s: i64| base() + SignedDuration::from_secs(s);
+    let mut agg = Aggregator::new(config, base());
+    agg.advance(t(1));
+    let hit = |agg: &mut Aggregator, route: &str, n: usize| {
+        let rec = record(us(agg.now()), 1000, None, 200, route);
+        for _ in 0..n {
+            agg.record(site, &rec, 1);
+        }
+    };
+    hit(&mut agg, "/a", 150);
+    // New generation: four heavier routes fill the table, `/a` only reaches the filter.
+    agg.advance(t(62));
+    for h in 0..4 {
+        hit(&mut agg, &format!("/h{h}"), 100);
+    }
+    hit(&mut agg, "/a", 30);
+    let report = agg.routes(site).unwrap();
+    assert_eq!(report.since, t(1));
+    assert_eq!(report.total, 150 + 400 + 30);
+    let a = &report.routes[0];
+    assert_eq!(a.route, "/a");
+    assert!(a.count >= 180, "upper bound: {} < 180", a.count);
+    assert!(a.count - a.overcount <= 180);
+    assert_eq!(
+        (a.count, a.overcount),
+        (180, 30),
+        "the cell holds exactly its 30 misses"
+    );
+    assert_eq!(a.observed, 150, "only monitored requests are observed");
+    // Routes only in the current generation: the previous one never filled up (no filter),
+    // so nothing is added.
+    for r in &report.routes[1..] {
+        assert_eq!(
+            (r.count, r.overcount, r.observed),
+            (100, 0, 100),
+            "{}",
+            r.route
+        );
     }
 }
 
@@ -1167,8 +1413,9 @@ fn recent_errors_keep_the_last_50_of_each_class() {
 
 /// A web site: Zipf(1) over 2,000 routes, each with its own log-normal latency (median
 /// 2..200 ms, sigma 0.4), PHP behind 85 % of them; 94 % 2xx, 1 % 3xx, 4 % 4xx, 1 % 5xx.
-/// Durations are logged in milliseconds like nginx's `$request_time` (and, on Windows, the
-/// clock tick of Apache and Caddy too); `micros` keeps microseconds (the worst case).
+/// Durations are logged in milliseconds like nginx's `$request_time` (Apache on Windows is
+/// coarser still, on the 15.6 ms clock tick); `micros` keeps microseconds, the resolution of
+/// Caddy (below 1 ms, the worst case for memory).
 struct SiteLoad {
     site: SiteId,
     rate: f64,
@@ -1296,6 +1543,84 @@ fn an_active_site_stays_bounded_for_ten_minutes() {
     let site = agg.site_heap_bytes(loads[0].site).unwrap() as isize;
     println!("10 min at 1,000 req/s: measured {total} B, estimated site {site} B");
     assert!(total <= MIB, "{total} B");
+}
+
+/// One closed minute of [`SiteLoad`] at 1,000 req/s, as persistence receives it.
+fn minute_at_1000(micros: bool) -> MinuteDelta {
+    let mut rng = Rng(11);
+    let mut load = SiteLoad::new(&mut rng, 1000.0, micros);
+    let m = (base().as_second() / 60 + 1) * 60;
+    let mut agg = Aggregator::new(cfg(), ts_us(m * 1_000_000));
+    for sec in m..m + 60 {
+        agg.advance(ts_us(sec * 1_000_000 + 1_300_000));
+        load.second(&mut agg, &mut rng, sec);
+    }
+    agg.advance(ts_us((m + 63) * 1_000_000));
+    let mut deltas = agg.take_minutes();
+    assert_eq!(deltas.len(), 1);
+    deltas.pop().unwrap()
+}
+
+/// Rehydrates `minutes` copies of a minute at 1,000 req/s, oldest first (as T7 reads
+/// `metrics_1m`), and returns the peak live bytes during the restore, the peak estimate and
+/// what the minute histograms alone would take if every restored minute kept them.
+fn restore_peak(micros: bool, minutes: i64) -> (isize, usize, usize) {
+    let template = minute_at_1000(micros);
+    let site = SiteId::new();
+    let end = (base().as_second() / 60 + 1) * 60 + 2 * 86_400;
+    let mut agg = Aggregator::new(AggConfig::default(), Timestamp::from_second(end).unwrap());
+    let untrimmed = minutes as usize * (template.rt.encoded_len() + template.ut.encoded_len());
+    let mark = live();
+    let (mut peak, mut peak_estimate) = (0isize, 0usize);
+    for i in (1..=minutes).rev() {
+        let mut d = template.clone();
+        d.site = site;
+        d.start = Timestamp::from_second(end - i * 60).unwrap();
+        agg.restore_minute(d);
+        peak = peak.max(live() - mark);
+        peak_estimate = peak_estimate.max(agg.site_heap_bytes(site).unwrap());
+    }
+    let w = agg.window(site, Duration::from_secs(86_400));
+    assert_eq!(
+        w.counters.requests,
+        minutes as u64 * template.counters.requests,
+        "every restored minute counts"
+    );
+    // The newest minute is still readable at minute resolution with its own percentiles.
+    let last = Timestamp::from_second(end - 120).unwrap();
+    let r = agg.range(site, last, last + SignedDuration::from_secs(60));
+    assert_eq!((r.from, r.rt), (last, template.rt.percentiles()));
+    println!(
+        "restore {minutes} min at 1,000 req/s ({}): peak {peak} B ({:.2} MiB), estimate {peak_estimate} B; \
+         every minute histogram kept would be {untrimmed} B ({:.1} MiB)",
+        if micros { "µs" } else { "ms" },
+        peak as f64 / MIB as f64,
+        untrimmed as f64 / MIB as f64,
+    );
+    (peak, peak_estimate, untrimmed)
+}
+
+/// A boot rehydration of 24 h holds no more minute histograms than a running aggregator:
+/// the budget and the cap apply while restoring, not only at the next `advance`.
+#[test]
+fn restoring_a_day_of_minutes_stays_in_the_histogram_budget() {
+    let (peak, _, untrimmed) = restore_peak(false, 1440);
+    assert!(peak <= MIB, "ms durations: restore peak {peak} B");
+    assert!(untrimmed as isize > 2 * peak);
+    // Microsecond durations: the 1 MiB cap holds, three hours are enough to pass it.
+    let (peak, _, untrimmed) = restore_peak(true, 180);
+    assert!(peak <= 3 * MIB, "µs durations: restore peak {peak} B");
+    assert!(untrimmed as isize > 2 * peak);
+}
+
+#[test]
+#[ignore = "release: cargo test -p forge-metrics --release --test agg -- --ignored"]
+fn restoring_a_day_of_microsecond_minutes_stays_in_the_histogram_budget() {
+    let (peak, estimate, untrimmed) = restore_peak(true, 1440);
+    assert!(peak <= 3 * MIB, "µs durations: restore peak {peak} B");
+    assert!(untrimmed as isize > 10 * peak);
+    let error = (estimate as isize - peak).abs() as f64 / peak as f64;
+    assert!(error <= 0.2, "estimate {estimate} vs measured {peak}");
 }
 
 fn day_at_1000(micros: bool) -> (isize, isize, isize) {

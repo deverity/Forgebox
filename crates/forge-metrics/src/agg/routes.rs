@@ -14,7 +14,9 @@
 //!
 //! The table covers two generations of `epoch` (12 h by default): a report merges the current
 //! and the previous one, so it spans between one and two epochs, and a site that goes idle
-//! frees it all after two epochs.
+//! frees it all after two epochs. A route monitored in only one of the two generations gets,
+//! for the other, the filter cell it hashes to there (added to `count` and `overcount`): the
+//! bounds hold over the whole report, not only within each generation.
 
 use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
@@ -35,7 +37,8 @@ pub struct RouteStats {
     pub method: String,
     /// Normalized route (`/users/{id}`), never with a query string.
     pub route: String,
-    /// Estimated requests: an upper bound of the true count.
+    /// Estimated requests since [`RoutesReport::since`]: an upper bound of the true count,
+    /// over both generations of the report.
     pub count: u64,
     /// How much `count` may overestimate (`count - overcount` is a lower bound).
     pub overcount: u64,
@@ -161,6 +164,14 @@ impl Generation {
         }
     }
 
+    /// Upper bound of the requests of an unmonitored route of this generation: its filter
+    /// cell (no filter: the table never filled up, so every route seen is monitored).
+    fn unmonitored_bound(&self, hash: u64) -> u64 {
+        self.filter
+            .as_ref()
+            .map_or(0, |f| u64::from(f[(hash >> FILTER_SHIFT) as usize]))
+    }
+
     fn heap_bytes(&self) -> usize {
         self.counts.capacity() * 8
             + self.slots.capacity() * size_of::<Slot>()
@@ -281,46 +292,68 @@ impl RouteTable {
     }
 
     pub(crate) fn report(&self, k: usize) -> RoutesReport {
-        let mut merged: HashMap<(&str, &str), (RouteStats, RouteHist)> = HashMap::new();
-        let gens = self.previous.iter().chain(std::iter::once(&self.current));
+        struct Merged {
+            stats: RouteStats,
+            hist: RouteHist,
+            hash: u64,
+            /// Bit `i`: monitored in generation `i` of `gens`.
+            seen: u8,
+        }
+        let gens: Vec<&Generation> = self
+            .previous
+            .iter()
+            .chain(std::iter::once(&self.current))
+            .collect();
+        let mut merged: HashMap<(&str, &str), Merged> = HashMap::new();
         let mut total = 0u64;
         let mut since = self.current.since;
-        for g in gens {
+        for (gi, g) in gens.iter().enumerate() {
             total = total.saturating_add(g.total);
             since = since.min(g.since);
             for (slot, &count) in g.slots.iter().zip(&g.counts) {
                 let e = merged
                     .entry((slot.method(), slot.route()))
-                    .or_insert_with(|| {
-                        (
-                            RouteStats {
-                                method: slot.method().to_string(),
-                                route: slot.route().to_string(),
-                                count: 0,
-                                overcount: 0,
-                                observed: 0,
-                                err4xx: 0,
-                                err5xx: 0,
-                                rt_sum_us: 0,
-                                rt: None,
-                            },
-                            RouteHist::default(),
-                        )
+                    .or_insert_with(|| Merged {
+                        stats: RouteStats {
+                            method: slot.method().to_string(),
+                            route: slot.route().to_string(),
+                            count: 0,
+                            overcount: 0,
+                            observed: 0,
+                            err4xx: 0,
+                            err5xx: 0,
+                            rt_sum_us: 0,
+                            rt: None,
+                        },
+                        hist: RouteHist::default(),
+                        // Same hasher for both generations: same hash, same filter cell.
+                        hash: slot.hash,
+                        seen: 0,
                     });
-                e.0.count = e.0.count.saturating_add(count);
-                e.0.overcount = e.0.overcount.saturating_add(slot.overcount);
-                e.0.err4xx += slot.err4xx;
-                e.0.err5xx += slot.err5xx;
-                e.0.rt_sum_us = e.0.rt_sum_us.saturating_add(slot.rt_sum);
-                e.1.merge_from(&slot.hist);
+                e.stats.count = e.stats.count.saturating_add(count);
+                e.stats.overcount = e.stats.overcount.saturating_add(slot.overcount);
+                e.stats.err4xx += slot.err4xx;
+                e.stats.err5xx += slot.err5xx;
+                e.stats.rt_sum_us = e.stats.rt_sum_us.saturating_add(slot.rt_sum);
+                e.hist.merge_from(&slot.hist);
+                e.seen |= 1 << gi;
             }
         }
         let mut routes: Vec<RouteStats> = merged
             .into_values()
-            .map(|(mut stats, hist)| {
-                stats.observed = hist.total();
-                stats.rt = hist.percentiles();
-                stats
+            .map(|mut m| {
+                // Requests of a generation where the route was not monitored: at most its
+                // filter cell there (upper bound), maybe none (lower bound unchanged).
+                for (gi, g) in gens.iter().enumerate() {
+                    if m.seen & (1 << gi) == 0 {
+                        let extra = g.unmonitored_bound(m.hash);
+                        m.stats.count = m.stats.count.saturating_add(extra);
+                        m.stats.overcount = m.stats.overcount.saturating_add(extra);
+                    }
+                }
+                m.stats.observed = m.hist.total();
+                m.stats.rt = m.hist.percentiles();
+                m.stats
             })
             .collect();
         routes.sort_by(|a, b| {
