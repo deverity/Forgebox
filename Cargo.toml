@@ -133,6 +133,15 @@ window-vibrancy = "0.8.1"
 # A second Forgebox.exe focuses the running one (ADR-0035). Plugins may link Win32 themselves;
 # src-tauri still has no direct windows/windows-sys dependency (cargo xtask arch-guard).
 tauri-plugin-single-instance = "2.4.5"
+# Clipboard ("Copiar comando") and native folder/file dialog (PathField, only when hello.local);
+# M2-E1-T13. Plugins may link Win32 themselves; src-tauri still has no direct windows deps.
+# Pinned exactly: the Tauri CLI refuses a crate and its npm package on different minors
+# ("version mismatched Tauri packages"), so apps/desktop/package.json pins
+# @tauri-apps/plugin-dialog 2.7.3 and @tauri-apps/plugin-clipboard-manager 2.3.3 (same minors).
+# The workspace MSRV (rust-version 1.88) limits the crates: dialog 2.8.x and clipboard-manager
+# 2.5.x need Rust 1.90. Bump crate and npm package together when the MSRV moves.
+tauri-plugin-clipboard-manager = "2.3.3"
+tauri-plugin-dialog = "2.7.3"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

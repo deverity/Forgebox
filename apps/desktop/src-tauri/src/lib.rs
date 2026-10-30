@@ -46,6 +46,10 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             window::on_second_instance(app, &argv);
         }))
+        // M2-E1-T13: "Copiar comando" and the native dialog of PathField (only offered when the
+        // daemon is local; capabilities/main.json grants just these two commands).
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             // The bridge's actor and the forge-ipc clients live on Tauri's tokio runtime.
             // Nothing connects here: a context opens on the first command naming it,

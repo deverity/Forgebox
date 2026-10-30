@@ -30,8 +30,13 @@ import type { ConnectionSlice } from "./stores";
 
 export const RECONNECT_HOLD_MS = 30_000;
 
-/** Statuses that come back to `connected` by themselves. */
-const HOLD_STATUSES = new Set<ConnectionStatus>(["idle", "connecting", "reconnecting", "starting"]);
+/** Statuses that come back to `connected` by themselves: a user action is held, not refused. */
+export const HOLD_STATUSES: ReadonlySet<ConnectionStatus> = new Set<ConnectionStatus>([
+  "idle",
+  "connecting",
+  "reconnecting",
+  "starting",
+]);
 
 interface Held {
   method: string;

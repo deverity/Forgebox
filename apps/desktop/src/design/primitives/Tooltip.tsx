@@ -36,6 +36,7 @@ export function Tooltip({ content, command, children, delayMs = 400 }: TooltipPr
                   {command ? (
                     <code
                       data-slot="command"
+                      data-forge-cli={command}
                       className="mt-1 block font-mono text-mono text-fg-secondary"
                     >
                       {command}

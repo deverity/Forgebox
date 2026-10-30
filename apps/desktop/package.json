@@ -35,6 +35,8 @@
     "@tanstack/react-router": "1.170.46",
     "@tanstack/react-virtual": "3.14.23",
     "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-clipboard-manager": "2.3.3",
+    "@tauri-apps/plugin-dialog": "2.7.3",
     "i18next": "26.5.11",
     "motion": "14.7.1",
     "radix-ui": "1.8.1",
