@@ -2068,7 +2068,7 @@ version = "0.1.0"
 dependencies = [
  "anstream",
  "anstyle",
- "base64 0.22.1",
+ "base64 0.23.1",
  "clap",
  "clap_complete",
  "embed-resource",
@@ -2116,7 +2116,7 @@ dependencies = [
 name = "forge-daemon"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "clap",
  "embed-resource",
  "forge-core",
@@ -2189,7 +2189,7 @@ name = "forge-ipc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "forge-core",
  "futures",
  "getrandom 0.4.3",
@@ -2309,7 +2309,7 @@ name = "forge-registry"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "forge-core",
  "forge-manifest",
  "futures",
@@ -2395,7 +2395,7 @@ dependencies = [
 name = "forge-tls"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "forge-core",
  "forge-ipc",
  "getrandom 0.4.3",
@@ -4716,7 +4716,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitfields",
  "block-padding",
  "blowfish",
