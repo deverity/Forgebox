@@ -77,7 +77,7 @@ x509-parser = "0.18.1"
 # rcgen's validity fields are `time::OffsetDateTime`; forge-tls converts from jiff at the edge.
 time = "0.3.55"
 # SHA-1 certificate thumbprints: the identity Windows uses for roots (forge_core::platform).
-sha1 = "0.10.7"
+sha1 = "0.11.0"
 # TLS handshake tests of forge-tls (dev only): a local tokio-rustls server and a rustls/webpki
 # client that must enforce the CA name constraints. Same crypto provider as reqwest (aws-lc-rs).
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
