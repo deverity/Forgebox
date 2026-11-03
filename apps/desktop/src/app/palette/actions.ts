@@ -6,11 +6,11 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { runAction, type Action } from "../../actions/registry";
 import { startAllServices, stopAllServices } from "../../actions/services";
-import { openTerminal } from "../../actions/terminal";
 import type { MethodName } from "../../ipc/methods";
 import { toast } from "../../design/primitives/toastStore";
 import { useErrorMessage, useErrorTranslate } from "../shell/useErrorText";
 import { useCapabilities, useRuntime } from "../../state";
+import { openTerminal } from "../../state/terminals";
 import { featureOf, type FeatureId } from "../features";
 import { DEFAULT_SHORTCUTS } from "../shortcuts/registry";
 import type { ShortcutHandlers } from "../shortcuts/useShortcuts";
@@ -119,7 +119,12 @@ export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
       stopAll: (label) =>
         guarded("services.stop", label, () => run(stopAllServices, undefined, label)),
       openTerminal: (label) =>
-        guarded("terminal.open", label, () => run(openTerminal, undefined, label)),
+        guarded("terminal.open", label, () => {
+          // The tab is added at once; the Terminal screen measures it and calls `terminal.open`.
+          openTerminal({}, runtime.context);
+          goTo("terminal");
+          return Promise.resolve(true);
+        }),
       handlers: () => {
         const handlers: ShortcutHandlers = {
           "palette.open": onTogglePalette,
@@ -146,5 +151,5 @@ export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
       },
     };
     return api;
-  }, [goTo, openService, run, capabilities, tx, translateError, onTogglePalette]);
+  }, [goTo, openService, run, runtime.context, capabilities, tx, translateError, onTogglePalette]);
 }

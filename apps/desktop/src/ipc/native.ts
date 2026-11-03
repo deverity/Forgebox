@@ -22,6 +22,19 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/** Reads the clipboard text (paste in the terminal); `null` when unavailable or denied. */
+export async function pasteText(): Promise<string | null> {
+  try {
+    if (inTauri()) {
+      const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+      return await readText();
+    }
+    return await navigator.clipboard.readText();
+  } catch {
+    return null;
+  }
+}
+
 export type PickKind = "directory" | "file";
 
 /** Native picker (docs/07 §6); `null` when cancelled or unavailable. Local daemons only. */

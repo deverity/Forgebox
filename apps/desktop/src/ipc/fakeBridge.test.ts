@@ -87,6 +87,30 @@ describe("fakeBridge jobs", () => {
     expect(cancel.was_running).toBe(true);
     expect(fake.jobList().map((j) => j.state)).toEqual(["failed", "cancelled"]);
   });
+
+  it("end a held job when the test says so, with the scripted or a given outcome", async () => {
+    const fake = createFakeBridge({
+      handlers: {
+        "tools.remove": (params) =>
+          fakeJob({ hold: true, outcome: { done: { ok: true, message: params.spec } } }),
+      },
+    });
+    const events = await record(fake, "events.subscribe", { filter: { kinds: ["job.*"] } });
+    const scripted = (await call(fake, "tools.remove", { spec: "a" })) as T.JobDto;
+    const given = (await call(fake, "tools.remove", { spec: "b" })) as T.JobDto;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fake.jobList().map((j) => j.state)).toEqual(["running", "running"]);
+    expect(fake.completeJob(scripted.id)).toBe(true);
+    expect(fake.completeJob(given.id, { failed: { code: "io", message: "disk full" } })).toBe(true);
+    expect(fake.completeJob(given.id)).toBe(false);
+    expect(fake.completeJob("01JNOSUCHJOB00000000000000")).toBe(false);
+    fake.flush();
+    expect(events.kinds()).toEqual(["job.started", "job.started", "job.done", "job.failed"]);
+    const done = (await call(fake, "jobs.get", { job_id: scripted.id })) as T.JobDto;
+    expect([done.state, done.result]).toEqual(["done", { ok: true, message: "a" }]);
+    const failed = (await call(fake, "jobs.get", { job_id: given.id })) as T.JobDto;
+    expect([failed.state, failed.error?.code]).toEqual(["failed", "io"]);
+  });
 });
 
 describe("fakeBridge streams", () => {
