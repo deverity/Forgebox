@@ -355,7 +355,7 @@ Forgebox/
 │       │       │                 #   connect_or_start, vigia de daemon.shutdown, evidência do arquivo de trava), policy.rs
 │       │       │                 #   (política pura de auto-start), streams.rs (bomba: quadros ≤ 16 ms/≤ 256, janela de 4
 │       │       │                 #   confirmados, lagged/reset/end; registro de streams), errors.rs (ClientError → ApiError)
-│       │       ├── tray.rs       # (M2-E1-T15) ícone/menu de bandeja, estados, ações rápidas
+│       │       ├── tray/         # (M2-E1-T15) mod.rs ator TrayModel · model.rs modelo puro · menu.rs ícone/menu nativos · icons.rs bitmaps
 │       │       ├── window.rs     # (M2-E1-T7, ADR-0035) janela escondida até `ready`, choose_effect (Mica/Acrylic/opaco)
 │       │       │                 #   aplicado por window-vibrancy, reavaliação em tema/foco/prefs, fechar → bandeja,
 │       │       │                 #   segunda instância foca (tauri-plugin-single-instance), comandos ready/appearance_get
@@ -417,7 +417,7 @@ Forgebox/
 │   └── assets/                   # banners, ícones do instalador
 │
 ├── xtask/                        # cargo xtask: build-all, gen-ts (contratos → TS), schema, release, arch-guard (grafo de dependências: GUI/CLI/MCP só dependem de forge-ipc; GUI sem windows/windows-sys), lint-registry, registry-index, registry-sign, registry-keygen
-├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1; e2e-desktop.ps1 (e2e da janela real, M2-E1-T19); qa/ (capture-window.ps1: PrintWindow, window-probe.ps1)
+├── scripts/                      # ci.ps1 (CI local), dev: setup.ps1, run-daemon.ps1, smoke.ps1; e2e-desktop.ps1 (e2e da janela real, M2-E1-T19); qa/ (capture-window.ps1: PrintWindow, window-probe.ps1, capture-tray.ps1: área de notificação e menu da bandeja, M2-E1-T15)
 ├── tests/
 │   ├── e2e/                      # testes de ponta a ponta contra daemon real (Windows runner)
 │   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout;
