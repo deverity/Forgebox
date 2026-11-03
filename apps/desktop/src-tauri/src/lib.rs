@@ -12,6 +12,7 @@ pub mod data_dir;
 pub mod i18n;
 pub mod perf;
 pub mod prefs;
+pub mod shortcuts;
 pub mod window;
 pub mod window_state;
 
@@ -50,6 +51,10 @@ pub fn run() {
         // daemon is local; capabilities/main.json grants just these two commands).
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        // M2-E1-T14: "open site in the browser" and the global terminal shortcuts (registered
+        // only when the webview asks, see shortcuts.rs).
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(move |app| {
             // The bridge's actor and the forge-ipc clients live on Tauri's tokio runtime.
             // Nothing connects here: a context opens on the first command naming it,
@@ -93,6 +98,7 @@ pub fn run() {
             perf::perf_startup,
             prefs::gui_prefs_get,
             prefs::gui_prefs_set,
+            shortcuts::shortcuts_sync,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the Forgebox desktop application");

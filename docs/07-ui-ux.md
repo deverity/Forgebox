@@ -160,6 +160,10 @@ Button (primary/secondary/ghost/destructive, com loading), IconButton, Toggle, S
 ## 8. Atalhos
 `Ctrl+K` palette · `Ctrl+1..9` seções · `Ctrl+Shift+S` start all · `Ctrl+Shift+X` stop all · `Ctrl+N` novo site · `Ctrl+L` logs · `` Ctrl+` `` terminal · `Ctrl+,` configurações · `Ctrl+Alt+T` terminal global (compatível com Laragon). Todos reconfiguráveis.
 
+- Implementação (M2-E1-T14): `src/app/shortcuts/registry.ts` (padrões, overrides, conflitos, `chordFromEvent`), `src/app/shortcuts/useShortcuts.ts` (listener único, sincronização dos atalhos globais) e `src/app/palette/` (`PaletteHost` eager, `CommandPalette` em chunk próprio). Overrides ficam em `prefs.json` sob a chave `shortcuts` (`{id: "Ctrl+Shift+1"}`) via `gui_prefs_get/set`; um acorde pertence a um só comando (`conflict` recusa com mensagem), tecla sem Ctrl/Alt só vale para `F1..F24`. Teclas nativas: dentro de TextField/textarea/select/contenteditable só `Ctrl+K` dispara. AltGr (Ctrl+Alt com `getModifierState("AltGraph")`, teclados pt-BR) é texto, nunca atalho. API para o editor de Configurações (M2-E3-T16): `shortcutRegistry.bindings()/set(id, chord)/reset(id)/subscribe` e `describeShortcutError`.
+- Globais (`src-tauri/src/shortcuts.rs`, comando `shortcuts_sync`): `Ctrl+Alt+T` e `` Ctrl+` `` só são registrados no sistema quando `hello` indica `terminal.open` implementado (e permitido); senão o webview pede `enabled:false` e nada fica registrado. Falha de registro (acorde de outro programa) volta em `failed`, vira toast e nunca é fatal. O pressionar emite `forgebox://global-shortcut` e o webview roda a ação `terminal.open`.
+- Os templates de CLI de `services.start`/`services.stop` ganharam a alternativa `forge start all`/`forge stop all` para alvos vazios (golden atualizado).
+
 ## 9. Acessibilidade e i18n
 - Navegação completa por teclado; `aria-*` via Radix; foco visível com anel `--accent`; textos alternativos em ícones de status (não só cor).
 - pt-BR e en-US no lançamento; strings em `src/i18n/`; formatos de data/número via `Intl`.

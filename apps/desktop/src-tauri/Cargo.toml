@@ -47,6 +47,8 @@ window-vibrancy = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-clipboard-manager = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

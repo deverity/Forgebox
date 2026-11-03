@@ -39,3 +39,17 @@ export async function pickPath(kind: PickKind, defaultPath?: string): Promise<st
     return null;
   }
 }
+
+/** Opens `url` in the default browser (opener plugin); a plain browser tab outside Tauri. */
+export async function openUrl(url: string): Promise<boolean> {
+  try {
+    if (inTauri()) {
+      const { openUrl: open } = await import("@tauri-apps/plugin-opener");
+      await open(url);
+      return true;
+    }
+    return globalThis.open(url, "_blank", "noopener") !== null;
+  } catch {
+    return false;
+  }
+}
