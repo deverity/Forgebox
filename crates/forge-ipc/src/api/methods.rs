@@ -46,8 +46,8 @@ macro_rules! api_methods {
             call "tools.history" tools_history(ToolHistoryParams) -> UpdateHistoryDto [Viewer] "forge tool info --history" => "forge tool info {tool} --history {series=--series} {limit=--limit}";
             call "tools.icon" tools_icon(ToolParams) -> IconDto [Viewer] "";
             // services / instances
-            job "services.start" services_start(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge start" => "forge start {targets...}";
-            job "services.stop" services_stop(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge stop" => "forge stop {targets...}";
+            job "services.start" services_start(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge start" => "[targets] forge start {targets...} | forge start all";
+            job "services.stop" services_stop(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge stop" => "[targets] forge stop {targets...} | forge stop all";
             job "services.restart" services_restart(ServiceTargetsParams) -> ServiceStatusDto [Operator, mutating] "forge restart" => "forge restart {targets...}";
             job "services.reload" services_reload(ServiceTargetParams) -> ServiceStatusDto [Operator, mutating] "forge reload" => "forge reload {target}";
             call "services.status" services_status(NoParams) -> ServiceStatusDto [Viewer] "forge status" => "forge status";

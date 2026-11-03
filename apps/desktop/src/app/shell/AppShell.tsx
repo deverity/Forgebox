@@ -1,6 +1,7 @@
 import { Outlet } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { useRuntime } from "../../state";
+import { PaletteHost } from "../palette/PaletteHost";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { accentOf } from "./contexts";
 import { LazyToasts } from "./LazyToasts";
@@ -33,6 +34,7 @@ export function AppShell() {
         </main>
       </div>
       <StatusBar />
+      <PaletteHost />
       <LazyToasts />
     </div>
   );

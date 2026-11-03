@@ -37,13 +37,8 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "public tunnels (cloudflared, ngrok, expose)",
     ),
     ("sites.new", "M3-E2", "project scaffolding from a stack"),
-    ("db.list", "M2-E3-T5", "database management"),
-    ("db.create", "M2-E3-T5", "database management"),
-    ("db.drop", "M2-E3-T5", "database management"),
     ("db.export", "M2-E3-T6", "database export"),
     ("db.import", "M2-E3-T6", "database import"),
-    ("db.shell", "M2-E3-T5", "database shell"),
-    ("db.url", "M2-E3-T5", "database URLs"),
     ("db.open", "M3-E1", "database GUI launch"),
     (
         "net.lan_expose",
@@ -157,10 +152,6 @@ pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
 /// is not in the table).
 pub const LOGS_BEFORE_SEQ_TASK: &str = "M2-E3-T8";
 
-/// Roadmap task of `tools.install|remove {target}` (extensions into a version of the tool
-/// they extend, `--for`; ADR-0041). The methods work without it.
-pub const EXTENSION_TARGET_TASK: &str = "M2-E2-T8";
-
 /// Roadmap task of `services.create {data_dir}` (ADR-0041). The method works without it.
 pub const SERVICES_DATA_DIR_TASK: &str = "M2-E2-T10";
 
@@ -244,11 +235,6 @@ mod tests {
     fn e3_methods_name_their_task() {
         // The E3 contract (ADR-0040): each backend task owns its methods.
         for (method, task) in [
-            ("db.list", "M2-E3-T5"),
-            ("db.create", "M2-E3-T5"),
-            ("db.drop", "M2-E3-T5"),
-            ("db.url", "M2-E3-T5"),
-            ("db.shell", "M2-E3-T5"),
             ("db.export", "M2-E3-T6"),
             ("db.import", "M2-E3-T6"),
             ("db.open", "M3-E1"),
@@ -321,7 +307,6 @@ mod tests {
         ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
-        assert_eq!(EXTENSION_TARGET_TASK, "M2-E2-T8");
         assert_eq!(SERVICES_DATA_DIR_TASK, "M2-E2-T10");
         // Every E2 row names its task, not only the epic.
         for (method, task, _) in NOT_IMPLEMENTED {

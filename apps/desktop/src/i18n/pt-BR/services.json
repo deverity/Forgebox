@@ -1,0 +1,136 @@
+{
+  "title": "Serviços",
+  "summary": "{running} de {total} em execução",
+  "category": {
+    "webserver": "Servidores web",
+    "database": "Bancos de dados",
+    "cache": "Cache",
+    "mail": "E-mail",
+    "runtime": "Runtimes",
+    "devtool": "Ferramentas de dev",
+    "other": "Outros"
+  },
+  "state": {
+    "stopped": "Parado",
+    "starting": "Iniciando",
+    "running": "Em execução",
+    "stopping": "Parando",
+    "crashed": "Encerrou com erro",
+    "failed": "Falhou",
+    "maintenance": "Atualizando"
+  },
+  "row": {
+    "running": "{state} · {uptime}",
+    "noPort": "Sem porta",
+    "noMetrics": "—",
+    "metrics": "{cpu}% · {ram}",
+    "pool": "Pool {name}",
+    "workers": "{busy}/{total} workers"
+  },
+  "action": {
+    "start": "Iniciar",
+    "starting": "Iniciando…",
+    "started": "Iniciado",
+    "stop": "Parar",
+    "stopping": "Parando…",
+    "stopped": "Parado",
+    "restart": "Reiniciar",
+    "restarting": "Reiniciando…",
+    "restarted": "Reiniciado"
+  },
+  "empty": {
+    "title": "Nenhum serviço ainda",
+    "description": "Instale uma ferramenta que roda como serviço, como MySQL ou Nginx, e ela aparece aqui.",
+    "action": "Abrir o Catálogo"
+  },
+  "sheet": {
+    "title": "Detalhes do serviço",
+    "description": "Estado, logs e instâncias deste serviço",
+    "tabs": "Seções do serviço"
+  },
+  "tabs": {
+    "overview": "Visão geral",
+    "logs": "Logs",
+    "instances": "Instâncias"
+  },
+  "overview": {
+    "timeline": "Linha do tempo do estado",
+    "timelineLoading": "Carregando histórico…",
+    "timelineEmpty": "Nenhuma mudança de estado registrada ainda.",
+    "version": "Versão",
+    "port": "Portas",
+    "pid": "Processo",
+    "restarts": "Reinícios",
+    "autostart": "Inicia com o Forgebox",
+    "yes": "Sim",
+    "no": "Não",
+    "dataDir": "Pasta de dados",
+    "size": "Tamanho dos dados"
+  },
+  "timeline": {
+    "service_starting": "Iniciando",
+    "service_running": "Em execução",
+    "service_stopping": "Parando",
+    "service_stopped": "Parado",
+    "service_crashed": "Encerrou com erro",
+    "service_failed": "Falhou ao iniciar",
+    "service_maintenance": "Atualizando"
+  },
+  "failure": {
+    "title": "Este serviço não iniciou",
+    "newPort": "Nova porta principal",
+    "portCliHint": "Digite uma porta para ver o comando.",
+    "portInvalid": "Digite uma porta válida primeiro.",
+    "apply": "Trocar porta",
+    "applying": "Trocando…",
+    "applied": "Porta trocada",
+    "cancelPort": "Cancelar",
+    "kill": "Encerrar {exe}",
+    "killing": "Encerrando…",
+    "killed": "Processo encerrado"
+  },
+  "logs": {
+    "filter": "Filtro",
+    "pause": "Pausar",
+    "resume": "Retomar",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copyFailed": "Não foi possível copiar",
+    "lost": "{count} linhas se perderam durante o acompanhamento.",
+    "region": "Log de {name}",
+    "loading": "Carregando o log…",
+    "empty": "Nenhuma linha para mostrar.",
+    "paused": "Pausado: as novas linhas ficam guardadas e aparecem ao retomar."
+  },
+  "instances": {
+    "title": "Instâncias",
+    "remove": "Remover {name}",
+    "removeShort": "Remover"
+  },
+  "create": {
+    "title": "Nova instância",
+    "version": "Versão",
+    "name": "Nome",
+    "port": "Porta principal (opcional)",
+    "dataDir": "Pasta de dados (opcional)",
+    "autostart": "Iniciar com o Forgebox",
+    "submit": "Criar instância",
+    "creating": "Criando…",
+    "created": "Criada",
+    "nameRequired": "Digite um nome para a instância.",
+    "nameInvalid": "Use letras minúsculas, dígitos, - e _ (até 32).",
+    "nameTaken": "Já existe uma instância com esse nome.",
+    "portInvalid": "Use uma porta entre 1 e 65535."
+  },
+  "remove": {
+    "title": "Remover {name}",
+    "warning": "{name} será parada e removida. Isso não pode ser desfeito.",
+    "type": "Digite {name} para confirmar",
+    "deleteData": "Apagar também os dados",
+    "confirm": "Remover instância",
+    "cancel": "Cancelar",
+    "removing": "Removendo…",
+    "removed": "Removida",
+    "mustType": "Digite {name} para habilitar."
+  }
+}

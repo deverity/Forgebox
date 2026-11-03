@@ -19,6 +19,7 @@ pub mod args;
 pub mod boot;
 pub mod catalog;
 pub mod daemon;
+pub mod databases;
 pub mod event_log;
 pub mod install;
 pub mod instance_case;

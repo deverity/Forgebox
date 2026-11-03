@@ -1,5 +1,61 @@
 {
   "placeholder": "Type a command or search…",
+  "label": "Command palette",
   "empty": "No results for “{query}”",
-  "hint": "Press {key} to open the command palette"
+  "hint": "Press {key} to open the command palette",
+  "groups": {
+    "actions": "Actions",
+    "navigation": "Navigation",
+    "services": "Services",
+    "sites": "Sites"
+  },
+  "commands": {
+    "goTo": "Go to {name}",
+    "startAll": "Start all",
+    "stopAll": "Stop all",
+    "newSite": "New site",
+    "logs": "Open logs",
+    "settings": "Open settings",
+    "openTerminal": "Open terminal",
+    "startInstance": "Start {name}",
+    "stopInstance": "Stop {name}",
+    "restartInstance": "Restart {name}",
+    "openInstance": "Open details of {name}",
+    "openSite": "Open {host} in the browser"
+  },
+  "unavailable": "Unavailable: {reason}",
+  "toast": {
+    "running": "{label}…",
+    "done": "{label}: done",
+    "openFailed": "Could not open {url}"
+  },
+  "global": {
+    "failed": "The global shortcut {chord} could not be registered: {error}"
+  },
+  "shortcuts": {
+    "conflict": "{chord} is already used by “{name}”",
+    "invalid": "“{chord}” is not a valid shortcut",
+    "needsModifier": "{chord} needs Ctrl or Alt",
+    "unknown": "Unknown shortcut {id}",
+    "saveFailed": "The shortcut was not saved: {message}",
+    "names": {
+      "palette.open": "Command palette",
+      "nav.dashboard": "Go to Dashboard",
+      "nav.services": "Go to Services",
+      "nav.sites": "Go to Sites",
+      "nav.php": "Go to PHP",
+      "nav.databases": "Go to Databases",
+      "nav.mail": "Go to Mail",
+      "nav.logs": "Go to Logs",
+      "nav.catalog": "Go to Catalog",
+      "nav.terminal": "Go to Terminal",
+      "services.startAll": "Start all",
+      "services.stopAll": "Stop all",
+      "sites.new": "New site",
+      "logs.open": "Open logs",
+      "settings.open": "Open settings",
+      "terminal.open": "Open terminal",
+      "terminal.global": "Open terminal (global)"
+    }
+  }
 }

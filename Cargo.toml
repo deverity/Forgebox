@@ -148,6 +148,11 @@ tauri-plugin-updater = { version = "2.12.0", default-features = false, features 
 # 2.5.x need Rust 1.90. Bump crate and npm package together when the MSRV moves.
 tauri-plugin-clipboard-manager = "2.3.3"
 tauri-plugin-dialog = "2.7.3"
+# M2-E1-T14: open a site in the browser (opener) and the global terminal shortcut. Same minor as
+# the npm packages (@tauri-apps/plugin-opener 2.5.3, plugin-global-shortcut 2.3.1); opener 2.7.x
+# needs Rust 1.90 (workspace MSRV 1.88).
+tauri-plugin-opener = "2.5.3"
+tauri-plugin-global-shortcut = "2.3.1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

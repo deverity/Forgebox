@@ -3,10 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SiteTabsHost } from "../../app/hosts";
 import { PlaceholderPage } from "../../app/shell/PlaceholderPage";
 
-/** Placeholder until M2-E2-T15. */
-export function SitesPage() {
-  return <PlaceholderPage id="sites" />;
-}
+export { SitesPage } from "./SitesPage";
 
 /** Placeholder until M2-E2-T16; already hosts the tabs other epics register. */
 export function SiteDetailPage() {

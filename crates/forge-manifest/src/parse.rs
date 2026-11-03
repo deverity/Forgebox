@@ -2055,6 +2055,19 @@ impl Checker<'_> {
             }
         }
         self.source(&spec.source, VersionScheme::Semver, None);
+        // `target_*` variant keys link an installed extension to its target version
+        // (ADR-0043): a release cannot carry them.
+        for (i, release) in spec.source.releases.iter().enumerate() {
+            for key in release.variants.keys() {
+                if key.starts_with(crate::schema::extension::TARGET_KEY_PREFIX) {
+                    self.push(
+                        IssueCode::InvalidId,
+                        format!("spec.source.releases[{i}].variants.{key}"),
+                        "`target_*` keys are reserved for the link to the target version",
+                    );
+                }
+            }
+        }
         let install = &spec.install;
         if install.archive == Some(ArchiveFormat::Msi) {
             self.push(

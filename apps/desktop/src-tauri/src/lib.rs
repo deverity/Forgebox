@@ -13,6 +13,7 @@ pub mod data_dir;
 pub mod i18n;
 pub mod perf;
 pub mod prefs;
+pub mod shortcuts;
 pub mod updater;
 pub mod window;
 pub mod window_state;
@@ -60,7 +61,11 @@ pub fn run() {
         // M2-E1-T13: "Copiar comando" and the native dialog of PathField (only offered when the
         // daemon is local; capabilities/main.json grants just these two commands).
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        // M2-E1-T14: "open site in the browser" and the global terminal shortcuts (registered
+        // only when the webview asks, see shortcuts.rs).
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
     if let updater::Activation::Active { pubkey, .. } = &activation {
         builder = builder.plugin(
             tauri_plugin_updater::Builder::new()
@@ -121,6 +126,7 @@ pub fn run() {
             updater::updater_status,
             updater::updater_check,
             updater::updater_apply,
+            shortcuts::shortcuts_sync,
         ])
         .build(context)
         .expect("error while building the Forgebox desktop application");

@@ -19,7 +19,9 @@
 //!   installed → `update.migrate` (`copy_dir` of `ext/`, `only_missing`) → re-renders the
 //!   series configuration for the new version ([`Layout::rerender`], the injected
 //!   `TemplateRenderer`) → blue/green ([`PoolSwitcher`], tools with `service.kind: pool`)
-//!   → moves `current` when the CLI version was in the same line → marks the history row
+//!   → re-links the extensions whose files `update.migrate` carried over
+//!   ([`Layout::carry_extensions`], ADR-0043) → moves `current` when the CLI version was
+//!   in the same line → marks the history row
 //!   `completed` → applies `retention` (versions of the line older than the new one,
 //!   beyond `update.retention`, are removed; never before the switch succeeded, never
 //!   `current`, a version a pool still serves or one used by instances) → `tool.updated`.
@@ -815,8 +817,13 @@ impl Core {
             }
         };
 
-        // 5. current, when the CLI version was in this line.
+        // 5. current, when the CLI version was in this line. Extensions whose files
+        // `update.migrate` carried over follow the new version first (ADR-0043): their rows
+        // of the old one go away with it at retention.
         let mut warnings = Vec::new();
+        if let Err(e) = self.deps.layout.carry_extensions(from, &to).await {
+            warnings.push(format!("extensions: {e}"));
+        }
         let current_moved = match self.follow_current(manifest, from, &to).await {
             Ok(moved) => moved,
             Err(e) => {

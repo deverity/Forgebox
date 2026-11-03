@@ -4,7 +4,9 @@ import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
+import type services from "./en-US/services.json";
 import type shell from "./en-US/shell.json";
+import type sites from "./en-US/sites.json";
 import type tray from "./en-US/tray.json";
 import type updater from "./en-US/updater.json";
 
@@ -21,6 +23,8 @@ export interface Resources {
   palette: typeof palette;
   gallery: typeof gallery;
   updater: typeof updater;
+  services: typeof services;
+  sites: typeof sites;
 }
 
 declare module "i18next" {

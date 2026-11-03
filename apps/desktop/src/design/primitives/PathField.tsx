@@ -9,6 +9,11 @@ export interface PathFieldProps extends Omit<TextFieldProps, "value" | "onChange
   onChange: (value: string) => void;
   /** What "Procurar…" picks (default a folder). */
   kind?: PickKind;
+  /**
+   * With a remote daemon, show "Browse…" disabled with the reason instead of hiding it
+   * (forms where the missing button would look like a bug).
+   */
+  showDisabledBrowse?: boolean;
 }
 
 /**
@@ -16,7 +21,13 @@ export interface PathFieldProps extends Omit<TextFieldProps, "value" | "onChange
  * (`hello.local`): a path picked on this machine means nothing to a remote daemon, so there
  * the field is free text with an explanation (docs/07 section 6, ADR-0009).
  */
-export function PathField({ value, onChange, kind = "directory", ...rest }: PathFieldProps) {
+export function PathField({
+  value,
+  onChange,
+  kind = "directory",
+  showDisabledBrowse = false,
+  ...rest
+}: PathFieldProps) {
   const { t } = useTranslation("common");
   const hello = useHello();
   const local = hello?.local === true;
@@ -40,6 +51,14 @@ export function PathField({ value, onChange, kind = "directory", ...rest }: Path
           onClick={() => {
             void browse();
           }}
+        >
+          {t("ui.pathBrowse")}
+        </Button>
+      ) : remote && showDisabledBrowse ? (
+        <Button
+          disabled
+          title={t("ui.pathRemoteHint")}
+          data-disabled-reason={t("ui.pathRemoteHint")}
         >
           {t("ui.pathBrowse")}
         </Button>

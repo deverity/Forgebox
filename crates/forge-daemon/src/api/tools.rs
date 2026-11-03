@@ -1,4 +1,7 @@
 //! `tools.*`: catalog, installation, removal, updates, active CLI version.
+//!
+//! `tools.install`/`tools.remove`/`tools.info` also take extensions (`kind: Extension`,
+//! ADR-0043): installed into versions of the tool they extend (`target`, CLI `--for`).
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -22,11 +25,12 @@ use forge_ipc::api::{
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_manifest::schema::tool::ServiceKind;
+use forge_provider::layout::ExtensionLink;
 use forge_provider::update::{ApplyRequest, AvailableUpdate, RollbackRequest};
 
 use super::convert;
 use super::route;
-use crate::catalog::{self, ToolEntry};
+use crate::catalog::{self, ExtensionEntry, Installable, ToolEntry};
 use crate::daemon::Daemon;
 use crate::install;
 
@@ -179,7 +183,10 @@ async fn list(daemon: Daemon, params: ToolListParams, _ctx: Ctx) -> Result<ToolL
 }
 
 async fn info(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<ToolInfoDto> {
-    let tool = catalog::require_tool(&daemon.registry, &params.tool)?;
+    let tool = match catalog::require_installable(&daemon.registry, &params.tool)? {
+        Installable::Tool(tool) => tool,
+        Installable::Extension(ext) => return extension_info(&daemon, &ext).await,
+    };
     let rows = catalog::installed(&daemon.reader, &params.tool, Some(&tool.manifest)).await?;
     let sites = daemon
         .reader
@@ -225,27 +232,130 @@ async fn info(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<ToolInfoD
     })
 }
 
-/// `target` of `tools.install`/`tools.remove` (extensions, API 1.1) is M2-E2-T8: refused
-/// instead of ignored, which would install or remove more than asked.
-fn refuse_extension_target(method: &str, target: Option<&forge_ipc::api::ToolSpec>) -> Result<()> {
-    match target {
-        Some(_) => Err(ForgeError::NotImplementedYet {
-            method: method.into(),
-            task: super::not_implemented::EXTENSION_TARGET_TASK.into(),
-            what: "installing extensions into a target version (--for)".into(),
-        }),
-        None => Ok(()),
+/// The installed rows of extension `ext`, ordered by target (newest target build first,
+/// rows whose target is gone last).
+async fn extension_rows(daemon: &Daemon, ext: &ExtensionEntry) -> Result<Vec<ToolVersionRow>> {
+    let manifest = &ext.manifest;
+    let mut rows = catalog::installed(&daemon.reader, &manifest.metadata.id, None).await?;
+    if let Some(target) = catalog::tool(&daemon.registry, &manifest.spec.extends) {
+        let targets = catalog::installed(
+            &daemon.reader,
+            &manifest.spec.extends,
+            Some(&target.manifest),
+        )
+        .await?;
+        rows.sort_by_key(|r| {
+            ExtensionLink::of(r)
+                .and_then(|l| targets.iter().position(|t| t.id == l.id))
+                .unwrap_or(usize::MAX)
+        });
     }
+    Ok(rows)
+}
+
+/// `tools.info` of an extension: `kind: extension`, `extends`, one installed row per
+/// target version (its `variant` carries `target_tool`/`target_id`/`target_name`).
+async fn extension_info(daemon: &Daemon, ext: &ExtensionEntry) -> Result<ToolInfoDto> {
+    let manifest = &ext.manifest;
+    let meta = &manifest.metadata;
+    let rows = extension_rows(daemon, ext).await?;
+    let available = ext
+        .latest
+        .iter()
+        .map(|v| AvailableVersionDto {
+            version: v.clone(),
+            variants: Vec::new(),
+            channel: Some("stable".into()),
+        })
+        .collect();
+    Ok(ToolInfoDto {
+        tool: ToolDto {
+            id: meta.id.clone(),
+            name: meta.name.clone(),
+            category: serde_json::to_value(meta.category)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned)),
+            description: meta.summary.clone(),
+            installed: rows
+                .iter()
+                .map(|r| convert::tool_version(r, false))
+                .collect(),
+            current: None,
+            // Extensions are not followed by the update engine (ADR-0043).
+            policy: UpdatePolicy::Manual,
+            latest: ext.latest.clone(),
+            update_available: None,
+            has_service: false,
+        },
+        available,
+        used_by: Vec::new(),
+        kind: CatalogKind::Extension,
+        description_md: meta.description.clone(),
+        homepage: meta.homepage.clone(),
+        docs: meta.docs.clone(),
+        changelog_url: None,
+        license: meta.license.clone(),
+        variants: Vec::new(),
+        suggests: Vec::new(),
+        extends: Some(manifest.spec.extends.clone()),
+        stack: None,
+    })
+}
+
+/// `--for` only means something for extensions.
+fn target_only_for_extensions(id: &ToolId) -> ForgeError {
+    ForgeError::InvalidInput(format!(
+        "{id} is a tool: --for (target) only applies to extensions (kind: Extension)"
+    ))
 }
 
 async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> Result<JobDto> {
-    refuse_extension_target("tools.install", params.target.as_ref())?;
     if params.specs.is_empty() {
         return Err(ForgeError::InvalidInput("nothing to install".into()));
     }
+    let mut kinds = Vec::new();
     for spec in &params.specs {
         let (tool, _) = install::parse_spec(spec.as_str())?;
-        catalog::require_tool(&daemon.registry, &tool)?;
+        let kind = catalog::require_installable(&daemon.registry, &tool)?;
+        match &kind {
+            Installable::Tool(_) if params.target.is_some() => {
+                return Err(target_only_for_extensions(&tool));
+            }
+            Installable::Extension(_) if params.variant.is_some() => {
+                return Err(ForgeError::InvalidInput(format!(
+                    "{tool} is an extension: its build follows the target version (no --variant)"
+                )));
+            }
+            _ => {}
+        }
+        kinds.push(kind);
+    }
+    // Targets that are already wrong fail before a job exists, unless the same request
+    // installs the extended tool first (`php@8.4 xdebug`).
+    let requested: BTreeSet<ToolId> = params
+        .specs
+        .iter()
+        .filter_map(|s| install::parse_spec(s.as_str()).ok().map(|(t, _)| t))
+        .collect();
+    for kind in &kinds {
+        let Installable::Extension(ext) = kind else {
+            continue;
+        };
+        let extends = &ext.manifest.spec.extends;
+        if requested.contains(extends) {
+            continue;
+        }
+        let target_tool = catalog::require_tool(&daemon.registry, extends)?;
+        let rows = catalog::installed(&daemon.reader, extends, Some(&target_tool.manifest)).await?;
+        let target = params.target.as_ref().map(|t| t.as_str());
+        install::extension_targets(&ext.manifest, &target_tool.manifest, &rows, target)?;
+        if rows.is_empty() {
+            return Err(ForgeError::NotFound(format!(
+                "{} installs into {extends}, and no version of {extends} is installed \
+                 (forge tool install {extends})",
+                ext.manifest.metadata.id
+            )));
+        }
     }
     let name = format!(
         "tools.install {}",
@@ -259,8 +369,16 @@ async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> R
     let d = daemon.clone();
     daemon.job(&ctx, name, move |job| async move {
         let mut installed = Vec::new();
-        for spec in &params.specs {
+        for (spec, kind) in params.specs.iter().zip(kinds) {
             job.check_cancelled()?;
+            if let Installable::Extension(ext) = kind {
+                let (_, version) = install::parse_spec(spec.as_str())?;
+                let target = params.target.as_ref().map(|t| t.as_str());
+                let rows =
+                    install::install_extension(&d, &job, &ext, version.as_deref(), target).await?;
+                installed.extend(rows.iter().map(|r| convert::tool_version(r, false)));
+                continue;
+            }
             let row =
                 install::install_one(&d, &job, spec.as_str(), params.variant.as_deref()).await?;
             let current = d
@@ -277,14 +395,21 @@ async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> R
 }
 
 async fn remove(daemon: Daemon, params: ToolRemoveParams, ctx: Ctx) -> Result<JobDto> {
-    refuse_extension_target("tools.remove", params.target.as_ref())?;
     if !params.confirm {
         return Err(ForgeError::InvalidInput(
             "removing a tool version is destructive: confirm must be true".into(),
         ));
     }
     let (tool_id, version) = install::parse_spec(params.spec.as_str())?;
-    let tool = catalog::require_tool(&daemon.registry, &tool_id)?;
+    let tool = match catalog::require_installable(&daemon.registry, &tool_id)? {
+        Installable::Tool(_) if params.target.is_some() => {
+            return Err(target_only_for_extensions(&tool_id));
+        }
+        Installable::Tool(tool) => tool,
+        Installable::Extension(ext) => {
+            return remove_extension(daemon, ext, version, params, ctx).await;
+        }
+    };
     let rows = catalog::installed(&daemon.reader, &tool_id, Some(&tool.manifest)).await?;
     let targets: Vec<ToolVersionRow> = match version.as_deref() {
         Some(v) => {
@@ -315,6 +440,63 @@ async fn remove(daemon: Daemon, params: ToolRemoveParams, ctx: Ctx) -> Result<Jo
             Ok(Ack::ok())
         },
     )
+}
+
+/// `tools.remove` of an extension: the installations of `version` (all when `None`) in
+/// the target version `params.target` names (every target when `None`), each with its
+/// file and unshared rendered files (ADR-0043).
+async fn remove_extension(
+    daemon: Daemon,
+    ext: ExtensionEntry,
+    version: Option<String>,
+    params: ToolRemoveParams,
+    ctx: Ctx,
+) -> Result<JobDto> {
+    let manifest = Arc::clone(&ext.manifest);
+    let id = manifest.metadata.id.clone();
+    let extends = manifest.spec.extends.clone();
+    let target_tool = catalog::require_tool(&daemon.registry, &extends)?;
+    let target_rows =
+        catalog::installed(&daemon.reader, &extends, Some(&target_tool.manifest)).await?;
+    let target = params.target.as_ref().map(|t| t.as_str());
+    let (targets, explicit) =
+        install::extension_targets(&manifest, &target_tool.manifest, &target_rows, target)?;
+    let rows: Vec<ToolVersionRow> = extension_rows(&daemon, &ext)
+        .await?
+        .into_iter()
+        .filter(|r| {
+            version
+                .as_deref()
+                .is_none_or(|v| r.version == v || r.version.starts_with(&format!("{v}.")))
+        })
+        .filter(|r| {
+            !explicit || ExtensionLink::of(r).is_some_and(|l| targets.iter().any(|t| t.id == l.id))
+        })
+        .collect();
+    if rows.is_empty() {
+        let what = version.map_or_else(|| id.to_string(), |v| format!("{id}@{v}"));
+        return Err(ForgeError::NotFound(match target {
+            Some(t) if explicit => format!("{what} is not installed for {t}"),
+            _ => format!("{what} is not installed"),
+        }));
+    }
+    let d = daemon.clone();
+    let name = match target {
+        Some(t) => format!("tools.remove {} --for {t}", params.spec),
+        None => format!("tools.remove {}", params.spec),
+    };
+    daemon.job(&ctx, name, move |_job| async move {
+        for row in rows {
+            d.layout
+                .remove_extension(
+                    Arc::clone(&manifest),
+                    Arc::clone(&target_tool.manifest),
+                    row.id,
+                )
+                .await?;
+        }
+        Ok(Ack::ok())
+    })
 }
 
 fn update_dto(update: &AvailableUpdate) -> ToolUpdateDto {

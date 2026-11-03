@@ -249,6 +249,31 @@ mod tests {
     }
 
     #[test]
+    fn xdebug_overlay_is_disabled_until_xdebug_is_configured() {
+        // Rendered by the extension's post_install (ADR-0043): installed, not loaded.
+        let e = Engine::embedded_only();
+        let off = e
+            .render(
+                "php/xdebug.ini.j2",
+                &json!({"php": {"series": "8.4", "xdebug": null}}),
+            )
+            .unwrap();
+        assert!(off.contains("\n;zend_extension = xdebug\n"), "{off}");
+        assert!(!off.contains("\nzend_extension"), "{off}");
+        assert!(!off.contains("xdebug.mode = "), "{off}");
+        let on = e
+            .render(
+                "php/xdebug.ini.j2",
+                &json!({"php": {"series": "8.4", "xdebug": {
+                    "mode": "debug", "start_with_request": "trigger", "client_port": 9003
+                }}}),
+            )
+            .unwrap();
+        assert!(on.contains("\nzend_extension = xdebug\n"), "{on}");
+        assert!(on.contains("xdebug.client_port = 9003\n"), "{on}");
+    }
+
+    #[test]
     fn html_filter_escapes_markup() {
         let dir = tempfile::tempdir().unwrap();
         let e = Engine::with_override_dir(dir.path());

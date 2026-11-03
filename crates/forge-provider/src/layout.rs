@@ -33,6 +33,7 @@
 
 mod actions;
 mod current;
+pub mod extension;
 pub mod path;
 pub mod shims;
 mod vars;
@@ -66,6 +67,10 @@ pub use self::actions::{
 pub(crate) use self::actions::{annotate, relative_in};
 pub use self::current::{
     CurrentVersion, TOOL_CURRENT_EVENT_VERSION, ToolCurrentEventPayload, UseReport, select,
+};
+pub use self::extension::{
+    ExtensionInstallRequest, ExtensionLink, ExtensionPlan, ExtensionPlanItem, ExtensionReport,
+    ExtensionTarget, RemovedExtension,
 };
 pub use self::path::PathReport;
 pub use self::shims::{ShimReport, ShimVersion};
@@ -202,6 +207,9 @@ pub struct RemovedVersion {
     pub path: PathBuf,
     /// Non-fatal problems (shims could not be refreshed).
     pub warnings: Vec<String>,
+    /// Extension rows linked to the version, removed with it (ADR-0043).
+    #[serde(default)]
+    pub extensions: Vec<VersionId>,
 }
 
 /// What the request resolves to before the job starts.
@@ -243,26 +251,7 @@ impl Plan {
             .install
             .archive
             .unwrap_or_else(|| ArchiveFormat::infer(&release.file_name));
-        let expect = match &req.options.expect {
-            Some(expect) => expect.clone(),
-            None => {
-                let mut expect = match (&release.sha256, &release.sha512) {
-                    (Some(sha256), _) => Expect::sha256(sha256.clone()),
-                    (None, Some(sha512)) => Expect::sha512(sha512.clone()),
-                    (None, None) => {
-                        return Err(ForgeError::VerificationFailed(format!(
-                            "{tool} {}: the release has no checksum; refusing to install an \
-                             unverified file (docs/05 §3)",
-                            release.version
-                        )));
-                    }
-                };
-                if let Some(size) = release.size {
-                    expect = expect.size(size);
-                }
-                expect
-            }
-        };
+        let expect = expectation(&tool, release, req.options.expect.as_ref())?;
         Ok(Self {
             tool_name: manifest.metadata.name.clone(),
             tool,
@@ -286,6 +275,30 @@ impl Plan {
             paths: PathVars::new(root, &self.dest),
         }
     }
+}
+
+/// What the archive of `release` must match: `explicit` (`--allow-unverified` or a
+/// caller's own), else the release's sha256 (or sha512) and size. A release without a
+/// checksum is refused.
+fn expectation(tool: &ToolId, release: &Release, explicit: Option<&Expect>) -> Result<Expect> {
+    if let Some(expect) = explicit {
+        return Ok(expect.clone());
+    }
+    let mut expect = match (&release.sha256, &release.sha512) {
+        (Some(sha256), _) => Expect::sha256(sha256.clone()),
+        (None, Some(sha512)) => Expect::sha512(sha512.clone()),
+        (None, None) => {
+            return Err(ForgeError::VerificationFailed(format!(
+                "{tool} {}: the release has no checksum; refusing to install an unverified \
+                 file (docs/05 §3)",
+                release.version
+            )));
+        }
+    };
+    if let Some(size) = release.size {
+        expect = expect.size(size);
+    }
+    Ok(expect)
 }
 
 /// The install staging folder: removed explicitly (awaited) on the normal paths, from a
@@ -974,9 +987,20 @@ impl Layout {
             }
             return Err(err);
         }
-        self.inner
+        // Extensions installed into the version went with its folder: their rows go too
+        // (ADR-0043).
+        let extensions = self
+            .inner
             .writer
-            .execute(move |conn| ToolVersionRepo::new(conn).delete(id))
+            .execute(move |conn| {
+                let repo = ToolVersionRepo::new(conn);
+                let linked = extension::linked_rows(&repo.list(None)?, id);
+                for ext in &linked {
+                    repo.delete(*ext)?;
+                }
+                repo.delete(id)?;
+                Ok(linked)
+            })
             .await?;
         let mut warnings = Vec::new();
         if let Err(e) = self.refresh_shims(&manifest).await {
@@ -990,6 +1014,7 @@ impl Layout {
             version_id: id,
             path: dir,
             warnings,
+            extensions,
         })
     }
 
