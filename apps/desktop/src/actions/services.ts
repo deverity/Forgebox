@@ -8,3 +8,24 @@ export const startAllServices = defineAction({
   method: "services.start",
   toParams: () => ({}),
 });
+
+/** "Stop all": `services.stop` with no targets (all). */
+export const stopAllServices = defineAction({
+  id: "services.stop",
+  method: "services.stop",
+  toParams: () => ({}),
+});
+
+/** Starts one instance, named by its target (`mysql/default`). */
+export const startInstance = defineAction<"services.start", string>({
+  id: "services.start_instance",
+  method: "services.start",
+  toParams: (target) => ({ targets: [target] }),
+});
+
+/** Stops one instance, named by its target (`mysql/default`). */
+export const stopInstance = defineAction<"services.stop", string>({
+  id: "services.stop_instance",
+  method: "services.stop",
+  toParams: (target) => ({ targets: [target] }),
+});

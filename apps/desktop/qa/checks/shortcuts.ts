@@ -4,12 +4,12 @@
 import type { ShortcutCheck } from "./lib";
 
 export const SECTION_8: readonly ShortcutCheck[] = [
-  { keys: "Control+k", label: "command palette", effect: null, pending: "M2-E1-T14" },
+  { keys: "Control+k", label: "command palette", effect: "[role=dialog] [cmdk-input]" },
   { keys: "Control+Shift+s", label: "start all", effect: null, pending: "M2-E1-T14" },
   { keys: "Control+Shift+x", label: "stop all", effect: null, pending: "M2-E1-T14" },
-  { keys: "Control+n", label: "new site", effect: null, pending: "M2-E1-T14" },
-  { keys: "Control+l", label: "logs", effect: null, pending: "M2-E1-T14" },
-  { keys: "Control+,", label: "settings", effect: null, pending: "M2-E1-T14" },
+  { keys: "Control+n", label: "new site", effect: '[data-testid="page-sites"]' },
+  { keys: "Control+l", label: "logs", effect: '[data-testid="page-logs"]' },
+  { keys: "Control+,", label: "settings", effect: '[data-testid="page-settings"]' },
 ];
 
 /** The shortcut of the self-test page: Ctrl+J shows the panel in the `ok` case only. */
