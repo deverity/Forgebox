@@ -1,0 +1,47 @@
+{
+  "title": "App updates",
+  "version": "Version {version}",
+  "channel": {
+    "label": "Channel",
+    "stable": "Stable",
+    "beta": "Beta"
+  },
+  "inactive": "App updates arrive in 1.0.",
+  "state": {
+    "idle": "Not checked yet",
+    "checking": "Checking for updates…",
+    "upToDate": "Forgebox is up to date",
+    "available": "Version {version} is available",
+    "downloading": "Downloading and verifying the signature…",
+    "stopping": "Stopping the daemon…",
+    "installing": "Starting the installer…",
+    "error": "The update failed"
+  },
+  "footer": {
+    "available": "Update {version} available"
+  },
+  "check": "Check for updates",
+  "changelog": "What is new",
+  "noChangelog": "No release notes.",
+  "apply": "Update and restart",
+  "confirm": "Forgebox will stop the daemon and its services, run the installer and restart. Continue?",
+  "confirmYes": "Update now",
+  "confirmNo": "Not now",
+  "autostart": {
+    "portable": "Autostart is disabled in portable mode: it would need an entry in the Windows registry, and a portable folder leaves no traces.",
+    "failed": "Could not change the Windows startup entry: {detail}",
+    "label": "Start with Windows (minimized)"
+  },
+  "errors": {
+    "inactive": "App updates are not active in this build.",
+    "busy": "An update is already in progress.",
+    "no_update": "There is no update to apply. Check for updates first.",
+    "network": "Could not reach the update server: {detail}",
+    "bad_manifest": "The update manifest is not valid: {detail}",
+    "bad_signature": "The update signature is invalid. The download was discarded and nothing was installed.",
+    "daemon_stop": "The daemon did not stop ({detail}). The update was not installed.",
+    "daemon_stop_timeout": "The daemon did not stop within {seconds} s. The update was not installed.",
+    "install": "The installer could not be started: {detail}",
+    "internal": "Unexpected error: {detail}"
+  }
+}

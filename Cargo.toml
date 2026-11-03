@@ -133,6 +133,12 @@ window-vibrancy = "0.8.1"
 # A second Forgebox.exe focuses the running one (ADR-0035). Plugins may link Win32 themselves;
 # src-tauri still has no direct windows/windows-sys dependency (cargo xtask arch-guard).
 tauri-plugin-single-instance = "2.4.5"
+# App autostart (HKCU Run with --minimized) and the app updater (minisign-verified, ADR-0038).
+# Both plugins link Win32 themselves; src-tauri still has no direct windows/windows-sys dependency.
+tauri-plugin-autostart = "2.5.1"
+# No `zip` feature: it only unpacks the legacy zipped installers and drags in `zip` 4.x, which
+# carries open RUSTSEC advisories; Tauri 2 NSIS updates are plain .exe files (ADR-0038).
+tauri-plugin-updater = { version = "2.12.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

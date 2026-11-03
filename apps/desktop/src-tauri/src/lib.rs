@@ -6,12 +6,14 @@
 //! (docs/03 §7.5). The window itself (chrome, materials, placement, first frame, single
 //! instance) is [`window`]; GUI-only files live in the [`data_dir`].
 
+pub mod autostart;
 pub mod bridge;
 pub mod commands;
 pub mod data_dir;
 pub mod i18n;
 pub mod perf;
 pub mod prefs;
+pub mod updater;
 pub mod window;
 pub mod window_state;
 
@@ -41,11 +43,28 @@ pub fn run() {
         .spawn(move || Boot::load(boot_source.as_ref()))
         .expect("spawning the boot thread");
 
-    let app = tauri::Builder::default()
+    let context = tauri::generate_context!();
+    // Release builds stay inactive without a production key and endpoint (ADR-0038); the
+    // environment override only exists in debug builds.
+    let activation = updater::decide(
+        &updater::ConfSettings::from_value(context.config().plugins.0.get("updater")),
+        std::env::var(updater::ENDPOINT_ENV).ok().as_deref(),
+        cfg!(debug_assertions),
+    );
+    let mut builder = tauri::Builder::default()
         // First plugin, so a second launch exits before anything else starts.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             window::on_second_instance(app, &argv);
         }))
+        .plugin(autostart::plugin());
+    if let updater::Activation::Active { pubkey, .. } = &activation {
+        builder = builder.plugin(
+            tauri_plugin_updater::Builder::new()
+                .pubkey(pubkey.clone())
+                .build(),
+        );
+    }
+    let app = builder
         .setup(move |app| {
             // The bridge's actor and the forge-ipc clients live on Tauri's tokio runtime.
             // Nothing connects here: a context opens on the first command naming it,
@@ -62,6 +81,10 @@ pub fn run() {
             app.manage(shell.clone());
             window::create_main_window(app.handle(), &shell)?;
             window::spawn_ready_watchdog(app.handle());
+            let updater = updater::build_service(app.handle(), &activation, shell.prefs().clone());
+            app.manage(updater.clone());
+            // First check after the first paint, then every 24 h (inactive builds skip it).
+            updater::spawn_schedule(updater);
             Ok(())
         })
         .on_page_load(|webview, payload| {
@@ -89,8 +112,13 @@ pub fn run() {
             perf::perf_startup,
             prefs::gui_prefs_get,
             prefs::gui_prefs_set,
+            autostart::autostart_get,
+            autostart::autostart_set,
+            updater::updater_status,
+            updater::updater_check,
+            updater::updater_apply,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building the Forgebox desktop application");
 
     app.run(|app, event| {
@@ -141,7 +169,7 @@ mod tests {
             &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
             &mut found,
         );
-        assert!(found.len() >= 8, "{found:?}");
+        assert!(found.len() >= 13, "{found:?}");
         for (file, signature) in &found {
             assert!(
                 signature.starts_with("pub async fn") || signature.starts_with("async fn"),

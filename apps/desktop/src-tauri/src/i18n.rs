@@ -44,12 +44,16 @@ const TRAY_PT: &str = include_str!("../../src/i18n/pt-BR/tray.json");
 const TRAY_EN: &str = include_str!("../../src/i18n/en-US/tray.json");
 const NOTIFICATIONS_PT: &str = include_str!("../../src/i18n/pt-BR/notifications.json");
 const NOTIFICATIONS_EN: &str = include_str!("../../src/i18n/en-US/notifications.json");
+const UPDATER_PT: &str = include_str!("../../src/i18n/pt-BR/updater.json");
+const UPDATER_EN: &str = include_str!("../../src/i18n/en-US/updater.json");
 
 /// Namespaces Rust may read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Namespace {
     Tray,
     Notifications,
+    /// Autostart and app updater causes (shared with the `updater` UI namespace, ADR-0038).
+    Updater,
 }
 
 fn source(ns: Namespace, lang: Language) -> &'static str {
@@ -58,6 +62,8 @@ fn source(ns: Namespace, lang: Language) -> &'static str {
         (Namespace::Tray, Language::EnUs) => TRAY_EN,
         (Namespace::Notifications, Language::PtBr) => NOTIFICATIONS_PT,
         (Namespace::Notifications, Language::EnUs) => NOTIFICATIONS_EN,
+        (Namespace::Updater, Language::PtBr) => UPDATER_PT,
+        (Namespace::Updater, Language::EnUs) => UPDATER_EN,
     }
 }
 
@@ -86,7 +92,11 @@ fn table(ns: Namespace, lang: Language) -> &'static Table {
     static TABLES: OnceLock<HashMap<(Namespace, Language), Table>> = OnceLock::new();
     let all = TABLES.get_or_init(|| {
         let mut all = HashMap::new();
-        for ns in [Namespace::Tray, Namespace::Notifications] {
+        for ns in [
+            Namespace::Tray,
+            Namespace::Notifications,
+            Namespace::Updater,
+        ] {
             for lang in [Language::PtBr, Language::EnUs] {
                 // The files are embedded at compile time and validated by the parity tests.
                 let json: Value =
@@ -172,6 +182,8 @@ mod tests {
         (Namespace::Notifications, "service_crashed"),
         (Namespace::Notifications, "service_restarted"),
         (Namespace::Notifications, "update_available"),
+        (Namespace::Updater, "autostart.portable"),
+        (Namespace::Updater, "errors.bad_signature"),
     ];
 
     #[test]
@@ -197,7 +209,11 @@ mod tests {
             v.sort();
             v
         }
-        for ns in [Namespace::Tray, Namespace::Notifications] {
+        for ns in [
+            Namespace::Tray,
+            Namespace::Notifications,
+            Namespace::Updater,
+        ] {
             let (pt, en) = (table(ns, Language::PtBr), table(ns, Language::EnUs));
             let mut a: Vec<_> = pt.keys().collect();
             let mut b: Vec<_> = en.keys().collect();

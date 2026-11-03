@@ -45,6 +45,14 @@ thiserror = { workspace = true }
 # Window shell (src/window.rs, ADR-0035): materials and single instance. No windows/windows-sys.
 window-vibrancy = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
+# Autostart and app updater (src/autostart.rs, src/updater.rs, ADR-0038).
+tauri-plugin-autostart = { workspace = true }
+tauri-plugin-updater = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# Mock runtime: the updater tests drive the real plugin against a local HTTP server.
+tauri = { workspace = true, features = ["test"] }
+minisign = { workspace = true }
+base64 = { workspace = true }
