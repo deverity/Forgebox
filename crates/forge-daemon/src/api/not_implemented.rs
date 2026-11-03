@@ -157,10 +157,6 @@ pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
 /// is not in the table).
 pub const LOGS_BEFORE_SEQ_TASK: &str = "M2-E3-T8";
 
-/// Roadmap task of `tools.install|remove {target}` (extensions into a version of the tool
-/// they extend, `--for`; ADR-0041). The methods work without it.
-pub const EXTENSION_TARGET_TASK: &str = "M2-E2-T8";
-
 /// Roadmap task of `services.create {data_dir}` (ADR-0041). The method works without it.
 pub const SERVICES_DATA_DIR_TASK: &str = "M2-E2-T10";
 
@@ -321,7 +317,6 @@ mod tests {
         ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
-        assert_eq!(EXTENSION_TARGET_TASK, "M2-E2-T8");
         assert_eq!(SERVICES_DATA_DIR_TASK, "M2-E2-T10");
         // Every E2 row names its task, not only the epic.
         for (method, task, _) in NOT_IMPLEMENTED {

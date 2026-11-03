@@ -68,8 +68,7 @@ fn table() -> Vec<Case> {
         case(&["tool", "list", "--installed", "--updates"], OK),
         case(&["tool", "info", "php"], OK),
         case(&["tool", "info", "nonexistent"], E("not_found")),
-        // The E2 contract (ADR-0041): releases and plans are M2-E2-T5, history M2-E2-T4,
-        // extension targets M2-E2-T8.
+        // The E2 contract (ADR-0041): releases and plans are M2-E2-T5, history M2-E2-T4.
         case(&["tool", "info", "--versions", "php"], NI),
         case(
             &["tool", "info", "--versions", "php", "--channel", "preview"],
@@ -78,7 +77,11 @@ fn table() -> Vec<Case> {
         case(&["tool", "info", "--history", "php"], NI),
         case(&["tool", "info", "--history", "php", "--series", "8.3"], NI),
         case(&["tool", "install", "--dry-run", "php@8.4", "nginx"], NI),
-        case(&["tool", "install", "xdebug", "--for", "php@8.4"], NI),
+        // Extensions (ADR-0043): no PHP in this root.
+        case(
+            &["tool", "install", "xdebug", "--for", "php@8.4", "--yes"],
+            E("not_found"),
+        ),
         case(
             &[
                 "tool",
@@ -88,7 +91,11 @@ fn table() -> Vec<Case> {
                 "php@8.4",
                 "--yes",
             ],
-            NI,
+            E("not_found"),
+        ),
+        case(
+            &["tool", "install", "nginx", "--for", "php@8.4", "--yes"],
+            E("invalid_input"),
         ),
         case(
             &["tool", "install", "nonexistent@1.0", "--yes"],
