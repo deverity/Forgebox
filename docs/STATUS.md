@@ -87,7 +87,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E3-T7 | Backend de e-mail no daemon (família Mailpit) + `mail.changed` | todo | — | |
 | M2-E3-T8 | Logs no daemon (`logs.targets`, alvos `site:`/`app:`, parsers, `before_seq`, redação) | todo | — | |
 | M2-E3-T9 | Lançadores locais no daemon (`shell.open`, `shell.open_editor`, `sites.open` editor/terminal) | todo | — | |
-| M2-E3-T10 | Suporte a Configurações e doctor (`config_list`, efeitos, `config.changed`, fixes, `--export`) | todo | — | |
+| M2-E3-T10 | Suporte a Configurações e doctor (`config_list`, efeitos, `config.changed`, fixes, `--export`) | doing | feature/M2-E3-T10-config-doctor | |
 | M2-E3-T11 | Extras de segurança (`tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) | todo | — | |
 | M2-E3-T12 | Tela Logs + `LogViewer` reutilizável | todo | — | |
 | M2-E3-T13 | Tela Mail (Mailpit nativo, preview HTML isolado, badge) | todo | — | |
