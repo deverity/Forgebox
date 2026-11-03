@@ -4,6 +4,7 @@
 import { fakeError, fakeJob, type FakeHandlers } from "../../../src/ipc/fakeBridge";
 import type * as T from "../../../src/ipc/generated";
 import { fakeId, type QaData } from "./data";
+import { QA_AVAILABLE_PHP } from "./siteDetail";
 
 /** A target that holds this port in the allocator (the conflict the form refuses). */
 export const QA_RESERVED_PORT = 6379;
@@ -239,7 +240,7 @@ export function configHandlers(data: QaData): FakeHandlers {
           update_available: null,
           has_service: id !== "php",
         },
-        available: [],
+        available: id === "php" ? QA_AVAILABLE_PHP : [],
         used_by:
           id === "php"
             ? data.sites.slice(0, 1).map((s) => ({ site_id: s.id, host: s.host, version: "8.3" }))

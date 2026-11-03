@@ -4,6 +4,7 @@
 // registers `empty`, `populated`, `heavy`, `slow` and `remote` with snapshot data and the
 // live behaviour of `heavy` (event storm).
 import {
+  NOT_IMPLEMENTED,
   SCENARIOS,
   fakeError,
   fakeJob,
@@ -23,6 +24,7 @@ import {
   site,
   type QaData,
 } from "./data";
+import { siteDetailHandlers } from "./siteDetail";
 
 export const QA_SCENARIO_NAMES = [
   "empty",
@@ -96,7 +98,12 @@ export function siteHandlers(data: QaData): FakeHandlers {
 
 /** A scenario whose snapshot handlers answer from `data`. */
 export function withData(name: string, data: QaData, extra: FakeScenario = {}): FakeScenario {
+  const detail = siteDetailHandlers(data);
   return {
+    // The Site detail answers `tools.plan` before its backend task (M2-E2-T5) lands.
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
+      (method) => !(method in detail),
+    ),
     ...extra,
     name,
     handlers: {
@@ -107,6 +114,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       "tls.ca_status": () => CA_STATUS,
       "daemon.status": () => data.daemon,
       ...siteHandlers(data),
+      ...detail,
       ...configHandlers(data),
       ...extra.handlers,
     },
