@@ -2,6 +2,7 @@ import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { restartInstance, startInstance, stopInstance } from "../../actions/services";
 import { ActionButton } from "../../design/primitives/ActionButton";
+import { FOCUS_RING } from "../../design/primitives/shared";
 import { StatusDot } from "../../design/primitives/StatusDot";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import { TNUM_CLASS } from "../../i18n/format";
@@ -60,8 +61,7 @@ export const InstanceRow = memo(function InstanceRow({
       <ToolIcon tool={instance.tool} layoutId={`service-icon-${instance.id}`} />
       <button
         type="button"
-        className={`${CELL} rounded-control py-2 text-left outline-hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent`}
-        aria-label={t("row.open", { name: target })}
+        className={`${CELL} rounded-control py-2 text-left ${FOCUS_RING}`}
         onClick={() => {
           onOpen(instance.id);
         }}

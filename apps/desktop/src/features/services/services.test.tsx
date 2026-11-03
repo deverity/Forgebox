@@ -86,7 +86,11 @@ function rowOf(target: string): Promise<HTMLElement> {
 }
 
 async function openSheet(user: ReturnType<typeof userEvent.setup>, target: string) {
-  await user.click(await screen.findByRole("button", { name: `Details of ${target}` }));
+  // The row button is named by its visible text (tool, version and instance).
+  const row = await rowOf(target);
+  const button = within(row).getAllByRole("button")[0];
+  if (button === undefined) throw new Error("no details button");
+  await user.click(button);
   return screen.findByTestId("service-sheet");
 }
 

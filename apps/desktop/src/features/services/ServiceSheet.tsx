@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { restartInstance, startInstance, stopInstance } from "../../actions/services";
 import { ActionButton } from "../../design/primitives/ActionButton";
 import { Sheet } from "../../design/primitives/Sheet";
+import { FOCUS_RING } from "../../design/primitives/shared";
 import { StatusDot } from "../../design/primitives/StatusDot";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import type { InstanceDto, ToolDto } from "../../ipc/generated";
@@ -16,8 +17,7 @@ import { ToolIcon } from "./ToolIcon";
 export const SERVICE_TABS = ["overview", "logs", "instances"] as const;
 export type ServiceTab = (typeof SERVICE_TABS)[number];
 
-const TAB_CLASS =
-  "-mb-px border-b-2 border-transparent px-3 py-2 text-callout text-fg-secondary outline-hidden hover:text-fg-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent data-[state=active]:border-accent data-[state=active]:text-fg-primary";
+const TAB_CLASS = `-mb-px border-b-2 border-transparent px-3 py-2 text-callout text-fg-secondary hover:text-fg-primary ${FOCUS_RING} data-[state=active]:border-accent data-[state=active]:text-fg-primary`;
 
 export interface ServiceSheetProps {
   instance: InstanceDto | undefined;
@@ -105,7 +105,7 @@ export function ServiceSheet({ instance, tool, now, onClose }: ServiceSheetProps
                 </Tabs.Trigger>
               ))}
             </Tabs.List>
-            <Tabs.Content value={SERVICE_TABS[0]} className="pt-4 outline-hidden">
+            <Tabs.Content value={SERVICE_TABS[0]} className={`pt-4 ${FOCUS_RING}`}>
               <OverviewTab
                 instance={instance}
                 onShowLogs={() => {
@@ -113,10 +113,10 @@ export function ServiceSheet({ instance, tool, now, onClose }: ServiceSheetProps
                 }}
               />
             </Tabs.Content>
-            <Tabs.Content value={SERVICE_TABS[1]} className="pt-4 outline-hidden">
+            <Tabs.Content value={SERVICE_TABS[1]} className={`pt-4 ${FOCUS_RING}`}>
               <LogsTab key={target} target={target} />
             </Tabs.Content>
-            <Tabs.Content value={SERVICE_TABS[2]} className="pt-4 outline-hidden">
+            <Tabs.Content value={SERVICE_TABS[2]} className={`pt-4 ${FOCUS_RING}`}>
               <InstancesTab
                 instance={instance}
                 tool={tool}

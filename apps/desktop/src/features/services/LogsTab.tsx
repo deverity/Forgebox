@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../design/primitives/Button";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
+import { FOCUS_RING } from "../../design/primitives/shared";
 import { TextField } from "../../design/primitives/TextField";
 import type { ForgeApiError } from "../../ipc/errors";
 import { toForgeApiError } from "../../ipc/errors";
@@ -165,7 +166,7 @@ export function LogsTab({ target }: LogsTabProps) {
         tabIndex={0}
         aria-label={t("logs.region", { name: target })}
         data-testid="log-lines"
-        className="h-80 overflow-auto rounded-control border border-stroke bg-surface p-2 font-mono text-mono outline-hidden focus-visible:outline-2 focus-visible:outline-accent"
+        className={`h-80 overflow-auto rounded-control border border-stroke bg-surface p-2 font-mono text-mono ${FOCUS_RING}`}
       >
         {visible.length === 0 ? (
           <p className="font-sans text-callout text-fg-secondary">

@@ -21,7 +21,6 @@
   },
   "row": {
     "running": "{state} · {uptime}",
-    "open": "Detalhes de {name}",
     "noPort": "Sem porta",
     "noMetrics": "—",
     "metrics": "{cpu}% · {ram}",

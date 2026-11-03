@@ -46,12 +46,12 @@ test("a service.failed event changes only that row", async ({ page }) => {
   }, id);
   await expect(redis).toHaveAttribute("data-state", "failed");
   await expect(mysql).toHaveAttribute("data-state", "running");
-  await page.getByRole("button", { name: "Details of redis/default" }).click();
+  await redis.getByRole("button").first().click();
   const card = page.getByTestId("failure-card");
   await expect(card).toContainText("Port 6379 is in use by redis-server.exe (PID 4321).");
   await card.getByRole("button", { name: "Change port" }).click();
   await card.getByLabel("New main port").fill("6380");
-  await expect(card.locator("[data-forge-cli]").first()).toHaveAttribute(
+  await expect(page.getByTestId("change-port").locator("div[data-forge-cli]")).toHaveAttribute(
     "data-forge-cli",
     "forge service set redis/default ports.main=6380",
   );
@@ -66,7 +66,10 @@ for (const dpr of [1, 1.25, 1.5]) {
         await page.goto(servicesUrl({ theme, vibrancy: "off" }));
         await expect(page.locator("[data-service-row]")).toHaveCount(3);
         await page.screenshot({ path: `${SHOT_DIR}/dpr-${String(dpr)}-${theme}-list.png` });
-        await page.getByRole("button", { name: "Details of mysql/default" }).click();
+        await page
+          .locator(`[data-service-row][data-target="mysql/default"] button`)
+          .first()
+          .click();
         const sheet = page.getByTestId("service-sheet");
         await expect(sheet).toBeVisible();
         await expect(page.getByRole("tab")).toHaveCount(3);
