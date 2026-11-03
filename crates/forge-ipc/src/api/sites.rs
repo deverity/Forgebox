@@ -32,6 +32,22 @@ pub enum SiteXdebug {
     Always,
 }
 
+/// Who a site's PHP workers serve (docs/06 §2.1, docs/14 §2, ADR-0044).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SitePoolMode {
+    /// The pool of the PHP version, shared by every site on it (`php_8_3`); CPU/RAM are
+    /// apportioned by upstream time and shown as ≈.
+    #[default]
+    Shared,
+    /// A pool of its own (`php_8_3__loja-test`): exact CPU/RAM, more memory.
+    Dedicated,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// PHP selection of a `php` site.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct SitePhpDto {
@@ -41,7 +57,7 @@ pub struct SitePhpDto {
     pub exact: Option<String>,
     /// Version currently serving the site.
     pub resolved: Option<String>,
-    /// Pool upstream (`php_8_3`).
+    /// Pool upstream (`php_8_3`; dedicated pool: `php_8_3__loja-test`).
     pub upstream: Option<String>,
 }
 
@@ -97,6 +113,13 @@ pub struct SiteDto {
     pub processes: Vec<SiteProcessDto>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
+    /// Shared or dedicated PHP pool (`sites.pool_mode`). API 1.1 (ADR-0044).
+    #[serde(default)]
+    pub pool_mode: SitePoolMode,
+    /// Per-site metrics switch (`sites.metrics`); off by default in portable roots. API
+    /// 1.1 (ADR-0044); a 1.0 peer's JSON reads as on.
+    #[serde(default = "default_true")]
+    pub metrics_enabled: bool,
 }
 
 /// Result of `sites.list`.
@@ -187,6 +210,24 @@ pub struct SiteDriverParams {
     /// `laravel`, `wordpress`, `generic-php`...; `None` = detect from the project files.
     #[serde(default)]
     pub driver: Option<String>,
+}
+
+/// Params of `sites.pool_mode` (job, `forge site pool`): moves a PHP site to its own pool
+/// or back to the shared one, blue/green without dropping requests (ADR-0021). API 1.1
+/// (ADR-0044).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SitePoolModeParams {
+    pub site: SiteRef,
+    pub mode: SitePoolMode,
+}
+
+/// Params of `sites.metrics` (`forge site metrics`): turns the site's metrics on or off.
+/// Off stops routing its access log lines into the aggregator; the stored history stays.
+/// API 1.1 (ADR-0044).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SiteMetricsParams {
+    pub site: SiteRef,
+    pub enabled: bool,
 }
 
 /// What `sites.open` opens on the daemon's machine.

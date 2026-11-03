@@ -105,6 +105,10 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "sites.run": SITE,
   "sites.share": SITE,
   "sites.new": effect(["sites", "services"], Q.sites, Q.pools, ["db.list"]),
+  // ADR-0044: a dedicated pool is created (or removed) with the switch; turning metrics off
+  // changes what the stats answer for the site.
+  "sites.pool_mode": SITE_AND_POOLS,
+  "sites.metrics": effect(["sites"], Q.sites, ["stats.get", "stats.series", "stats.routes"]),
 
   "db.create": effect([], ["db.list"]),
   "db.drop": effect([], ["db.list"]),

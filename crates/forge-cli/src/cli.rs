@@ -572,6 +572,10 @@ pub enum SiteCmd {
         #[arg(long)]
         reveal: bool,
     },
+    /// Pool PHP do site: compartilhado (padrão) ou dedicado (CPU/RAM exatos).
+    Pool { site: String, mode: PoolModeArg },
+    /// Liga/desliga as métricas do site.
+    Metrics { site: String, state: OnOff },
     /// Liga/desliga o modo case-sensitive do site.
     CaseSensitive { site: String, state: OnOff },
     /// Case Mismatch Finder (docs/15 §6).
@@ -592,6 +596,12 @@ pub enum SiteCmd {
 pub enum AliasAction {
     Add,
     Remove,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum PoolModeArg {
+    Shared,
+    Dedicated,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -961,8 +971,20 @@ pub struct StatsArgs {
     #[arg(long, value_enum, default_value = "5m")]
     pub window: WindowArg,
     /// Atualiza continuamente.
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["from", "to", "series", "routes"])]
     pub watch: bool,
+    /// Início de um intervalo exato (RFC 3339 ou relativo: `24h`, `7d`); sem ele, a janela.
+    #[arg(long)]
+    pub from: Option<String>,
+    /// Fim do intervalo (padrão: agora).
+    #[arg(long)]
+    pub to: Option<String>,
+    /// Série de pontos para gráficos (passo pela janela: 2 s, 10 s, 1 min, 1 h).
+    #[arg(long, requires = "site", conflicts_with = "routes")]
+    pub series: bool,
+    /// Rotas mais lentas e erros recentes do site.
+    #[arg(long, requires = "site", conflicts_with_all = ["from", "to"])]
+    pub routes: bool,
     #[command(subcommand)]
     pub command: Option<StatsCmd>,
 }

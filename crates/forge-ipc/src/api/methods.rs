@@ -98,6 +98,9 @@ macro_rules! api_methods {
             job "sites.run" sites_run(SiteRunParams) -> SiteProcessDto [Operator, mutating] "forge run" => "forge run {site} {process} {action}";
             job "sites.share" sites_share(SiteShareParams) -> ShareDto [Operator, mutating] "forge share" => "forge share {site} {provider=--provider} {stop?--stop}";
             job "sites.new" sites_new(SiteNewParams) -> SiteDto [Admin, mutating] "forge new" => "forge new {stack} {name} {php=--php} {db=--db} {dir=--dir}";
+            // per-site PHP pool and metrics switch (ADR-0044)
+            job "sites.pool_mode" sites_pool_mode(SitePoolModeParams) -> SiteDto [Operator, mutating] "forge site pool" => "forge site pool {site} {mode}";
+            call "sites.metrics" sites_metrics(SiteMetricsParams) -> SiteDto [Operator, mutating] "forge site metrics" => "forge site metrics {site} {enabled?on:off}";
             // databases
             call "db.list" db_list(DbListParams) -> DatabaseListDto [Viewer] "forge db list" => "forge db list {instance}";
             call "db.create" db_create(DbCreateParams) -> DatabaseDto [Operator, mutating] "forge db create" => "forge db create {name} {instance=--on} {charset=--charset}";
@@ -162,8 +165,10 @@ macro_rules! api_methods {
             call "jobs.list" jobs_list(JobListParams) -> JobListDto [Viewer] "forge jobs" => "forge jobs {active?--active}";
             call "jobs.get" jobs_get(JobIdParams) -> JobDto [Viewer] "forge jobs watch" => "forge jobs watch {job_id}";
             call "jobs.cancel" jobs_cancel(JobIdParams) -> JobCancelDto [Operator, mutating] "forge jobs cancel" => "forge jobs cancel {job_id}";
-            // stats / metrics
-            call "stats.get" stats_get(StatsParams) -> StatsDto [Viewer] "forge stats" => "forge stats {site} {window=--window}";
+            // stats / metrics (ADR-0044): `from` turns the window into an exact range
+            call "stats.get" stats_get(StatsParams) -> StatsDto [Viewer] "forge stats" => "[from] forge stats {site} {from=--from} {to=--to} | forge stats {site} {window=--window}";
+            call "stats.series" stats_series(StatsSeriesParams) -> SeriesDto [Viewer] "forge stats --series" => "forge stats {site} --series {range=--window} {from=--from} {to=--to}";
+            call "stats.routes" stats_routes(StatsRoutesParams) -> RoutesDto [Viewer] "forge stats --routes" => "forge stats {site} --routes";
             call "stats.top" stats_top(NoParams) -> TopDto [Viewer] "forge top" => "forge top";
             job "stats.export" stats_export(StatsExportParams) -> StatsExportDto [Viewer] "forge stats export" => "forge stats export {site} {from=--from} {to=--to} {format=--output}";
             stream "metrics.subscribe" metrics_subscribe(MetricsSubscribeParams) -> MetricsEnvelope [Viewer, notify("metrics.site", "metrics.lagged")] "forge stats --watch" => "forge stats {site} {window=--window} --watch";

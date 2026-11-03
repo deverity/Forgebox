@@ -5,16 +5,16 @@ use std::path::Path;
 
 use forge_ipc::api::methods::{
     fs_parity_lint_case, fs_parity_site_case, sites_add, sites_alias, sites_down, sites_driver,
-    sites_new, sites_php, sites_proxy_add, sites_remove, sites_run, sites_secure, sites_server,
-    sites_share, sites_up,
+    sites_metrics, sites_new, sites_php, sites_pool_mode, sites_proxy_add, sites_remove, sites_run,
+    sites_secure, sites_server, sites_share, sites_up,
 };
 use forge_ipc::api::{
     Ack, CaseFixChoice, CaseLintReportDto, LintCaseParams, ListAction, NoParams, ParkParams,
     ParkedDirDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, ShareDto,
     SiteAddParams, SiteAliasParams, SiteCaseParams, SiteDriverParams, SiteDto, SiteEnvDto,
-    SiteEnvParams, SiteNewParams, SiteOpenParams, SiteOpenTarget, SiteParams, SitePhpParams,
-    SiteProcessDto, SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams,
-    SiteServerParams, SiteShareParams,
+    SiteEnvParams, SiteMetricsParams, SiteNewParams, SiteOpenParams, SiteOpenTarget, SiteParams,
+    SitePhpParams, SitePoolMode, SitePoolModeParams, SiteProcessDto, SitePsParams, SiteRef,
+    SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams, SiteShareParams,
 };
 
 /// `forge site driver <site> auto` detects again (`driver: None`, ADR-0041).
@@ -23,8 +23,8 @@ fn driver_param(word: &str) -> Option<String> {
 }
 
 use crate::cli::{
-    AliasAction, DirArg, LinkArgs, NewArgs, OnOff, OptDirArg, ParkArgs, PsArgs, RunAction, RunArgs,
-    ShareArgs, SiteCmd, StrategyArg,
+    AliasAction, DirArg, LinkArgs, NewArgs, OnOff, OptDirArg, ParkArgs, PoolModeArg, PsArgs,
+    RunAction, RunArgs, ShareArgs, SiteCmd, StrategyArg,
 };
 use crate::context::Context;
 use crate::error::{CliError, CliResult};
@@ -196,6 +196,33 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                 })
                 .await?;
             ctx.out.emit(&env, |out| dotenv_table(out, &env));
+            Ok(())
+        }
+        SiteCmd::Pool { site, mode } => {
+            let site: SiteDto = ctx
+                .job::<sites_pool_mode, SiteDto>(SitePoolModeParams {
+                    site: SiteRef::from(site),
+                    mode: match mode {
+                        PoolModeArg::Shared => SitePoolMode::Shared,
+                        PoolModeArg::Dedicated => SitePoolMode::Dedicated,
+                    },
+                })
+                .await?;
+            ctx.out.emit(&site, |out| {
+                out.success(out.tf(Msg::SiteUpdated, &[&site.host]))
+            });
+            Ok(())
+        }
+        SiteCmd::Metrics { site, state } => {
+            let site: SiteDto = ctx
+                .call::<sites_metrics>(SiteMetricsParams {
+                    site: SiteRef::from(site),
+                    enabled: matches!(state, OnOff::On),
+                })
+                .await?;
+            ctx.out.emit(&site, |out| {
+                out.success(out.tf(Msg::SiteUpdated, &[&site.host]))
+            });
             Ok(())
         }
         SiteCmd::CaseSensitive { site, state } => {

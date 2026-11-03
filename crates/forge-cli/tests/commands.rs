@@ -193,6 +193,13 @@ fn table() -> Vec<Case> {
         case(&["site", "alias", "demo.test", "add", "www.demo.test"], OK),
         // Plain `site open` would launch a real browser; the editor target stays not_implemented.
         case(&["site", "open", "demo.test", "--editor"], NI),
+        // The metrics contract (ADR-0044): pool mode and the metrics switch are M2-E5-T11.
+        case(&["site", "pool", "demo.test", "dedicated"], NI),
+        case(&["site", "metrics", "demo.test", "off"], NI),
+        case(
+            &["site", "pool", "demo.test", "private"],
+            E("invalid_input"),
+        ),
         case(&["site", "case-sensitive", "demo.test", "on"], OK),
         case(&["site", "lint-case", "demo.test"], OK),
         case(&["site", "remove", "demo.test"], E("invalid_input")),
@@ -308,6 +315,16 @@ fn table() -> Vec<Case> {
         // stats / remote
         case(&["stats"], NI),
         case(&["stats", "demo.test", "--window", "1h"], NI),
+        // ADR-0044: exact ranges (M2-E5-T8), series and routes (M2-E5-T9).
+        case(&["stats", "demo.test", "--from", "2h", "--to", "1h"], NI),
+        case(&["stats", "--from", "1h", "--to", "2h"], E("invalid_input")),
+        case(&["stats", "--series", "demo.test", "--window", "24h"], NI),
+        case(&["stats", "--series", "--window", "1h"], E("invalid_input")),
+        case(&["stats", "--routes", "demo.test"], NI),
+        case(
+            &["stats", "--routes", "demo.test", "--watch"],
+            E("invalid_input"),
+        ),
         case(
             &["stats", "export", "demo.test", "--from", "24h", "-o", "csv"],
             NI,

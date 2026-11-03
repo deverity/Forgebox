@@ -89,6 +89,8 @@ export const METHODS = {
   "sites.run": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge run"], cli_template: "forge run {site} {process} {action}", notification: null, lagged_notification: null },
   "sites.share": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge share"], cli_template: "forge share {site} {provider=--provider} {stop?--stop}", notification: null, lagged_notification: null },
   "sites.new": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge new"], cli_template: "forge new {stack} {name} {php=--php} {db=--db} {dir=--dir}", notification: null, lagged_notification: null },
+  "sites.pool_mode": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site pool"], cli_template: "forge site pool {site} {mode}", notification: null, lagged_notification: null },
+  "sites.metrics": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge site metrics"], cli_template: "forge site metrics {site} {enabled?on:off}", notification: null, lagged_notification: null },
   "db.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge db list"], cli_template: "forge db list {instance}", notification: null, lagged_notification: null },
   "db.create": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge db create"], cli_template: "forge db create {name} {instance=--on} {charset=--charset}", notification: null, lagged_notification: null },
   "db.drop": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge db drop"], cli_template: "forge db drop {name} {instance=--on}", notification: null, lagged_notification: null },
@@ -145,7 +147,9 @@ export const METHODS = {
   "jobs.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge jobs"], cli_template: "forge jobs {active?--active}", notification: null, lagged_notification: null },
   "jobs.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge jobs watch"], cli_template: "forge jobs watch {job_id}", notification: null, lagged_notification: null },
   "jobs.cancel": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge jobs cancel"], cli_template: "forge jobs cancel {job_id}", notification: null, lagged_notification: null },
-  "stats.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats"], cli_template: "forge stats {site} {window=--window}", notification: null, lagged_notification: null },
+  "stats.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats"], cli_template: "[from] forge stats {site} {from=--from} {to=--to} | forge stats {site} {window=--window}", notification: null, lagged_notification: null },
+  "stats.series": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --series"], cli_template: "forge stats {site} --series {range=--window} {from=--from} {to=--to}", notification: null, lagged_notification: null },
+  "stats.routes": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --routes"], cli_template: "forge stats {site} --routes", notification: null, lagged_notification: null },
   "stats.top": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge top"], cli_template: "forge top", notification: null, lagged_notification: null },
   "stats.export": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge stats export"], cli_template: "forge stats export {site} {from=--from} {to=--to} {format=--output}", notification: null, lagged_notification: null },
   "metrics.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --watch"], cli_template: "forge stats {site} {window=--window} --watch", notification: "metrics.site", lagged_notification: "metrics.lagged" },
@@ -250,6 +254,8 @@ export interface ApiMethods {
   "sites.run": { params: T.SiteRunParams; result: T.JobDto; job_result: T.SiteProcessDto };
   "sites.share": { params: T.SiteShareParams; result: T.JobDto; job_result: T.ShareDto };
   "sites.new": { params: T.SiteNewParams; result: T.JobDto; job_result: T.SiteDto };
+  "sites.pool_mode": { params: T.SitePoolModeParams; result: T.JobDto; job_result: T.SiteDto };
+  "sites.metrics": { params: T.SiteMetricsParams; result: T.SiteDto };
   "db.list": { params: T.DbListParams; result: T.DatabaseListDto };
   "db.create": { params: T.DbCreateParams; result: T.DatabaseDto };
   "db.drop": { params: T.DbDropParams; result: T.Ack };
@@ -307,6 +313,8 @@ export interface ApiMethods {
   "jobs.get": { params: T.JobIdParams; result: T.JobDto };
   "jobs.cancel": { params: T.JobIdParams; result: T.JobCancelDto };
   "stats.get": { params: T.StatsParams; result: T.StatsDto };
+  "stats.series": { params: T.StatsSeriesParams; result: T.SeriesDto };
+  "stats.routes": { params: T.StatsRoutesParams; result: T.RoutesDto };
   "stats.top": { params: T.NoParams; result: T.TopDto };
   "stats.export": { params: T.StatsExportParams; result: T.JobDto; job_result: T.StatsExportDto };
   "metrics.subscribe": { params: T.MetricsSubscribeParams; result: T.SubscriptionDto; item: T.MetricsEnvelope };
