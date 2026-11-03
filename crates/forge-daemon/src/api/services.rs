@@ -503,6 +503,8 @@ async fn kill_port_holder(daemon: Daemon, params: KillPortHolderParams, ctx: Ctx
     policy.check_pid(pid)?;
     let table = std::sync::Arc::clone(daemon.platform.port_table());
     let terminator = std::sync::Arc::clone(daemon.platform.process_terminator());
+    let client = ctx.session().client.name.clone();
+    let asker = client.clone();
     let facts = forge_core::runtime::spawn_blocking_timeout(
         "ending the port holder",
         KILL_BLOCKING,
@@ -519,12 +521,20 @@ async fn kill_port_holder(daemon: Daemon, params: KillPortHolderParams, ctx: Ctx
                         "PID {pid} no longer listens on port {port}: check the port again"
                     )));
                 }
-                policy.check(facts)
+                policy.check(facts)?;
+                // Logged before acting: should the caller time out, the trail stays.
+                tracing::warn!(
+                    port,
+                    pid,
+                    exe = %facts.exe_display(),
+                    client = %asker,
+                    "audit: terminating the port holder"
+                );
+                Ok(())
             })
         },
     )
     .await;
-    let client = ctx.session().client.name.clone();
     let facts = match facts {
         Ok(facts) => facts,
         Err(err) => {

@@ -243,8 +243,12 @@ fn table() -> Vec<Case> {
         case(&["db", "create", "loja"], E("not_found")),
         case(&["db", "drop", "loja"], E("invalid_input")),
         case(&["db", "drop", "loja", "--yes"], E("not_found")),
-        case(&["db", "export", "loja", "-o", "{TMP}/loja.sql"], NI),
-        case(&["db", "import", "loja", "{TMP}/loja.sql"], NI),
+        // M2-E3-T6: real now; no database instance in this root.
+        case(
+            &["db", "export", "loja", "-o", "{TMP}/loja.sql"],
+            E("not_found"),
+        ),
+        case(&["db", "import", "loja", "{TMP}/loja.sql"], E("not_found")),
         case(&["db", "shell", "mysql/default"], E("not_found")),
         case(&["db", "url", "mysql/default", "loja"], E("not_found")),
         case(&["db", "open", "mysql/default", "--with", "heidisql"], NI),

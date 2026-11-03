@@ -349,3 +349,58 @@ fn lint_case_lists_mismatches_and_exits_1() {
         2
     );
 }
+
+// --- security extras (M2-E3-T11) -------------------------------------------------------
+
+#[test]
+fn site_env_masks_secrets_unless_revealed() {
+    let fx = Fixture::new();
+    let dir = fx.root.www("envsite");
+    std::fs::write(dir.join("index.html"), "<h1>env</h1>").unwrap();
+    std::fs::write(
+        dir.join(".env"),
+        "APP_NAME=Loja\nDB_PASSWORD=s3cr3t\nAPP_KEY=base64:a2V5\n",
+    )
+    .unwrap();
+    let dir_text = dir.display().to_string();
+    fx.root
+        .json(&["site", "add", &dir_text, "--host", "envsite.test"]);
+
+    let masked = fx.root.json(&["site", "env", "envsite.test"]);
+    assert_eq!(masked["revealed"], false);
+    let vars = &masked["files"][0]["vars"];
+    assert_eq!(vars[0]["key"], "APP_NAME");
+    assert_eq!(vars[0]["value"], "Loja");
+    for i in [1, 2] {
+        assert_eq!(vars[i]["secret"], true, "{}", vars[i]);
+        assert!(vars[i]["value"].is_null(), "{}", vars[i]);
+    }
+    let human = fx.root.run(&["site", "env", "envsite.test"]);
+    human.assert_success();
+    assert!(human.stdout.contains("APP_NAME") && human.stdout.contains("Loja"));
+    assert!(human.stdout.contains("******"), "{human:#?}");
+    assert!(!human.stdout.contains("s3cr3t") && !human.stdout.contains("a2V5"));
+
+    // A local connection is admin: --reveal shows the values.
+    let revealed = fx.root.json(&["site", "env", "envsite.test", "--reveal"]);
+    assert_eq!(revealed["revealed"], true);
+    assert_eq!(revealed["files"][0]["vars"][1]["value"], "s3cr3t");
+}
+
+#[test]
+fn kill_port_refuses_a_forgebox_process() {
+    let fx = Fixture::new();
+    // The daemon itself never goes, whatever port is named.
+    let pid = fx.root.daemon_pid().expect("daemon pid").to_string();
+    let run = fx.root.run(&[
+        "--json",
+        "service",
+        "kill-port",
+        "1",
+        "--pid",
+        &pid,
+        "--yes",
+    ]);
+    assert_eq!(run.json()["error"]["code"], "forbidden", "{run:#?}");
+    assert!(fx.root.daemon_pid().is_some(), "still running");
+}
