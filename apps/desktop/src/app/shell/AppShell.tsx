@@ -8,6 +8,7 @@ import { LazyToasts } from "./LazyToasts";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { Titlebar } from "./Titlebar";
+import { useTrayBridge } from "./trayBridge";
 
 /**
  * Titlebar, sidebar (window material), opaque content and status bar (docs/07 section 4).
@@ -15,6 +16,8 @@ import { Titlebar } from "./Titlebar";
  */
 export function AppShell() {
   const context = useRuntime().context;
+  // The native tray opens routes here and learns prefers-reduced-motion (docs/07 section 7).
+  useTrayBridge();
   const accent = accentOf(context);
   // A remote context re-tints the window accent (docs/13 section 5); `local` keeps the system's.
   const style = accent === null ? undefined : ({ "--accent": accent } as CSSProperties);
