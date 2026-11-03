@@ -1,21 +1,25 @@
 // The live PHP switch of one site (docs/06 section 2.2, docs/07 section 5.4):
-//   idle -> switching (job progress) -> done, only after `job.done` AND `site.php_changed`;
+//   idle -> switching (job progress) -> done, only after `job.done` AND the matching
+//   `site.php_changed` (or a refetch that shows the new version);
 //   a failure restores the selection and keeps the cause;
 //   `not_found` + `version_not_installed` -> confirm (size from `tools.plan`) -> `tools.install`
 //   -> the same switch again; cancelling leaves the old PHP.
-// One switch per site at a time: while one is in flight (or waits on the user) `request`
-// ignores new targets, so a second `sites.php` is never sent.
-import { useCallback, useEffect, useRef, useState } from "react";
+// One switch per site at a time. The state lives in a controller keyed by (runtime, site), NOT
+// in the component: the General tab unmounts when another tab or screen opens (Radix Tabs
+// without forceMount), and a remount must still see the switch in flight, keep the dropdown
+// locked and show the outcome. `request` ignores new targets while one is in flight, so a
+// second `sites.php` is never sent.
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { runAction } from "../../../actions/registry";
 import { installToolSpec, switchSitePhp } from "../../../actions/sites";
+import type { ForgeApi } from "../../../ipc/api";
 import { newIntent } from "../../../ipc/api";
-import { toForgeApiError, type ForgeApiError } from "../../../ipc/errors";
+import { apiError, ForgeApiError, toForgeApiError } from "../../../ipc/errors";
 import type * as T from "../../../ipc/generated";
-import { useForgeApi, useRuntime } from "../../../state";
+import { useRuntime, type ContextRuntime } from "../../../state";
 import { isNotInstalled, phpSpec } from "./model";
-import { useSiteEvents } from "./useSiteEvents";
 
-/** How long `job.done` waits for a `site.php_changed` the event stream has not shown yet. */
+/** How long `job.done` waits for the `site.php_changed` of the new version before refetching. */
 export const CHANGE_WAIT_MS = 2000;
 /** How long the success state stays before the badge goes back to idle. */
 export const DONE_VISIBLE_MS = 2500;
@@ -39,7 +43,8 @@ export interface PhpSwitch {
   selected: (current: string | null) => string | null;
   /** True while a request runs or waits on the install confirmation. */
   busy: boolean;
-  request: (target: string) => void;
+  /** `resolvedBefore`: the version serving the site now (tells whether an event is due). */
+  request: (target: string, resolvedBefore?: string | null) => void;
   confirmInstall: () => void;
   cancelInstall: () => void;
   dismiss: () => void;
@@ -47,158 +52,247 @@ export interface PhpSwitch {
 
 const IDLE: PhpSwitchState = { phase: "idle" };
 
-export function usePhpSwitch(siteId: string): PhpSwitch {
-  const api = useForgeApi();
-  const runtime = useRuntime();
-  const [state, setState] = useState<PhpSwitchState>(IDLE);
-  // Refs, not state: two clicks in the same tick must not both pass the guard.
-  const inFlight = useRef(false);
-  const alive = useRef(true);
-  const pendingTarget = useRef<string | null>(null);
-  const change = useRef<{ to: string } | null>(null);
-  const waiters = useRef<(() => void)[]>([]);
-  const doneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+const KINDS = ["site.php_changed"];
 
-  useEffect(() => {
-    alive.current = true;
+/** Non-React owner of one site's switch; it outlives the components that show it. */
+class SwitchController {
+  private state: PhpSwitchState = IDLE;
+  private readonly listeners = new Set<() => void>();
+  private inFlight = false;
+  private pendingTarget: string | null = null;
+  private resolvedBefore: string | null = null;
+  /** `to` of every `site.php_changed` seen since the current switch started. */
+  private changes: string[] = [];
+  private waiters: (() => void)[] = [];
+  private doneTimer: ReturnType<typeof setTimeout> | null = null;
+  private unsubscribe: (() => Promise<void>) | null = null;
+
+  constructor(
+    private readonly api: ForgeApi,
+    private readonly runtime: ContextRuntime,
+    private readonly siteId: string,
+  ) {}
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
     return () => {
-      alive.current = false;
-      if (doneTimer.current !== null) clearTimeout(doneTimer.current);
+      this.listeners.delete(listener);
     };
-  }, []);
+  };
 
-  useSiteEvents(siteId, (event) => {
-    if (event.kind !== "site.php_changed") return;
-    change.current = { to: (event.payload as T.SitePhpChangedPayload).to };
-    for (const wake of waiters.current.splice(0)) wake();
-  });
+  getSnapshot = (): PhpSwitchState => this.state;
 
-  const set = useCallback((next: PhpSwitchState) => {
-    if (alive.current) setState(next);
-  }, []);
+  private set(next: PhpSwitchState): void {
+    this.state = next;
+    for (const listener of [...this.listeners]) listener();
+  }
 
-  const waitForChange = useCallback(async () => {
-    if (change.current !== null) return;
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, CHANGE_WAIT_MS);
-      waiters.current.push(() => {
-        clearTimeout(timer);
-        resolve();
+  private update(fn: (s: PhpSwitchState) => PhpSwitchState): void {
+    const next = fn(this.state);
+    if (next !== this.state) this.set(next);
+  }
+
+  /** Listens to `site.php_changed` of this site for the length of one switch. */
+  private async listen(): Promise<void> {
+    await this.stopListening();
+    try {
+      const handle = await this.api.subscribe(
+        "events.subscribe",
+        { filter: { kinds: KINDS }, resume_from: null },
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.kind !== "item") continue;
+            const event = entry.item.event;
+            if (event.kind !== "site.php_changed") continue;
+            const payload = event.payload as T.SitePhpChangedPayload;
+            if (payload.site_id !== this.siteId) continue;
+            this.changes.push(payload.to);
+            for (const wake of this.waiters.splice(0)) wake();
+          }
+        },
+      );
+      this.unsubscribe = () => handle.unsubscribe();
+    } catch {
+      // Best effort: the refetch after the wait still confirms the version.
+    }
+  }
+
+  private async stopListening(): Promise<void> {
+    const off = this.unsubscribe;
+    this.unsubscribe = null;
+    await off?.().catch(() => undefined);
+  }
+
+  /** True when a `site.php_changed` to `version` was seen within the wait, false on timeout. */
+  private async waitForChange(version: string): Promise<boolean> {
+    const deadline = Date.now() + CHANGE_WAIT_MS;
+    while (!this.changes.includes(version)) {
+      const left = deadline - Date.now();
+      if (left <= 0) return false;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, left);
+        this.waiters.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
       });
-    });
-  }, []);
+    }
+    return true;
+  }
 
-  const planInstall = useCallback(
-    async (target: string) => {
-      const update = (plan: PlanState) => {
-        if (!alive.current) return;
-        setState((s) =>
-          s.phase === "confirm_install" && s.target === target ? { ...s, plan } : s,
-        );
-      };
-      try {
-        const handle = await api.job("tools.plan", { specs: [phpSpec(target)] });
-        update({ status: "ready", plan: await handle.done });
-      } catch (thrown) {
-        update({ status: "failed", error: toForgeApiError(thrown, { method: "tools.plan" }) });
-      }
-    },
-    [api],
-  );
+  /** Refetches the site: is the new version really serving? */
+  private async confirmByRefetch(version: string): Promise<boolean> {
+    try {
+      const list = await this.api.call("sites.list", {});
+      const site = list.sites.find((s) => s.id === this.siteId);
+      return site?.php?.resolved === version;
+    } catch {
+      return false;
+    }
+  }
 
-  const switchTo = useCallback(
-    async (target: string) => {
-      change.current = null;
-      set({ phase: "switching", target, progress: null });
-      try {
-        await runAction(
-          runtime.queue,
-          switchSitePhp,
-          { site: siteId, php: target },
-          {
-            intent: newIntent(),
-            onProgress: (progress) => {
-              if (!alive.current) return;
-              setState((s) => (s.phase === "switching" ? { ...s, progress } : s));
-            },
-          },
-        );
-        // `site.php_changed` goes out before `job.done`, on another stream: give it a moment.
-        await waitForChange();
-        set({ phase: "done", target });
-        doneTimer.current = setTimeout(() => {
-          doneTimer.current = null;
-          if (alive.current) setState((s) => (s.phase === "done" ? IDLE : s));
-        }, DONE_VISIBLE_MS);
-        inFlight.current = false;
-      } catch (thrown) {
-        const error = toForgeApiError(thrown, { method: "sites.php" });
-        if (isNotInstalled(error)) {
-          pendingTarget.current = target;
-          set({ phase: "confirm_install", target, plan: { status: "loading" } });
-          void planInstall(target);
-          return; // The guard stays: the user decides next.
-        }
-        set({ phase: "failed", target, error });
-        inFlight.current = false;
-      }
-    },
-    [runtime, siteId, set, waitForChange, planInstall],
-  );
+  private finish(next: PhpSwitchState): void {
+    this.inFlight = false;
+    void this.stopListening();
+    this.set(next);
+  }
 
-  const request = useCallback(
-    (target: string) => {
-      if (inFlight.current) return;
-      inFlight.current = true;
-      if (doneTimer.current !== null) clearTimeout(doneTimer.current);
-      void switchTo(target);
-    },
-    [switchTo],
-  );
-
-  const confirmInstall = useCallback(() => {
-    const target = pendingTarget.current;
-    if (target === null) return;
-    pendingTarget.current = null;
-    set({ phase: "installing", target, progress: null });
-    void (async () => {
-      try {
-        await runAction(runtime.queue, installToolSpec, phpSpec(target), {
+  private async switchTo(target: string): Promise<void> {
+    this.changes = [];
+    this.set({ phase: "switching", target, progress: null });
+    await this.listen();
+    try {
+      const result = await runAction(
+        this.runtime.queue,
+        switchSitePhp,
+        { site: this.siteId, php: target },
+        {
           intent: newIntent(),
           onProgress: (progress) => {
-            if (!alive.current) return;
-            setState((s) => (s.phase === "installing" ? { ...s, progress } : s));
+            this.update((s) => (s.phase === "switching" ? { ...s, progress } : s));
+          },
+        },
+      );
+      const after = (result as T.SiteDto | null)?.php?.resolved ?? null;
+      // `site.php_changed` is only emitted when the resolved version changes (docs/03 section
+      // 2.2): an unchanged one is done at `job.done`; a changed one needs its event, or a
+      // refetch that shows it. Success is never declared unverified.
+      if (after !== null && after !== this.resolvedBefore) {
+        const seen = await this.waitForChange(after);
+        if (!seen && !(await this.confirmByRefetch(after))) {
+          this.finish({
+            phase: "failed",
+            target,
+            error: new ForgeApiError(
+              apiError("internal", `PHP ${after} was not confirmed for the site`),
+              { method: "sites.php" },
+            ),
+          });
+          return;
+        }
+      }
+      this.finish({ phase: "done", target });
+      this.doneTimer = setTimeout(() => {
+        this.doneTimer = null;
+        this.update((s) => (s.phase === "done" ? IDLE : s));
+      }, DONE_VISIBLE_MS);
+    } catch (thrown) {
+      const error = toForgeApiError(thrown, { method: "sites.php" });
+      if (isNotInstalled(error)) {
+        this.pendingTarget = target;
+        void this.stopListening();
+        this.set({ phase: "confirm_install", target, plan: { status: "loading" } });
+        void this.planInstall(target);
+        return; // The guard stays: the user decides next.
+      }
+      this.finish({ phase: "failed", target, error });
+    }
+  }
+
+  private async planInstall(target: string): Promise<void> {
+    const update = (plan: PlanState) => {
+      this.update((s) =>
+        s.phase === "confirm_install" && s.target === target ? { ...s, plan } : s,
+      );
+    };
+    try {
+      const handle = await this.api.job("tools.plan", { specs: [phpSpec(target)] });
+      update({ status: "ready", plan: await handle.done });
+    } catch (thrown) {
+      update({ status: "failed", error: toForgeApiError(thrown, { method: "tools.plan" }) });
+    }
+  }
+
+  request = (target: string, resolvedBefore: string | null = null): void => {
+    if (this.inFlight) return;
+    this.inFlight = true;
+    this.resolvedBefore = resolvedBefore;
+    if (this.doneTimer !== null) clearTimeout(this.doneTimer);
+    this.doneTimer = null;
+    void this.switchTo(target);
+  };
+
+  confirmInstall = (): void => {
+    const target = this.pendingTarget;
+    if (target === null) return;
+    this.pendingTarget = null;
+    this.set({ phase: "installing", target, progress: null });
+    void (async () => {
+      try {
+        await runAction(this.runtime.queue, installToolSpec, phpSpec(target), {
+          intent: newIntent(),
+          onProgress: (progress) => {
+            this.update((s) => (s.phase === "installing" ? { ...s, progress } : s));
           },
         });
       } catch (thrown) {
-        set({
+        this.finish({
           phase: "failed",
           target,
           error: toForgeApiError(thrown, { method: "tools.install" }),
         });
-        inFlight.current = false;
         return;
       }
-      await switchTo(target); // Installed: the same switch again.
+      await this.switchTo(target); // Installed: the same switch again.
     })();
-  }, [runtime, set, switchTo]);
+  };
 
-  const cancelInstall = useCallback(() => {
-    pendingTarget.current = null;
-    inFlight.current = false;
-    setState((s) => (s.phase === "confirm_install" ? IDLE : s));
-  }, []);
+  cancelInstall = (): void => {
+    this.pendingTarget = null;
+    this.inFlight = false;
+    this.update((s) => (s.phase === "confirm_install" ? IDLE : s));
+  };
 
-  const dismiss = useCallback(() => {
-    setState((s) => (s.phase === "failed" ? IDLE : s));
-  }, []);
+  dismiss = (): void => {
+    this.update((s) => (s.phase === "failed" ? IDLE : s));
+  };
+}
 
+const controllers = new WeakMap<ContextRuntime, Map<string, SwitchController>>();
+
+function controllerFor(runtime: ContextRuntime, siteId: string): SwitchController {
+  let bySite = controllers.get(runtime);
+  if (bySite === undefined) {
+    bySite = new Map();
+    controllers.set(runtime, bySite);
+  }
+  let controller = bySite.get(siteId);
+  if (controller === undefined) {
+    controller = new SwitchController(runtime.api, runtime, siteId);
+    bySite.set(siteId, controller);
+  }
+  return controller;
+}
+
+export function usePhpSwitch(siteId: string): PhpSwitch {
+  const runtime = useRuntime();
+  const controller = useMemo(() => controllerFor(runtime, siteId), [runtime, siteId]);
+  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const selected = useCallback(
     (current: string | null) =>
       state.phase === "idle" || state.phase === "failed" ? current : state.target,
     [state],
   );
-
   return {
     state,
     selected,
@@ -206,9 +300,9 @@ export function usePhpSwitch(siteId: string): PhpSwitch {
       state.phase === "switching" ||
       state.phase === "confirm_install" ||
       state.phase === "installing",
-    request,
-    confirmInstall,
-    cancelInstall,
-    dismiss,
+    request: controller.request,
+    confirmInstall: controller.confirmInstall,
+    cancelInstall: controller.cancelInstall,
+    dismiss: controller.dismiss,
   };
 }

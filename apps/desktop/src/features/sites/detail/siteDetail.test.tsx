@@ -133,6 +133,11 @@ describe("PHP switch", () => {
 
   it("does not finish on site.php_changed alone, and waits for it after job.done", async () => {
     const fakeData = detailData();
+    const base = must(fakeData.sites[0]);
+    const next = {
+      ...base,
+      php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
+    };
     await open(fakeData, {
       "sites.php": (_params, ctx) => {
         setTimeout(() => {
@@ -144,7 +149,7 @@ describe("PHP switch", () => {
             to: "8.2.30",
           });
         }, 20);
-        return fakeJob({ stepMs: 600, outcome: { done: must(fakeData.sites[0]) } });
+        return fakeJob({ stepMs: 600, outcome: { done: next } });
       },
     });
     await pickPhp("8.2");
@@ -162,23 +167,115 @@ describe("PHP switch", () => {
     );
   });
 
-  it("job.done without site.php_changed waits for the event before showing done", async () => {
+  it("changed version without site.php_changed stays switching until a refetch confirms it", async () => {
     const fakeData = detailData();
+    const base = must(fakeData.sites[0]);
+    const next = {
+      ...base,
+      php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
+    };
     await open(fakeData, {
-      "sites.php": () => fakeJob({ stepMs: 30, outcome: { done: must(fakeData.sites[0]) } }),
+      "sites.php": () => {
+        fakeData.sites.splice(0, 1, next);
+        return fakeJob({ stepMs: 30, outcome: { done: next } });
+      },
     });
     await pickPhp("8.2");
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    // No event: not done yet.
     expect(document.querySelector("[data-php-switch]")).toHaveAttribute(
       "data-php-switch",
       "switching",
     );
+    expect(screen.queryByText("PHP 8.2 is active")).not.toBeInTheDocument();
     await waitFor(
       () => {
         expect(screen.getByText("PHP 8.2 is active")).toBeInTheDocument();
       },
       { timeout: CHANGE_WAIT_MS + 2000 },
     );
+    expect(calls("sites.list").length).toBeGreaterThan(1);
+  });
+
+  it("changed version never confirmed ends as a failure, not as success", async () => {
+    const fakeData = detailData();
+    const base = must(fakeData.sites[0]);
+    const next = {
+      ...base,
+      php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
+    };
+    // The refetch keeps showing the old version.
+    await open(fakeData, {
+      "sites.php": () => fakeJob({ stepMs: 30, outcome: { done: next } }),
+    });
+    await pickPhp("8.2");
+    await waitFor(
+      () => {
+        expect(document.querySelector("[data-php-switch-failure]")).not.toBeNull();
+      },
+      { timeout: CHANGE_WAIT_MS + 2000 },
+    );
+    expect(screen.queryByText("PHP 8.2 is active")).not.toBeInTheDocument();
+  });
+
+  it("unchanged resolved version finishes at job.done without waiting for an event", async () => {
+    const fakeData = detailData();
+    await open(fakeData, {
+      "sites.php": () => fakeJob({ stepMs: 30, outcome: { done: must(fakeData.sites[0]) } }),
+    });
+    await pickPhp("8.2");
+    await waitFor(
+      () => {
+        expect(screen.getByText("PHP 8.2 is active")).toBeInTheDocument();
+      },
+      { timeout: CHANGE_WAIT_MS - 500 },
+    );
+  });
+
+  it("shows the equivalent CLI command of the switch with the host", async () => {
+    await open();
+    await pickPhp("8.2");
+    expect(await screen.findByText("forge site php loja.test 8.2")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("PHP 8.2 is active")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps the switch locked across a tab change and shows its outcome on return", async () => {
+    const fakeData = detailData();
+    const next = {
+      ...must(fakeData.sites[0]),
+      php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
+    };
+    // Slow enough to leave the tab and come back while the job runs.
+    await open(fakeData, {
+      "sites.php": (_params, ctx) => {
+        setTimeout(() => {
+          ctx.fake.publish("site.php_changed", {
+            v: 1,
+            site_id: SITE_ID,
+            host: "loja.test",
+            from: "8.3.36",
+            to: "8.2.30",
+          });
+        }, 900);
+        return fakeJob({ stepMs: 600, outcome: { done: next } });
+      },
+    });
+    const user = await pickPhp("8.2");
+    expect(await screen.findByText("Switching to 8.2…")).toBeInTheDocument();
+    await user.click(await screen.findByRole("tab", { name: "Processes" }));
+    await screen.findByRole("list", { name: "Processes" });
+    await user.click(await screen.findByRole("tab", { name: "General" }));
+    const combo = await screen.findByRole("combobox", { name: "PHP version" });
+    expect(combo).toBeDisabled();
+    expect(combo).toHaveTextContent("8.2");
+    expect(screen.getByText("Switching to 8.2…")).toBeInTheDocument();
+    expect(phpCalls()).toHaveLength(1);
+    await waitFor(() => {
+      expect(screen.getByText("PHP 8.2 is active")).toBeInTheDocument();
+    });
+    expect(phpCalls()).toHaveLength(1);
   });
 
   it("job.failed restores the selection, shows the cause and sends no second request", async () => {

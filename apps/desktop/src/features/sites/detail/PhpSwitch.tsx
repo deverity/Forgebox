@@ -68,11 +68,16 @@ export function PhpSwitchControl({ site }: PhpSwitchProps) {
               : t("detail.php.notInstalled", { series: option.value }),
           }))}
           onValueChange={(value) => {
-            if (value !== current) sw.request(value);
+            if (value !== current) sw.request(value, site.php?.resolved ?? null);
           }}
         />
         <SwitchBadge state={state} />
       </div>
+      <CliCommand
+        command={
+          selected === null ? null : renderCli("sites.php", { site: site.host, php: selected })
+        }
+      />
       {reason !== null ? <p className="text-caption text-fg-tertiary">{reason}</p> : null}
       {state.phase === "failed" ? (
         <div data-php-switch-failure="">
@@ -84,7 +89,7 @@ export function PhpSwitchControl({ site }: PhpSwitchProps) {
             {...(retryTarget !== null && {
               onRetry: () => {
                 sw.dismiss();
-                sw.request(retryTarget);
+                sw.request(retryTarget, site.php?.resolved ?? null);
               },
             })}
           />
