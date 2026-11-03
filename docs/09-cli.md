@@ -68,6 +68,8 @@ forge php ext list 8.3 | forge php ext enable 8.3 intl | disable
 forge php xdebug 8.3 on|off|trigger [--port 9003]
 forge php ini 8.3 [--open]                          # caminho / abre no editor (num terminal)
 ```
+- `php ext list <versão>` mostra o estado real da série (M2-E2-T9): as DLLs de `ext/` (embutidas, ligadas por `defaults_on` e pelas escolhas guardadas) e as extensões do registry instaladas naquela versão (Xdebug: não embutida, `zend`, desligada até ser ligada). `php ext enable|disable <versão> <nome>` é um job: DLL que não existe → `not_found` (saída 3) sem nada gravado; a escolha vale para a série (`etc/php/<série>/conf.d/10-forgebox.ini`) e os pools da série que rodam são reciclados só se algo mudou. Voltar ao padrão não deixa nada guardado.
+- `php xdebug <versão> on|trigger [--port N]` instala o Xdebug que falta na versão dentro do mesmo job (com progresso), reserva a porta do cliente (padrão 9003; dono `php@<série>/xdebug` em `forge service ports`), grava o preset do modo (`on`: `start_with_request = yes`; `trigger`: `trigger`; ambos `mode = debug,develop`) em `conf.d/20-xdebug.ini` e recicla o pool; `off` desliga a linha e mantém a reserva e a DLL. Porta com listener (de fora) → `port_in_use` (saída 4) com `pid`/`exe` e nada gravado; reservada para outro dono → `conflict`. Rodar de novo com o mesmo modo não muda nada. O Xdebug por site (`SiteXdebug`) fica fora do M2.
 
 ### site
 ```

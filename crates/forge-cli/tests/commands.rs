@@ -181,9 +181,10 @@ fn table() -> Vec<Case> {
         case(&["php", "pool", "status"], OK),
         case(&["php", "pool", "status", "8.3"], E("not_found")),
         case(&["php", "ext", "list", "8.3"], E("not_found")),
-        case(&["php", "ext", "enable", "8.3", "intl"], NI),
-        case(&["php", "ext", "disable", "8.3", "intl"], NI),
-        case(&["php", "xdebug", "8.3", "on"], NI),
+        // M2-E2-T9: real now; no PHP 8.3 in this root.
+        case(&["php", "ext", "enable", "8.3", "intl"], E("not_found")),
+        case(&["php", "ext", "disable", "8.3", "intl"], E("not_found")),
+        case(&["php", "xdebug", "8.3", "on"], E("not_found")),
         case(&["php", "ini", "8.3"], E("not_found")),
         // sites
         case(&["site", "list"], OK),
