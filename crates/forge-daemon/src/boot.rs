@@ -261,6 +261,8 @@ pub struct BootOptions {
     pub platform: Option<Platform>,
     /// Answers the scheduler's update questions (a fake with no network).
     pub update_source: Option<Arc<dyn UpdateSource>>,
+    /// Terminal tunables (ring size, reaping delay).
+    pub terminal: Option<crate::terminal::TerminalOptions>,
 }
 
 /// Runs the whole sequence. `lock` is the instance mutex taken by `main`, which also
@@ -471,6 +473,16 @@ pub async fn boot_with(
         .with_state_file(root.state_dns_policy());
     start_dns(&dns, &dns_policy, &config).await;
 
+    let terminals = {
+        let tree = job_tree.clone();
+        crate::terminal::TerminalManager::new(
+            bus.clone(),
+            Arc::new(move || tree.instance_job()),
+            Arc::clone(platform.pty_spawner()),
+            options.terminal.clone().unwrap_or_default(),
+        )
+    };
+
     let endpoint = forge_ipc::transport::local_transport(&root).endpoint();
     let daemon = Daemon::new(Inner {
         root: root.clone(),
@@ -495,6 +507,7 @@ pub async fn boot_with(
         web: web.clone(),
         sites: sites.clone(),
         apps,
+        terminals,
         tls,
         dns,
         dns_policy,

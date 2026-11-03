@@ -44,7 +44,8 @@
     "mailBadge_other": "{count} mensagens não lidas",
     "version": "v{version}",
     "versionUnknown": "Forgebox",
-    "updater": "Atualizações do app chegam na 1.0"
+    "updater": "Atualizações do app chegam na 1.0",
+    "updateAvailable": "Atualização {version} disponível"
   },
   "context": {
     "label": "Contexto",

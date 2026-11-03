@@ -37,6 +37,7 @@ use tokio_util::sync::CancellationToken;
 use crate::args::Args;
 use crate::pools::PoolManager;
 use crate::services::ServiceManager;
+use crate::terminal::TerminalManager;
 use crate::web::WebManager;
 
 /// Why the daemon is going down.
@@ -122,6 +123,8 @@ pub struct Inner {
     pub web: WebManager,
     pub sites: SiteService,
     pub apps: AppManager,
+    /// Terminal sessions (`terminal.*`), each in its own Job of `job_tree`.
+    pub terminals: TerminalManager,
     pub tls: TlsManager,
     pub dns: DnsServer,
     pub dns_policy: DnsPolicyManager,

@@ -1,7 +1,8 @@
 //! Graceful shutdown (Ctrl+C, `daemon.stop`, `daemon.restart`), in order:
 //!
 //! 1. the scheduler and the parked-folder watcher stop; running jobs are asked to cancel;
-//! 2. pools, site processes and instances stop **in parallel** (each with its stop
+//! 2. terminal sessions close (their Jobs terminated, consoles closed); pools, site
+//!    processes and instances stop **in parallel** (each with its stop
 //!    cascade), all within one global budget (`--shutdown-timeout`, 30 s); whatever is
 //!    still alive in the root Job Object is then terminated (and awaited);
 //! 3. the DNS, TLS, download and update actors stop;
@@ -68,6 +69,7 @@ pub async fn run(booted: Booted, lock: InstanceLock) -> ShutdownReport {
     // 2.
     let stack = async {
         tokio::join!(
+            daemon.terminals.close_all(budget),
             daemon.pools.stop_all(budget),
             daemon.services.stop_all(budget),
             async {

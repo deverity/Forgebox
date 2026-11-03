@@ -145,36 +145,6 @@
     "what": "editor launcher"
   },
   {
-    "method": "terminal.open",
-    "task": "M2-E3-T4",
-    "what": "daemon-hosted terminal sessions"
-  },
-  {
-    "method": "terminal.list",
-    "task": "M2-E3-T4",
-    "what": "daemon-hosted terminal sessions"
-  },
-  {
-    "method": "terminal.input",
-    "task": "M2-E3-T4",
-    "what": "daemon-hosted terminal sessions"
-  },
-  {
-    "method": "terminal.resize",
-    "task": "M2-E3-T4",
-    "what": "daemon-hosted terminal sessions"
-  },
-  {
-    "method": "terminal.close",
-    "task": "M2-E3-T4",
-    "what": "daemon-hosted terminal sessions"
-  },
-  {
-    "method": "terminal.subscribe",
-    "task": "M2-E3-T4",
-    "what": "daemon-hosted terminal sessions"
-  },
-  {
     "method": "tls.ca_uninstall",
     "task": "M2-E3-T11",
     "what": "removing the local CA"

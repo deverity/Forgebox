@@ -239,7 +239,8 @@ describe("global terminal shortcut", () => {
   it("is not registered while terminal.open is not implemented", async () => {
     const invoke = vi.fn<GlobalInvoke>(() => Promise.resolve({ registered: [], failed: [] }));
     globalShortcutBackend.invoke = invoke;
-    await renderApp();
+    // A daemon older than M2-E3-T4 reports terminal.open as not implemented.
+    await renderApp({ extra: { notImplemented: ["terminal.open"] } });
     await waitFor(() => {
       expect(invoke).toHaveBeenCalled();
     });

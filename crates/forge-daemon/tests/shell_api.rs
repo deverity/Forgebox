@@ -316,6 +316,7 @@ async fn hello_status_port_check_and_sites_open() {
         BootOptions {
             platform: Some(platform),
             update_source: Some(Arc::new(FakeSource::default())),
+            ..BootOptions::default()
         },
     )
     .await;
