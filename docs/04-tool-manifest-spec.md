@@ -184,6 +184,8 @@ spec:
       recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
       env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }  # o forge-fcgi sobrescreve com um teto acima de max_requests (docs/03 §2.1)
       health: { fastcgi: "/_forgebox/health.php" }
+      logs:                      # lidos como `<tool>@<série>` no visualizador de logs (docs/09); o primeiro vale; mesmo formato de `daemon.logs[]`
+        - { label: Error log, path: "{{ paths.logs }}/php/{{ series }}/error.log", format: php }
 
   # ---------- Descoberta de instalação manual ----------
   discover:
