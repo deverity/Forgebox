@@ -94,6 +94,13 @@ Regras:
 - O daemon tem seu próprio canal: a GUI atualizada pede ao daemon para se auto-substituir (`forgeboxd --self-update <path>`): valida assinatura, para pools e serviços de forma graciosa **ou** usa handoff (novo daemon herda Job Objects via `DuplicateHandle` — v1.1), troca binário, reinicia.
 - Canais: `stable`, `beta`. Changelog renderizado na UI antes de aplicar.
 
+### 5.1 Implementação na GUI (M2-E1-T18, [ADR-0038](adr/0038-gui-autostart-updater.md))
+- **Status de ativação: INATIVO na 0.2.0.** O `tauri.conf.json` versionado tem `plugins.updater.pubkey = ""` e `endpoints = []`; sem os dois o atualizador não é registrado e a UI diz que as atualizações do app chegam na 1.0. Chave de produção e endpoint entram no M4-E1 (preencher o `tauri.conf.json`, ligar `bundle.createUpdaterArtifacts`, publicar `latest.json` + `.sig`).
+- **Endpoint**: `plugins.updater.endpoints[0]` do `tauri.conf.json`, um template com `{channel_file}` (`latest.json` no canal `stable`, `latest-beta.json` no `beta`; o canal fica na preferência `update_channel` do `prefs.json` da GUI). Em build **debug**, `FORGEBOX_UPDATER_ENDPOINT` o substitui (servidor local de teste) e vale a chave pública de dev `apps/desktop/src-tauri/keys/updater-dev.pub`; em release a variável é ignorada.
+- **Verificação**: ao iniciar (20 s depois), a cada 24 h e sob demanda; evento `forge://updater` e comandos `updater_status|check|apply`.
+- **Handoff com o daemon** (o instalador precisa substituir o `forgeboxd.exe` travado): baixa e verifica a assinatura minisign, `daemon.stop {keep_services:false}` aguardado até o daemon ter saído de fato, não só até o Ack (o daemon responde na hora e leva até 30 s parando serviços antes de fechar o pipe; a GUI espera o contexto `local` sair de `Connected`; timeout único de 35 s; estado `Reconnecting` espera um estado definitivo; daemon parado/ausente conta como parado), instalador `passive` com relançamento do app; a GUI sobe e inicia o daemon. Falha ou timeout do stop = o instalador não roda, erro localizado, nova tentativa possível.
+- **Autostart** (`autostart_get|set`): `HKCU\...\Run` com `--minimized` (janela escondida, só a bandeja); recusado no modo portátil com motivo localizado.
+
 ## 6. Bot do registry
 GitHub Action (`registry/.github/workflows/bump.yml`) roda a cada 6 h: executa cada provider, detecta novas versões, calcula sha256 para upstreams sem hash, abre PR com a lista `releases:` atualizada e mudanças de `latest`. Humano aprova (ou auto-merge para patch). Assim o catálogo nunca depende de "alguém lembrar".
 

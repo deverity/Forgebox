@@ -44,7 +44,8 @@
     "mailBadge_other": "{count} unread messages",
     "version": "v{version}",
     "versionUnknown": "Forgebox",
-    "updater": "App updates arrive in 1.0"
+    "updater": "App updates arrive in 1.0",
+    "updateAvailable": "Update {version} available"
   },
   "context": {
     "label": "Context",
