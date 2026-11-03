@@ -92,7 +92,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E3-T12 | Tela Logs + `LogViewer` reutilizável | todo | — | |
 | M2-E3-T13 | Tela Mail (Mailpit nativo, preview HTML isolado, badge) | todo | — | |
 | M2-E3-T14 | Tela Bancos + aba 'Banco' do site | todo | — | |
-| M2-E3-T15 | Tela Terminal (xterm.js em abas sobre sessões do daemon) | todo | — | |
+| M2-E3-T15 | Tela Terminal (xterm.js em abas sobre sessões do daemon) | doing | feature/M2-E3-T15-terminal-screen | |
 | M2-E3-T16 | Configurações parte 1 (layout, linhas por schema, Geral, Editor/Terminal, Atalhos, Avançado) | todo | — | |
 | M2-E3-T17 | Configurações parte 2 (Rede e Segurança) | todo | — | |
 | M2-E3-T18 | Configurações parte 3 (Sistema de arquivos, Registries, Atualizações) | todo | — | |
