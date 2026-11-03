@@ -75,6 +75,7 @@ VhostModel {
 
 ### 2.1 Como funciona
 - Cada **série** de PHP usada por pelo menos um site ativo tem um **PhpPool** (ver [03-engine.md §2](03-engine.md)). Se um site fixa versão exata (`8.3.36`), o pool é daquela versão exata; se fixa série (`8.3`), o pool segue a última patch instalada da série (e acompanha auto-update).
+- **Pool dedicado** (`pool_mode: dedicated`, `forge site pool loja.test dedicated`, `sites.pool_mode`; [ADR-0044](adr/0044-metrics-v1.md) §7, M2-E5-T11): o site ganha um pool só dele, com a mesma resolução de versão, blue/green e `PoolSwitcher` do pool compartilhado, portas da faixa do PHP e upstream **`php_<ver>__<slug>`** (`php_8_3__loja-test`, em `etc/<servidor>/upstreams/`). O `PoolManager` passa a ser indexado por `PoolKey {versão, site}` (`site` vazio = compartilhado), uma extensão do modelo por versão da [ADR-0029](adr/0029-daemon-composition.md). Trocar o modo é um job: sobe e aquece o pool novo, re-renderiza o vhost, recarrega o servidor e drena o pool antigo se nenhum outro site o usa. Serve para CPU/RAM exatos na aba Desempenho ([14](14-observability-metrics.md) §2) e para isolar um site pesado; custa a memória de mais workers. Sem portas livres na faixa: `conflict` com mensagem clara. O padrão é `shared`.
 - O vhost renderizado aponta para o upstream do pool:
 
 **Nginx** (`etc/nginx/sites/loja.test.conf`):

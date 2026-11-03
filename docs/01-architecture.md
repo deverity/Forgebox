@@ -86,9 +86,10 @@ forge-core ← forge-manifest ← forge-registry ← forge-provider
 forge-core ← forge-supervisor ← forge-fcgi
 forge-core ← forge-render ← forge-sites
 forge-core ← forge-net, forge-tls
+forge-core ← forge-metrics (só forge-core: o daemon adapta as amostras do supervisor/fcgi e mapeia para DTOs, ADR-0044)
 forge-ipc ← (todos os de domínio, só pelos tipos)
 forge-daemon → todos
-forge-cli, forge-mcp, apps/desktop → forge-ipc apenas (nunca importar crates de domínio diretamente; os tipos base — ids, paths, códigos de erro, Timestamp — vêm do re-export `forge_ipc::base`) — verificado por `cargo xtask arch-guard`
+forge-cli, forge-mcp, apps/desktop → forge-ipc apenas (nunca importar crates de domínio diretamente; os tipos base — ids, paths, códigos de erro, Timestamp — vêm do re-export `forge_ipc::base`) — verificado por `cargo xtask arch-guard`, que também confere que `forge-metrics` só usa `forge-core` do workspace
 ```
 
 Essa regra força que **toda** funcionalidade passe pela API, logo GUI e CLI têm paridade por construção.
@@ -155,6 +156,7 @@ Implementação: `forge_provider::update::UpdateEngine` ([05 §4.1](05-providers
 - Métricas por processo: CPU, RSS, handles, uptime, restarts (amostragem 2 s, via `GetProcessTimes`/`GetProcessMemoryInfo`/`GetProcessHandleCount`, sem PDH; somadas por Job da instância, [03 §6](03-engine.md)).
 - Logs das tools são "tailados" sob demanda pelo daemon e enviados por stream para a GUI/CLI (`forge logs nginx -f`).
 - Health de cada Instance: `tcp`, `http`, `command`, `pid`. Resultados alimentam o estado exibido.
+- Métricas por site (req/s, p50/p90/p99, erros, CPU/RAM atribuídos) vêm do tail dos access logs JSON pelo `forge-metrics` ([14](14-observability-metrics.md), [ADR-0044](adr/0044-metrics-v1.md)).
 
 ## 7. Portabilidade e modo remoto
 - Todo acesso a Win32 fica em módulos `platform::windows::*` com traits (`ProcessGroup`, `TrustStore`, `DnsPolicy`, `LinkFs`, `SystemAppearance`). Clientes (CLI, GUI) que precisam de fatos do SO (iniciar o daemon desanexado, cor de destaque/tema/RDP/build para os materiais da janela, hora de criação do processo) os obtêm de `forge_ipc::base::platform` (re-export de `forge-core`), nunca chamando Win32 diretamente; `crates/forge-core/tests/win32_boundary.rs` verifica isso. Em Linux/macOS as implementações são cgroups/systemd-user ou launchd, `update-ca-certificates`/Keychain, `systemd-resolved`/`/etc/resolver`, symlinks.

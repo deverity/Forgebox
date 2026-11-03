@@ -82,6 +82,8 @@ forge site alias loja.test add admin.loja.test
 forge site open loja.test [--editor|--terminal|--explorer]
 forge site info loja.test                           # diagnóstico: site.dns, site.certificate (aviso < 30 dias), site.php_pool, site.root_access
 forge site env loja.test [--reveal]                 # .env/.env.local do site com segredos mascarados (--reveal: só admin)
+forge site pool loja.test shared|dedicated          # pool PHP compartilhado (CPU/RAM ≈) ou exclusivo (exatos, upstream php_<ver>__<slug>); job
+forge site metrics loja.test on|off                 # liga/desliga as métricas do site (desligadas por padrão em raízes portáteis)
 forge park <dir> [--tld .test] | forge unpark <dir> | forge parked
 forge link [<dir>] [--host] | forge unlink [<dir>]    # equivalente valet; unlink acha o site pela pasta
 forge proxy add app.test http://127.0.0.1:3000 [--ws] [--secure]
@@ -147,7 +149,10 @@ forge jobs watch <job_id> | cancel <job_id>
 
 ### stats / remote
 ```
-forge stats [loja.test] [--window 5m|1h|24h|7d] [--watch] [--json]   # rps, p50/p90/p99, err%, cpu≈, mem≈
+forge stats [loja.test] [--window 1m|5m|1h|24h|7d] [--watch] [--json]   # rps, p50/p90/p99, err%, cpu≈, mem≈; --watch a cada 2/10/60 s
+forge stats [loja.test] --from 24h|<RFC 3339> [--to ...]   # intervalo exato (merge dos histogramas; a janela só rotula)
+forge stats loja.test --series [--window 1h] [--from ...] [--to ...]   # pontos dos gráficos: passo 2 s (1m/5m), 10 s (1h), 1 min (24h), 1 h (7d)
+forge stats loja.test --routes                      # rotas mais lentas (top-K de 12 a 24 h) e erros recentes (4xx/5xx do access log)
 forge top                                           # processos do Forgebox por CPU/RAM com dono (site/instance)
 forge stats export loja.test --from 24h|<RFC 3339> [--to ...] -o csv|json    # imprime o conteúdo
 forge remote add hml wss://10.0.0.5:7788 --code 1234-5678 | forge remote add vps ssh://user@host
@@ -179,6 +184,8 @@ Sem comando da CLI (só a GUI e o protocolo): `tools.icon` (ícone SVG sanitizad
 API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md), aditiva na 1.1): os métodos novos (`terminal.*`, `logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`, `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) e os de bancos/e-mail respondem `not_implemented` citando a tarefa dona (`M2-E3-T4`…`T11`; `db.open` → `M3-E1`) até o backend chegar — `system.hello.not_implemented` os lista.
 
 API do E2 ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md), aditiva na 1.1): `tools.releases` e `tools.plan` (jobs, `viewer`; nada é baixado), `tools.history`, `tools.icon` e `services.update` (job, `admin`) respondem `not_implemented` citando a tarefa dona (`M2-E2-T4`…`T10`) até o backend chegar; `sites.driver` (job, `operator`) e `tls.list` (`viewer`) saíram desse grupo no M2-E2-T6 e funcionam, e `services.settings` (`viewer`; o bloco `advanced` só vai para admin) e `services.set` respondem desde o M2-E2-T7; `tools.install|remove` com `--for` (`target`) citam M2-E2-T8 e `service create --data-dir` cita M2-E2-T10, em vez de ignorar o parâmetro. O plano de uma stack (`tools.plan {stack}`) e os `args`/`env` de `services.update` (`launch`) não têm comando equivalente: a GUI não mostra comando em vez de mostrar um errado.
+
+API das métricas ([ADR-0044](adr/0044-metrics-v1.md), aditiva na 1.1): `stats.get` ganhou `from`/`to` (`forge stats --from/--to`), `stats.series` (`forge stats <site> --series`) e `stats.routes` (`forge stats <site> --routes`) são `viewer`, `TopDto.machine` traz o monitor da máquina, e `sites.pool_mode` (job, `forge site pool`) e `sites.metrics` (`forge site metrics`) são `operator`. Até o backend chegar respondem `not_implemented` citando a tarefa dona: `stats.get` e `metrics.subscribe` → M2-E5-T8; `stats.series`, `stats.routes`, `stats.top` e `stats.export` → M2-E5-T9; `sites.pool_mode` e `sites.metrics` → M2-E5-T11.
 
 `forge site open <site>` (`sites.open`, `local_only`): sem opção abre no navegador padrão; `--explorer` abre a pasta do site no Explorer (ambos pelo `ShellOpener` da plataforma, `ShellExecuteExW`); `--editor` e `--terminal` respondem `not_implemented` citando M2-E3-T9 até essa tarefa.
 
