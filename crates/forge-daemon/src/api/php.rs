@@ -20,7 +20,6 @@ use forge_core::ids::VersionId;
 use forge_core::jobs::{JobContext, JobProgress};
 use forge_core::model::port::{PortProtocol, ReservationOwner};
 use forge_core::store::{ToolSeriesSettingsRepo, ToolVersionRow};
-use forge_fcgi::PoolHandle;
 use forge_ipc::api::methods::{
     php_ext_disable, php_ext_enable, php_ext_list, php_ini, php_ini_open, php_list,
     php_pool_status, php_xdebug,
@@ -329,7 +328,7 @@ async fn render_and_recycle(
     changed: bool,
 ) -> Result<bool> {
     let running = super::settings::running_pools(d, versions).await;
-    let version = running.first().map_or(row.id, PoolHandle::version_id);
+    let version = crate::pools::render_version(&running, row.id);
     let applied = d.pools.render_config(version).await;
     drop(turn);
     let applied = applied?;

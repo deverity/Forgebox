@@ -19,6 +19,10 @@
 //!   local server that does not speak TLS (a trusted unsigned copy of the official
 //!   registry points the 8.3 build at it) and fails the job with nothing written; the
 //!   successful install inside the job is the online test.
+//! * `tools.install xdebug --for php@8.4.26` while the 8.4.27 pool serves: the series
+//!   files (`10-forgebox.ini`, whose `extension_dir` is a version folder) are rendered
+//!   with 8.4.27, the serving version, not with the target; with no pool running, with
+//!   the target.
 //! * Online (ignored): real PHP 8.4.27 + real Xdebug 3.5.3 from xdebug.org installed by
 //!   `php.xdebug on` itself; `php -m` with the series overlays (what the pool's workers
 //!   read) lists Xdebug.
@@ -40,11 +44,12 @@ use forge_core::store::{
 };
 use forge_ipc::api::methods::{
     jobs_get, php_ext_disable, php_ext_enable, php_ext_list, php_list, php_xdebug, services_ports,
-    services_start,
+    services_start, services_stop, tools_install,
 };
 use forge_ipc::api::{
     EventFilter, EventsListParams, JobDto, JobIdParams, JobState, NoParams, PhpExtListDto,
-    PhpExtParams, PhpVersionParams, PhpXdebugParams, PoolDto, ServiceTargetsParams, XdebugMode,
+    PhpExtParams, PhpVersionParams, PhpXdebugParams, PoolDto, ServiceTargetsParams,
+    ToolInstallParams, ToolSpec, XdebugMode,
 };
 use forge_ipc::{ApiError, Client, ClientError};
 use futures::StreamExt;
@@ -689,6 +694,75 @@ async fn xdebug_modes_reserve_the_client_port_and_install_inside_the_job() {
     assert!(!etc.join("php/8.3/conf.d/20-xdebug.ini").exists());
     assert_eq!(xdebug_reservation(&client, "php@8.3/xdebug").await, None);
     assert_eq!(version_mode(&client, "8.3").await, XdebugMode::Off);
+
+    let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
+    assert!(status.success(), "{status}");
+}
+
+/// `tools.install xdebug --for php@8.4.26` (Xdebug 3.5.3 already there, as T8 leaves it:
+/// no download, the install converges the series files) with two 8.4 patches installed.
+/// `10-forgebox.ini` is removed before each install so its render is observable.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn extension_install_renders_the_series_with_the_serving_version() {
+    let root = TestRoot::new();
+    {
+        std::fs::create_dir_all(root.root.db().parent().unwrap()).unwrap();
+        let store = Store::open(&root.root.db()).unwrap();
+        let php26 = php_version(&root, &store, "8.4.26-nts-vs17-x64");
+        php_version(&root, &store, "8.4.27-nts-vs17-x64");
+        seed_xdebug(&root, &store, &php26, "8.4");
+    }
+    let mut daemon = spawn_daemon(&root, &[]);
+    let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
+    let overlay = long(&root.root.etc()).join("php/8.4/conf.d/10-forgebox.ini");
+    let ext_dir = |folder: &str| format!("/bin/php/{folder}/ext\"");
+    let install = || async {
+        let job = client
+            .call::<tools_install>(ToolInstallParams {
+                specs: vec![ToolSpec::from("xdebug")],
+                variant: None,
+                yes: true,
+                target: Some(ToolSpec::from("php@8.4.26")),
+            })
+            .await
+            .unwrap();
+        wait_job(&client, job.id, Duration::from_secs(60)).await;
+    };
+
+    // 8.4.27 serves: its folder is the series' extension_dir.
+    let job = client
+        .call::<services_start>(ServiceTargetsParams {
+            targets: vec!["php@8.4.27".into()],
+        })
+        .await
+        .unwrap();
+    wait_job(&client, job.id, Duration::from_secs(60)).await;
+    let started = std::fs::read_to_string(&overlay).unwrap();
+    assert!(
+        started.contains(&ext_dir("8.4.27-nts-vs17-x64")),
+        "{started}"
+    );
+
+    // The install into 8.4.26 renders the series with 8.4.27, the serving version.
+    std::fs::remove_file(&overlay).unwrap();
+    install().await;
+    let text = std::fs::read_to_string(&overlay).expect("the install renders the series");
+    assert!(text.contains(&ext_dir("8.4.27-nts-vs17-x64")), "{text}");
+    assert!(!text.contains("8.4.26-nts-vs17-x64"), "{text}");
+    assert_eq!(text, started, "the files of the serving version");
+
+    // No pool of the series runs: the target renders.
+    let job = client
+        .call::<services_stop>(ServiceTargetsParams {
+            targets: vec!["php@8.4.27".into()],
+        })
+        .await
+        .unwrap();
+    wait_job(&client, job.id, Duration::from_secs(60)).await;
+    std::fs::remove_file(&overlay).unwrap();
+    install().await;
+    let text = std::fs::read_to_string(&overlay).unwrap();
+    assert!(text.contains(&ext_dir("8.4.26-nts-vs17-x64")), "{text}");
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");

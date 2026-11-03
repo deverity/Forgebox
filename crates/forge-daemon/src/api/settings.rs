@@ -38,7 +38,6 @@ use super::route;
 use crate::catalog::{self, ToolEntry};
 use crate::daemon::Daemon;
 use crate::install;
-use crate::pools::POOL_QUICK;
 use crate::services::{Entry, instance_owner};
 use crate::settings::{self, Changes};
 use crate::vars::RuntimeVars;
@@ -580,22 +579,8 @@ async fn set_instance(
 
 /// Pools of `versions` that run (serving first).
 pub(crate) async fn running_pools(d: &Daemon, versions: &[ToolVersionRow]) -> Vec<PoolHandle> {
-    let mut out: Vec<(bool, PoolHandle)> = Vec::new();
-    for handle in d.pools.handles() {
-        if !versions.iter().any(|v| v.id == handle.version_id()) {
-            continue;
-        }
-        if let Ok(status) = handle.status(POOL_QUICK).await {
-            if matches!(
-                status.state,
-                forge_fcgi::PoolState::Running | forge_fcgi::PoolState::Starting
-            ) {
-                out.push((status.serving, handle));
-            }
-        }
-    }
-    out.sort_by_key(|(serving, _)| !*serving);
-    out.into_iter().map(|(_, h)| h).collect()
+    let ids: Vec<_> = versions.iter().map(|v| v.id).collect();
+    d.pools.running_of(&ids).await
 }
 
 async fn set_series(
@@ -626,11 +611,11 @@ async fn set_series(
     if !changed.is_empty() {
         // The files of a series are shared by its versions: render with the one that
         // serves (its folder is in `extension_dir`), else the newest installed.
-        let version = running
+        let newest = versions
             .first()
-            .map(PoolHandle::version_id)
-            .or_else(|| versions.first().map(|v| v.id))
+            .map(|v| v.id)
             .ok_or_else(|| ForgeError::NotFound(format!("{tool_id}@{series} is not installed")))?;
+        let version = crate::pools::render_version(&running, newest);
         d.pools.render_config(version).await?;
         drop(turn);
         if settings::apply_mode(manifest, &changed) != Apply::None {

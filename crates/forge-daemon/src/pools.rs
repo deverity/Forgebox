@@ -151,6 +151,32 @@ impl PoolManager {
             .collect()
     }
 
+    /// Pools of `versions` that run or are starting, the serving ones first.
+    pub async fn running_of(&self, versions: &[VersionId]) -> Vec<PoolHandle> {
+        let mut out: Vec<(bool, PoolHandle)> = Vec::new();
+        for handle in self.handles() {
+            if !versions.contains(&handle.version_id()) {
+                continue;
+            }
+            if let Ok(status) = handle.status(POOL_QUICK).await {
+                if matches!(status.state, PoolState::Running | PoolState::Starting) {
+                    out.push((status.serving, handle));
+                }
+            }
+        }
+        out.sort_by_key(|(serving, _)| !*serving);
+        out.into_iter().map(|(_, h)| h).collect()
+    }
+
+    /// [`render_version`] over the pools of `versions` (the versions of one series).
+    pub async fn series_render_version(
+        &self,
+        versions: &[VersionId],
+        fallback: VersionId,
+    ) -> VersionId {
+        render_version(&self.running_of(versions).await, fallback)
+    }
+
     /// The spec of `row` (an installed version of a `service.kind: pool` tool).
     pub fn spec(&self, manifest: &ToolManifest, row: &ToolVersionRow) -> Result<PoolSpec> {
         pool_spec(
@@ -392,6 +418,16 @@ impl PoolSwitcher for DaemonPoolSwitcher {
             }
         })
     }
+}
+
+/// The version whose folder a render of the files shared by a series must use: the
+/// series' `conf.d/10-forgebox.ini` holds `extension_dir = "<version folder>/ext"`, so it
+/// is rendered with the version whose pool runs and serves (`running`, serving first, as
+/// [`PoolManager::running_of`] answers), and with `fallback` only when no pool of the
+/// series runs. Rendering with another patch would point the workers that start later
+/// (autoscale, crash restart) at that patch's `ext/` folder.
+pub fn render_version(running: &[PoolHandle], fallback: VersionId) -> VersionId {
+    running.first().map_or(fallback, PoolHandle::version_id)
 }
 
 /// `service.pool` of `manifest` resolved for the installed `row` (pure).
