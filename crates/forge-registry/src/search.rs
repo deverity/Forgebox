@@ -254,11 +254,12 @@ mod tests {
     }
 
     #[test]
-    fn empty_query_lists_by_id_and_every_word_must_match() {
+    fn empty_query_keeps_the_catalog_order_and_every_word_must_match() {
         let all = search(&catalog(), "", None);
+        // Index order (the order the caller gave), not an id order.
         assert_eq!(
             ids(&all),
-            ["mariadb", "mysql", "php", "phpmyadmin", "xdebug"]
+            ["php", "phpmyadmin", "mysql", "mariadb", "xdebug"]
         );
         assert!(all.iter().all(|h| h.matched == MatchKind::All));
         let both = search(&catalog(), "my admin", None);

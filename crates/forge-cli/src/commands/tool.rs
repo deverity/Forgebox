@@ -286,6 +286,38 @@ async fn info(ctx: &Context, tool: forge_ipc::base::ids::ToolId) -> CliResult<()
         if let Some(description) = &t.description {
             out.line(paint(DIM, description));
         }
+        // Links of the manifest (`homepage`, `docs`, `changelog_url`): URLs, not translated.
+        let links: Vec<(&str, String)> = [
+            ("Homepage", &info.homepage),
+            ("Docs", &info.docs),
+            ("Changelog", &info.changelog_url),
+        ]
+        .into_iter()
+        .filter_map(|(label, url)| url.clone().map(|url| (label, url)))
+        .collect();
+        if !links.is_empty() {
+            out.pairs(&links);
+        }
+        if let Some(stack) = &info.stack {
+            out.line("");
+            let rows = stack
+                .tools
+                .iter()
+                .map(|s| {
+                    vec![
+                        s.id.to_string(),
+                        or_dash(s.series.as_deref().or(s.version.as_deref())),
+                        s.extensions
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ]
+                })
+                .collect();
+            out.table(&["ID", out.t(Msg::HSeries), ""], rows, Msg::NoResults);
+            return;
+        }
         out.line("");
         out.line(out.t(Msg::HInstalled));
         let rows = t

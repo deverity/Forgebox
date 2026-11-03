@@ -878,6 +878,15 @@ export class FakeBridge implements Bridge {
         return { value: { server_time: nowIso() } satisfies T.PongDto };
       case "system.hello":
         return { value: this.hello };
+      // M2-E2-T4: the daemon answers both. The fake has no icons and no update history
+      // unless a scenario handler says otherwise (icon: `not_found`, like a tool without one).
+      case "tools.icon":
+        reject(apiError("not_found", `${String(params.tool)} has no icon`));
+        return undefined;
+      case "tools.history":
+        return {
+          value: { tool: params.tool, entries: [] } as unknown as T.UpdateHistoryDto,
+        };
       case "jobs.get": {
         const job = this.jobs.get(String(params.job_id));
         if (job === undefined)

@@ -15,16 +15,6 @@
     "what": "install plans"
   },
   {
-    "method": "tools.history",
-    "task": "M2-E2-T4",
-    "what": "update history"
-  },
-  {
-    "method": "tools.icon",
-    "task": "M2-E2-T4",
-    "what": "catalog icons"
-  },
-  {
     "method": "services.update",
     "task": "M2-E2-T10",
     "what": "advanced instance settings"
