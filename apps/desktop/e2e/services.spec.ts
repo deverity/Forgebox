@@ -72,7 +72,7 @@ for (const dpr of [1, 1.25, 1.5]) {
           .click();
         const sheet = page.getByTestId("service-sheet");
         await expect(sheet).toBeVisible();
-        await expect(page.getByRole("tab")).toHaveCount(3);
+        await expect(page.getByRole("tab")).toHaveCount(6);
         const aside = page.locator("aside[data-motion]").last();
         const box = await aside.boundingBox();
         expect(box?.width).toBeCloseTo(420, 0);

@@ -50,8 +50,11 @@
   },
   "tabs": {
     "overview": "Visão geral",
+    "config": "Configuração",
     "logs": "Logs",
-    "instances": "Instâncias"
+    "instances": "Instâncias",
+    "versions": "Versões",
+    "advanced": "Avançado"
   },
   "overview": {
     "timeline": "Linha do tempo do estado",
@@ -132,5 +135,132 @@
     "removing": "Removendo…",
     "removed": "Removida",
     "mustType": "Digite {name} para habilitar."
+  },
+  "tab": {
+    "loading": "Carregando…"
+  },
+  "quick": {
+    "title": "Configurações rápidas",
+    "empty": "Este serviço não tem configurações rápidas.",
+    "ports": "Portas",
+    "undo": "Desfazer",
+    "useDefault": "Usar padrão",
+    "save": "Aplicar alterações",
+    "saving": "Aplicando…",
+    "saved": "Aplicado",
+    "nothingChanged": "Nada foi alterado ainda.",
+    "fixErrors": "Corrija primeiro os campos destacados.",
+    "portConflict": "Porta já usada por {owner}.",
+    "apply": {
+      "reload": "Aplicar estas alterações recarrega o serviço.",
+      "restart": "Aplicar estas alterações reinicia o serviço.",
+      "none": "Estas alterações valem na próxima partida ou requisição, sem recarregar."
+    },
+    "problem": {
+      "number": "Digite um número.",
+      "option": "Escolha um dos valores listados.",
+      "port": "Use uma porta entre 1 e 65535.",
+      "path": "Este valor tem caracteres que não são permitidos.",
+      "rangeBoth": "Use um valor entre {min} e {max}.",
+      "rangeMax": "Use um valor de até {max}.",
+      "rangeMin": "Use um valor de pelo menos {min}."
+    }
+  },
+  "config": {
+    "files": "Arquivos de configuração",
+    "open": "Abrir arquivo",
+    "opening": "Abrindo…",
+    "opened": "Aberto",
+    "noFiles": "Este serviço não tem arquivos de configuração.",
+    "managed": "Gerenciado",
+    "openRole": "Abrir arquivo: {role}",
+    "viewerTitle": "Conteúdo de {path}",
+    "closeViewer": "Fechar",
+    "viewerUnavailable": "Esta conexão não pode ler arquivos do daemon.",
+    "binary": "Este arquivo não é texto.",
+    "managedLegend": "As linhas destacadas pertencem ao Forgebox e são reescritas na próxima geração; edite fora delas.",
+    "truncated": "Só o começo do arquivo é mostrado."
+  },
+  "versions": {
+    "installed": "Versões instaladas",
+    "cliExplain": "\"Usar na CLI\" só muda a versão que a linha de comando forge e o seu terminal usam. Sites e serviços mantêm a própria versão.",
+    "none": "Nenhuma versão instalada.",
+    "cli": "CLI",
+    "broken": "Com defeito",
+    "useCli": "Usar na CLI",
+    "using": "Trocando…",
+    "used": "CLI atualizada",
+    "alreadyCli": "Esta já é a versão da CLI.",
+    "remove": "Remover",
+    "removeVersion": "Remover {version}",
+    "removeHint": "Remove esta versão do disco.",
+    "inUseInstance": "Em uso por {names}.",
+    "inUseSites_one": "Em uso por {count} site.",
+    "inUseSites_other": "Em uso por {count} sites.",
+    "inUseCli": "É a versão da CLI: escolha outra antes.",
+    "removeTitle": "Remover {spec}",
+    "removeWarning": "{spec} será apagada do disco. Isso não pode ser desfeito.",
+    "confirmRemove": "Remover versão",
+    "cancel": "Cancelar",
+    "removing": "Removendo…",
+    "removed": "Removida",
+    "updates": "Atualizações",
+    "policy": "Política de atualização",
+    "check": "Verificar atualizações",
+    "checking": "Verificando…",
+    "checked": "Verificado",
+    "upToDate": "Tudo está atualizado.",
+    "available": "{from} → {to}",
+    "policies": {
+      "manual": "Manual",
+      "notify": "Só avisar",
+      "auto-patch": "Patches automáticos",
+      "auto-minor": "Minors automáticas",
+      "auto": "Automática"
+    },
+    "policyHint": {
+      "manual": "Nunca verifica sozinha.",
+      "notify": "Avisa quando houver versão nova.",
+      "auto-patch": "Instala patches da mesma série.",
+      "auto-minor": "Instala versões minor e patch.",
+      "auto": "Instala toda versão nova."
+    },
+    "history": "Histórico de atualizações",
+    "historyEmpty": "Nenhuma atualização ainda.",
+    "historyLine": "{from} → {to} · {status}",
+    "status": {
+      "started": "em andamento",
+      "completed": "concluída",
+      "failed": "falhou",
+      "rolled_back": "revertida"
+    },
+    "rollback": "Reverter",
+    "rollingBack": "Revertendo…",
+    "rolledBack": "Revertida"
+  },
+  "advanced": {
+    "nothingChanged": "Nada foi alterado ainda.",
+    "autostart": "Iniciar com o Forgebox",
+    "args": "Argumentos extras",
+    "argsHint": "Um por linha, depois dos argumentos do manifesto.",
+    "env": "Variáveis de ambiente",
+    "envHint": "Uma CHAVE=valor por linha.",
+    "envInvalid": "Use CHAVE=valor, uma por linha.",
+    "restartPolicy": "Política de reinício",
+    "restartOn": "Reiniciar quando",
+    "onDefault": "{label} (padrão)",
+    "on": {
+      "never": "Nunca",
+      "failure": "Falhar",
+      "always": "Encerrar"
+    },
+    "restartMax": "Reinícios permitidos",
+    "restartWindow": "Em (segundos)",
+    "positive": "Use um número inteiro maior que zero.",
+    "version": "Versão",
+    "versionHint": "Só versões da mesma série: as pastas de dados não são migradas.",
+    "restartNote": "Salvar gera a configuração de novo e reinicia o serviço se ele estiver rodando.",
+    "save": "Salvar configurações avançadas",
+    "unavailable": "As configurações avançadas exigem uma conexão de administrador."
   }
 }

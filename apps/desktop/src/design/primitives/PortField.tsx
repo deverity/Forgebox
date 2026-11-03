@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PortCheckDto } from "../../ipc/generated";
 import { useCapability, useForgeApi } from "../../state";
@@ -11,6 +11,11 @@ export interface PortFieldProps extends Omit<TextFieldProps, "value" | "onChange
   value: string;
   onChange: (value: string) => void;
   protocol?: "tcp" | "udp";
+  /**
+   * The latest `net.port_check` answer for the typed port (`null` while idle, checking or
+   * failed), so a form can refuse a conflicting port before submit.
+   */
+  onResult?: (result: PortCheckDto | null) => void;
 }
 
 /** A valid TCP/UDP port number, or `null`. */
@@ -30,7 +35,7 @@ type Check =
  * Port input with a live check: `net.port_check` runs 250 ms after the last keystroke (one
  * request per window) and the hint says "livre" or "em uso por mysqld.exe (pid)".
  */
-export function PortField({ value, onChange, protocol, ...rest }: PortFieldProps) {
+export function PortField({ value, onChange, protocol, onResult, ...rest }: PortFieldProps) {
   const { t } = useTranslation("common");
   const api = useForgeApi();
   const capability = useCapability("net.port_check");
@@ -62,6 +67,15 @@ export function PortField({ value, onChange, protocol, ...rest }: PortFieldProps
       clearTimeout(timer);
     };
   }, [api, available, port, protocol, key]);
+
+  const result = check.kind === "done" ? check.result : null;
+  const report = useRef(onResult);
+  useEffect(() => {
+    report.current = onResult;
+  });
+  useEffect(() => {
+    report.current?.(result);
+  }, [result]);
 
   let hint: string | undefined;
   if (check.kind === "checking") hint = t("ui.portChecking");
