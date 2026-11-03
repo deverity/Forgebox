@@ -508,6 +508,38 @@ describe("logs and timeline", () => {
       .map((li) => li.getAttribute("data-event-kind"));
     expect(kinds).toEqual(["service.running", "service.starting"]);
   });
+
+  it("follows has_more so the timeline shows the newest events", async () => {
+    const user = userEvent.setup();
+    const ev = (seq: number, kind: string) => ({
+      id: `E${String(seq)}`,
+      seq,
+      ts: "2026-10-28T10:00:00Z",
+      kind,
+      payload: {},
+    });
+    const first = Array.from({ length: 20 }, (_, i) => ev(i + 1, "service.starting"));
+    const second = [ev(21, "service.running"), ev(22, "service.stopped")];
+    await renderApp({
+      path: "/services",
+      data: categorized(),
+      extra: {
+        handlers: {
+          "events.list": (params: { after_seq?: number }) =>
+            (params.after_seq ?? 0) === 0
+              ? { events: first, next_after: 20, last_seq: 22, has_more: true }
+              : { events: second, next_after: 22, last_seq: 22, has_more: false },
+        },
+      },
+    });
+    await openSheet(user, "mysql/default");
+    const timeline = await screen.findByTestId("timeline");
+    const kinds = within(timeline)
+      .getAllByRole("listitem")
+      .map((li) => li.getAttribute("data-event-kind"));
+    expect(kinds).toHaveLength(12);
+    expect(kinds.slice(0, 2)).toEqual(["service.stopped", "service.running"]);
+  });
 });
 
 describe("palette", () => {

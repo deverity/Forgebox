@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { killPortHolder, setServicePort } from "../../actions/services";
 import { ActionButton } from "../../design/primitives/ActionButton";
@@ -9,8 +10,8 @@ import { PortField, parsePort } from "../../design/primitives/PortField";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import { TNUM_CLASS } from "../../i18n/format";
 import type { ErrorAction } from "../../ipc/describeError";
-import type { InstanceDto } from "../../ipc/generated";
-import { useForgeQuery } from "../../state";
+import type { EventDto, InstanceDto } from "../../ipc/generated";
+import { queryKeys, useForgeApi } from "../../state";
 import { isFailure, mainPort, portHolder, targetOf } from "./model";
 
 export interface OverviewTabProps {
@@ -21,14 +22,34 @@ export interface OverviewTabProps {
 
 /** Timeline entries kept (newest first). */
 const TIMELINE_LIMIT = 12;
+/** Maximum page size of `events.list`. */
+const PAGE_LIMIT = 5000;
 
 function Timeline({ instance }: { instance: InstanceDto }) {
   const { t } = useTranslation("services");
   const format = useFormatters();
-  const history = useForgeQuery("events.list", {
-    after_seq: 0,
-    limit: 500,
-    filter: { kinds: ["service.*"], instance_id: instance.id },
+  const api = useForgeApi();
+  // `events.list` pages run oldest to newest, so read to the end of the stream and keep the tail.
+  const history = useQuery({
+    queryKey: queryKeys.call(api.context, "events.list", {
+      after_seq: 0,
+      limit: PAGE_LIMIT,
+      filter: { kinds: ["service.*"], instance_id: instance.id },
+    }),
+    queryFn: async () => {
+      let tail: EventDto[] = [];
+      let after = 0;
+      for (;;) {
+        const page = await api.call("events.list", {
+          after_seq: after,
+          limit: PAGE_LIMIT,
+          filter: { kinds: ["service.*"], instance_id: instance.id },
+        });
+        tail = [...tail, ...page.events].slice(-TIMELINE_LIMIT);
+        if (!page.has_more || page.next_after <= after) return tail;
+        after = page.next_after;
+      }
+    },
   });
   const { refetch } = history;
   // The live state changed: the timeline gained an entry (events do not invalidate this query).
@@ -39,7 +60,7 @@ function Timeline({ instance }: { instance: InstanceDto }) {
     seen.current = stamp;
     void refetch();
   }, [stamp, refetch]);
-  const events = [...(history.data?.events ?? [])].reverse().slice(0, TIMELINE_LIMIT);
+  const events = [...(history.data ?? [])].reverse().slice(0, TIMELINE_LIMIT);
   return (
     <section aria-labelledby="timeline-title" className="flex flex-col gap-2">
       <h3 id="timeline-title" className="text-headline">
