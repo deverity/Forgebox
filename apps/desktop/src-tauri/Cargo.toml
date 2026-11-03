@@ -32,7 +32,9 @@ tauri-build = { workspace = true }
 [dependencies]
 # Architecture rule (CLAUDE.md): GUI depends on forge-ipc only; checked by `cargo xtask arch-guard`.
 forge-ipc = { path = "../../../crates/forge-ipc" }
-tauri = { workspace = true }
+# `tray-icon`: the tray (src/tray, docs/07 §7). Icons are decoded by the crate itself, so
+# no `image-*` feature is needed.
+tauri = { workspace = true, features = ["tray-icon"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The IPC bridge (src/bridge, ADR-0034): async commands, the Contexts actor, stream pumps.
@@ -57,6 +59,6 @@ tauri-plugin-global-shortcut = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 # Mock runtime: the updater tests drive the real plugin against a local HTTP server.
-tauri = { workspace = true, features = ["test"] }
+tauri = { workspace = true, features = ["test", "tray-icon"] }
 minisign = { workspace = true }
 base64 = { workspace = true }

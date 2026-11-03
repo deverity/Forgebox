@@ -1,7 +1,49 @@
 {
-  "open": "Abrir o Forgebox",
-  "start_all": "Iniciar todos os serviços",
-  "stop_all": "Parar todos os serviços",
+  "title": "Forgebox · {context}",
+  "context": {
+    "local": "Local",
+    "add_remote": "Adicionar remoto (M6)"
+  },
+  "status": {
+    "all_running": "Todos os serviços em execução",
+    "failed": "{count} com falha",
+    "daemon_down": "Daemon indisponível",
+    "connecting": "Conectando ao daemon…",
+    "no_services": "Nenhum serviço criado"
+  },
   "services_running": "{running} de {total} serviços em execução",
-  "quit": "Sair"
+  "tooltip": {
+    "remote": "Remoto: {context}",
+    "php": "PHP CLI {version}"
+  },
+  "open": "Abrir painel",
+  "services": {
+    "menu": "Gerenciar serviços",
+    "open": "Abrir Serviços"
+  },
+  "sites": {
+    "menu": "Sites",
+    "empty": "Nenhum site"
+  },
+  "php": {
+    "menu": "PHP CLI",
+    "empty": "Nenhuma versão do PHP",
+    "version": "PHP {version}"
+  },
+  "start_all": "Iniciar todos",
+  "restart_all": "Reiniciar todos",
+  "stop_all": "Parar todos",
+  "logs": "Ver logs",
+  "mail": "Mail",
+  "mail_unread": "Mail ({count} não lidos)",
+  "terminal": "Terminal",
+  "settings": "Configurações",
+  "quit": "Sair",
+  "quit_dialog": {
+    "title": "Sair do Forgebox",
+    "message": "Os serviços continuam rodando no daemon depois que o Forgebox fecha. Deseja pará-los também?",
+    "stop": "Parar serviços e sair",
+    "keep": "Manter serviços e sair",
+    "cancel": "Cancelar"
+  }
 }

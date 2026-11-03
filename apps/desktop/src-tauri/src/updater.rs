@@ -868,6 +868,10 @@ pub fn build_service(
             if let Err(err) = emitter.emit(UPDATER_EVENT, snapshot) {
                 tracing::debug!(%err, "updater event not delivered");
             }
+            // An announced app update is also the tray's "updating" badge (docs/07 §7).
+            if let Some(tray) = emitter.try_state::<crate::tray::Tray>() {
+                tray.set_app_update(snapshot.available.is_some());
+            }
         }),
     ))
 }
