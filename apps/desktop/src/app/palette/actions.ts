@@ -34,6 +34,8 @@ type Translate = (key: string, values?: Record<string, string | number>) => stri
 
 export interface PaletteActions {
   goTo: (feature: FeatureId) => void;
+  /** Opens the detail sheet of an instance (`/services?instance=<id>`). */
+  openService: (instanceId: string) => void;
   newSite: () => void;
   /** Runs a registered action with job toasts; resolves when it ended (never rejects). */
   run: <M extends MethodName, I>(action: Action<M, I>, input: I, label: string) => Promise<boolean>;
@@ -56,6 +58,13 @@ export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
   const goTo = useCallback(
     (feature: FeatureId) => {
       void navigate({ to: featureOf(feature).path });
+    },
+    [navigate],
+  );
+
+  const openService = useCallback(
+    (instanceId: string) => {
+      void navigate({ to: featureOf("services").path, search: { instance: instanceId } });
     },
     [navigate],
   );
@@ -102,6 +111,7 @@ export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
     };
     const api: PaletteActions = {
       goTo,
+      openService,
       newSite,
       run,
       startAll: (label) =>
@@ -136,5 +146,5 @@ export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
       },
     };
     return api;
-  }, [goTo, run, capabilities, tx, translateError, onTogglePalette]);
+  }, [goTo, openService, run, capabilities, tx, translateError, onTogglePalette]);
 }

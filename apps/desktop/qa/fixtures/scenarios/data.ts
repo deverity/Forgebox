@@ -167,8 +167,10 @@ export function populatedData(): QaData {
       site(3, "api.test", { kind: "proxy", upstream: "http://127.0.0.1:3000" }),
     ],
     tools: [
-      tool("mysql", { current: "8.4.3", has_service: true }),
-      tool("php", { current: "8.3.36" }),
+      tool("mysql", { name: "MySQL", category: "database", current: "8.4.3", has_service: true }),
+      tool("redis", { name: "Redis", category: "cache", has_service: true }),
+      tool("mailpit", { name: "Mailpit", category: "mail", has_service: true }),
+      tool("php", { name: "PHP", category: "runtime", current: "8.3.36" }),
     ],
     daemon: daemonStatus(),
   };

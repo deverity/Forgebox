@@ -6,7 +6,7 @@
 // so "services" finds "Serviços" and "servi" finds "Services" whatever the UI language is.
 import type { MethodName } from "../../ipc/methods";
 import type { Action } from "../../actions/registry";
-import { startInstance, stopInstance } from "../../actions/services";
+import { restartInstance, startInstance, stopInstance } from "../../actions/services";
 import type { InstanceDto, SiteDto } from "../../ipc/generated";
 import enPalette from "../../i18n/en-US/palette.json";
 import enShell from "../../i18n/en-US/shell.json";
@@ -69,6 +69,8 @@ export interface PaletteInputs {
   /** Why a method is unavailable (`null`: available). */
   unavailable: (method: string) => string | null;
   goTo: (feature: FeatureId) => void;
+  /** Opens the detail sheet of an instance on the Services screen. */
+  openService: (instanceId: string) => void;
   newSite: () => void;
   run: <M extends MethodName, I>(action: Action<M, I>, input: I, label: string) => Promise<boolean>;
   startAll: (label: string) => Promise<boolean>;
@@ -79,7 +81,7 @@ export interface PaletteInputs {
   cli: {
     startAll: string | null;
     stopAll: string | null;
-    instance: (action: "start" | "stop", target: string) => string | null;
+    instance: (action: "start" | "stop" | "restart", target: string) => string | null;
   };
 }
 
@@ -176,6 +178,36 @@ export function buildCommands(input: PaletteInputs): PaletteCommand[] {
       cli: input.cli.instance(running ? "stop" : "start", target),
       unavailable: input.unavailable(method),
       run: () => void input.run(running ? stopInstance : startInstance, target, label),
+    });
+    // Per-service extras (M2-E2-T12): restart a running one, and open the detail sheet.
+    if (running) {
+      const restartLabel = t("commands.restartInstance", { name: target });
+      out.push({
+        id: `instance.${instance.id}.restart`,
+        group: "services",
+        label: restartLabel,
+        searchText: [
+          bothLocales("palette", "commands.restartInstance", { name: target }),
+          fold(`${instance.tool} ${instance.name} ${instance.version}`),
+        ].join(" "),
+        cli: input.cli.instance("restart", target),
+        unavailable: input.unavailable("services.restart"),
+        run: () => void input.run(restartInstance, target, restartLabel),
+      });
+    }
+    out.push({
+      id: `instance.${instance.id}.open`,
+      group: "services",
+      label: t("commands.openInstance", { name: target }),
+      searchText: [
+        bothLocales("palette", "commands.openInstance", { name: target }),
+        fold(`${instance.tool} ${instance.name} ${instance.version}`),
+      ].join(" "),
+      cli: null,
+      unavailable: null,
+      run: () => {
+        input.openService(instance.id);
+      },
     });
   }
 

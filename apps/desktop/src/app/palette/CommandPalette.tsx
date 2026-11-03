@@ -53,6 +53,7 @@ export function CommandPalette({ open, onOpenChange, actions }: CommandPalettePr
       sites: Object.values(sites),
       unavailable,
       goTo: actions.goTo,
+      openService: actions.openService,
       newSite: actions.newSite,
       run: actions.run,
       startAll: actions.startAll,
@@ -62,8 +63,7 @@ export function CommandPalette({ open, onOpenChange, actions }: CommandPalettePr
       cli: {
         startAll: renderCli("services.start", {}),
         stopAll: renderCli("services.stop", {}),
-        instance: (action, target) =>
-          renderCli(action === "start" ? "services.start" : "services.stop", { targets: [target] }),
+        instance: (action, target) => renderCli(`services.${action}`, { targets: [target] }),
       },
     });
   }, [t, instances, sites, capabilities, translateError, actions]);

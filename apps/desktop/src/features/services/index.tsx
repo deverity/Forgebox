@@ -1,6 +1,2 @@
-import { PlaceholderPage } from "../../app/shell/PlaceholderPage";
-
-/** Placeholder until the task named on screen delivers the real services screen. */
-export function ServicesPage() {
-  return <PlaceholderPage id="services" />;
-}
+// The Services screen (M2-E2-T12, docs/07 section 5.3). The route imports `ServicesPage`.
+export { ServicesPage } from "./ServicesPage";
