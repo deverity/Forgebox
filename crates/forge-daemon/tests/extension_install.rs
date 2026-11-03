@@ -359,13 +359,18 @@ async fn xdebug_install_online() {
     let output = std::process::Command::new(php_dir.join("php.exe"))
         .arg("-n")
         .arg("-d")
-        .arg(format!("zend_extension={}", dll.display()))
+        // Quoted: the temporary root may be an 8.3 short path, and `~` is INI syntax.
+        .arg(format!(r#"zend_extension="{}""#, dll.display()))
         .arg("-m")
         .output()
         .unwrap();
     let modules = String::from_utf8_lossy(&output.stdout);
     println!("{modules}");
-    assert!(modules.contains("Xdebug"), "{modules}");
+    assert!(
+        modules.contains("Xdebug"),
+        "{modules}{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // And remove --for takes it out again.
     let job = client
