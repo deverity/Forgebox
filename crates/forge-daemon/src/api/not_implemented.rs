@@ -63,11 +63,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("logs.targets", "M2-E3-T8", "listing log targets"),
     ("shell.open", "M2-E3-T9", "external terminal launcher"),
     ("shell.open_editor", "M2-E3-T9", "editor launcher"),
-    (
-        "system.config_list",
-        "M2-E3-T10",
-        "configuration document with schema",
-    ),
     ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
     (
         "services.kill_port_holder",
@@ -220,7 +215,6 @@ mod tests {
             ("logs.targets", "M2-E3-T8"),
             ("shell.open", "M2-E3-T9"),
             ("shell.open_editor", "M2-E3-T9"),
-            ("system.config_list", "M2-E3-T10"),
             ("tls.ca_uninstall", "M2-E3-T11"),
             ("services.kill_port_holder", "M2-E3-T11"),
             ("sites.env", "M2-E3-T11"),

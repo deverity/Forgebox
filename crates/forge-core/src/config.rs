@@ -38,6 +38,7 @@ pub const CONFIG_HEADER: &str = "\
 
 /// Root of `forgebox.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct ForgeConfig {
     /// TLD of local sites, with the leading dot (`.test`). Always lowercase.
@@ -77,6 +78,7 @@ impl Default for ForgeConfig {
 
 /// `[ports]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct PortsConfig {
     /// Ports never handed out automatically to other owners (Xdebug 9003).
@@ -217,6 +219,27 @@ impl PortSet {
     }
 }
 
+/// Items are single ports or `"start-end"` spans (the TOML shape `Serialize` writes).
+#[cfg(feature = "schemars")]
+impl schemars::JsonSchema for PortSet {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PortSet".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "array",
+            "description": "Ports and spans: 80, \"19000-19999\".",
+            "items": {
+                "oneOf": [
+                    { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    { "type": "string", "pattern": "^[0-9]+-[0-9]+$" }
+                ]
+            }
+        })
+    }
+}
+
 impl FromStr for PortSet {
     type Err = String;
 
@@ -272,6 +295,7 @@ impl<'de> Deserialize<'de> for PortSet {
 /// `[dns]` (docs/06 §5, docs/13 §5): whether the daemon runs the local resolver and what
 /// it answers besides `tld`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct DnsConfig {
     /// The daemon starts the resolver at boot (docs/01 §5.1 step 5). Default `true`;
@@ -299,6 +323,7 @@ impl Default for DnsConfig {
 
 /// One entry of `[[dns.remote_zones]]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RemoteZoneConfig {
     /// Zone name without dots around it, lowercase (`hml.test`).
     pub zone: String,
@@ -308,6 +333,7 @@ pub struct RemoteZoneConfig {
 
 /// `[metrics]` (docs/14).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct MetricsConfig {
     pub enabled: bool,
@@ -321,6 +347,7 @@ impl Default for MetricsConfig {
 
 /// `[updates]` (docs/05 §4): background checks respect these.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct UpdatesConfig {
     /// What to do on a metered connection.
@@ -332,6 +359,7 @@ pub struct UpdatesConfig {
 
 /// Local-time window `"HH:MM"`..`"HH:MM"`; may wrap midnight (`22:00`..`07:00`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct QuietHours {
     pub start: String,
     pub end: String,
@@ -366,6 +394,7 @@ fn parse_hhmm(value: &str) -> Result<u16> {
 
 /// Behaviour of background downloads on metered connections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum MeteredPolicy {
     /// Do not download in the background while metered (default).
@@ -377,6 +406,7 @@ pub enum MeteredPolicy {
 
 /// `[editor]`: command used by "open in editor". `None`: auto-detect.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct EditorConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -397,6 +427,7 @@ pub const TERMINAL_MAX_SESSIONS_LIMIT: u32 = 256;
 /// `[terminal]`: the external terminal command (`command`, `None`: auto-detect) and the
 /// integrated terminal hosted by the daemon (docs/07 §5.10, docs/03 §7.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct TerminalConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -424,6 +455,7 @@ impl Default for TerminalConfig {
 /// `[path]` (docs/03 §5.2, docs/08 §3): what `forge_provider::layout::path::ensure` puts on
 /// the user `PATH` once the user agreed to it (onboarding). Never used in portable mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct PathConfig {
     /// `bin/<tool>/current` (plus the manifest's `install.path` subfolders) of every
@@ -443,6 +475,13 @@ impl Default for PathConfig {
 }
 
 impl ForgeConfig {
+    /// JSON Schema (2020-12) of `forgebox.toml` in its nested shape, with the doc comments
+    /// as titles/descriptions. The Settings screen is generated from it (`system.config_list`).
+    #[cfg(feature = "schemars")]
+    pub fn json_schema() -> serde_json::Value {
+        serde_json::to_value(schemars::schema_for!(ForgeConfig)).unwrap_or_default()
+    }
+
     /// Every suffix answered by the local resolver: `tld` then `[dns] extra_tlds`, without
     /// duplicates (`[".test"]` by default).
     pub fn tlds(&self) -> Vec<String> {

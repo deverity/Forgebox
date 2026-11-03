@@ -145,11 +145,6 @@
     "what": "editor launcher"
   },
   {
-    "method": "system.config_list",
-    "task": "M2-E3-T10",
-    "what": "configuration document with schema"
-  },
-  {
     "method": "tls.ca_uninstall",
     "task": "M2-E3-T11",
     "what": "removing the local CA"

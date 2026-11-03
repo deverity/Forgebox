@@ -520,6 +520,7 @@ pub async fn boot_with(
         started_at,
         server: std::sync::OnceLock::new(),
         endpoint: endpoint.clone(),
+        config_owner: crate::config_owner::ConfigOwner::spawn(),
         settings_turn: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         db_sizes: crate::databases::SizeCache::default(),
     });

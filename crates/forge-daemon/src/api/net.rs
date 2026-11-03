@@ -215,21 +215,13 @@ async fn status(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<DnsStatu
 }
 
 async fn set_enabled(daemon: &Daemon, enabled: bool) -> Result<()> {
-    let mut config = (*daemon.config()).clone();
-    if config.dns.enabled == enabled {
-        return Ok(());
-    }
-    config.dns.enabled = enabled;
-    let path = daemon.root.forgebox_toml();
-    let saved = config.clone();
-    forge_core::runtime::spawn_blocking_timeout(
-        "saving forgebox.toml",
-        std::time::Duration::from_secs(5),
-        move || saved.save(&path),
-    )
-    .await?;
-    daemon.set_config(config);
-    Ok(())
+    crate::config_owner::update(daemon, move |config| {
+        let mut next = config.clone();
+        next.dns.enabled = enabled;
+        Ok(next)
+    })
+    .await
+    .map(|_| ())
 }
 
 async fn enable(daemon: Daemon, _params: NoParams, ctx: Ctx) -> Result<JobDto> {

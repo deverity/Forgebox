@@ -27,6 +27,7 @@ mod tools;
 use forge_ipc::server::Router;
 
 pub(crate) use services::{instance_names, owner_name};
+pub(crate) use sites::{reconcile_parked, reconcile_quietly};
 
 use crate::daemon::Daemon;
 

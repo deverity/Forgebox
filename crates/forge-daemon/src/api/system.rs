@@ -7,10 +7,12 @@ use std::sync::Arc;
 
 use forge_core::config::ForgeConfig;
 use forge_core::error::{ForgeError, Result};
-use forge_ipc::api::methods::{system_config_get, system_config_set, system_import_laragon};
+use forge_ipc::api::methods::{
+    system_config_get, system_config_list, system_config_set, system_import_laragon,
+};
 use forge_ipc::api::{
-    ConfigGetParams, ConfigSetParams, ConfigValueDto, ImportItemDto, ImportLaragonParams,
-    ImportReportDto, JobDto,
+    ConfigDocumentDto, ConfigGetParams, ConfigSetParams, ConfigValueDto, ImportItemDto,
+    ImportLaragonParams, ImportReportDto, JobDto, NoParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::import::{ApplyEnv, CaseConvertFn};
@@ -19,12 +21,13 @@ use futures::FutureExt;
 use serde_json::Value;
 
 use super::route;
-use super::sites::{reconcile_parked, reconcile_quietly, save_config};
+use super::sites::reconcile_quietly;
 use crate::catalog;
 use crate::daemon::Daemon;
 
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, system_config_get, get);
+    route!(router, daemon, system_config_list, list);
     route!(router, daemon, system_config_set, set);
     route!(router, daemon, system_import_laragon, import_laragon);
 }
@@ -74,8 +77,8 @@ async fn import_laragon(daemon: Daemon, params: ImportLaragonParams, ctx: Ctx) -
 
         if !params.dry_run {
             if outcome.config_changed {
-                save_config(&d, outcome.config.clone()).await?;
-                reconcile_parked(&d).await;
+                // The owner saves, reconciles the parked folders and publishes the change.
+                crate::config_owner::replace(&d, outcome.config.clone()).await?;
             }
             if outcome.instances > 0 {
                 d.services.adopt_stored().await?;
@@ -153,23 +156,27 @@ async fn get(daemon: Daemon, params: ConfigGetParams, _ctx: Ctx) -> Result<Confi
 }
 
 async fn set(daemon: Daemon, params: ConfigSetParams, _ctx: Ctx) -> Result<ConfigValueDto> {
-    let updated = with_value(&daemon.config(), &params.key, params.value)?;
-    let path = daemon.root.forgebox_toml();
-    let saved = updated.clone();
-    forge_core::runtime::spawn_blocking_timeout(
-        "saving forgebox.toml",
-        std::time::Duration::from_secs(5),
-        move || saved.save(&path),
-    )
-    .await?;
-    daemon.set_config(updated.clone());
-    let value = value_of(&updated, &params.key)?;
+    let (key, value) = (params.key.clone(), params.value);
+    let change =
+        crate::config_owner::update(&daemon, move |config| with_value(config, &key, value)).await?;
+    let value = value_of(&daemon.config(), &params.key)?;
     let default = value_of(&ForgeConfig::default(), &params.key).ok();
     Ok(ConfigValueDto {
         key: params.key,
         is_default: default.as_ref() == Some(&value),
         value,
-        requires: Vec::new(),
+        requires: change.requires,
+    })
+}
+
+/// `system.config_list`: values, defaults and the JSON Schema (ADR-0040).
+async fn list(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<ConfigDocumentDto> {
+    let config = daemon.config();
+    Ok(ConfigDocumentDto {
+        values: serde_json::to_value(&*config).unwrap_or(Value::Null),
+        defaults: serde_json::to_value(ForgeConfig::default()).unwrap_or(Value::Null),
+        schema: ForgeConfig::json_schema(),
+        set_keys: crate::config_owner::changed_keys(&ForgeConfig::default(), &config),
     })
 }
 

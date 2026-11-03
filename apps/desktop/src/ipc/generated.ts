@@ -477,7 +477,10 @@ export type ConfigDocumentDto = {
 	defaults: unknown,
 	/**  JSON Schema (2020-12) of the configuration, with titles and descriptions. */
 	schema: unknown,
-	/**  Dotted keys set in `forgebox.toml` (the others are defaults). */
+	/**
+	 *  Dotted keys whose value differs from the default (the file stores every key, so a
+	 *  key set to its default counts as default).
+	 */
 	set_keys?: string[],
 };
 

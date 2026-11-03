@@ -24,15 +24,29 @@ use forge_core::store::{
     ToolVersionRepo, VersionSource, VersionState,
 };
 use forge_ipc::api::methods::{
-    jobs_get, php_pool_status, services_set, services_status, sites_list, sites_php,
+    jobs_get, php_pool_status, services_set, services_status, sites_list, sites_park, sites_php,
+    system_config_set,
 };
 use forge_ipc::api::{
-    JobIdParams, JobState, NoParams, PhpPoolStatusParams, ServiceSetParams, ServiceState,
-    SitePhpParams, SiteRef,
+    ConfigSetParams, EventFilter, EventsListParams, JobIdParams, JobState, NoParams, ParkParams,
+    PhpPoolStatusParams, ServiceSetParams, ServiceState, SitePhpParams, SiteRef,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use common::*;
+
+async fn rendered_events(client: &forge_ipc::Client) -> usize {
+    client
+        .events_list(EventsListParams {
+            after_seq: 0,
+            limit: Some(5000),
+            filter: EventFilter::kinds(["config.rendered"]),
+        })
+        .await
+        .unwrap()
+        .events
+        .len()
+}
 
 async fn http_get(port: u16, host: &str, path: &str) -> String {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
@@ -322,6 +336,34 @@ async fn boot_renders_and_starts_nginx_in_front_of_the_php_pool_online() {
         "8.4 pool out of service {:?} after the switch (drains in the background)",
         drained.elapsed()
     );
+
+    // A TLD change (M2-E3-T10): the parked sites take the new suffix and the web server is
+    // re-rendered and reloaded without a restart; the follow-up CA rotation is reported.
+    let parked = root.path().join("parked");
+    std::fs::create_dir_all(parked.join("app2")).unwrap();
+    client
+        .call::<sites_park>(ParkParams {
+            dir: forge_core::paths::posix_string(&parked),
+            tld: None,
+        })
+        .await
+        .unwrap();
+    let rendered_before = rendered_events(&client).await;
+    let changed = client
+        .call::<system_config_set>(ConfigSetParams {
+            key: "tld".into(),
+            value: serde_json::json!(".dev"),
+        })
+        .await
+        .unwrap();
+    assert!(changed.requires.contains(&"tls.ca_rotate".to_owned()));
+    let conf = etc.join("sites").join("app2.dev.conf");
+    let waited = Instant::now();
+    while !conf.exists() {
+        assert!(waited.elapsed() < Duration::from_secs(30), "no {conf:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(rendered_events(&client).await > rendered_before);
 
     let new_cgi: Vec<u32> = pids_of("php-cgi.exe")
         .into_iter()

@@ -26,6 +26,7 @@ Site {
 
 ### 1.1 Origens de um site
 1. **Parked directories** (como `www/` do Laragon ou `herd park`): o watcher cria um site `nome.test` para cada subpasta. Driver detectado automaticamente (ex. existe `artisan` → Laravel → root `public/`). Pode haver vários diretórios parked (`C:\www`, `D:\clientes`), cada um com TLD próprio opcional.
+   **Mudar o TLD** (`forge config set tld .dev`, [ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)): o daemon grava, recarrega as zonas do DNS, passa a validar hosts com o TLD novo, reconcilia os parked dirs (cada site parked ganha `nome.<tld novo>`, mesmo id) e re-renderiza os servidores web (`config.rendered`). Sites explícitos (`site add`) e aliases **não** são renomeados. A CA local lista os TLDs nas name constraints, então a resposta traz `requires = ["tls.ca_rotate", "net.dns_enable"]` (rotacionar a CA e reaplicar a política de DNS do TLD novo); certificados antigos dos hosts renomeados deixam de valer.
 2. **Link explícito**: `forge site add <dir> [--host x.test]` (como `valet link`). Para projetos fora dos parked dirs.
 3. **Arquivo `forgebox.yaml` do projeto** (`kind: Project`): `forge up` dentro da pasta.
 4. **Proxy**: `forge proxy add app.test http://127.0.0.1:3000 --ws`.

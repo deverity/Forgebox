@@ -244,6 +244,25 @@ fn help_and_version_work_without_a_daemon() {
 }
 
 #[test]
+fn doctor_export_writes_a_support_bundle() {
+    let fx = Fixture::new();
+    let file = fx.root.path.join("support.json");
+    let run = fx
+        .root
+        .run(&["doctor", "--export", file.to_str().unwrap(), "--json"]);
+    assert!(run.code == 0 || run.code == 1, "{run:?}");
+    let bundle: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).expect("the bundle file")).unwrap();
+    assert_eq!(bundle["v"], 1);
+    assert!(bundle["doctor"]["checks"].as_array().unwrap().len() > 5);
+    assert!(bundle["status"]["pid"].is_number(), "{bundle}");
+    assert!(bundle["tools"].is_array());
+    let log = bundle["daemon_log"].as_array().unwrap();
+    assert!(log.len() <= 500);
+    assert!(!log.is_empty(), "the daemon logged while booting");
+}
+
+#[test]
 fn doctor_reports_every_area() {
     let fx = Fixture::new();
     let run = fx.root.run(&["doctor", "--json"]);

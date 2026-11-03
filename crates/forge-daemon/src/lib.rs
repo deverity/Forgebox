@@ -19,6 +19,7 @@ pub mod api;
 pub mod args;
 pub mod boot;
 pub mod catalog;
+pub mod config_owner;
 pub mod daemon;
 pub mod databases;
 pub mod event_log;

@@ -486,6 +486,7 @@ messages! {
     ArtifactWritten => ("{0} ({1}, sha256 {2})", "{0} ({1}, sha256 {2})"),
     BackupScheduled => ("Backup agendado: {0} {1}", "Backup scheduled: {0} {1}"),
     ConfigDefault => ("(padrão)", "(default)"),
+    ConfigRequires => ("Ainda falta executar: {0}", "Still to run: {0}"),
     SelfUpdated => ("Forgebox atualizado.", "Forgebox updated."),
     RestartRequired => ("Reinicie o Forgebox para usar a nova versão.", "Restart Forgebox to use the new version."),
 }

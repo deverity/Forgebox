@@ -226,11 +226,14 @@ impl ParkedSync {
             match existing.get(key) {
                 Some(site) => {
                     let root = posix_string(&entry.root);
+                    // A different host means the parked TLD changed (`forgebox.toml`).
                     if site.root.as_deref() != Some(root.as_str())
                         || site.driver.as_deref() != Some(entry.driver)
+                        || site.host != entry.host
                     {
                         let mut updated = site.clone();
                         let draft = draft_from_entry(entry)?;
+                        updated.host = entry.host.clone();
                         updated.root = draft.root.as_deref().map(posix_string);
                         updated.driver = draft.driver;
                         updated.kind = draft.kind;
