@@ -80,8 +80,7 @@ async fn job_done(client: &Client, id: JobId, root: &TestRoot) -> JobDto {
             assert_eq!(
                 job.state,
                 JobState::Done,
-                "{}: {:?}
-{}",
+                "{}: {:?}\n{}",
                 job.name,
                 job.error,
                 service_logs(root)

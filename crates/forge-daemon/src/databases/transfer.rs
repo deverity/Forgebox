@@ -43,8 +43,10 @@ use super::{Target, render_error};
 pub const CHANNEL_CHUNKS: usize = 16;
 /// zstd level of `.sql.zst` exports (the library default: fast, about 3-4x on SQL).
 pub const ZSTD_LEVEL: i32 = 3;
-/// A progress report after this many bytes.
+/// A progress report after this many bytes...
 pub const PROGRESS_STEP: u64 = 1 << 20;
+/// ...or after this long with some progress (a well compressed input is read slowly).
+const PROGRESS_EVERY: Duration = Duration::from_millis(250);
 /// Budget of a file system step around a transfer (create, rename, delete, stat).
 const FS_BUDGET: Duration = Duration::from_secs(10);
 /// Buffer of the compressed file writer and reader.
@@ -217,10 +219,11 @@ fn stream_failure(label: &str, what: &str, outcome: &OneshotOutcome) -> ForgeErr
     }
 }
 
-/// Throttled progress: a report every [`PROGRESS_STEP`] bytes, with the average speed
-/// and, when the total is known, the percentage and the ETA.
+/// Throttled progress: a report every [`PROGRESS_STEP`] bytes (or [`PROGRESS_EVERY`]),
+/// with the average speed and, when the total is known, the percentage and the ETA.
 struct Meter {
     started: Instant,
+    last: Instant,
     total: Option<u64>,
     reported: u64,
     message: String,
@@ -228,8 +231,10 @@ struct Meter {
 
 impl Meter {
     fn new(total: Option<u64>, message: String) -> Self {
+        let now = Instant::now();
         Self {
-            started: Instant::now(),
+            started: now,
+            last: now,
             total,
             reported: 0,
             message,
@@ -237,13 +242,16 @@ impl Meter {
     }
 
     fn update(&mut self, done: u64, progress: &ProgressSink) {
-        if done >= self.reported + PROGRESS_STEP {
+        if done >= self.reported + PROGRESS_STEP
+            || (done > self.reported && self.last.elapsed() >= PROGRESS_EVERY)
+        {
             self.report(done, progress);
         }
     }
 
     fn report(&mut self, done: u64, progress: &ProgressSink) {
         self.reported = done;
+        self.last = Instant::now();
         let secs = self.started.elapsed().as_secs_f64().max(0.001);
         let speed = (done as f64 / secs) as u64;
         let mut update = JobProgress::new()
