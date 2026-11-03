@@ -58,6 +58,14 @@ pub const POSTGRESQL_17: Archive = Archive {
     inner: "pgsql",
 };
 
+/// Mailpit 1.32.0 (curated sha256 of `registry/tools/mailpit.yaml`).
+pub const MAILPIT_1_32: Archive = Archive {
+    file: "mailpit-windows-amd64.zip",
+    url: "https://github.com/axllent/mailpit/releases/download/v1.32.0/mailpit-windows-amd64.zip",
+    sha256: "16915767a6c95dca569336e8f561f91cf355e9a33c57b91deedcc10a4bba7fd4",
+    inner: "",
+};
+
 fn shared_dir(var: &str, default: &str) -> PathBuf {
     let dir = std::env::var_os(var)
         .map(PathBuf::from)

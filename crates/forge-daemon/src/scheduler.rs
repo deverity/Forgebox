@@ -117,6 +117,7 @@ impl Scheduler {
             tokio::spawn(tmp_loop(daemon.clone(), stop.clone())),
             tokio::spawn(port_loop(daemon.clone(), stop.clone())),
             tokio::spawn(react_loop(daemon.clone(), stop.clone())),
+            tokio::spawn(crate::mail::watch_loop(daemon.clone(), stop.clone())),
         ];
         Self { stop, tasks }
     }
