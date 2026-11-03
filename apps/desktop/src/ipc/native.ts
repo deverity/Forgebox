@@ -53,3 +53,31 @@ export async function openUrl(url: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Subscribes to files or folders dropped on the window (Tauri webview drag-drop, which gives
+ * real paths; the DOM `drop` event does not). `onHover` tells when something is dragged over.
+ * Returns the unsubscribe function; a no-op outside Tauri (QA builds, tests).
+ */
+export async function onPathsDropped(
+  onDrop: (paths: string[]) => void,
+  onHover?: (hovering: boolean) => void,
+): Promise<() => void> {
+  if (!inTauri()) {
+    return () => undefined;
+  }
+  try {
+    const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+    return await getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type === "enter" || payload.type === "over") onHover?.(true);
+      else if (payload.type === "leave") onHover?.(false);
+      else {
+        onHover?.(false);
+        onDrop(payload.paths);
+      }
+    });
+  } catch {
+    return () => undefined;
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "title": "Sites",
+  "search": {
+    "label": "Search sites",
+    "placeholder": "Search host, alias, folder or driver",
+    "clear": "Clear search"
+  },
+  "view": {
+    "label": "Layout",
+    "grid": "Grid",
+    "list": "List"
+  },
+  "new": "New site",
+  "count_one": "{count} site",
+  "count_other": "{count} sites",
+  "countFiltered": "{shown} of {total}",
+  "empty": {
+    "title": "No sites yet",
+    "description": "Link a project folder or point a host at a local app.",
+    "noMatchTitle": "No site matches \"{query}\"",
+    "noMatchDescription": "Search looks at the host, aliases, folder and driver."
+  },
+  "list": {
+    "label": "Sites"
+  },
+  "card": {
+    "open": "Open {host} in the browser",
+    "details": "Details",
+    "details_aria": "Details of {host}",
+    "remove": "Remove",
+    "remove_aria": "Remove {host}",
+    "monogram": "Driver {driver}",
+    "proxy": "proxy",
+    "web": "web: {state}"
+  },
+  "badge": {
+    "php": "PHP {version}",
+    "https": "HTTPS",
+    "http": "HTTP",
+    "caseSensitive": "Aa",
+    "caseSensitiveTitle": "Case-sensitive folder",
+    "caseInsensitive": "aA",
+    "caseInsensitiveTitle": "Case-insensitive folder",
+    "ws": "WebSocket"
+  },
+  "process": {
+    "running": "running",
+    "starting": "starting",
+    "stopped": "stopped",
+    "failed": "failed",
+    "updating": "updating"
+  },
+  "create": {
+    "title": "New site",
+    "description": "Pick how the site is created.",
+    "tabs": "Kind of site",
+    "tabFolder": "Folder",
+    "tabProxy": "Proxy",
+    "tabProject": "New project",
+    "projectDisabled": "Creating projects from stacks arrives in milestone M3.",
+    "folder": "Project folder",
+    "dropZone": "Drop a project folder here",
+    "dropZoneActive": "Release to use this folder",
+    "dropZoneRemote": "Drag and drop is disabled: this daemon runs on another machine, type the path as it exists there.",
+    "host": "Host",
+    "hostHint": "Suggested from the folder name: <folder>.{tld}",
+    "hostLowercased": "Hosts are always lowercase: using \"{host}\".",
+    "hostEmpty": "Enter a host.",
+    "hostSyntax": "Use letters, digits, dots and hyphens, ending in a TLD such as .{tld}.",
+    "folderEmpty": "Enter the project folder.",
+    "php": "PHP version",
+    "phpDefault": "Default",
+    "server": "Web server",
+    "serverDefault": "Default",
+    "driver": "Driver",
+    "driverAuto": "Detect automatically",
+    "https": "HTTPS",
+    "upstream": "Upstream",
+    "upstreamHint": "Where the app listens, for example http://127.0.0.1:3000",
+    "upstreamEmpty": "Enter the upstream URL.",
+    "upstreamSyntax": "Use a complete http:// or https:// URL.",
+    "websocket": "WebSocket (HMR, live reload)",
+    "submit": "Create site",
+    "submitting": "Creating…",
+    "created": "Site {host} created.",
+    "cli": "Equivalent command"
+  },
+  "remove": {
+    "title": "Remove {host}?",
+    "description": "The site stops being served and its configuration is removed. Your project files are never deleted.",
+    "cancel": "Cancel",
+    "confirm": "Remove site",
+    "removing": "Removing…",
+    "done": "Site {host} removed.",
+    "failed": "Could not remove {host}."
+  }
+}
