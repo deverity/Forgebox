@@ -59,4 +59,17 @@ pub struct RegistryEntry {
     /// Newest stable version, for the catalog list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest: Option<String>,
+    /// The catalog icon (`metadata.icon`, a file of `icons/`), so its hash is covered by the
+    /// signed index like the manifests are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<RegistryIcon>,
+}
+
+/// `spec.tools[].icon`: an SVG of the registry and the SHA-256 of its exact bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RegistryIcon {
+    /// Relative to the registry root, `/` separators (`icons/php.svg`).
+    pub path: String,
+    pub sha256: Sha256,
 }

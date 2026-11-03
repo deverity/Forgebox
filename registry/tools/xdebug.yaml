@@ -24,6 +24,7 @@ metadata:
   tags: [php, debug, profiler]
   homepage: https://xdebug.org
   docs: https://xdebug.org/docs/
+  changelog_url: https://xdebug.org/updates
   license: Xdebug-1.03
   icon: xdebug.svg
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]

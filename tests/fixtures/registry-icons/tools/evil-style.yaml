@@ -1,0 +1,17 @@
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata:
+  id: evil-style
+  name: evil-style
+  summary: Icon fixture
+  category: devtool
+  icon: evil-style.svg
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: mysql
+    releases:
+      - version: "1.0.0"
+        url: https://example.org/evil-style-1.0.0.zip
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111"

@@ -966,6 +966,7 @@ impl Registry {
                 sha256: m.sha256.clone(),
                 latest: m.latest.clone(),
                 manifest: Arc::clone(&m.manifest),
+                icon: m.icon.clone(),
             })
             .collect();
         let tools = entries
@@ -1158,43 +1159,62 @@ impl Registry {
             .map_err(blocking_failed)??
         };
         Self::progress(ctx, "downloading manifests", 30.0);
-        let wanted: Vec<String> = index::entries(&verified.index)?
+        let mut wanted: Vec<(String, bool)> = index::entries(&verified.index)?
             .into_iter()
-            .map(|(_, entry)| entry.path.clone())
+            .map(|(_, entry)| (entry.path.clone(), false))
             .collect();
+        // The icons the index lists; one that cannot be had is simply not offered.
+        wanted.extend(
+            index::icon_paths(&verified.index)?
+                .into_iter()
+                .map(|path| (path, true)),
+        );
         let total = wanted.len().max(1);
         let mut urls = Vec::with_capacity(wanted.len());
-        for path in wanted {
+        for (path, is_icon) in wanted {
             let url = index_url.join(&path).map_err(|e| {
                 ForgeError::InvalidInput(format!(
                     "cannot resolve `{path}` against the index URL: {e}"
                 ))
             })?;
-            urls.push((path, url));
+            urls.push((path, url, is_icon));
         }
         use futures::StreamExt as _;
         let client = self.clone();
         let mut downloads = futures::stream::iter(urls)
-            .map(|(path, url)| {
+            .map(|(path, url, is_icon)| {
                 let client = client.clone();
                 async move {
-                    match client.http_get(&url, MAX_MANIFEST_BYTES, None).await? {
-                        HttpBody::Body { bytes, .. } => Ok((path, bytes)),
-                        HttpBody::NotModified => Err(ForgeError::Internal(
+                    let max = if is_icon {
+                        crate::icon::MAX_ICON_BYTES
+                    } else {
+                        MAX_MANIFEST_BYTES
+                    };
+                    match client.http_get(&url, max, None).await {
+                        Ok(HttpBody::Body { bytes, .. }) => Ok(Some((path, bytes))),
+                        Ok(HttpBody::NotModified) => Err(ForgeError::Internal(
                             "unexpected 304 for an unconditional request".to_owned(),
                         )),
+                        Err(ForgeError::NotFound(_) | ForgeError::InvalidInput(_)) if is_icon => {
+                            tracing::warn!(%path, "icon not available; it will not be offered");
+                            Ok(None)
+                        }
+                        Err(e) => Err(e),
                     }
                 }
             })
             .buffer_unordered(self.inner.options.concurrency.max(1));
         let mut files = BTreeMap::new();
+        let mut done = 0usize;
         while let Some(next) = downloads.next().await {
-            let (path, bytes) = next?;
-            files.insert(path, bytes);
+            done += 1;
+            if let Some((path, bytes)) = next? {
+                files.insert(path, bytes);
+            }
             Self::progress(
                 ctx,
                 "downloading manifests",
-                30.0 + 40.0 * files.len() as f32 / total as f32,
+                30.0 + 40.0 * done as f32 / total as f32,
             );
         }
         Ok(Fetched::Fresh {

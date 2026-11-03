@@ -19,6 +19,7 @@ metadata:
   tags: [mariadb, mysql, sql, database]
   homepage: https://mariadb.org
   docs: https://mariadb.com/kb/en/documentation/
+  changelog_url: https://mariadb.com/kb/en/release-notes/
   license: GPL-2.0-only
   icon: mariadb.svg
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]

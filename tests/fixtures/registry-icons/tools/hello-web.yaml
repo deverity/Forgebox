@@ -1,0 +1,40 @@
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata:
+  id: hello-web
+  name: Hello Web
+  summary: Web server with every catalog field
+  description: |
+    # Hello Web
+
+    A **fixture** with a Markdown description.
+  category: webserver
+  tags: [http, demo]
+  homepage: https://example.org/hello-web
+  docs: https://example.org/hello-web/docs
+  changelog_url: https://example.org/hello-web/changelog
+  license: MIT
+  icon: hello-web.svg
+spec:
+  platforms: [windows-x64]
+  suggests: [hello-db]
+  versioning:
+    variants:
+      - key: flavor
+        values: [lite, full]
+        default: lite
+        label: { lite: Lite build, full: Full build }
+  source:
+    providers:
+      - type: mysql
+    releases:
+      - version: "1.2.0"
+        url: https://example.org/hello-web-1.2.0.zip
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+      - version: "1.10.0"
+        url: https://example.org/hello-web-1.10.0.zip
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222"
+  install:
+    size_estimate_mb: 12
+  ui:
+    color: "#336699"

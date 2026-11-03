@@ -2382,6 +2382,13 @@ expression: text
         "category": {
           "$ref": "#/$defs/Category"
         },
+        "changelog_url": {
+          "description": "Upstream release notes (`https://`), linked from the catalog.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "deprecated": {
           "description": "Hidden from the catalog (installed versions are kept).",
           "type": "boolean"

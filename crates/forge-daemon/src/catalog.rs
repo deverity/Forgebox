@@ -7,7 +7,7 @@ use forge_core::error::{ForgeError, Result};
 use forge_core::ids::{ToolId, VersionId};
 use forge_core::store::{StoreReader, ToolVersionRepo, ToolVersionRow, VersionState};
 use forge_manifest::schema::tool::{ServiceKind, ToolManifest};
-use forge_manifest::schema::{ExtensionManifest, Manifest};
+use forge_manifest::schema::{ExtensionManifest, Manifest, Platform, StackManifest};
 use forge_manifest::version::{Build, Version, cmp_builds};
 use forge_registry::Registry;
 
@@ -225,4 +225,106 @@ pub fn pick<'a>(
             rows.iter()
                 .find(|r| r.version.starts_with(&format!("{spec}.")))
         })
+}
+
+/// A stack manifest (`kind: Stack`, docs/04 §3) of a loaded registry.
+#[derive(Debug, Clone)]
+pub struct StackEntry {
+    pub manifest: Arc<StackManifest>,
+    pub official: bool,
+    pub registry: String,
+}
+
+/// The stack manifest of `id`, if a loaded registry has one.
+pub fn stack(registry: &Registry, id: &ToolId) -> Option<StackEntry> {
+    let entry = registry.find(id.as_str())?;
+    match entry.manifest.as_ref() {
+        Manifest::Stack(stack) => Some(StackEntry {
+            manifest: Arc::new(stack.clone()),
+            official: entry.official,
+            registry: entry.registry.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// What a catalog card shows besides the manifest text: read from manifests only (no
+/// network, no database).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Facts {
+    /// `ui.color`.
+    pub color: Option<String>,
+    /// `spec.platforms` (stacks: the platforms every one of their tools supports;
+    /// extensions: those of the tool they extend).
+    pub platforms: Vec<Platform>,
+    /// `install.size_estimate_mb` in bytes (stacks: the sum of their tools; `None` when no
+    /// tool has an estimate).
+    pub size_estimate_bytes: Option<u64>,
+}
+
+const MB: u64 = 1024 * 1024;
+
+fn tool_facts(tool: &ToolManifest) -> Facts {
+    Facts {
+        color: tool.spec.ui.color.clone(),
+        platforms: tool.spec.platforms.clone(),
+        size_estimate_bytes: tool
+            .spec
+            .install
+            .size_estimate_mb
+            .map(|mb| u64::from(mb) * MB),
+    }
+}
+
+/// [`Facts`] of a catalog entry.
+pub fn facts(registry: &Registry, manifest: &Manifest) -> Facts {
+    match manifest {
+        Manifest::Tool(tool) => tool_facts(tool),
+        Manifest::Extension(ext) => Facts {
+            color: None,
+            platforms: self::tool(registry, &ext.spec.extends)
+                .map(|t| t.manifest.spec.platforms.clone())
+                .unwrap_or_default(),
+            size_estimate_bytes: None,
+        },
+        Manifest::Stack(stack) => {
+            let mut platforms: Option<Vec<Platform>> = None;
+            let mut size: Option<u64> = None;
+            for item in &stack.spec.tools {
+                let Some(tool) = self::tool(registry, &item.id) else {
+                    continue;
+                };
+                let f = tool_facts(&tool.manifest);
+                platforms = Some(match platforms {
+                    None => f.platforms,
+                    Some(p) => p.into_iter().filter(|x| f.platforms.contains(x)).collect(),
+                });
+                if let Some(bytes) = f.size_estimate_bytes {
+                    *size.get_or_insert(0) += bytes;
+                }
+            }
+            Facts {
+                color: None,
+                platforms: platforms.unwrap_or_default(),
+                size_estimate_bytes: size,
+            }
+        }
+        _ => Facts::default(),
+    }
+}
+
+/// The newer version of an installed series that the registry already knows, without any
+/// network: the index `latest` when it belongs to a series with an installed version older
+/// than it. (`tools.update` / `tools.check_updates` ask the providers for the real answer.)
+pub fn offline_update(tool: &ToolEntry, rows: &[ToolVersionRow]) -> Option<String> {
+    let latest_text = tool.latest.as_deref()?;
+    let versioning = &tool.manifest.spec.versioning;
+    let latest = Version::parse(versioning.scheme, latest_text).ok()?;
+    let series = latest.series(&versioning.series_key).ok()?;
+    let newest_installed = rows
+        .iter()
+        .filter_map(|r| Version::parse(versioning.scheme, &r.version).ok())
+        .filter(|v| v.series(&versioning.series_key).is_ok_and(|s| s == series))
+        .max()?;
+    (newest_installed < latest).then(|| latest_text.to_owned())
 }

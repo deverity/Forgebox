@@ -3,17 +3,20 @@
 
 use forge_core::model::port::{OwnerKind, PortReservation, PortState as DomainPortState};
 use forge_core::store::{
-    Site, SiteKind as DomainSiteKind, SiteXdebug as DomainXdebug, ToolVersionRow, VersionSource,
-    VersionState,
+    Site, SiteKind as DomainSiteKind, SiteXdebug as DomainXdebug, ToolVersionRow, UpdateHistoryRow,
+    UpdateStatus, UpdateTrigger, VersionSource, VersionState,
 };
 use forge_fcgi::{PoolState, PoolStatus, WorkerPhase};
 use forge_ipc::api::{
     ApiError, CaStatusDto, CatalogKind, CertificateDto, FailureReasonDto, InstanceDto, PoolDto,
     PortDto, PortHolderDto, PortOwnerKind, PortProtocol, PortState, RegistryDto, RegistryKind,
-    ServiceState, SiteDto, SiteKind, SitePhpDto, SitePoolMode, SiteXdebug, ToolVersionDto,
-    ToolVersionSource, ToolVersionState, UpdatePolicy, XdebugMode,
+    ServiceState, SiteDto, SiteKind, SitePhpDto, SitePoolMode, SiteXdebug, StackDto, StackToolDto,
+    ToolVersionDto, ToolVersionSource, ToolVersionState, UpdateHistoryEntryDto, UpdatePolicy,
+    UpdateStatusDto, UpdateTriggerDto, VariantDefDto, XdebugMode,
 };
-use forge_manifest::schema::Kind;
+use forge_manifest::schema::stack::StackManifest;
+use forge_manifest::schema::tool::Variant;
+use forge_manifest::schema::{Kind, Platform};
 use forge_registry::RegistryInfo;
 use forge_supervisor::{FailureReason, InstanceState, InstanceStatus};
 use forge_tls::{LeafInfo, PermittedSubtree, TlsStatus};
@@ -45,6 +48,84 @@ pub fn catalog_kind(kind: Kind) -> CatalogKind {
         Kind::Extension => CatalogKind::Extension,
         Kind::Stack => CatalogKind::Stack,
         Kind::Tool | Kind::Project | Kind::Registry => CatalogKind::Tool,
+    }
+}
+
+/// `versioning.variants[]` → the variant picker definitions.
+pub fn variant_defs(variants: &[Variant]) -> Vec<VariantDefDto> {
+    variants
+        .iter()
+        .map(|v| VariantDefDto {
+            key: v.key.clone(),
+            values: v.values.clone(),
+            default: v.default.clone(),
+            labels: v.label.clone(),
+            derived: v.derive.is_some(),
+        })
+        .collect()
+}
+
+/// `spec.tools` of a stack → what `tools.info` shows.
+pub fn stack_dto(stack: &StackManifest) -> StackDto {
+    StackDto {
+        tools: stack
+            .spec
+            .tools
+            .iter()
+            .map(|t| StackToolDto {
+                id: t.id.clone(),
+                series: t.series.clone(),
+                version: t.version.clone(),
+                instance: t.instance.clone(),
+                extensions: t.extensions.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Platform as the manifests write it (`windows-x64`).
+pub fn platform_text(platform: Platform) -> String {
+    serde_json::to_value(platform)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// The platform the daemon runs on, in manifest terms.
+pub fn host_platform() -> Platform {
+    if cfg!(target_arch = "aarch64") {
+        Platform::WindowsArm64
+    } else {
+        Platform::WindowsX64
+    }
+}
+
+/// An `update_history` row → `tools.history` entry.
+pub fn history_entry(row: UpdateHistoryRow) -> UpdateHistoryEntryDto {
+    UpdateHistoryEntryDto {
+        id: row.id,
+        series: row.series,
+        from: row.from_version,
+        to: row.to_version,
+        from_version_id: row.from_version_id,
+        to_version_id: row.to_version_id,
+        policy: row.policy.as_deref().and_then(update_policy),
+        trigger: match row.triggered_by {
+            UpdateTrigger::Auto => UpdateTriggerDto::Auto,
+            UpdateTrigger::User => UpdateTriggerDto::User,
+            UpdateTrigger::Rollback => UpdateTriggerDto::Rollback,
+        },
+        status: match row.status {
+            UpdateStatus::Started => UpdateStatusDto::Started,
+            UpdateStatus::Completed => UpdateStatusDto::Completed,
+            UpdateStatus::Failed => UpdateStatusDto::Failed,
+            UpdateStatus::RolledBack => UpdateStatusDto::RolledBack,
+        },
+        error: row.error,
+        job_id: row.job_id,
+        rollback_of: row.rollback_of,
+        started_at: row.started_at,
+        finished_at: row.finished_at,
     }
 }
 

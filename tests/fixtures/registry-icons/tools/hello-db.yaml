@@ -1,0 +1,18 @@
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata:
+  id: hello-db
+  name: Hello DB
+  summary: Database without an icon
+  category: database
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: mysql
+    releases:
+      - version: "3.0.0"
+        url: https://example.org/hello-db-3.0.0.zip
+        sha256: "3333333333333333333333333333333333333333333333333333333333333333"
+  install:
+    size_estimate_mb: 30

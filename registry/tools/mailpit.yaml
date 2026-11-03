@@ -16,6 +16,7 @@ metadata:
   tags: [mail, smtp, mailpit, testing]
   homepage: https://mailpit.axllent.org
   docs: https://mailpit.axllent.org/docs/
+  changelog_url: https://github.com/axllent/mailpit/releases
   license: MIT
   icon: mailpit.svg
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]

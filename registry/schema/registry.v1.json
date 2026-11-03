@@ -60,6 +60,17 @@
             "$ref": "#/$defs/Category"
           }
         },
+        "icon": {
+          "description": "The catalog icon (`metadata.icon`, a file of `icons/`), so its hash is covered by the\nsigned index like the manifests are.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegistryIcon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "id": {
           "$ref": "#/$defs/ToolId"
         },
@@ -82,6 +93,24 @@
       "additionalProperties": false,
       "required": [
         "id",
+        "path",
+        "sha256"
+      ]
+    },
+    "RegistryIcon": {
+      "description": "`spec.tools[].icon`: an SVG of the registry and the SHA-256 of its exact bytes.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Relative to the registry root, `/` separators (`icons/php.svg`).",
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
         "path",
         "sha256"
       ]

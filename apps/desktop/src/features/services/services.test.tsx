@@ -184,8 +184,7 @@ describe("list", () => {
       path: "/services",
       data: categorized(),
       extra: {
-        // tools.icon is "not implemented" in the fake until M2-E2-T4: enable it for this test.
-        notImplemented: [],
+        // The fake answers tools.icon with not_found by default: give this tool an icon.
         handlers: { "tools.icon": (params) => ({ tool: params.tool, svg, sha256: "00" }) },
       },
     });

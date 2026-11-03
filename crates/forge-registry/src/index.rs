@@ -103,6 +103,18 @@ pub enum Section {
     Stacks,
 }
 
+/// An icon of the registry, as the signed index lists it: the bytes matched the index hash.
+/// Whether they are a safe SVG is checked when a client asks for them
+/// ([`crate::icon::sanitize_svg`]).
+#[derive(Debug, Clone)]
+pub struct LoadedIcon {
+    /// Path inside the registry (`icons/php.svg`).
+    pub path: String,
+    /// Hex SHA-256 of `bytes`, as in the index.
+    pub sha256: String,
+    pub bytes: Arc<Vec<u8>>,
+}
+
 /// A verified, parsed manifest of a registry.
 #[derive(Debug, Clone)]
 pub struct LoadedManifest {
@@ -114,6 +126,8 @@ pub struct LoadedManifest {
     /// `latest` and `categories` as the index says.
     pub latest: Option<String>,
     pub manifest: Arc<Manifest>,
+    /// The icon the index lists, when its file was available.
+    pub icon: Option<LoadedIcon>,
 }
 
 /// Result of verifying and parsing a whole registry.
@@ -306,6 +320,39 @@ pub fn validate_entry_path(section: Section, path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Checks the path of an icon taken from the index: `icons/<name>.svg`, one component.
+pub fn validate_icon_path(path: &str) -> Result<()> {
+    let bad = |why: &str| invalid(&format!("index icon path `{path}`"), why);
+    let Some(name) = path.strip_prefix("icons/") else {
+        return Err(bad("must start with `icons/`"));
+    };
+    let ok = path.len() <= 200
+        && name.ends_with(".svg")
+        && name.len() > 4
+        && !name.starts_with('.')
+        && !name.contains(['/', '\\', ':', '\0', '?', '*', '"', '<', '>', '|'])
+        && !name.chars().any(char::is_control);
+    if ok {
+        Ok(())
+    } else {
+        Err(bad("not a plain .svg file name"))
+    }
+}
+
+/// Paths of the icons the index lists (validated, without repeats), in index order.
+pub fn icon_paths(index: &RegistryManifest) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for (_, entry) in entries(index)? {
+        if let Some(icon) = &entry.icon {
+            validate_icon_path(&icon.path)?;
+            if !out.contains(&icon.path) {
+                out.push(icon.path.clone());
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Every `(section, entry)` of the index, in index order, with paths validated.
 pub fn entries(
     index: &RegistryManifest,
@@ -355,6 +402,17 @@ pub fn read_tree(
     for (_, entry) in entries(&verified.index)? {
         let bytes = read_limited(&root.join(&entry.path), MAX_MANIFEST_BYTES)?;
         files.insert(entry.path.clone(), bytes);
+    }
+    // Icons are optional: one that is missing is simply not offered.
+    for path in icon_paths(&verified.index)? {
+        match read_limited(&root.join(&path), crate::icon::MAX_ICON_BYTES) {
+            Ok(bytes) => {
+                files.insert(path, bytes);
+            }
+            // Missing or too large: the icon is simply not offered.
+            Err(ForgeError::NotFound(_) | ForgeError::InvalidInput(_)) => {}
+            Err(e) => return Err(e),
+        }
     }
     Ok((verified, files))
 }
@@ -436,7 +494,33 @@ pub fn build_loaded(
             skipped.push(skip(reason));
             continue;
         }
+        let icon = match &entry.icon {
+            Some(icon) => match files.remove(&icon.path).or_else(|| {
+                // Another entry may share the file.
+                verified_files.get(&icon.path).cloned()
+            }) {
+                Some(bytes) => {
+                    let actual = sha256_hex(&bytes);
+                    if !actual.eq_ignore_ascii_case(icon.sha256.as_str()) {
+                        return Err(verification_failed(format!(
+                            "sha256 of {} is {actual}, the index says {}",
+                            icon.path,
+                            icon.sha256.as_str()
+                        )));
+                    }
+                    verified_files.insert(icon.path.clone(), bytes.clone());
+                    Some(LoadedIcon {
+                        path: icon.path.clone(),
+                        sha256: actual,
+                        bytes: Arc::new(bytes),
+                    })
+                }
+                None => None,
+            },
+            None => None,
+        };
         manifests.push(LoadedManifest {
+            icon,
             section,
             id: entry.id.clone(),
             path: entry.path.clone(),

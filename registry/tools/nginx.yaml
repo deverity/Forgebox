@@ -20,6 +20,7 @@ metadata:
   tags: [nginx, webserver, proxy, fastcgi]
   homepage: https://nginx.org
   docs: https://nginx.org/en/docs/
+  changelog_url: https://nginx.org/en/CHANGES
   license: BSD-2-Clause
   icon: nginx.svg
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]

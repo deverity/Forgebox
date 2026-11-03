@@ -17,7 +17,7 @@ use crate::lint::RegistryDir;
 use crate::parse::{self, ManifestError};
 use crate::schema::common::{Category, Kind, RegistryKind, Sha256};
 use crate::schema::registry::{
-    REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryMetadata, RegistrySpec,
+    REGISTRY_SCHEMA_VERSION, RegistryEntry, RegistryIcon, RegistryMetadata, RegistrySpec,
 };
 use crate::schema::tool::StaticRelease;
 use crate::schema::{ApiVersion, Manifest, RegistryManifest, VersionScheme};
@@ -98,6 +98,7 @@ pub fn build_entries(
                 sha256,
                 categories: categories(m.metadata.category),
                 latest: latest_version(m.spec.versioning.scheme, &m.spec.source.releases),
+                icon: icon_entry(dir, m.metadata.icon.as_deref()),
             }),
             Manifest::Extension(m) => tools.push(RegistryEntry {
                 id: m.metadata.id.clone(),
@@ -105,6 +106,7 @@ pub fn build_entries(
                 sha256,
                 categories: categories(m.metadata.category),
                 latest: latest_version(VersionScheme::Semver, &m.spec.source.releases),
+                icon: icon_entry(dir, m.metadata.icon.as_deref()),
             }),
             Manifest::Stack(m) => stacks.push((
                 m.metadata.order,
@@ -114,6 +116,7 @@ pub fn build_entries(
                     sha256,
                     categories: Vec::new(),
                     latest: None,
+                    icon: icon_entry(dir, m.metadata.icon.as_deref()),
                 },
             )),
             other => {
@@ -135,6 +138,25 @@ pub fn build_entries(
     });
     let stacks = stacks.into_iter().map(|(_, entry)| entry).collect();
     Ok((tools, stacks))
+}
+
+/// The index entry of a registry-relative `metadata.icon` (`php.svg`) whose file exists in
+/// `icons/`; `None` for URLs (never fetched), missing files (the linter reports them) and
+/// unsafe names.
+fn icon_entry(dir: &RegistryDir, icon: Option<&str>) -> Option<RegistryIcon> {
+    let name = icon?;
+    let plain = !name.is_empty()
+        && name.ends_with(".svg")
+        && !name.contains(['/', '\\', ':', '\0'])
+        && !name.starts_with('.');
+    if !plain {
+        return None;
+    }
+    let bytes = std::fs::read(dir.icons_dir().join(name)).ok()?;
+    Some(RegistryIcon {
+        path: format!("icons/{name}"),
+        sha256: Sha256::new(&sha256_hex(&bytes)).expect("sha256_hex is 64 hex digits"),
+    })
 }
 
 fn categories(category: Category) -> Vec<Category> {

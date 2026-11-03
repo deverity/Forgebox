@@ -45,6 +45,9 @@ pub struct ToolMetadata {
     pub homepage: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs: Option<String>,
+    /// Upstream release notes (`https://`), linked from the catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changelog_url: Option<String>,
     /// SPDX expression.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
