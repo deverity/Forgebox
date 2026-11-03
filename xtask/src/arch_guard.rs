@@ -7,6 +7,9 @@
 //! 2. `forgebox-desktop` must not depend directly on `windows` / `windows-sys` / `windows-core`:
 //!    Win32 lives in `forge-core::platform::windows` behind traits (ADR-0035). Transitive use by
 //!    Tauri/wry/window-vibrancy is fine.
+//! 3. Leaf domain crates use only the workspace crates listed in [`LEAF_CRATES`]:
+//!    `forge-metrics` depends on `forge-core` alone (ADR-0044); the daemon adapts the
+//!    supervisor/fcgi samples and maps its results to DTOs.
 //!
 //! Every dependency kind (normal, build, dev) and every `cfg(target)` is checked.
 
@@ -25,6 +28,8 @@ pub const ALLOWED_CLIENT_DEP: &str = "forge-ipc";
 pub const GUI_CRATE: &str = "forgebox-desktop";
 /// Win32 binding crates the GUI must not depend on directly.
 pub const FORBIDDEN_GUI_DEPS: [&str; 3] = ["windows", "windows-sys", "windows-core"];
+/// Rule 3: `(crate, the only workspace crates it may depend on)`.
+pub const LEAF_CRATES: [(&str, &[&str]); 1] = [("forge-metrics", &["forge-core"])];
 
 /// Runs `cargo metadata --no-deps` for the workspace at `root`.
 pub fn load_metadata(root: &Path) -> Result<Value> {
@@ -74,6 +79,14 @@ pub fn check(metadata: &Value) -> Vec<String> {
                      clients may depend only on `{ALLOWED_CLIENT_DEP}` (go through the daemon API)"
                 ));
             }
+            if let Some((_, allowed)) = LEAF_CRATES.iter().find(|(leaf, _)| *leaf == name)
+                && workspace.contains(dep_name)
+                && !allowed.contains(&dep_name)
+            {
+                violations.push(format!(
+                    "`{name}` has a {kind} dependency on workspace crate `{dep_name}`;                      it may depend only on {allowed:?} (ADR-0044)"
+                ));
+            }
             if name == GUI_CRATE && FORBIDDEN_GUI_DEPS.contains(&dep_name) {
                 violations.push(format!(
                     "`{name}` has a {kind} dependency on `{dep_name}`; Win32 belongs to \
@@ -116,6 +129,14 @@ mod tests {
         vec![
             package("forge-core", &[("serde", None)]),
             package("forge-ipc", &[("forge-core", None)]),
+            package(
+                "forge-metrics",
+                &[
+                    ("forge-core", None),
+                    ("hdrhistogram", None),
+                    ("tempfile", Some("dev")),
+                ],
+            ),
             package("forge-daemon", &[("forge-core", None), ("forge-ipc", None)]),
             package(
                 "forge-cli",
@@ -175,6 +196,24 @@ mod tests {
     #[test]
     fn non_client_crates_are_free_to_use_domain_crates() {
         let found = check(&with_extra_dep("forge-ipc", "forge-daemon", None));
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn metrics_depends_only_on_core() {
+        for domain in ["forge-ipc", "forge-daemon", "forge-cli"] {
+            for kind in [None, Some("dev"), Some("build")] {
+                let found = check(&with_extra_dep("forge-metrics", domain, kind));
+                assert_eq!(
+                    found.len(),
+                    1,
+                    "forge-metrics -> {domain} ({kind:?}): {found:?}"
+                );
+                assert!(found[0].contains("forge-metrics") && found[0].contains(domain));
+            }
+        }
+        // External crates are not restricted by the rule.
+        let found = check(&with_extra_dep("forge-metrics", "serde_json", None));
         assert!(found.is_empty(), "{found:?}");
     }
 

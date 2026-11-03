@@ -62,6 +62,8 @@ fn site_dto(id: SiteId, host: &str) -> SiteDto {
         processes: vec![],
         created_at: ts(),
         updated_at: ts(),
+        pool_mode: SitePoolMode::Shared,
+        metrics_enabled: true,
     }
 }
 
@@ -294,6 +296,20 @@ fn fakes() -> Fakes {
                 mem_bytes: Some(64 << 20),
                 approx: true,
                 sampled: false,
+                from: Some(ts()),
+                bytes: 4 << 20,
+                status_1xx: 0,
+                status_2xx: 1150,
+                status_3xx: 47,
+                status_4xx: 0,
+                status_5xx: 3,
+                php_p50_ms: Some(10.0),
+                php_p90_ms: Some(35.0),
+                php_p99_ms: Some(110.0),
+                workers_active: Some(2),
+                processes: None,
+                last_request_at: Some(ts()),
+                metrics_enabled: true,
             }],
         },
         remote: RemoteClientListDto {

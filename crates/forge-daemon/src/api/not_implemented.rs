@@ -110,14 +110,30 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "terminating a port holder",
     ),
     ("sites.env", "M2-E3-T11", "masked .env viewer"),
-    ("stats.get", "M2-E5", "per-site metrics (forge-metrics)"),
-    ("stats.top", "M2-E5", "per-site metrics (forge-metrics)"),
-    ("stats.export", "M2-E5", "per-site metrics (forge-metrics)"),
+    ("stats.get", "M2-E5-T8", "per-site metrics (forge-metrics)"),
+    (
+        "stats.top",
+        "M2-E5-T9",
+        "Forgebox processes and machine stats",
+    ),
+    ("stats.export", "M2-E5-T9", "metrics export"),
+    (
+        "stats.series",
+        "M2-E5-T9",
+        "per-site metric series and markers",
+    ),
+    ("stats.routes", "M2-E5-T9", "top routes and recent errors"),
     (
         "metrics.subscribe",
-        "M2-E5",
+        "M2-E5-T8",
         "per-site metrics stream (forge-metrics)",
     ),
+    (
+        "sites.pool_mode",
+        "M2-E5-T11",
+        "dedicated PHP pool per site",
+    ),
+    ("sites.metrics", "M2-E5-T11", "per-site metrics switch"),
     ("remote.pair", "M6-E3", "remote mode pairing"),
     ("remote.listen", "M6-E3", "remote mode listener"),
     ("remote.clients", "M6-E3", "remote mode clients"),
@@ -311,6 +327,37 @@ mod tests {
         for (method, task, _) in NOT_IMPLEMENTED {
             if task.starts_with("M2-E2") {
                 assert!(task.starts_with("M2-E2-T"), "{method}: {task}");
+            }
+        }
+    }
+
+    #[test]
+    fn e5_methods_name_their_task() {
+        // The metrics contract (ADR-0044): each backend task owns its methods.
+        for (method, task) in [
+            ("stats.get", "M2-E5-T8"),
+            ("metrics.subscribe", "M2-E5-T8"),
+            ("stats.top", "M2-E5-T9"),
+            ("stats.export", "M2-E5-T9"),
+            ("stats.series", "M2-E5-T9"),
+            ("stats.routes", "M2-E5-T9"),
+            ("sites.pool_mode", "M2-E5-T11"),
+            ("sites.metrics", "M2-E5-T11"),
+        ] {
+            let err = error(method);
+            assert_eq!(err.code(), "not_implemented", "{method}");
+            assert!(
+                err.to_string().contains(&format!("(roadmap {task})")),
+                "{method}: {err}"
+            );
+            let details = err.details().unwrap();
+            assert_eq!(details["args"]["task"], task, "{method}");
+            assert_eq!(details["args"]["method"], method);
+        }
+        // Every E5 row names its task, not only the epic.
+        for (method, task, _) in NOT_IMPLEMENTED {
+            if task.starts_with("M2-E5") {
+                assert!(task.starts_with("M2-E5-T"), "{method}: {task}");
             }
         }
     }

@@ -10,8 +10,8 @@ use forge_fcgi::{PoolState, PoolStatus, WorkerPhase};
 use forge_ipc::api::{
     ApiError, CaStatusDto, CatalogKind, CertificateDto, FailureReasonDto, InstanceDto, PoolDto,
     PortDto, PortHolderDto, PortOwnerKind, PortProtocol, PortState, RegistryDto, RegistryKind,
-    ServiceState, SiteDto, SiteKind, SitePhpDto, SiteXdebug, ToolVersionDto, ToolVersionSource,
-    ToolVersionState, UpdatePolicy, XdebugMode,
+    ServiceState, SiteDto, SiteKind, SitePhpDto, SitePoolMode, SiteXdebug, ToolVersionDto,
+    ToolVersionSource, ToolVersionState, UpdatePolicy, XdebugMode,
 };
 use forge_manifest::schema::Kind;
 use forge_registry::RegistryInfo;
@@ -331,6 +331,10 @@ pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto
         processes: Vec::new(),
         created_at: site.created_at,
         updated_at: site.updated_at,
+        // The site columns (and the portable-root default of the metrics switch) arrive
+        // with M2-E5-T11 (ADR-0044); until then every site uses the shared pool.
+        pool_mode: SitePoolMode::Shared,
+        metrics_enabled: true,
     }
 }
 
