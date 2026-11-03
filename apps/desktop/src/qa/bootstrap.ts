@@ -23,6 +23,8 @@ export interface QaHandle {
   scenario: string;
   bridge: FakeBridge;
   locale: AnyLocale | null;
+  /** Applies a Windows accent (`#RRGGBB`) the way the shell does (qa:check accent contrast). */
+  setAccent: (hex: string) => void;
   stop: () => void;
 }
 
@@ -77,6 +79,9 @@ export function bootQa(search: string = window.location.search, win: Window = wi
     scenario: scenario.name ?? name,
     bridge,
     locale: qaLocaleOverride(params.get("locale")),
+    setAccent: (hex) => {
+      applyAppearance({ accent: hex });
+    },
     stop: () => {
       stopLive?.();
     },

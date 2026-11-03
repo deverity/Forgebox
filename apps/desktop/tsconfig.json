@@ -26,9 +26,11 @@
     "e2e",
     "playwright.config.ts",
     "playwright.real.config.ts",
+    "playwright.qa.config.ts",
     "vite.config.ts",
     "eslint.i18n.js",
     "eslint.actions.js",
-    "eslint.colors.js"
+    "eslint.colors.js",
+    "eslint.disable.js"
   ]
 }

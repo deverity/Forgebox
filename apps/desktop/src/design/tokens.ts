@@ -34,7 +34,7 @@ export const colors = {
     "state-running": "#30D158",
     "state-starting": "#FFD60A",
     "state-stopped": "#8E8E93",
-    "state-failed": "#FF453A",
+    "state-failed": "#FF6259",
     "state-updating": "#64D2FF"
   },
   "highContrast": {

@@ -4,7 +4,7 @@
 # -OfflineDeny: for machines where the RustSec advisory DB cannot be fetched (e.g. TLS
 # interception); runs the same steps individually with `cargo deny --offline` (cached DB).
 # -Desktop: the desktop steps only (apps/desktop, Node >= 24): install, generated-file drift
-# (design tokens, brand icons), lint, typecheck, vitest, the Playwright fake-bridge suite (system
+# (design tokens, brand icons), lint, typecheck, vitest, the Playwright fake-bridge suite, qa:check (docs/07 section 11; system
 # Edge, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1) and `tauri build --debug --no-bundle`. FORGEBOX_NODE_DIR, when set, is put
 # first on the PATH of this process only; NODE_OPTIONS=--use-system-ca is set for this process.
 # Mirrors the `desktop` job of the workflow; the develop-only desktop-release job is not run here.
@@ -29,6 +29,7 @@ if ($Desktop) {
     Invoke-Step 'typecheck' { pnpm -C apps/desktop typecheck }
     Invoke-Step 'test' { pnpm -C apps/desktop test }
     Invoke-Step 'playwright fake-bridge suite' { pnpm -C apps/desktop e2e }
+    Invoke-Step 'qa:check (section 11 checklist)' { pnpm -C apps/desktop qa:check }
     Invoke-Step 'tauri debug build' { pnpm -C apps/desktop tauri build --debug --no-bundle }
     Write-Host 'CI Desktop OK'
     exit 0

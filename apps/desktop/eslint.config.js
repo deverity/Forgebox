@@ -6,9 +6,12 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 import { actionsConfig } from "./eslint.actions.js";
 import { colorLiteralConfig } from "./eslint.colors.js";
+import { disableReasonConfig } from "./eslint.disable.js";
 import { i18nLiteralConfig } from "./eslint.i18n.js";
 
 export default defineConfig([
+  // A directive that suppresses nothing is dead weight: fail it too (M2-E4-T3).
+  { linterOptions: { reportUnusedDisableDirectives: "error" } },
   // Build output, dependencies, Rust target and generated IPC contracts (cargo xtask gen-ts).
   globalIgnores([
     "dist",
@@ -53,6 +56,11 @@ export default defineConfig([
   },
   // Mutating API methods only through the action registry (M2-E1-T13).
   actionsConfig,
+  {
+    // Every eslint-disable carries an inline reason (M2-E4-T3).
+    ...disableReasonConfig,
+    files: ["**/*.{ts,tsx,js,mjs}"],
+  },
   {
     // Config files are plain JS, outside the TS project.
     files: ["**/*.js"],
