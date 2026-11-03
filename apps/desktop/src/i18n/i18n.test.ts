@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createFormatters } from "./format";
-import { resolveLocale } from "./index";
+import { i18n, resolveLocale } from "./index";
 import { pseudoize, pseudoizeBundle } from "./pseudo";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -135,4 +135,15 @@ describe("pseudo-locale", () => {
     expect(out.a.b).toContain("{n}");
     expect(out.a.b).not.toBe("x {n}");
   });
+});
+
+describe("lazy namespace backend", () => {
+  // Every namespace file must load through the import.meta.glob backend, in tests too: a
+  // stale transform cache once hid the new `updater` namespace (gate B3, src/test/globCache.test.ts).
+  for (const ns of namespaces("en-US")) {
+    it(`${ns}: loads in every locale`, async () => {
+      await i18n.loadNamespaces(ns);
+      for (const locale of LOCALES) expect(i18n.hasResourceBundle(locale, ns)).toBe(true);
+    });
+  }
 });

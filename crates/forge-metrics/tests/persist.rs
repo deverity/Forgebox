@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use forge_core::ids::SiteId;
-use forge_core::store::{MetricsRepo, MetricsRow, MetricsTier, Store};
+use forge_core::store::{MetricsRepo, MetricsRow, MetricsTier, Store, StoreOptions};
 use forge_metrics::hist::{FORMAT_VERSION, HIGHEST_US};
 use forge_metrics::persist::{self, Persister};
 use forge_metrics::{AccessRecord, AggConfig, Aggregator, Checkpoint, LatencyHist};
@@ -841,7 +841,14 @@ async fn a_timed_out_flush_that_still_commits_is_not_applied_twice() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn rolling_up_50_sites_over_3_hours_keeps_each_writer_operation_short() {
-    let store = Store::open_in_memory().unwrap();
+    // The store-read timeout bounds the SQL of a chunk (tens of ms for 9,000 rows), never the
+    // histogram merge that follows it (seconds in a debug build): a tight read timeout keeps that
+    // split honest. Before gate B3 the merge ran inside the read and hit the timeout under load.
+    let store = Store::open_in_memory_with(StoreOptions {
+        read_timeout: Duration::from_secs(1),
+        ..StoreOptions::default()
+    })
+    .unwrap();
     let sites: Vec<SiteId> = (0..50).map(|_| SiteId::new()).collect();
     let mut rng = Rng(7);
     let mut agg = Aggregator::new(cfg(), ts(BASE));

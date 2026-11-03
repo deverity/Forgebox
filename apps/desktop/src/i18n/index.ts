@@ -19,13 +19,16 @@ export const SET_LANGUAGE_COMMAND = "set_language";
 type Bundle = Record<string, unknown>;
 // Every namespace JSON under src/i18n/<locale>/ is picked up by the glob.
 // (Adding a file needs no registration here; only the typed Resources in i18next.d.ts.)
-const loaders = import.meta.glob<Bundle>("./*/*.json", { import: "default" });
+// No type argument on the call: Vitest's fsModuleCache only skips modules whose source contains
+// the literal `import.meta.glob(`, so `glob<T>(` would cache a stale file list and a new
+// namespace would be missing in tests (src/test/globCache.test.ts). loadBundle narrows instead.
+const loaders = import.meta.glob("./*/*.json", { import: "default" });
 
 async function loadBundle(lng: string, ns: string): Promise<Bundle> {
   const source = lng === PSEUDO_LOCALE ? "en-US" : lng;
   const load = loaders[`./${source}/${ns}.json`];
   if (!load) throw new Error(`i18n: missing namespace ${ns} for ${lng}`);
-  const bundle = await load();
+  const bundle = (await load()) as Bundle;
   return lng === PSEUDO_LOCALE ? pseudoizeBundle(bundle) : bundle;
 }
 
