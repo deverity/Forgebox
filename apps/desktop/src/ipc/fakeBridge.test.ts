@@ -217,13 +217,13 @@ describe("fakeBridge daemon semantics", () => {
 
   it("answers not_implemented for the not-implemented table, with the roadmap task", async () => {
     const fake = createFakeBridge();
-    const error = await rejection(call(fake, "db.list", {}));
+    const error = await rejection(call(fake, "db.export", { name: "loja" }));
     expect(error.code).toBe("not_implemented");
     expect(error.reason).toBe("not_implemented");
     expect(error.args).toEqual({
-      method: "db.list",
-      task: "M2-E3-T5",
-      what: "database management",
+      method: "db.export",
+      task: "M2-E3-T6",
+      what: "database export",
     });
     const state = await fake.state(LOCAL_CONTEXT);
     expect(state.hello?.not_implemented).toEqual(NOT_IMPLEMENTED.map((row) => row.method));
@@ -235,9 +235,9 @@ describe("fakeBridge daemon semantics", () => {
     // A scenario decides its own list.
     const none = createFakeBridge({
       notImplemented: [],
-      handlers: { "db.list": () => ({ instances: [], databases: [] }) },
+      handlers: { "db.export": () => ({ path: "D:/x.sql", size_bytes: 1 }) },
     });
-    await expect(call(none, "db.list", {})).resolves.toBeDefined();
+    await expect(call(none, "db.export", { name: "loja" })).resolves.toBeDefined();
   });
 
   it("validates like the Rust bridge before anything reaches the daemon", async () => {

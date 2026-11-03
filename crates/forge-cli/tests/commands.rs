@@ -68,8 +68,7 @@ fn table() -> Vec<Case> {
         case(&["tool", "list", "--installed", "--updates"], OK),
         case(&["tool", "info", "php"], OK),
         case(&["tool", "info", "nonexistent"], E("not_found")),
-        // The E2 contract (ADR-0041): releases and plans are M2-E2-T5, history M2-E2-T4,
-        // extension targets M2-E2-T8.
+        // The E2 contract (ADR-0041): releases and plans are M2-E2-T5, history M2-E2-T4.
         case(&["tool", "info", "--versions", "php"], NI),
         case(
             &["tool", "info", "--versions", "php", "--channel", "preview"],
@@ -78,7 +77,11 @@ fn table() -> Vec<Case> {
         case(&["tool", "info", "--history", "php"], NI),
         case(&["tool", "info", "--history", "php", "--series", "8.3"], NI),
         case(&["tool", "install", "--dry-run", "php@8.4", "nginx"], NI),
-        case(&["tool", "install", "xdebug", "--for", "php@8.4"], NI),
+        // Extensions (ADR-0043): no PHP in this root.
+        case(
+            &["tool", "install", "xdebug", "--for", "php@8.4", "--yes"],
+            E("not_found"),
+        ),
         case(
             &[
                 "tool",
@@ -88,7 +91,11 @@ fn table() -> Vec<Case> {
                 "php@8.4",
                 "--yes",
             ],
-            NI,
+            E("not_found"),
+        ),
+        case(
+            &["tool", "install", "nginx", "--for", "php@8.4", "--yes"],
+            E("invalid_input"),
         ),
         case(
             &["tool", "install", "nonexistent@1.0", "--yes"],
@@ -224,14 +231,14 @@ fn table() -> Vec<Case> {
         case(&["share", "nope.test"], NI),
         case(&["new", "laravel", "loja"], NI),
         // db
-        case(&["db", "list"], NI),
-        case(&["db", "create", "loja"], NI),
+        case(&["db", "list"], OK),
+        case(&["db", "create", "loja"], E("not_found")),
         case(&["db", "drop", "loja"], E("invalid_input")),
-        case(&["db", "drop", "loja", "--yes"], NI),
+        case(&["db", "drop", "loja", "--yes"], E("not_found")),
         case(&["db", "export", "loja", "-o", "{TMP}/loja.sql"], NI),
         case(&["db", "import", "loja", "{TMP}/loja.sql"], NI),
-        case(&["db", "shell", "mysql/default"], NI),
-        case(&["db", "url", "mysql/default", "loja"], NI),
+        case(&["db", "shell", "mysql/default"], E("not_found")),
+        case(&["db", "url", "mysql/default", "loja"], E("not_found")),
         case(&["db", "open", "mysql/default", "--with", "heidisql"], NI),
         // net / tls
         case(&["dns", "status"], OK),
@@ -616,4 +623,170 @@ fn every_cli_command_of_the_method_table_is_covered() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------- db with a fake client
+
+/// Compiles `crates/forge-daemon/tests/fixtures/<relative>` (a single file or the `main.rs`
+/// of a fixture folder) with `rustc` into this test's target tmp folder.
+fn compile_daemon_fixture(name: &str, relative: &str) -> std::path::PathBuf {
+    use std::sync::{Mutex, OnceLock};
+    static BUILT: OnceLock<Mutex<std::collections::BTreeMap<String, std::path::PathBuf>>> =
+        OnceLock::new();
+    let mut built = BUILT.get_or_init(Default::default).lock().unwrap();
+    built
+        .entry(name.to_owned())
+        .or_insert_with(|| {
+            let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("cli_fixtures");
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = dir.join(format!("{name}.exe"));
+            let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../forge-daemon/tests/fixtures")
+                .join(relative);
+            let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+            let output = std::process::Command::new(rustc)
+                .args(["--edition", "2024", "-O", "-o"])
+                .arg(&exe)
+                .arg(&source)
+                .output()
+                .expect("running rustc");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            exe
+        })
+        .clone()
+}
+
+/// `forge db list|create|drop|url|shell` against a real `forgeboxd` whose `mysql/default`
+/// is the fake `mysqld` and whose client is the fake of `fixtures/fake_db_client/`:
+/// `--json` shapes, human output, the confirmation of `drop`, and `db shell` running the
+/// client attached to the console and exiting with its code.
+#[test]
+fn db_commands_drive_the_manifest_client() {
+    let root = TestRoot::new(true);
+    let bin = root.path.join("bin/mysql/8.4.13/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let mysqld = compile_daemon_fixture("fake_mysqld", "fake_mysqld.rs");
+    std::fs::copy(&mysqld, bin.join("mysqld.exe")).unwrap();
+    std::fs::copy(&mysqld, bin.join("mysqladmin.exe")).unwrap();
+    std::fs::copy(
+        compile_daemon_fixture("fake_db_client", "fake_db_client/main.rs"),
+        bin.join("mysql.exe"),
+    )
+    .unwrap();
+    let _daemon = start_daemon(&root);
+    struct StopOnDrop<'a>(&'a TestRoot);
+    impl Drop for StopOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.stop_daemon();
+        }
+    }
+    let _stop = StopOnDrop(&root);
+
+    // The instance autostarts; `db list` reports it before and after it runs.
+    let started = std::time::Instant::now();
+    let list = loop {
+        let list = root.json(&["db", "list"]);
+        if list["instances"][0]["state"] == "running" {
+            break list;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "mysql never ran: {list}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    };
+    assert_eq!(list["databases"], serde_json::json!([]));
+    let instance = &list["instances"][0];
+    assert_eq!(instance["instance"], "mysql/default");
+    assert_eq!(instance["protocol"], "mysql");
+    assert_eq!(instance["version"], "8.4.13");
+    assert_eq!(instance["capabilities"]["shell"], true);
+    let port = instance["port"].as_u64().expect("port");
+
+    // create: JSON shape and human text.
+    let made = root.json(&["db", "create", "loja"]);
+    assert_eq!(made["name"], "loja");
+    assert_eq!(made["instance"], "mysql/default");
+    assert_eq!(made["charset"], "utf8mb4");
+    let human = root.forge().env("FORGE_LANG", "en").run(&[
+        "db",
+        "create",
+        "Loja",
+        "--charset",
+        "latin1",
+        "--on",
+        "mysql",
+    ]);
+    human.assert_success();
+    assert!(
+        human.stdout.contains("Loja") || human.stderr.contains("Loja"),
+        "{human:#?}"
+    );
+    let bad = root.run(&["--json", "db", "create", "a;b"]);
+    assert_eq!(bad.code, 2, "{bad:#?}");
+    assert_eq!(bad.error_code(), "invalid_input");
+
+    let list = root.json(&["db", "list", "mysql/default"]);
+    let names: Vec<_> = list["databases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["Loja", "loja"],
+        "case-sensitive, system databases hidden"
+    );
+    let human = root.forge().env("FORGE_LANG", "en").run(&["db", "list"]);
+    human.assert_success();
+    assert!(
+        human.stdout.contains("loja") && human.stdout.contains("mysql/default"),
+        "{human:#?}"
+    );
+
+    // url.
+    let url = root.json(&["db", "url", "mysql/default", "loja"]);
+    assert_eq!(url["url"], format!("mysql://root@127.0.0.1:{port}/loja"));
+    assert_eq!(url["env"]["vars"]["DB_DATABASE"], "loja");
+    assert_eq!(url["env"]["vars"]["DB_PORT"], port.to_string());
+
+    // drop asks for confirmation (`--yes` skips it; a script without it fails).
+    let refused = root.run(&["--json", "db", "drop", "loja"]);
+    assert_eq!(refused.code, 2, "{refused:#?}");
+    assert_eq!(refused.error_code(), "invalid_input");
+    let dropped = root.json(&["db", "drop", "loja", "--yes"]);
+    assert_eq!(dropped["ok"], true);
+    let gone = root.run(&["--json", "db", "drop", "loja", "--yes"]);
+    assert_eq!(
+        gone.code,
+        forge_ipc::base::error::exit_code_for("not_found")
+    );
+
+    // shell: --json prints the command; otherwise the fake runs attached, exit code kept.
+    let command = root.json(&["db", "shell", "mysql/default", "Loja"]);
+    assert!(
+        command["program"]
+            .as_str()
+            .unwrap()
+            .ends_with(r"bin\mysql.exe"),
+        "{command}"
+    );
+    assert_eq!(command["args"].as_array().unwrap().last().unwrap(), "Loja");
+    let attached = root.run(&["db", "shell", "mysql/default", "Loja"]);
+    attached.assert_success();
+    assert!(
+        attached.stdout.contains(&format!(
+            "fake-shell --protocol=tcp --host=127.0.0.1 --port={port} --user=root Loja"
+        )),
+        "{attached:#?}"
+    );
+    std::fs::write(bin.join("shell-exit.txt"), "7").unwrap();
+    let failing = root.run(&["db", "shell", "mysql/default"]);
+    assert_eq!(failing.code, 7, "{failing:#?}");
+    assert!(failing.stdout.contains("fake-shell"), "{failing:#?}");
 }

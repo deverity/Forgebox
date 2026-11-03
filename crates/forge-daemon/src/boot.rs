@@ -521,6 +521,7 @@ pub async fn boot_with(
         server: std::sync::OnceLock::new(),
         endpoint: endpoint.clone(),
         settings_turn: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        db_sizes: crate::databases::SizeCache::default(),
     });
 
     // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web

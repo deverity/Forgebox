@@ -8,6 +8,7 @@
 
 pub mod convert;
 mod daemon_api;
+mod db;
 mod fs_parity;
 mod logs;
 pub(crate) mod net;
@@ -58,6 +59,7 @@ pub fn router(daemon: &Daemon) -> Router {
     logs::register(&mut router, daemon);
     shell::register(&mut router, daemon);
     terminal::register(&mut router, daemon);
+    db::register(&mut router, daemon);
     fs_parity::register(&mut router, daemon);
     not_implemented::register(&mut router);
     router

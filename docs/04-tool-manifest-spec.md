@@ -322,7 +322,7 @@ Strings dos manifestos só **substituem variáveis**: `{{ caminho.da.variavel }}
 
 | Onde | Variáveis |
 |---|---|
-| Tool e Extension (qualquer campo de `spec`) | `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` (key declarada em `versioning.variants`; em Extension, as da tool alvo), `{{ paths.root\|bin\|etc\|data\|logs\|tmp\|www\|certs\|version }}`, `{{ instance.name\|data_dir }}`, `{{ instance.ports.<n> }}` (porta declarada em `service.daemon.ports`), `{{ instance.config.<id> }}` (id de `config.files`), `{{ prefs.<chave> }}` |
+| Tool e Extension (qualquer campo de `spec`) | `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` (key declarada em `versioning.variants`; em Extension, `version`, `series`, `variant.*` e `paths.version` são os da versão alvo, §2), `{{ paths.root\|bin\|etc\|data\|logs\|tmp\|www\|certs\|version }}`, `{{ instance.name\|data_dir }}`, `{{ instance.ports.<n> }}` (porta declarada em `service.daemon.ports`), `{{ instance.config.<id> }}` (id de `config.files`), `{{ prefs.<chave> }}` |
 | `spec.install` (Tool e Extension) | só `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` e `{{ paths.<dir> }}`: `install` roda **uma vez por versão, antes de existir instância** (`instance.*` e `prefs.*` são erro de lint, regra 5). Pastas e arquivos por instância (`logs/mysql/<instância>/`, `my.ini`) vêm do alvo de render e de `service.daemon.logs` no start |
 | `config.quick_settings[]` | + `{{ value }}` (texto escrito do valor escolhido, em `also_set`) |
 | `spec.database` | + `{{ database }}` (todos os campos menos `client`), `{{ charset }}` (só `queries.*`), `{{ sql }}` (só `client.args`); `{{ instance.ports.<n> }}` como nas demais (§1.8) |
@@ -452,6 +452,13 @@ spec:
 `source.releases[].variants` de uma Extension aceita chaves livres (as variantes reais são as da tool alvo): o catálogo usa `php_series` (`{php_series}`) para distinguir DLLs que compartilham `ts`/`compiler` (PHP 8.4 e 8.5 são ambos `nts`/`vs17`). Como xdebug.org não publica `.sha256`, cada release traz `url` e `sha256` curados.
 
 `install` de Extension aceita `archive`, `strip_root`, `target` (obrigatório, começa com `{{ paths.version }}`), `post_install`, `uninstall` e `size_estimate_mb`. Versões de Extension usam `semver`.
+
+**Instalação** ([ADR-0043](adr/0043-extension-install.md), M2-E2-T8): `forge tool install xdebug [--for php@8.4]` instala na versão indicada (série = a mais nova instalada dela; versão exata) ou em **todas** as versões instaladas compatíveis de `extends`.
+- **Compatibilidade**: vale a primeira entrada de `compat` cujo `tool` casa a versão alvo e cujas chaves de `variant` existem no build alvo com o mesmo valor (chave ausente no alvo não casa); sem `compat`, todo alvo serve. Uma release serve ao alvo quando a versão satisfaz `compat.version`, a variante `<extends>_series` (`php_series`) é a série do alvo e as demais chaves da release que o alvo também tem coincidem (as que o alvo não declara não são conferidas). Alvo explícito sem build → `not_found` listando as séries compatíveis; sem `--for`, os incompatíveis são pulados e só "nenhum serve" é erro.
+- **Releases**: os providers resolvem a extensão como uma tool `semver` sem variantes declaradas (as variantes das releases são livres, e viram placeholders de URL).
+- **Arquivos**: `install.target` com as variáveis da versão alvo (`{{ paths.version }}` = pasta dela, `{{ series }}` = série dela, `{{ variant.<key> }}` = variantes dela); o arquivo existente é substituído (e volta se algo falhar). `post_install` roda depois do arquivo no lugar, com as mesmas variáveis; `render` usa o contexto da tool alvo (`php`); `run` **nunca** executa em Extension. O `conf.d/20-xdebug.ini` sai desligado (`;zend_extension = xdebug`) até o Xdebug ser ligado (M2-E2-T9).
+- **Registro**: uma linha de `tool_versions` por alvo, com `canonical_name` = `<tool alvo>-<pasta alvo>` e o vínculo no mapa de variantes (`target_tool`, `target_id`, `target_name`, junto das variantes da release). Por isso o prefixo `target_` é reservado nas variantes de `source.releases[]` de uma Extension (erro de validação).
+- **Remoção**: `forge tool remove xdebug [--for php@8.4]` apaga o arquivo daquele alvo e os arquivos que os `render` dele escreveram, salvo os que outra instalação da mesma extensão também renderiza (overlay da série compartilhado por `8.4.26` e `8.4.27`). Remover a versão alvo apaga as linhas ligadas a ela; um update dentro da série que copia `ext/` (`update.migrate`) religa a instalação à versão nova ([05 §4.1](05-providers-and-updates.md)).
 
 ---
 

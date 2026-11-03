@@ -3419,8 +3419,9 @@ export type ToolInstallParams = {
 	/**
 	 *  Extensions (`xdebug`): the installed version of the extended tool to install into
 	 *  (`php@8.3`, `php@8.3.36`); `None` = every compatible installed version. CLI
-	 *  `--for`. API 1.1 (ADR-0041); answers `not_implemented` (M2-E2-T8) until the
-	 *  extension install lands.
+	 *  `--for`. API 1.1 (ADR-0041, ADR-0043). Only for extensions (`invalid_input` with a
+	 *  tool); a version without a compatible build is `not_found` naming the compatible
+	 *  series.
 	 */
 	target?: ToolSpec | null,
 };
@@ -3449,7 +3450,10 @@ export type ToolInstallPayload = {
 	canonical_name?: string | null,
 };
 
-/**  Result of the `tools.install` job. */
+/**
+ *  Result of the `tools.install` job (extensions: one row per target version, linked by
+ *  the `target_tool`/`target_id`/`target_name` keys of `variant`, ADR-0043).
+ */
 export type ToolInstallResultDto = {
 	installed: ToolVersionDto[],
 };
@@ -3586,8 +3590,8 @@ export type ToolRemoveParams = {
 	confirm?: boolean,
 	/**
 	 *  Extensions: remove only from this version of the extended tool (`php@8.4`); `None`
-	 *  = from every version that has it. CLI `--for`. API 1.1 (ADR-0041); answers
-	 *  `not_implemented` (M2-E2-T8) until the extension install lands.
+	 *  = from every version that has it. CLI `--for`. API 1.1 (ADR-0041, ADR-0043): the
+	 *  file and the rendered overlay of that target only.
 	 */
 	target?: ToolSpec | null,
 };
