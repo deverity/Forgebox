@@ -85,11 +85,24 @@ describe("sidebar", () => {
   };
 
   it("hides the mail badge while mail.status is not implemented", async () => {
-    // The default fake daemon answers mail.status with `not_implemented` (hello says so).
-    await renderApp({ extra: { handlers: MAIL_STATUS } });
+    // An older daemon answers mail.status with `not_implemented` (hello says so): no call.
+    const h = await renderApp({
+      extra: { notImplemented: ["mail.status"], handlers: MAIL_STATUS },
+    });
     expect(screen.getByRole("link", { name: "Mail" })).toBeInTheDocument();
     expect(screen.queryByTestId("badge-mail")).toBeNull();
     expect(screen.queryByText("3")).toBeNull();
+    expect(h.fake.calls.some((call) => call.method === "mail.status")).toBe(false);
+  });
+
+  it("hides the mail badge when there is no mail instance", async () => {
+    // The default fake daemon has no Mailpit: mail.status answers `not_found` (M2-E3-T7).
+    const h = await renderApp();
+    await waitFor(() => {
+      expect(h.fake.calls.some((call) => call.method === "mail.status")).toBe(true);
+    });
+    expect(screen.getByRole("link", { name: "Mail" })).toBeInTheDocument();
+    expect(screen.queryByTestId("badge-mail")).toBeNull();
   });
 
   it("shows the unread count once mail.status exists", async () => {

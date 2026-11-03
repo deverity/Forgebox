@@ -247,20 +247,10 @@ describe("PHP switch", () => {
       ...must(fakeData.sites[0]),
       php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
     };
-    // Slow enough to leave the tab and come back while the job runs.
-    await open(fakeData, {
-      "sites.php": (_params, ctx) => {
-        setTimeout(() => {
-          ctx.fake.publish("site.php_changed", {
-            v: 1,
-            site_id: SITE_ID,
-            host: "loja.test",
-            from: "8.3.36",
-            to: "8.2.30",
-          });
-        }, 900);
-        return fakeJob({ stepMs: 600, outcome: { done: next } });
-      },
+    // The job runs until the test ends it: a timer would race the tab round trip, which
+    // takes longer than any fixed delay on a loaded machine (full vitest run).
+    const h = await open(fakeData, {
+      "sites.php": () => fakeJob({ hold: true, outcome: { done: next } }),
     });
     const user = await pickPhp("8.2");
     expect(await screen.findByText("Switching to 8.2…")).toBeInTheDocument();
@@ -272,9 +262,22 @@ describe("PHP switch", () => {
     expect(combo).toHaveTextContent("8.2");
     expect(screen.getByText("Switching to 8.2…")).toBeInTheDocument();
     expect(phpCalls()).toHaveLength(1);
+    const job = must(h.fake.jobList().find((j) => j.name === "sites.php" && j.state === "running"));
+    act(() => {
+      h.fake.publish("site.php_changed", {
+        v: 1,
+        site_id: SITE_ID,
+        host: "loja.test",
+        from: "8.3.36",
+        to: "8.2.30",
+      });
+      expect(h.fake.completeJob(job.id)).toBe(true);
+      h.fake.flush();
+    });
     await waitFor(() => {
       expect(screen.getByText("PHP 8.2 is active")).toBeInTheDocument();
     });
+    expect(screen.getByRole("combobox", { name: "PHP version" })).toBeEnabled();
     expect(phpCalls()).toHaveLength(1);
   });
 
