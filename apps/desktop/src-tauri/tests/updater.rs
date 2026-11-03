@@ -369,3 +369,37 @@ async fn an_unreachable_server_is_a_network_error_not_a_signature_error() {
     assert!(matches!(err, UpdaterError::Network(_)), "{err:?}");
     assert_eq!(rig.service.snapshot().error.unwrap().code, "io");
 }
+
+#[tokio::test]
+async fn a_server_that_never_answers_times_out_and_does_not_leave_the_service_busy() {
+    let keys = Keys::generate();
+    // Accepts connections and holds them open without ever replying.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/{{channel_file}}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((socket, _)) = listener.accept().await {
+            held.push(socket);
+        }
+    });
+    let app = mock_app(&keys.pubkey());
+    let log: Log = Arc::default();
+    let source = Arc::new(Recording {
+        inner: TauriSource::new(app.handle().clone(), endpoint, || Channel::Stable)
+            .with_timeouts(Duration::from_millis(300), Duration::from_millis(300)),
+        log: log.clone(),
+    });
+    let service = UpdateService::new(
+        source,
+        Daemon { log, fail: false },
+        true,
+        "0.1.0",
+        Box::new(|_| {}),
+    );
+    let err = service.check().await.unwrap_err();
+    assert!(matches!(err, UpdaterError::Network(_)), "{err:?}");
+    assert_eq!(service.snapshot().phase, Phase::Error);
+    // A later check is not rejected as Busy; it runs and times out again.
+    let again = service.check().await.unwrap_err();
+    assert!(matches!(again, UpdaterError::Network(_)), "{again:?}");
+}

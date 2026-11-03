@@ -46,6 +46,10 @@ pub const DEV_PUBKEY: &str = include_str!("../keys/updater-dev.pub");
 pub const CHANNEL_PREF: &str = "update_channel";
 /// How long the daemon gets to stop before the update is abandoned.
 pub const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+/// Deadline for the manifest request (a server that accepts and never answers must not hang us).
+pub const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+/// Deadline for the installer download.
+pub const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 /// First automatic check after the app starts (never during first paint).
 pub const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
 /// Period of the automatic checks.
@@ -580,6 +584,8 @@ pub struct TauriSource<R: Runtime> {
     endpoint: String,
     channel: Box<dyn Fn() -> Channel + Send + Sync>,
     pending: Mutex<Option<Update>>,
+    check_timeout: Duration,
+    download_timeout: Duration,
 }
 
 /// A downloaded and verified installer.
@@ -599,7 +605,17 @@ impl<R: Runtime> TauriSource<R> {
             endpoint,
             channel: Box::new(channel),
             pending: Mutex::new(None),
+            check_timeout: CHECK_TIMEOUT,
+            download_timeout: DOWNLOAD_TIMEOUT,
         }
+    }
+
+    /// Overrides the check and download deadlines (tests).
+    #[must_use]
+    pub fn with_timeouts(mut self, check: Duration, download: Duration) -> Self {
+        self.check_timeout = check;
+        self.download_timeout = download;
+        self
     }
 
     fn pending(&self) -> Option<Update> {
@@ -618,13 +634,15 @@ impl<R: Runtime> UpdateSource for TauriSource<R> {
         let updater = self
             .app
             .updater_builder()
+            .timeout(self.check_timeout)
             .endpoints(vec![url])
             .map_err(|e| UpdaterError::from_plugin(&e))?
             .build()
             .map_err(|e| UpdaterError::from_plugin(&e))?;
-        let found = updater
-            .check()
+        // The builder timeout covers the HTTP request; the outer one also covers a stalled body.
+        let found = tokio::time::timeout(self.check_timeout, updater.check())
             .await
+            .map_err(|_| UpdaterError::Network("update check timed out".to_owned()))?
             .map_err(|e| UpdaterError::from_plugin(&e))?;
         let info = found.as_ref().map(|u| UpdateInfo {
             version: u.version.clone(),
@@ -639,10 +657,11 @@ impl<R: Runtime> UpdateSource for TauriSource<R> {
     }
 
     async fn download(&self) -> Result<Downloaded, UpdaterError> {
-        let update = self.pending().ok_or(UpdaterError::NoUpdate)?;
-        let bytes = update
-            .download(|_, _| {}, || {})
+        let mut update = self.pending().ok_or(UpdaterError::NoUpdate)?;
+        update.timeout = Some(self.download_timeout);
+        let bytes = tokio::time::timeout(self.download_timeout, update.download(|_, _| {}, || {}))
             .await
+            .map_err(|_| UpdaterError::Network("update download timed out".to_owned()))?
             .map_err(|e| UpdaterError::from_plugin(&e))?;
         Ok(Downloaded { update, bytes })
     }
