@@ -359,12 +359,12 @@ async fn a_log_subscriber_that_never_reads_slows_down_nothing() {
 // ------------------------------------------------------------------ terminal flood
 
 /// Size of the terminal flood in MB: `FORGEBOX_TERMINAL_FLOOD_MB` (the acceptance run of
-/// M2-E3-T4 uses 50), 8 by default.
+/// M2-E3-T4 uses 50), 16 by default.
 fn terminal_flood_mb() -> usize {
     std::env::var("FORGEBOX_TERMINAL_FLOOD_MB")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(8)
+        .unwrap_or(16)
 }
 
 /// A raw connection that says hello, subscribes to terminal `id` and then never reads
