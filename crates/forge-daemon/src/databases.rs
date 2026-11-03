@@ -13,6 +13,10 @@
 //!   inside `spawn_blocking` (ADR-0011) and print TAB separated rows.
 //! * **Sizes** of the data folders come from a cached walk (TTL 60 s) done on a blocking
 //!   thread: `None` until the first walk ends, so `db.list` never waits for a disk scan.
+//! * **Export/import** ([`transfer`], M2-E3-T6) stream through the `dump`/`restore`
+//!   clients in the one-shot runner of `forge-supervisor`, as jobs.
+
+pub mod transfer;
 
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
@@ -20,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use forge_core::Timestamp;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::InstanceId;
 use forge_core::platform::{PROBE_TIMEOUT, ProbeCommand, ProbeOutput, run_probe};
@@ -28,8 +33,8 @@ use forge_core::sync::{LockLevel, OrderedMutex};
 use forge_ipc::api::common::InstanceKey;
 use forge_ipc::api::{
     Ack, DatabaseDto, DatabaseListDto, DbCapabilitiesDto, DbCreateParams, DbDropParams,
-    DbInstanceDto, DbListParams, DbShellParams, DbUrlDto, DbUrlParams, EnvVarsDto, InstanceRef,
-    ServiceState, ShellCommandDto,
+    DbExportParams, DbImportParams, DbInstanceDto, DbListParams, DbShellParams, DbUrlDto,
+    DbUrlParams, EnvVarsDto, InstanceRef, ServiceState, ShellCommandDto,
 };
 use forge_manifest::database::{DbQuery, DbVars, RenderError, RenderedCommand};
 use forge_manifest::schema::tool::{DatabaseProtocol, DatabaseSpec};
@@ -613,6 +618,103 @@ pub async fn shell(daemon: &Daemon, params: DbShellParams) -> Result<ShellComman
         .shell(params.database.as_deref())
 }
 
+// ------------------------------------------------------------------ export / import
+
+/// Canonical form of `path` (an existing file or folder, or a new file in an existing
+/// folder) for containment checks; `None` when it cannot be resolved.
+fn canonical(path: &Path) -> Option<PathBuf> {
+    if let Ok(found) = path.canonicalize() {
+        return Some(found);
+    }
+    let parent = path.parent()?.canonicalize().ok()?;
+    Some(parent.join(path.file_name()?))
+}
+
+/// Blocking: whether `path` resolves (links followed) inside one of `roots`.
+fn inside_any(path: &Path, roots: &[PathBuf]) -> bool {
+    let Some(path) = canonical(path) else {
+        return false;
+    };
+    roots
+        .iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .any(|root| path.starts_with(root))
+}
+
+/// Remote clients reach only the folders the Forgebox owns for this: `www/` to import
+/// from, `www/` or `backups/` to export to (docs/09 §db, ADR-0009). Local clients may use
+/// any absolute path of their machine.
+async fn require_remote_scope(path: &Path, roots: Vec<PathBuf>, what: &str) -> Result<()> {
+    let shown = path.display().to_string();
+    let allowed = roots
+        .iter()
+        .map(|r| forge_core::paths::plain_path(r).display().to_string())
+        .collect::<Vec<_>>()
+        .join(" or ");
+    let path = path.to_path_buf();
+    let inside = spawn_blocking_timeout("checking a path", Duration::from_secs(5), move || {
+        Ok(inside_any(&path, &roots))
+    })
+    .await?;
+    if inside {
+        Ok(())
+    } else {
+        Err(ForgeError::Forbidden(format!(
+            "{shown}: a remote client can only {what} inside {allowed}"
+        )))
+    }
+}
+
+/// `db.export`, before the job: the target, the output (default
+/// `backups/<tool>/<instance>/<db>-<UTC ts>.sql.zst`) and its checks. `local` is whether
+/// the caller runs on this machine.
+pub async fn prepare_export(
+    daemon: &Daemon,
+    params: &DbExportParams,
+    local: bool,
+) -> Result<transfer::Transfer> {
+    let target = target(daemon, params.instance.as_ref()).await?;
+    let output = match &params.output {
+        Some(output) => PathBuf::from(output.replace('/', "\\")),
+        None => target.default_export_path(&daemon.root.backups(), &params.name, Timestamp::now()),
+    };
+    let prepared = target.prepare_export(&params.name, &output)?;
+    if !local && params.output.is_some() {
+        require_remote_scope(
+            &output,
+            vec![daemon.root.www(), daemon.root.backups()],
+            "export",
+        )
+        .await?;
+    }
+    Ok(prepared)
+}
+
+/// `db.import`, before the job: the target, the input file and its checks.
+pub async fn prepare_import(
+    daemon: &Daemon,
+    params: &DbImportParams,
+    local: bool,
+) -> Result<transfer::Transfer> {
+    let target = target(daemon, params.instance.as_ref()).await?;
+    let input = PathBuf::from(params.file.replace('/', "\\"));
+    let prepared = target.prepare_import(&params.name, &input)?;
+    if !local {
+        require_remote_scope(&input, vec![daemon.root.www()], "import").await?;
+    }
+    let check = input.clone();
+    let is_file = spawn_blocking_timeout(
+        "checking the import file",
+        Duration::from_secs(5),
+        move || Ok(check.is_file()),
+    )
+    .await?;
+    if !is_file {
+        return Err(ForgeError::NotFound(format!("file {}", input.display())));
+    }
+    Ok(prepared)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -666,6 +768,31 @@ mod tests {
             .code(),
             "not_found"
         );
+    }
+
+    #[test]
+    fn remote_scope_is_resolved_before_comparing() {
+        let dir = tempfile::tempdir().unwrap();
+        let www = dir.path().join("www");
+        std::fs::create_dir_all(www.join("loja")).unwrap();
+        std::fs::write(www.join("loja").join("db.sql"), "x").unwrap();
+        std::fs::write(dir.path().join("secret.sql"), "x").unwrap();
+        let roots = [www.clone()];
+        assert!(inside_any(&www.join("loja").join("db.sql"), &roots));
+        // A file that does not exist yet, in an existing folder (export output).
+        assert!(inside_any(&www.join("loja").join("new.sql.zst"), &roots));
+        assert!(!inside_any(&dir.path().join("secret.sql"), &roots));
+        // `..` cannot climb out once resolved.
+        assert!(!inside_any(
+            &www.join("loja").join("..").join("..").join("secret.sql"),
+            &roots
+        ));
+        // A missing folder resolves to nothing: refused.
+        assert!(!inside_any(&www.join("nope").join("x.sql"), &roots));
+        // A sibling whose name starts like the root is not inside it.
+        std::fs::create_dir_all(dir.path().join("www2")).unwrap();
+        std::fs::write(dir.path().join("www2").join("a.sql"), "x").unwrap();
+        assert!(!inside_any(&dir.path().join("www2").join("a.sql"), &roots));
     }
 
     #[test]

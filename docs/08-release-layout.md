@@ -115,8 +115,9 @@ C:\Forgebox\
 ├── tmp\                          # efêmero (limpo automaticamente)
 │   ├── downloads\ , stage\ , sessions\php\8.3\ , uploads\
 │
-├── backups\                      # dumps agendados/manuais de bancos, snapshots de etc\ antes de updates
-│   └── 2026-10-26T13-00\mysql-default-loja.sql.zst
+├── backups\                      # dumps de bancos, snapshots de etc\ antes de updates
+│   ├── mysql\default\loja-20261026T130000Z.sql.zst      # db.export sem --output: <tool>\<instância>\<banco>-<UTC>.sql.zst (M2-E3-T6)
+│   └── postgresql\default\Loja-20261026T130512Z.sql.zst  # escrito como .partial e renomeado só no fim; cancelar/falhar apaga o .partial
 │
 └── manifests\
     └── local\                    # manifestos do usuário (kind: Tool/Extension) fora do registry

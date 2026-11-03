@@ -160,7 +160,7 @@ pub async fn run(
     let errors = spawned.stderr.take();
     let exited = CancellationToken::new();
 
-    let feed = feed_stdin(&mut writer, stdin, &exited);
+    let feed = feed_stdin(&mut writer, stdin, &exited, cancel);
     let pump = pump_stdout(reader, stdout, cancel);
     let tail = collect_stderr(errors, stderr_tail);
     let exit = async {
@@ -214,12 +214,16 @@ async fn terminate(group: &Arc<dyn ProcessGroup>, label: &str) {
 }
 
 /// Writes every chunk of `rx` to the child; closes stdin at the end of the input. Stops
-/// (keeping the pipe open) when the process exits; stops and drops `rx` when the child
-/// no longer reads (the producer sees its channel closed).
+/// (keeping the pipe open) when the process exits or the run is cancelled; stops and
+/// drops `rx` when the child no longer reads (the producer sees its channel closed).
+///
+/// A producer that fails cancels the run **before** dropping its sender, so the end of
+/// its channel after a cancellation is never taken for the end of the input.
 async fn feed_stdin(
     writer: &mut Option<PipeWriter>,
     rx: Option<mpsc::Receiver<Vec<u8>>>,
     exited: &CancellationToken,
+    cancel: &CancellationToken,
 ) -> u64 {
     let mut written = 0u64;
     let (Some(pipe), Some(mut rx)) = (writer.as_mut(), rx) else {
@@ -230,10 +234,14 @@ async fn feed_stdin(
     loop {
         let chunk = tokio::select! {
             biased;
+            () = cancel.cancelled() => return written,
             () = exited.cancelled() => return written,
             chunk = rx.recv() => chunk,
         };
         let Some(chunk) = chunk else {
+            if cancel.is_cancelled() {
+                return written;
+            }
             let _ = pipe.flush().await;
             // End of the input: closing our end is the child's end of file.
             *writer = None;
@@ -241,6 +249,7 @@ async fn feed_stdin(
         };
         let wrote = tokio::select! {
             biased;
+            () = cancel.cancelled() => return written,
             () = exited.cancelled() => return written,
             wrote = pipe.write_all(&chunk) => wrote,
         };

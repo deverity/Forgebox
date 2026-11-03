@@ -24,8 +24,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "public tunnels (cloudflared, ngrok, expose)",
     ),
     ("sites.new", "M3-E2", "project scaffolding from a stack"),
-    ("db.export", "M2-E3-T6", "database export"),
-    ("db.import", "M2-E3-T6", "database import"),
     ("db.open", "M3-E1", "database GUI launch"),
     (
         "net.lan_expose",
@@ -187,8 +185,6 @@ mod tests {
     fn e3_methods_name_their_task() {
         // The E3 contract (ADR-0040): each backend task owns its methods.
         for (method, task) in [
-            ("db.export", "M2-E3-T6"),
-            ("db.import", "M2-E3-T6"),
             ("db.open", "M3-E1"),
             ("mail.status", "M2-E3-T7"),
             ("mail.open", "M2-E3-T7"),
