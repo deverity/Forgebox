@@ -143,6 +143,8 @@ export interface FakeScenario {
 
 interface LogItem {
   seq: number;
+  /** Sequence units this item spans (1; the bytes of a `terminal.subscribe` output item). */
+  size: number;
   /** Envelope fields besides `subscription_id`/`seq` (`event`, `line`, `sample`). */
   fields: Record<string, unknown>;
 }
@@ -242,6 +244,7 @@ interface FakeSubscription {
 
 function topicOf(method: string, params: Record<string, unknown>): string {
   if (method === "logs.subscribe") return `logs:${String(params.target)}`;
+  if (method === "terminal.subscribe") return `terminal:${String(params.id)}`;
   return method.split(".")[0] ?? method;
 }
 
@@ -517,7 +520,16 @@ export class FakeBridge implements Bridge {
     return this.append("metrics", () => ({ sample }));
   }
 
-  /** Last seq of a stream (`events`, `logs:<target>`, `metrics`). */
+  /**
+   * An item of a terminal session's stream (`terminal.subscribe`). `seq` counts output bytes
+   * like the daemon: an output item advances it by its UTF-8 size, `exited` by one.
+   */
+  emitTerminal(id: string, item: T.TerminalItemDto): number {
+    const size = item.kind === "output" ? new TextEncoder().encode(item.data).length : 1;
+    return this.append(`terminal:${id}`, () => ({ item }), size);
+  }
+
+  /** Last seq of a stream (`events`, `logs:<target>`, `metrics`, `terminal:<id>`). */
   lastSeq(topic = "events"): number {
     return (this.topics.get(topic)?.next ?? 1) - 1;
   }
@@ -1018,12 +1030,16 @@ export class FakeBridge implements Bridge {
   }
 
   /** Appends to a stream's history and delivers to its attached subscriptions. */
-  private append(topicName: string, make: (seq: number) => Record<string, unknown>): number {
+  private append(
+    topicName: string,
+    make: (seq: number) => Record<string, unknown>,
+    size = 1,
+  ): number {
     const topic = this.topics.get(topicName) ?? { next: 1, items: [] };
     this.topics.set(topicName, topic);
-    const seq = topic.next;
-    topic.next += 1;
-    const item: LogItem = { seq, fields: make(seq) };
+    const seq = topic.next + size - 1;
+    topic.next = seq + 1;
+    const item: LogItem = { seq, size, fields: make(seq) };
     topic.items.push(item);
     const keep = this.scenario.historySize ?? 4096;
     if (topic.items.length > keep) topic.items.splice(0, topic.items.length - keep);
@@ -1050,6 +1066,8 @@ export class FakeBridge implements Bridge {
     sub.attached = true;
     const topic = this.topics.get(sub.topic);
     const head = (topic?.next ?? 1) - 1;
+    // `terminal.subscribe` without `resume_from` sends the whole ring first (ADR-0040).
+    if (from === null && sub.method === "terminal.subscribe") from = 0;
     if (from === null) {
       sub.cursor = head;
       return;
@@ -1064,7 +1082,8 @@ export class FakeBridge implements Bridge {
     }
     sub.cursor = from;
     const items = topic?.items ?? [];
-    const oldest = items[0]?.seq ?? head + 1;
+    const first = items[0];
+    const oldest = first === undefined ? head + 1 : first.seq - first.size + 1;
     if (oldest - 1 > from) {
       sub.queue.push({ kind: "lagged", missed: oldest - 1 - from });
       sub.cursor = oldest - 1;

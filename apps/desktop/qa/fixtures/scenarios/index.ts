@@ -26,6 +26,7 @@ import {
   type QaData,
 } from "./data";
 import { siteDetailHandlers } from "./siteDetail";
+import { terminalHandlers } from "./terminal";
 
 export const QA_SCENARIO_NAMES = [
   "empty",
@@ -102,7 +103,8 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const config = configHandlers(data);
   const detail = siteDetailHandlers(data);
   const catalog = catalogHandlers(data, config);
-  const answered = { ...detail, ...catalog };
+  const terminal = terminalHandlers();
+  const answered = { ...detail, ...catalog, ...terminal };
   return {
     // The Site detail and the catalog answer `tools.plan` etc. before their backend tasks land.
     notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
@@ -121,6 +123,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...detail,
       ...config,
       ...catalog,
+      ...terminal,
       ...extra.handlers,
     },
   } satisfies FakeScenario;

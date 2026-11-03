@@ -1,0 +1,33 @@
+{
+  "title": "Terminal",
+  "tabs": {
+    "label": "Terminal tabs",
+    "global": "Terminal",
+    "site": "Terminal in {host}",
+    "close": "Close tab {title}",
+    "new": "New terminal",
+    "newSite": "Terminal in a site",
+    "chooseSite": "Choose a site…"
+  },
+  "withContext": "{title} · {name}",
+  "opening": "Opening the terminal…",
+  "failed": "Could not open the terminal: {message}",
+  "retry": "Try again",
+  "exited": "Process ended (code {code})",
+  "exitedNoCode": "Process ended",
+  "reopen": "Reopen",
+  "search": {
+    "label": "Search in the terminal",
+    "placeholder": "Search",
+    "next": "Next match",
+    "previous": "Previous match",
+    "close": "Close search"
+  },
+  "empty": {
+    "title": "No terminals open",
+    "description": "Open a terminal with the Forgebox environment: PATH, PHP and tools of the right versions."
+  },
+  "unavailable": "The terminal needs an administrator connection to the daemon.",
+  "cli": "Equivalent in the CLI",
+  "copyHint": "Ctrl+Shift+C copy · Ctrl+Shift+V paste · Ctrl+Shift+F search"
+}
