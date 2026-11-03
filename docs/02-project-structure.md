@@ -301,6 +301,7 @@ Forgebox/
 │       ├── playwright.config.ts / playwright.real.config.ts  # M2-E1-T19 (ADR-0036): e2e web (Edge, build `qa` + vite preview, porta FORGE_QA_PORT, padrão 4174, sem reuso) e e2e da janela real (CDP)
 │       ├── playwright.qa.config.ts  # M2-E4-T3: `pnpm qa:check` (porta FORGE_QA_CHECK_PORT, padrão 4175; relatório JSON/HTML em qa/out/check-report)
 │       ├── qa/checks/            # M2-E4-T3: lib.ts (regras), {a11y,keyboard,layout-shift,motion,contracts,accent}.spec.ts, shortcuts.ts; cada regra tem caso negativo em /qa/selftest (src/qa/selftest)
+│       ├── qa/{playwright.config.ts,matrix.ts,shots.spec.ts,contact-sheet.ts,emulation.ts}  # M2-E4-T2: `pnpm qa:shots [--grep]` (docs/07 §12; porta FORGE_QA_SHOTS_PORT, padrão 4176; saída em qa/out/shots/<run>/); `src/qa/matrix.test.ts` confere a matriz contra o router
 │       ├── e2e/                  # fixtures.ts (emulação, axe, teclado, CLS), *.spec.ts por cenário; real/app.spec.ts (Forgebox.exe via CDP, só por scripts/e2e-desktop.ps1)
 │       ├── qa/                   # fixtures/scenarios/ (biblioteca tipada com `satisfies` contra generated.ts: empty, populated, heavy...); out/ (gitignored)
 │       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree)
