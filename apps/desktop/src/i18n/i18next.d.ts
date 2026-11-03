@@ -1,4 +1,5 @@
 import "i18next";
+import type catalog from "./en-US/catalog.json";
 import type common from "./en-US/common.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
@@ -25,6 +26,7 @@ export interface Resources {
   updater: typeof updater;
   services: typeof services;
   sites: typeof sites;
+  catalog: typeof catalog;
 }
 
 declare module "i18next" {

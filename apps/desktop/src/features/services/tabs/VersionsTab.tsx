@@ -196,7 +196,8 @@ function UpdateResult({ found }: { found: ToolUpdatesDto }) {
   );
 }
 
-function PolicyPicker({ tool, policy }: { tool: string; policy: UpdatePolicy }) {
+/** The update-policy select; also used by the catalog tool page. */
+export function PolicyPicker({ tool, policy }: { tool: string; policy: UpdatePolicy }) {
   const { t } = useTranslation("services");
   const runtime = useRuntime();
   const capability = useCapability("tools.policy");

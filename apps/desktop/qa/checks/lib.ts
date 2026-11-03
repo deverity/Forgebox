@@ -16,8 +16,6 @@ export const MIN_TEXT_CONTRAST = 4.5;
 export const MAX_CLS = 0.01;
 export const REDUCED_MOTION_MAX_MS = 100;
 
-/** Concrete id for the `$id` routes (placeholders ignore it; screens read it from the fixtures). */
-const SAMPLE_ID = "demo";
 /** The first site of the QA scenarios (`fakeId("01QAS1TE", 1)`): the detail screen needs a real one. */
 const SAMPLE_SITE_ID = "01QAS1TE000000000000000001";
 
@@ -25,7 +23,9 @@ const SAMPLE_SITE_ID = "01QAS1TE000000000000000001";
 export const ROUTES: readonly string[] = [
   ...FEATURES.map((f) => f.path),
   `/sites/${SAMPLE_SITE_ID}`,
-  `/catalog/${SAMPLE_ID}`,
+  // Real fixture ids of the catalog (M2-E2-T18): a tool and a stack.
+  "/catalog/php",
+  "/catalog/laravel",
   "/__gallery",
 ];
 

@@ -33,7 +33,6 @@ export interface ScreenDef {
   scenario: Scenario;
 }
 
-const SAMPLE_ID = "demo";
 /** The first site of the QA scenarios (`fakeId("01QAS1TE", 1)`): the detail screen needs a real one. */
 const SAMPLE_SITE_ID = "01QAS1TE000000000000000001";
 
@@ -56,7 +55,7 @@ export const SCREENS: readonly ScreenDef[] = [
   {
     id: "catalog-detail",
     route: "/catalog/$id",
-    path: `/catalog/${SAMPLE_ID}`,
+    path: "/catalog/php",
     scenario: "populated",
   },
   { id: "terminal", route: "/terminal", path: "/terminal", scenario: "populated" },

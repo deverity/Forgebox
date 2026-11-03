@@ -1,22 +1,14 @@
+// The Catalog screens (M2-E2-T18, docs/07 section 5.9). The routes import these two.
 import { useParams } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
-import { PlaceholderPage } from "../../app/shell/PlaceholderPage";
+import { ToolPage } from "./ToolPage";
 
-/** Placeholder until M2-E2-T18. */
-export function CatalogPage() {
-  return <PlaceholderPage id="catalog" />;
-}
+export { CatalogPage } from "./CatalogPage";
 
-/** Placeholder for `/catalog/:id` until M2-E2-T18. */
+/** `/catalog/:id`: a tool or a stack. */
 export function CatalogToolPage() {
-  const { t } = useTranslation("shell");
   const id = useParams({
     strict: false,
     select: (params: Record<string, unknown>) => (typeof params.id === "string" ? params.id : ""),
   });
-  return (
-    <PlaceholderPage id="catalog">
-      <h2 className="px-4 text-headline">{t("placeholder.toolId", { id: id })}</h2>
-    </PlaceholderPage>
-  );
+  return <ToolPage key={id} id={id} />;
 }
