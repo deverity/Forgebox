@@ -3,7 +3,9 @@
 //! binaries copied into `bin/`, `<tool>/default` initializes its data folder and starts,
 //! and the manifest-driven `db.list|create|drop|url|shell` run the real `mysql.exe` /
 //! `psql.exe`: system databases hidden, case-sensitive names, `db.shell`'s command runs
-//! against the server.
+//! against the server. Then the round trip of M2-E3-T6: a table of 1000 rows, `db.export`
+//! (`mysqldump.exe` / `pg_dump.exe` → `.sql.zst`), drop, create, `db.import` (`mysql.exe` /
+//! `psql.exe` fed through stdin) and the same row count.
 //!
 //! Needs the zips in `C:\apps_src\Forgebox-wt\cache` (or `FORGEBOX_TEST_CACHE`, sha256
 //! checked) and the VC++ runtime:
@@ -15,10 +17,14 @@ mod common;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use forge_core::ids::JobId;
 use forge_ipc::Client;
-use forge_ipc::api::methods::{db_create, db_drop, db_list, db_shell, db_url, services_status};
+use forge_ipc::api::methods::{
+    db_create, db_drop, db_export, db_import, db_list, db_shell, db_url, jobs_get, services_status,
+};
 use forge_ipc::api::{
-    DbCreateParams, DbDropParams, DbListParams, DbShellParams, DbUrlParams, NoParams, ServiceState,
+    DbCreateParams, DbDropParams, DbExportDto, DbExportParams, DbImportParams, DbListParams,
+    DbShellParams, DbUrlParams, JobDto, JobIdParams, JobState, NoParams, ServiceState,
 };
 
 use common::*;
@@ -63,9 +69,163 @@ async fn wait_running(client: &Client, tool: &str, timeout: Duration) {
     }
 }
 
+async fn job_done(client: &Client, id: JobId, root: &TestRoot) -> JobDto {
+    let deadline = Instant::now() + Duration::from_secs(300);
+    loop {
+        let job = client
+            .call::<jobs_get>(JobIdParams { job_id: id })
+            .await
+            .unwrap();
+        if job.state.is_terminal() {
+            assert_eq!(
+                job.state,
+                JobState::Done,
+                "{}: {:?}\n{}",
+                job.name,
+                job.error,
+                service_logs(root)
+            );
+            return job;
+        }
+        assert!(Instant::now() < deadline, "{} never ended", job.name);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Runs `sql` with the shell command of `db.shell` on `database`; returns stdout.
+async fn run_sql(
+    client: &Client,
+    instance: &str,
+    database: &str,
+    exec: fn(&str) -> Vec<String>,
+    sql: &str,
+) -> String {
+    let shell = client
+        .call::<db_shell>(DbShellParams {
+            instance: instance.into(),
+            database: Some(database.into()),
+        })
+        .await
+        .unwrap();
+    let out = std::process::Command::new(&shell.program)
+        .args(&shell.args)
+        .args(exec(sql))
+        .current_dir(shell.cwd.as_deref().unwrap())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{sql}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// Export → drop → create → import of a 1000-row table; the count survives.
+async fn round_trip(
+    client: &Client,
+    root: &TestRoot,
+    instance: &str,
+    exec: fn(&str) -> Vec<String>,
+) {
+    let rows: Vec<String> = (1..=1000).map(|i| format!("({i},'row {i}')")).collect();
+    run_sql(
+        client,
+        instance,
+        "shop_2",
+        exec,
+        "CREATE TABLE t (id INT PRIMARY KEY, v VARCHAR(40))",
+    )
+    .await;
+    run_sql(
+        client,
+        instance,
+        "shop_2",
+        exec,
+        &format!("INSERT INTO t VALUES {}", rows.join(",")),
+    )
+    .await;
+    let count = "SELECT COUNT(*) FROM t";
+    assert_eq!(
+        run_sql(client, instance, "shop_2", exec, count).await,
+        "1000"
+    );
+
+    let job = client
+        .call::<db_export>(DbExportParams {
+            name: "shop_2".into(),
+            instance: Some(instance.into()),
+            output: None,
+        })
+        .await
+        .unwrap();
+    let done = job_done(client, job.id, root).await;
+    let export: DbExportDto = serde_json::from_value(done.result.unwrap()).unwrap();
+    assert!(export.path.ends_with(".sql.zst"), "{}", export.path);
+    assert!(export.size_bytes > 0);
+    let plain = zstd::decode_all(std::fs::read(&export.path).unwrap().as_slice()).unwrap();
+    let text = String::from_utf8_lossy(&plain);
+    assert!(text.contains("row 1000"), "the dump has the rows");
+
+    client
+        .call::<db_drop>(DbDropParams {
+            name: "shop_2".into(),
+            instance: Some(instance.into()),
+            confirm: true,
+        })
+        .await
+        .unwrap();
+    client
+        .call::<db_create>(DbCreateParams {
+            name: "shop_2".into(),
+            instance: Some(instance.into()),
+            charset: None,
+        })
+        .await
+        .unwrap();
+    let job = client
+        .call::<db_import>(DbImportParams {
+            name: "shop_2".into(),
+            instance: Some(instance.into()),
+            file: export.path.clone(),
+        })
+        .await
+        .unwrap();
+    let done = job_done(client, job.id, root).await;
+    assert_eq!(done.progress.pct, Some(100.0));
+    assert_eq!(
+        run_sql(client, instance, "shop_2", exec, count).await,
+        "1000"
+    );
+}
+
+fn mysql_exec(sql: &str) -> Vec<String> {
+    vec![
+        "--batch".into(),
+        "--skip-column-names".into(),
+        format!("--execute={sql}"),
+    ]
+}
+
+fn psql_exec(sql: &str) -> Vec<String> {
+    vec![
+        "-At".into(),
+        "-v".into(),
+        "ON_ERROR_STOP=1".into(),
+        "-c".into(),
+        sql.into(),
+    ]
+}
+
 /// The whole flow on one family. `shell_args` run the shell command non-interactively and
-/// print the current database.
-async fn flow(root: &TestRoot, tool: &str, url_prefix: &str, shell_args: &[&str]) {
+/// print the current database; `exec` runs a statement the same way.
+async fn flow(
+    root: &TestRoot,
+    tool: &str,
+    url_prefix: &str,
+    shell_args: &[&str],
+    exec: fn(&str) -> Vec<String>,
+) {
     let mut daemon = spawn_daemon(root, &[]);
     let (client, _) = connect(root, &mut daemon, Duration::from_secs(60)).await;
     wait_running(&client, tool, Duration::from_secs(240)).await;
@@ -174,6 +334,8 @@ async fn flow(root: &TestRoot, tool: &str, url_prefix: &str, shell_args: &[&str]
     names.sort();
     assert_eq!(names, ["loja", "shop_2"]);
 
+    round_trip(&client, root, &instance, exec).await;
+
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
 }
@@ -195,6 +357,7 @@ async fn mysql_8_4_13_online() {
             "--skip-column-names",
             "--execute=SELECT DATABASE()",
         ],
+        mysql_exec,
     )
     .await;
 }
@@ -221,6 +384,7 @@ async fn postgresql_17_11_online() {
         "postgresql",
         "postgresql://postgres@127.0.0.1:",
         &["-At", "-c", "SELECT current_database()"],
+        psql_exec,
     )
     .await;
 }

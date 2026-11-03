@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::error::{ForgeError, Result};
 
@@ -40,6 +40,10 @@ pub const ASSIGN_RETRY_LIMIT: Duration = Duration::from_secs(2);
 
 /// Async reading end of a captured stdout/stderr pipe.
 pub type PipeReader = Pin<Box<dyn AsyncRead + Send>>;
+
+/// Async writing end of a child's stdin pipe ([`StdinSource::Pipe`]). Dropping it closes
+/// the pipe: the child reads end of file.
+pub type PipeWriter = Pin<Box<dyn AsyncWrite + Send>>;
 
 /// Limits of a process group (Job Object).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +87,17 @@ pub enum StdioTarget {
     File(PathBuf),
 }
 
+/// Where a child's stdin comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StdinSource {
+    /// The null device (services, probes): the child reads end of file at once.
+    #[default]
+    Null,
+    /// A pipe written asynchronously by the caller ([`SpawnedProcess::stdin`]); used by
+    /// the streaming one-shot runner (`db.import` feeds `mysql.exe` this way).
+    Pipe,
+}
+
 /// Console of a child process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConsoleMode {
@@ -94,7 +109,8 @@ pub enum ConsoleMode {
 }
 
 /// Everything the OS needs to start a process. Nothing is inherited from the daemon:
-/// `env` is the complete environment and stdin is always the null device.
+/// `env` is the complete environment and stdin is the null device unless
+/// [`StdinSource::Pipe`] is asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessCommand {
     /// Absolute path of the executable (`.bat`/`.cmd` are refused: cmd.exe quoting).
@@ -105,6 +121,7 @@ pub struct ProcessCommand {
     /// Complete environment. On Windows names are case-insensitive; the last duplicate
     /// wins and the block is sorted as `CreateProcess` requires.
     pub env: Vec<(OsString, OsString)>,
+    pub stdin: StdinSource,
     pub stdout: StdioTarget,
     pub stderr: StdioTarget,
     /// Start a new process group whose id is the child's pid (`CREATE_NEW_PROCESS_GROUP`),
@@ -114,14 +131,15 @@ pub struct ProcessCommand {
 }
 
 impl ProcessCommand {
-    /// Command for `exe` with no arguments, cwd `cwd`, empty environment, stdio to null,
-    /// hidden console and a new process group.
+    /// Command for `exe` with no arguments, cwd `cwd`, empty environment, stdin, stdout
+    /// and stderr on the null device, hidden console and a new process group.
     pub fn new(exe: impl Into<PathBuf>, cwd: impl Into<PathBuf>) -> Self {
         Self {
             exe: exe.into(),
             args: Vec::new(),
             cwd: cwd.into(),
             env: Vec::new(),
+            stdin: StdinSource::Null,
             stdout: StdioTarget::Null,
             stderr: StdioTarget::Null,
             new_process_group: true,
@@ -133,6 +151,8 @@ impl ProcessCommand {
 /// A process that was started (and resumed) inside a group.
 pub struct SpawnedProcess {
     pub pid: u32,
+    /// Present when stdin was [`StdinSource::Pipe`].
+    pub stdin: Option<PipeWriter>,
     /// Present when stdout was [`StdioTarget::Pipe`].
     pub stdout: Option<PipeReader>,
     /// Present when stderr was [`StdioTarget::Pipe`].
@@ -145,6 +165,7 @@ impl fmt::Debug for SpawnedProcess {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SpawnedProcess")
             .field("pid", &self.pid)
+            .field("stdin", &self.stdin.is_some())
             .field("stdout", &self.stdout.is_some())
             .field("stderr", &self.stderr.is_some())
             .finish_non_exhaustive()

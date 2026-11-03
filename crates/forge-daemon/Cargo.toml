@@ -41,6 +41,8 @@ forge-metrics = { path = "../forge-metrics" }
 forge-ipc = { path = "../forge-ipc" }
 base64 = { workspace = true }
 clap = { workspace = true, features = ["env"] }
+# `.sql.gz` input of db.import (M2-E3-T6).
+flate2 = { workspace = true }
 futures = { workspace = true }
 jiff = { workspace = true }
 rand = { workspace = true }
@@ -53,6 +55,8 @@ tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+# `.sql.zst` of db.export/db.import (M2-E3-T6).
+zstd = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

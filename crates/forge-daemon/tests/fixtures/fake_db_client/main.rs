@@ -11,9 +11,111 @@
 //! * `--execute=<sql>` (mysql) or `-c <sql>` (psql) carry the statement; without one the
 //!   run is an interactive shell: it prints `fake-shell <args>` and exits with the number
 //!   in `shell-exit.txt` (0 when absent).
+//! * copied as `mysqldump.exe` / `pg_dump.exe` it is a **dump** (M2-E3-T6): it writes its
+//!   pid to `dump.pid` and prints [`dump_bytes`] of deterministic SQL to stdout, sized by
+//!   `dump.txt` (`<bytes> [<ms per MiB> [<exit code>]]`, default 1 MiB, no pause, 0); a
+//!   non-zero exit prints 30 numbered lines to stderr first;
+//! * with `restore.txt` next to it (`[<ms per MiB> [<exit code>]]`), a run without a
+//!   statement is a **restore**: it writes its pid to `restore.pid`, copies stdin to
+//!   `restored.bin` (pausing after each MiB), then exits with the code; a non-zero exit
+//!   prints 30 numbered lines to stderr.
 
-use std::io::Write;
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+/// The dump's SQL: `INSERT` lines whose values come from a xorshift generator, cut at
+/// exactly `size` bytes. The tests regenerate it to check what reached the file.
+fn dump_bytes(size: usize, mut sink: impl FnMut(&[u8])) {
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut done = 0usize;
+    let mut row = 0u64;
+    let mut line = String::new();
+    while done < size {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        line.clear();
+        line.push_str(&format!(
+            "INSERT INTO `t` VALUES ({row},'{state:016x}{:016x}');\n",
+            state.rotate_left(29)
+        ));
+        let take = line.len().min(size - done);
+        sink(&line.as_bytes()[..take]);
+        done += take;
+        row += 1;
+    }
+}
+
+fn numbers(dir: &Path, file: &str) -> Option<Vec<u64>> {
+    let text = std::fs::read_to_string(dir.join(file)).ok()?;
+    Some(
+        text.split_whitespace()
+            .filter_map(|n| n.parse().ok())
+            .collect(),
+    )
+}
+
+fn fail_lines(what: &str, code: i32) -> ! {
+    for i in 1..=30 {
+        eprintln!("{what} error line {i}");
+    }
+    std::process::exit(code);
+}
+
+fn dump(dir: &Path) -> ! {
+    std::fs::write(dir.join("dump.pid"), std::process::id().to_string()).expect("dump.pid");
+    let config = numbers(dir, "dump.txt").unwrap_or_default();
+    let size = config.first().copied().unwrap_or(1 << 20) as usize;
+    let pause = config.get(1).copied().unwrap_or(0);
+    let code = config.get(2).copied().unwrap_or(0) as i32;
+    let stdout = std::io::stdout();
+    let mut out = std::io::BufWriter::with_capacity(64 * 1024, stdout.lock());
+    let mut since_pause = 0usize;
+    dump_bytes(size, |bytes| {
+        if out.write_all(bytes).is_err() {
+            std::process::exit(3);
+        }
+        since_pause += bytes.len();
+        if pause > 0 && since_pause >= 1 << 20 {
+            since_pause = 0;
+            let _ = out.flush();
+            std::thread::sleep(std::time::Duration::from_millis(pause));
+        }
+    });
+    let _ = out.flush();
+    if code != 0 {
+        fail_lines("dump", code);
+    }
+    std::process::exit(0);
+}
+
+fn restore(dir: &Path, config: &[u64]) -> ! {
+    std::fs::write(dir.join("restore.pid"), std::process::id().to_string())
+        .expect("restore.pid");
+    let pause = config.first().copied().unwrap_or(0);
+    let code = config.get(1).copied().unwrap_or(0) as i32;
+    let mut file = std::fs::File::create(dir.join("restored.bin")).expect("restored.bin");
+    let mut stdin = std::io::stdin().lock();
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut since_pause = 0usize;
+    loop {
+        let n = match stdin.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        file.write_all(&buf[..n]).expect("writing restored.bin");
+        since_pause += n;
+        if pause > 0 && since_pause >= 1 << 20 {
+            since_pause = 0;
+            std::thread::sleep(std::time::Duration::from_millis(pause));
+        }
+    }
+    drop(file);
+    if code != 0 {
+        fail_lines("restore", code);
+    }
+    std::process::exit(0);
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -31,6 +133,9 @@ fn main() {
         .expect("argv.log");
     writeln!(log, "{args:?}").expect("writing argv.log");
     drop(log);
+    if family == "mysqldump" || family == "pg_dump" {
+        dump(&dir);
+    }
 
     let sql = args
         .iter()
@@ -41,6 +146,9 @@ fn main() {
                 .and_then(|i| args.get(i + 1).cloned())
         });
     let Some(sql) = sql else {
+        if let Some(config) = numbers(&dir, "restore.txt") {
+            restore(&dir, &config);
+        }
         println!("fake-shell {}", args.join(" "));
         let code = std::fs::read_to_string(dir.join("shell-exit.txt"))
             .ok()

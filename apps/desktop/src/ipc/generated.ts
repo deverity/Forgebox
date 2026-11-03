@@ -636,7 +636,12 @@ export type DbExportDto = {
 export type DbExportParams = {
 	name: string,
 	instance?: InstanceRef | null,
-	/**  Output file on the daemon's machine; default `backups/<instance>/<db>-<ts>.sql.zst`. */
+	/**
+	 *  Absolute output file on the daemon's machine (`.sql.zst`, `.sql.gz` or `.sql`: the
+	 *  name picks the compression); default
+	 *  `backups/<tool>/<instance>/<db>-<UTC yyyymmddThhmmssZ>.sql.zst`. A remote client
+	 *  may only write inside `www/` or `backups/`.
+	 */
 	output?: string | null,
 };
 
@@ -644,7 +649,10 @@ export type DbExportParams = {
 export type DbImportParams = {
 	name: string,
 	instance?: InstanceRef | null,
-	/**  `.sql`, `.sql.gz` or `.sql.zst` on the daemon's machine. */
+	/**
+	 *  Absolute `.sql`, `.sql.gz` or `.sql.zst` file on the daemon's machine; a remote
+	 *  client may only import from inside `www/`.
+	 */
 	file: string,
 };
 

@@ -217,13 +217,15 @@ describe("fakeBridge daemon semantics", () => {
 
   it("answers not_implemented for the not-implemented table, with the roadmap task", async () => {
     const fake = createFakeBridge();
-    const error = await rejection(call(fake, "db.export", { name: "loja" }));
+    const error = await rejection(
+      call(fake, "db.open", { instance: "mysql/default", with: "heidisql" }),
+    );
     expect(error.code).toBe("not_implemented");
     expect(error.reason).toBe("not_implemented");
     expect(error.args).toEqual({
-      method: "db.export",
-      task: "M2-E3-T6",
-      what: "database export",
+      method: "db.open",
+      task: "M3-E1",
+      what: "database GUI launch",
     });
     const state = await fake.state(LOCAL_CONTEXT);
     expect(state.hello?.not_implemented).toEqual(NOT_IMPLEMENTED.map((row) => row.method));

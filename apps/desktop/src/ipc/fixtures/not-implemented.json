@@ -30,16 +30,6 @@
     "what": "project scaffolding from a stack"
   },
   {
-    "method": "db.export",
-    "task": "M2-E3-T6",
-    "what": "database export"
-  },
-  {
-    "method": "db.import",
-    "task": "M2-E3-T6",
-    "what": "database import"
-  },
-  {
     "method": "db.open",
     "task": "M3-E1",
     "what": "database GUI launch"

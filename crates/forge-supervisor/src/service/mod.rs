@@ -510,6 +510,7 @@ async fn run_process(
         stdout,
         stderr,
         exit,
+        ..
     } = match spawned {
         Ok(process) => process,
         Err(err) => {

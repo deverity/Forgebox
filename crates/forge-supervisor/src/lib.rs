@@ -24,6 +24,9 @@
 //! * [`service`]: the lifecycle state machine ([`service::state`]) and
 //!   [`InstanceActor`] (Start/Stop/Restart/Status/SubscribeLogs/Metrics/maintenance)
 //!   behind [`InstanceHandle`], created by [`Supervisor::spawn_instance`].
+//! * [`oneshot`]: a command run once in its own job with stdin/stdout/stderr streamed
+//!   concurrently through bounded channels and cancellation that kills the job
+//!   (`db.export`/`db.import`, M2-E3-T6).
 //! * [`events::ServiceEventPayload`]: the payload of the `service.*` events, shaped as
 //!   the API contract `forge_ipc::api::events::ServicePayload` (docs/03 §8).
 //!
@@ -38,6 +41,7 @@ pub mod health;
 pub mod job;
 pub mod logs;
 pub mod metrics;
+pub mod oneshot;
 pub mod policy;
 pub mod precheck;
 pub mod process;
@@ -48,6 +52,7 @@ pub use health::{HealthSpec, HealthStatus, Probe};
 pub use job::JobTree;
 pub use logs::{LogItem, LogLine, LogOptions, LogStream, LogSubscription, Rotation};
 pub use metrics::{InstanceMetrics, MetricsOptions, ProcessMetrics, ServiceMetricsPayload};
+pub use oneshot::{Oneshot, OneshotOutcome};
 pub use policy::{Backoff, RestartPolicy};
 pub use precheck::{
     ConfigCheck, DependencyFuture, DependencyLookup, DependencyRef, NoDependencies, PrecheckSpec,
