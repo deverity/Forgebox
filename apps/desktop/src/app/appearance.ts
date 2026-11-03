@@ -64,7 +64,39 @@ export function applyAppearance(
   }
   if (appearance.accent && HEX_COLOR.test(appearance.accent)) {
     root.style.setProperty("--system-accent", appearance.accent);
+    applyAccent(root, appearance.accent);
   }
+  // High contrast keeps its own tokens (they win over any accent).
+  if (appearance.contrast === "high") {
+    root.style.removeProperty("--accent");
+    root.style.removeProperty("--fg-on-accent");
+  }
+}
+
+/** Relative luminance (WCAG 2.1) of `#RRGGBB`. */
+export function luminance(hex: string): number {
+  const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/**
+ * Text colour for a fill of `accent`: black or white, whichever has more contrast. The best of
+ * the two always reaches 4.5:1 (docs/07 section 2.3), whatever accent the user picked in Windows
+ * (white on #FFB900 would be 1.6:1).
+ */
+export function onAccentColor(accent: string): "black" | "white" {
+  const l = luminance(accent);
+  return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? "white" : "black";
+}
+
+/** The Windows accent drives `--accent`; `--fg-on-accent` follows it. */
+function applyAccent(root: HTMLElement, accent: string): void {
+  if (root.dataset.contrast === "high") return;
+  root.style.setProperty("--accent", accent);
+  root.style.setProperty("--fg-on-accent", onAccentColor(accent));
 }
 
 function isTheme(value: string | null): value is ThemeName {

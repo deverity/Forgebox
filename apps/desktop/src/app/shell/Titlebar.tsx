@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { FOCUS_RING } from "../../design/primitives/shared";
 import { WindowControls } from "./WindowControls";
 import { defaultWindowApi, type WindowApi } from "./windowApi";
 
@@ -7,6 +8,8 @@ import { defaultWindowApi, type WindowApi } from "./windowApi";
 // is not a control (`data-tauri-drag-region="deep"`; Tauri's drag script also maximizes on
 // double-click), the Ctrl+K search slot and the window controls. Transparent: the window
 // material (data-vibrancy="on") or the opaque canvas shows through.
+
+const SEARCH_BUTTON = `mr-2 inline-flex h-6 items-center gap-2 rounded-control border border-stroke-strong px-2 text-callout text-fg-secondary hover:bg-stroke ${FOCUS_RING}`;
 
 /** DOM event the default search slot dispatches until the command palette (M2-E1-T14) exists. */
 export const OPEN_PALETTE_EVENT = "forgebox:open-palette";
@@ -62,7 +65,7 @@ export function Titlebar({ onOpenPalette, searchSlot, windowApi }: TitlebarProps
           onClick={open}
           aria-keyshortcuts="Control+K"
           title={t("titlebar.searchHint")}
-          className="mr-2 inline-flex h-6 items-center gap-2 rounded-control border border-stroke-strong px-2 text-callout text-fg-secondary outline-none hover:bg-stroke focus-visible:outline-2 focus-visible:outline-accent"
+          className={SEARCH_BUTTON}
         >
           <SearchGlyph />
           <span>{t("titlebar.search")}</span>

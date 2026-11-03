@@ -24,6 +24,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "e2e": "playwright test",
+    "qa:check": "pnpm lint && playwright test -c playwright.qa.config.ts",
     "e2e:real": "playwright test -c playwright.real.config.ts",
     "perf:startup": "node scripts/perf-startup.mjs",
     "tauri": "tauri"

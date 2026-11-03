@@ -9,6 +9,7 @@ import {
   type ErrorTranslate,
 } from "../../ipc/describeError";
 import { Button } from "./Button";
+import { FOCUS_RING } from "./shared";
 import { Tooltip } from "./Tooltip";
 
 export interface ErrorNoticeProps {
@@ -51,7 +52,8 @@ export function ErrorNotice({
   const { t } = useTranslation(["errors", "common"]);
   const [showDetail, setShowDetail] = useState(false);
   const translate = useErrorTranslate();
-  const view = translateError(describeError(error, context), translate);
+  const description = describeError(error, context);
+  const view = translateError(description, translate);
   const buttons: { id: string; text: string; cli?: string | null }[] = view.actions.filter(
     (action) =>
       action.id === "retry"
@@ -64,7 +66,12 @@ export function ErrorNotice({
     buttons.unshift({ id: "retry", text: t("common:ui.asyncRetry") });
   }
   return (
-    <div role="alert" data-error-notice="" className="flex flex-col gap-2 text-left">
+    <div
+      role="alert"
+      data-error-notice=""
+      data-error-code={description.code}
+      className="flex flex-col gap-2 text-left"
+    >
       <p className="text-body text-fg-primary">{view.cause}</p>
       {view.detail === null ? null : (
         <div>
@@ -102,7 +109,7 @@ export function ErrorNotice({
                   // A disabled button cannot take focus: the wrapper does, so the reason is reachable.
                   // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the wrapper takes focus so the disabled reason is reachable
                   tabIndex={reason === undefined ? undefined : 0}
-                  className="inline-flex"
+                  className={`inline-flex rounded-control ${FOCUS_RING}`}
                 >
                   <Button
                     variant={action.id === "retry" ? "secondary" : "ghost"}

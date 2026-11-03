@@ -297,6 +297,8 @@ Forgebox/
 │       ├── .prettierrc.json / .prettierignore / .gitignore
 │       ├── README.md             # runbook: Node 24, NODE_OPTIONS, comandos, o que roda sem Node
 │       ├── playwright.config.ts / playwright.real.config.ts  # M2-E1-T19 (ADR-0036): e2e web (Edge, build `qa` + vite preview, porta FORGE_QA_PORT, padrão 4174, sem reuso) e e2e da janela real (CDP)
+│       ├── playwright.qa.config.ts  # M2-E4-T3: `pnpm qa:check` (porta FORGE_QA_CHECK_PORT, padrão 4175; relatório JSON/HTML em qa/out/check-report)
+│       ├── qa/checks/            # M2-E4-T3: lib.ts (regras), {a11y,keyboard,layout-shift,motion,contracts,accent}.spec.ts, shortcuts.ts; cada regra tem caso negativo em /qa/selftest (src/qa/selftest)
 │       ├── e2e/                  # fixtures.ts (emulação, axe, teclado, CLS), *.spec.ts por cenário; real/app.spec.ts (Forgebox.exe via CDP, só por scripts/e2e-desktop.ps1)
 │       ├── qa/                   # fixtures/scenarios/ (biblioteca tipada com `satisfies` contra generated.ts: empty, populated, heavy...); out/ (gitignored)
 │       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree)

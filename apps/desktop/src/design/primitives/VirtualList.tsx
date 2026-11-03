@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { type ReactNode, useRef } from "react";
+import { FOCUS_RING } from "./shared";
 
 export interface VirtualListProps<T> {
   items: readonly T[];
@@ -51,7 +52,10 @@ export function VirtualList<T>({
       ref={parentRef}
       role="list"
       aria-label={label}
-      className={["h-full overflow-auto", className].filter(Boolean).join(" ")}
+      // A scroll region needs keyboard access (axe scrollable-region-focusable): arrows and PageUp/Down scroll it.
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- keyboard users must be able to scroll the list
+      tabIndex={0}
+      className={["h-full overflow-auto", FOCUS_RING, className].filter(Boolean).join(" ")}
     >
       <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
         {virtualizer.getVirtualItems().map((row) => {

@@ -4,11 +4,12 @@ import { useTranslation } from "react-i18next";
 import { runAction, type Action } from "../../actions/registry";
 import type { ErrorAction } from "../../ipc/describeError";
 import { toForgeApiError, type ForgeApiError } from "../../ipc/errors";
-import type { MethodName } from "../../ipc/methods";
+import { METHODS, type MethodName } from "../../ipc/methods";
 import { newIntent } from "../../ipc/api";
 import { useCapabilities, useCapability, useConnectionStatus, useRuntime } from "../../state";
 import { HOLD_STATUSES } from "../../state/reconnectQueue";
 import { Button, type ButtonVariant } from "./Button";
+import { FOCUS_RING } from "./shared";
 import { ErrorNotice, useErrorTranslate } from "./ErrorNotice";
 import { Tooltip } from "./Tooltip";
 
@@ -144,11 +145,12 @@ export function ActionButton<M extends MethodName, I = void>({
           data-action={action.id}
           data-phase={phase}
           data-forge-cli={cli ?? undefined}
+          data-local-only={METHODS[action.method].local_only ? "true" : undefined}
           data-disabled-reason={reason}
           // A disabled button cannot take focus: the wrapper does, so keyboard users reach the reason.
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the wrapper takes focus so the disabled reason is reachable
           tabIndex={disabled ? 0 : undefined}
-          className="inline-flex"
+          className={`inline-flex rounded-control ${FOCUS_RING}`}
         >
           <Button
             variant={variant}

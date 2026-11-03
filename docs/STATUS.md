@@ -118,7 +118,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E5-T17 | Seção 'Projetos' do Dashboard, sites ociosos, monitor da máquina, alertas de performance | todo | — | |
 | M2-E4-T1 | Fixtures gravadas de um daemon real (`cargo xtask qa-fixtures`) | todo | — | |
 | M2-E4-T2 | Matriz de screenshots, folhas de contato e docs/07 §12 | todo | — | |
-| M2-E4-T3 | Checklist §11 automatizado (`qa:check`) com autotestes negativos | doing | feature/M2-E4-T3-qa-checklist-automation | |
+| M2-E4-T3 | Checklist §11 automatizado (`qa:check`) com autotestes negativos | review | feature/M2-E4-T3-qa-checklist-automation | `pnpm qa:check` = lint + Playwright (`playwright.qa.config.ts`, `qa/checks/*.spec.ts`, regras em `lib.ts`): 299 testes verdes em 2,3-3,3 min nesta máquina (build qa incluso), 6 skipped (atalhos §8 sem implementação, M2-E1-T14); relatório JSON/HTML em `qa/out/check-report`. 14 casos negativos em `/qa/selftest` (só build qa) + positivo `ok`; regra local `forgebox-disable/needs-reason` + `reportUnusedDisableDirectives`; CI e `ci.ps1 -Desktop`. Achados corrigidos: anel de foco ausente (Titlebar, WindowControls, `select` de idioma, wrappers de ActionButton/ErrorNotice), VirtualList não focável, `--state-failed` dark 4,1:1 → `#FF6259`, `--accent`/`--fg-on-accent` agora seguem o accent do Windows (texto preto/branco ≥ 4,5:1), `data-error-code` no ErrorNotice e `data-local-only` no ActionButton. |
 | M2-E4-T4 | Orçamentos de performance e resiliência (docs/07 §10, docs/03 §7.5) | todo | — | |
 | M2-E4-T5 | Gate de paridade GUI/CLI (`gui-commands.json` + `cli-only.yaml`) | todo | — | |
 | M2-E4-T6 | Passe inicial de QA no shell e primitivas (achados, correções, tamanho mínimo, `--on-accent`) | todo | — | |
