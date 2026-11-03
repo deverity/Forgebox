@@ -63,7 +63,7 @@ jobs:
           git diff --exit-code
 
   desktop:
-    name: desktop (tokens, lint, typecheck, vitest, Playwright fake suite, tauri debug build)
+    name: desktop (tokens, lint, typecheck, vitest, Playwright fake suite, qa:check, tauri debug build)
     runs-on: windows-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
@@ -109,6 +109,9 @@ jobs:
       - name: Playwright fake-bridge suite (msedge)
         run: pnpm -C apps/desktop e2e
 
+      - name: qa:check (docs/07 section 11 checklist with negative self-tests)
+        run: pnpm -C apps/desktop qa:check
+
       - name: upload Playwright reports and screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,6 +120,8 @@ jobs:
           path: |
             apps/desktop/qa/out/playwright-report
             apps/desktop/qa/out/test-results
+            apps/desktop/qa/out/check-report
+            apps/desktop/qa/out/check-results
           if-no-files-found: ignore
           retention-days: 14
 

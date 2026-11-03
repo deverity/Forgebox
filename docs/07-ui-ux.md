@@ -37,7 +37,7 @@ Fonte única: [`docs/design/tokens.json`](design/tokens.json) (DTCG). `pnpm -C a
 --fg-on-accent     texto/ícone sobre fundo --accent (4,5:1; branco no light, preto no dark e alto contraste)
 --stroke           divisores (alpha 8–12%)
 --accent           cor do sistema Windows (`SystemAppearance.accent` do forge-core; o `AccentColor` do CSS não é confiável no WebView2) com fallback #0A84FF
---state-running    #30D158   --state-starting #FFD60A   --state-stopped #8E8E93   --state-failed #FF453A   --state-updating #64D2FF
+--state-running    #30D158   --state-starting #FFD60A   --state-stopped #8E8E93   --state-failed #FF6259 (dark; 4,5:1 sobre `--bg-surface-2`)   --state-updating #64D2FF
 --tool-*           cor por tool do manifesto (ui.color), usada só em ícone/acento, nunca em fundo grande
 ```
 - Light e dark completos. Dark é o padrão quando o sistema é dark. Contraste mínimo WCAG AA (4.5:1 texto, 3:1 UI).
@@ -186,3 +186,5 @@ Button (primary/secondary/ghost/destructive, com loading), IconButton, Toggle, S
 - [ ] Mostra comando `forge` equivalente.
 - [ ] Testado em 125% e 150% DPI.
 - [ ] Sem layout shift ao chegar dados (skeleton/altura fixa).
+
+**Automação (M2-E4-T3):** `pnpm -C apps/desktop qa:check` roda o lint estático (cores, < 11 px, texto literal, `eslint-disable` sem motivo) e, em todas as rotas e cenários do fakeBridge, axe WCAG 2.1 AA (0 serious/critical; claro/escuro, vibrancy on/off, contraste dos tokens `fg-*` sobre o fallback opaco da sidebar), teclado (Tab alcança tudo com anel `--accent`, Escape fecha e devolve o foco, atalhos do §8), texto sobre `--accent` >= 4,5:1 (#0078D4, #FFB900, #E81123, #00CC6A), CLS < 0,01 com dados 300 ms atrasados, reduced-motion (<= 100 ms, só opacidade) e contratos DOM (`data-forge-cli`, `data-error-code` + causa + ação, `local_only` desabilitado com explicação e sem caminho `C:\` no remoto). Cada regra tem um caso negativo em `/qa/selftest?case=<id>` (só no build `qa`). Todo PR de tela precisa passar `qa:check`; toda isenção de regra (`eslint-disable`) leva motivo inline (`-- porque`). Atalhos do §8 ainda não implementados aparecem como *skipped* em `qa/checks/shortcuts.ts` com a tarefa responsável (M2-E1-T14).

@@ -8,8 +8,8 @@ import type { WindowApi } from "./windowApi";
 // clickable elements), so double-click on them never maximizes.
 
 const BUTTON =
-  "inline-flex h-8 w-11.5 shrink-0 items-center justify-center text-fg-primary outline-none " +
-  "hover:bg-stroke focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent";
+  "inline-flex h-8 w-11.5 shrink-0 items-center justify-center text-fg-primary outline-hidden " +
+  "hover:bg-stroke focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent";
 const CLOSE = `${BUTTON} hover:bg-state-failed hover:text-surface`;
 
 function Glyph({ children }: { children: ReactNode }) {

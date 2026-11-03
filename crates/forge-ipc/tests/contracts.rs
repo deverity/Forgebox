@@ -73,6 +73,8 @@ const DOCS_COMMANDS: &[&str] = &[
     "forge site open",
     "forge site info",
     "forge site env",
+    "forge site pool",
+    "forge site metrics",
     "forge park",
     "forge unpark",
     "forge parked",
@@ -143,6 +145,8 @@ const DOCS_COMMANDS: &[&str] = &[
     // stats / remote
     "forge stats",
     "forge stats --watch",
+    "forge stats --series",
+    "forge stats --routes",
     "forge top",
     "forge stats export",
     "forge remote pair",
@@ -591,5 +595,66 @@ fn e2_methods_have_the_decided_roles_and_flags() {
         for field in fields {
             assert!(template.contains(field), "{name}: {template}");
         }
+    }
+}
+
+/// Roles and flags of the methods added by the metrics contract (ADR-0044).
+#[test]
+fn e5_methods_have_the_decided_roles_and_flags() {
+    let info = |name: &str| method_info(name).unwrap_or_else(|| panic!("{name} missing"));
+    // (method, kind, role, mutating, served commands, params, result or job result)
+    for (name, kind, role, mutating, cli, params, result) in [
+        (
+            "stats.series",
+            MethodKind::Call,
+            Role::Viewer,
+            false,
+            "forge stats --series",
+            "StatsSeriesParams",
+            "SeriesDto",
+        ),
+        (
+            "stats.routes",
+            MethodKind::Call,
+            Role::Viewer,
+            false,
+            "forge stats --routes",
+            "StatsRoutesParams",
+            "RoutesDto",
+        ),
+        (
+            "sites.pool_mode",
+            MethodKind::Job,
+            Role::Operator,
+            true,
+            "forge site pool",
+            "SitePoolModeParams",
+            "SiteDto",
+        ),
+        (
+            "sites.metrics",
+            MethodKind::Call,
+            Role::Operator,
+            true,
+            "forge site metrics",
+            "SiteMetricsParams",
+            "SiteDto",
+        ),
+    ] {
+        let m = info(name);
+        assert_eq!(
+            (m.kind, m.min_role, m.mutating, m.cli, m.params),
+            (kind, role, mutating, cli, params),
+            "{name}"
+        );
+        assert_eq!(m.job_result.unwrap_or(m.result), result, "{name}");
+        // Metrics are read and switched on the daemon's machine: nothing is local only.
+        assert!(!m.local_only, "{name}");
+        assert!(m.cli_template.is_some(), "{name}");
+    }
+    // `stats.get` gained `from`/`to`: the template renders the range when `from` is given.
+    let template = info("stats.get").cli_template.unwrap();
+    for field in ["[from]", "{from=--from}", "{to=--to}", "{window=--window}"] {
+        assert!(template.contains(field), "stats.get: {template}");
     }
 }

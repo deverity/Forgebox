@@ -34,3 +34,10 @@ O M2 entrega ~20 telas em paralelo. Precisamos de testes que rodem nesta máquin
 - Enquanto as telas do M2 não existem, o e2e real dirige a conexão e os serviços pelos mesmos comandos Tauri da camada de estado (`ipc_state`, `ipc_call`, `ipc_subscribe`) e verifica `data-testid="connection-status"` (`data-status`) quando a barra de status o expõe; a tarefa da barra de status deve expô-lo.
 - Cada tarefa de tela registra seus dados em `qa/fixtures/scenarios` e ganha as verificações de axe/teclado/CLS dos helpers de `e2e/fixtures.ts`.
 - Reconexão do daemon: quando o daemon morre, a ponte reinicia sozinha e o contexto mostra `starting` (não `reconnecting`, ADR-0034); `reconnecting` só aparece sem restart automático (2º kill dentro da janela de 60 s da política). O e2e real grava os eventos `forge://connection` antes do kill (sem polling), exige `connected` → `starting|reconnecting` → `connected` em < 10 s com outro pid, e cobre `reconnecting` com um 2º kill seguido de `forgeboxd --root <root>` iniciado pelo teste e reconexão em < 10 s.
+
+## Adendo (M2-E4-T3): `qa:check`
+
+- `pnpm -C apps/desktop qa:check` = `pnpm lint` + `playwright test -c playwright.qa.config.ts` (mesmo build `qa` e Edge, porta `FORGE_QA_CHECK_PORT`, padrão 4175). As regras são funções em `qa/checks/lib.ts` que devolvem violações; cada spec exige `[]` no app e não vazio no caso negativo de `/qa/selftest?case=<id>` (rota só do modo `qa`, `src/qa/selftest`). Relatório em `qa/out/check-report/{report.json,html}`.
+- `vibrancy=on` no navegador não tem o material do SO: o axe mede com o token opaco da sidebar pintado atrás (`withMaterialBackdrop`).
+- `eslint-disable` exige motivo (`-- texto`; regra local `forgebox-disable/needs-reason`) e diretivas sem efeito falham o lint.
+- O accent do Windows passa a dirigir `--accent` e `--fg-on-accent` (preto ou branco, o de maior contraste) em `applyAppearance`; alto contraste mantém os tokens próprios.

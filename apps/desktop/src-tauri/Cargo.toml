@@ -49,6 +49,8 @@ tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-autostart = { workspace = true }
 tauri-plugin-updater = { workspace = true }
 url = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

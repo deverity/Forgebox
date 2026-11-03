@@ -56,7 +56,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             window::on_second_instance(app, &argv);
         }))
-        .plugin(autostart::plugin());
+        .plugin(autostart::plugin())
+        // M2-E1-T13: "Copiar comando" and the native dialog of PathField (only offered when the
+        // daemon is local; capabilities/main.json grants just these two commands).
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init());
     if let updater::Activation::Active { pubkey, .. } = &activation {
         builder = builder.plugin(
             tauri_plugin_updater::Builder::new()

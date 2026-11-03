@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { startAllServices } from "../../actions/services";
+import { runAction } from "../../actions/registry";
 import { Button } from "../../design/primitives/Button";
 import { IconButton } from "../../design/primitives/IconButton";
 import { toast } from "../../design/primitives/toastStore";
@@ -30,9 +32,7 @@ export function StartAll({ collapsed }: { collapsed: boolean }) {
 
   const run = () => {
     setBusy(true);
-    runtime.queue
-      .job("services.start", {})
-      .then((handle) => handle.done)
+    runAction(runtime.queue, startAllServices, undefined)
       .catch((error: unknown) => {
         toast.show({ kind: "error", message: errorMessage(error) });
       })

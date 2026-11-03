@@ -13,6 +13,7 @@ import { logsRoute } from "./routes/logs";
 import { mailRoute } from "./routes/mail";
 import { chromeRoute, onboardingRoute } from "./routes/onboarding";
 import { phpRoute } from "./routes/php";
+import { qaSelftestRoute } from "./routes/qaSelftest";
 import { indexRoute, rootRoute, shellRoute } from "./routes/root";
 import { servicesRoute } from "./routes/services";
 import { settingsRoute } from "./routes/settings";
@@ -35,6 +36,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   chromeRoute.addChildren([onboardingRoute]),
   ...(galleryRoute === null ? [] : [galleryRoute]),
+  ...(qaSelftestRoute === null ? [] : [qaSelftestRoute]),
   shellRoute.addChildren([
     dashboardRoute,
     servicesRoute,

@@ -925,6 +925,38 @@
     "expected": "forge new laravel loja --php 8.4 --db mysql --dir C:\\www"
   },
   {
+    "method": "sites.pool_mode",
+    "params": {
+      "site": "loja.test",
+      "mode": "dedicated"
+    },
+    "expected": "forge site pool loja.test dedicated"
+  },
+  {
+    "method": "sites.pool_mode",
+    "params": {
+      "site": "loja.test",
+      "mode": "shared"
+    },
+    "expected": "forge site pool loja.test shared"
+  },
+  {
+    "method": "sites.metrics",
+    "params": {
+      "site": "loja.test",
+      "enabled": false
+    },
+    "expected": "forge site metrics loja.test off"
+  },
+  {
+    "method": "sites.metrics",
+    "params": {
+      "site": "loja.test",
+      "enabled": true
+    },
+    "expected": "forge site metrics loja.test on"
+  },
+  {
     "method": "db.list",
     "params": {
       "instance": null
@@ -1434,6 +1466,65 @@
       "window": "24h"
     },
     "expected": "forge stats loja.test --window 24h"
+  },
+  {
+    "method": "stats.get",
+    "params": {
+      "site": "loja.test",
+      "window": "5m",
+      "from": "2026-10-27T12:00:00Z",
+      "to": null
+    },
+    "expected": "forge stats loja.test --from 2026-10-27T12:00:00Z",
+    "note": "from given: an exact range, window only labels the result"
+  },
+  {
+    "method": "stats.get",
+    "params": {
+      "site": null,
+      "window": "1h",
+      "from": "2026-10-27T12:00:00Z",
+      "to": "2026-10-27T13:00:00Z"
+    },
+    "expected": "forge stats --from 2026-10-27T12:00:00Z --to 2026-10-27T13:00:00Z"
+  },
+  {
+    "method": "stats.get",
+    "params": {
+      "site": "loja.test",
+      "window": "1h",
+      "from": null,
+      "to": "2026-10-27T12:00:00Z"
+    },
+    "expected": "forge stats loja.test --window 1h --to 2026-10-27T12:00:00Z",
+    "note": "no from: the last window before to"
+  },
+  {
+    "method": "stats.series",
+    "params": {
+      "site": "loja.test",
+      "range": "1h",
+      "from": null,
+      "to": null
+    },
+    "expected": "forge stats loja.test --series --window 1h"
+  },
+  {
+    "method": "stats.series",
+    "params": {
+      "site": "loja.test",
+      "range": "24h",
+      "from": "2026-10-26T00:00:00Z",
+      "to": "2026-10-27T00:00:00Z"
+    },
+    "expected": "forge stats loja.test --series --window 24h --from 2026-10-26T00:00:00Z --to 2026-10-27T00:00:00Z"
+  },
+  {
+    "method": "stats.routes",
+    "params": {
+      "site": "loja.test"
+    },
+    "expected": "forge stats loja.test --routes"
   },
   {
     "method": "stats.top",

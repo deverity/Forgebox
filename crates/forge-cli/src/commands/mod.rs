@@ -121,6 +121,8 @@ pub(crate) mod tests_support {
             processes: vec![],
             created_at: now,
             updated_at: now,
+            pool_mode: Default::default(),
+            metrics_enabled: true,
         }
     }
 }

@@ -707,6 +707,22 @@ export type DbUrlParams = {
 	database: string,
 };
 
+/**  Which volume a [`DiskSpaceDto`] describes (never its path, ADR-0009). */
+export type DiskRole = 
+/**  The volume of the Forgebox root folder. */
+"root" | 
+/**  The volume of `data/`, only when it is not the root's. */
+"data";
+
+/**  Size and free space of a volume (`GetDiskFreeSpaceExW`, docs/14 §4.2). */
+export type DiskSpaceDto = {
+	role: DiskRole,
+	total: number,
+	free: number,
+	/**  Free bytes the daemon's user may still write (quotas); at most `free`. */
+	available: number,
+};
+
 /**  Which path really takes the OS resolver to the sites of a TLD (docs/06 §5.4). */
 export type DnsMode = 
 /**  An NRPT rule Windows follows (verified by asking the OS resolver). */
@@ -1546,6 +1562,30 @@ export type LogsSubscribeParams = {
 };
 
 /**
+ *  The machine against the Forgebox share of it (dashboard machine monitor, `forge top`
+ *  header; docs/14 §4.2). CPU percentages are shares of the whole machine, as the Task
+ *  Manager shows them, over the same interval.
+ */
+export type MachineStatsDto = {
+	at: string,
+	/**  Busy CPU of the machine; `None` until two samples exist. */
+	cpu_pct: number | null,
+	logical_cpus: number,
+	mem_total: number,
+	/**  Task Manager "Available". */
+	mem_available: number,
+	/**
+	 *  CPU of the daemon, the instances, the pools and the apps together; never above
+	 *  `cpu_pct`.
+	 */
+	forgebox_cpu_pct: number | null,
+	/**  Working set of the same processes. */
+	forgebox_rss: number,
+	/**  The root's volume, then `data/`'s when it is another one. */
+	disks: DiskSpaceDto[],
+};
+
+/**
  *  Result of `mail.attachment`: the decoded size is at most
  *  [`MAIL_ATTACHMENT_MAX_BYTES`].
  */
@@ -1697,7 +1737,16 @@ export type MetricsEnvelope = {
 	sample: SiteStatsDto,
 };
 
-/**  Params of `metrics.subscribe` (`forge stats --watch`, GUI performance tab). */
+/**
+ *  Params of `metrics.subscribe` (`forge stats --watch`, GUI performance tab).
+ * 
+ *  Samples are state, not history (ADR-0044): the subscription starts with a snapshot
+ *  (one sample per matched site, metrics off included), then one sample per site with
+ *  metrics on every [`StatsWindow::subscribe_cadence_ms`]. `seq` counts the items of the
+ *  subscription from its `last_seq`, which is `resume_from` when given: a resumed
+ *  subscription answers a fresh snapshot and nothing of the gap is replayed (the charts
+ *  refill it with `stats.series`); queue drops are `metrics.lagged` (ADR-0015).
+ */
 export type MetricsSubscribeParams = {
 	/**  One site or all. */
 	site?: SiteRef | null,
@@ -2075,6 +2124,22 @@ export type QuickSettingKind = "toggle" | "select" | "number" | "text" | "path" 
 /**  Checkboxes over `options`. */
 "multi";
 
+/**  A failed request of the access log (v1 source of "Erros recentes", ADR-0044). */
+export type RecentErrorDto = {
+	/**  End of the request. */
+	at: string,
+	status: number,
+	method: string,
+	/**  Normalized route, never with a query string. */
+	route: string,
+	/**  Host the request was for (the site's host or one of its aliases). */
+	host: string,
+	duration_ms: number | null,
+	/**  Upstream (PHP/proxy) time, when the server logs it. */
+	upstream_ms: number | null,
+	bytes: number,
+};
+
 /**  Params of `registry.add`. */
 export type RegistryAddParams = {
 	url: string,
@@ -2190,6 +2255,47 @@ export type Role =
 /**  Everything. */
 "admin";
 
+/**  One monitored route of the top-K. */
+export type RouteStatsDto = {
+	/**  `GET`, `POST`, ... (`OTHER` for unknown methods; empty when the log has none). */
+	method: string,
+	/**  Normalized route (`/users/{id}`), never with a query string. */
+	route: string,
+	/**  Estimated requests since `RoutesDto.since`: an upper bound. */
+	count: number,
+	/**  Lower bound of the same count (`count - overcount`). */
+	count_min: number,
+	/**
+	 *  Requests observed since the route entered the table: what the latency and the
+	 *  error counts cover.
+	 */
+	observed: number,
+	status_4xx: number,
+	status_5xx: number,
+	/**  `(4xx + 5xx) / observed`, in percent. */
+	error_pct: number | null,
+	mean_ms: number | null,
+	/**  Percentiles at 2 significant digits. */
+	p50_ms: number | null,
+	p90_ms: number | null,
+	p99_ms: number | null,
+};
+
+/**  Result of `stats.routes`. */
+export type RoutesDto = {
+	site_id: SiteId,
+	host: string,
+	/**  Start of the oldest route generation in the report. */
+	since: string,
+	at: string,
+	/**  Requests seen since `since`, monitored or not. */
+	total: number,
+	/**  At most 100 routes, by decreasing `count`. */
+	routes: RouteStatsDto[],
+	/**  The last 50 5xx and the last 50 4xx of the last 24 h, newest first. */
+	recent_errors: RecentErrorDto[],
+};
+
 /**  Result of the `system.self_update` job. */
 export type SelfUpdateDto = {
 	current: string,
@@ -2205,6 +2311,72 @@ export type SelfUpdateParams = {
 	check?: boolean,
 	/**  `stable` (default) or `beta`. */
 	channel?: string | null,
+};
+
+/**  Result of `stats.series`. */
+export type SeriesDto = {
+	site_id: SiteId,
+	host: string,
+	range: StatsWindow,
+	step_ms: number,
+	/**  Span covered: aligned to the step, limited by the retention of the step's tier. */
+	from: string,
+	to: string,
+	/**  Oldest first, one per step of `[from, to)`. */
+	points: SeriesPointDto[],
+	/**  Oldest first. */
+	markers: SeriesMarkerDto[],
+};
+
+/**
+ *  An event drawn on the charts (PHP switch, restart, config change, update). Built from
+ *  the `events` table; the GUI labels it from `kind` and `args`, never from English text.
+ */
+export type SeriesMarkerDto = {
+	/**  `seq` of the event (`events.list` gives the whole event). */
+	seq: number,
+	at: string,
+	/**
+	 *  Event kind: `site.php_changed`, `site.updated`, `service.running|stopped|crashed`
+	 *  of the site's web server or pool, `tool.updated|rollback` of its PHP,
+	 *  `config.rendered` of its vhost.
+	 */
+	kind: string,
+	/**
+	 *  Selected payload fields for the label (`from`, `to`, `tool`, `instance`, `owner`).
+	 *  Never an absolute path: `config.rendered` gives its root-relative `fs_path`.
+	 */
+	args: { [key in string]: string },
+};
+
+/**
+ *  One step of a series. Steps without requests are present (dense series) with zero
+ *  counts and no percentiles.
+ */
+export type SeriesPointDto = {
+	/**  Start of the step. */
+	at: string,
+	requests: number,
+	rps: number | null,
+	bytes: number,
+	status_4xx: number,
+	status_5xx: number,
+	error_pct: number | null,
+	/**  Total request time percentiles; `None` without requests. */
+	p50_ms: number | null,
+	p90_ms: number | null,
+	p99_ms: number | null,
+	/**
+	 *  Attributed CPU/RAM (minutes and hours average their 10 s points); `None` when no
+	 *  resource sample covers the step.
+	 */
+	cpu_pct: number | null,
+	mem_bytes: number | null,
+	workers_active: number | null,
+	/**  CPU/RAM are apportioned estimates (shared pool). */
+	approx: boolean,
+	/**  Adaptive sampling was active in the step. */
+	sampled: boolean,
 };
 
 /**  Params of `services.create`. */
@@ -2567,6 +2739,13 @@ export type SiteDto = {
 	processes: SiteProcessDto[],
 	created_at: string,
 	updated_at: string,
+	/**  Shared or dedicated PHP pool (`sites.pool_mode`). API 1.1 (ADR-0044). */
+	pool_mode?: SitePoolMode,
+	/**
+	 *  Per-site metrics switch (`sites.metrics`); off by default in portable roots. API
+	 *  1.1 (ADR-0044); a 1.0 peer's JSON reads as on.
+	 */
+	metrics_enabled?: boolean,
 };
 
 /**  Result of `sites.env`. */
@@ -2604,6 +2783,16 @@ export type SiteKind = "php" | "static" | "proxy" | "app";
 /**  Result of `sites.list`. */
 export type SiteListDto = {
 	sites: SiteDto[],
+};
+
+/**
+ *  Params of `sites.metrics` (`forge site metrics`): turns the site's metrics on or off.
+ *  Off stops routing its access log lines into the aggregator; the stored history stays.
+ *  API 1.1 (ADR-0044).
+ */
+export type SiteMetricsParams = {
+	site: SiteRef,
+	enabled: boolean,
 };
 
 /**  Params of `sites.new` (`forge new laravel loja`). */
@@ -2656,7 +2845,7 @@ export type SitePhpDto = {
 	exact: string | null,
 	/**  Version currently serving the site. */
 	resolved: string | null,
-	/**  Pool upstream (`php_8_3`). */
+	/**  Pool upstream (`php_8_3`; dedicated pool: `php_8_3__loja-test`). */
 	upstream: string | null,
 };
 
@@ -2664,6 +2853,26 @@ export type SitePhpDto = {
 export type SitePhpParams = {
 	site: SiteRef,
 	php: string,
+};
+
+/**  Who a site's PHP workers serve (docs/06 §2.1, docs/14 §2, ADR-0044). */
+export type SitePoolMode = 
+/**
+ *  The pool of the PHP version, shared by every site on it (`php_8_3`); CPU/RAM are
+ *  apportioned by upstream time and shown as ≈.
+ */
+"shared" | 
+/**  A pool of its own (`php_8_3__loja-test`): exact CPU/RAM, more memory. */
+"dedicated";
+
+/**
+ *  Params of `sites.pool_mode` (job, `forge site pool`): moves a PHP site to its own pool
+ *  or back to the shared one, blue/green without dropping requests (ADR-0021). API 1.1
+ *  (ADR-0044).
+ */
+export type SitePoolModeParams = {
+	site: SiteRef,
+	mode: SitePoolMode,
 };
 
 /**  A process managed for a site (Procfile entry, docs/06 §6). */
@@ -2737,14 +2946,22 @@ export type SiteShareParams = {
 	stop?: boolean,
 };
 
-/**  Metrics of one site over a window (docs/14 §1). */
+/**
+ *  Metrics of one site over a window (docs/14 §1).
+ * 
+ *  Percentiles always come from merged HDR histograms, never from averages of percentiles
+ *  (ADR-0044). The fields after `sampled` are API 1.1 (ADR-0044) and default when a 1.0
+ *  peer omits them.
+ */
 export type SiteStatsDto = {
 	site_id: SiteId,
 	host: string,
 	window: StatsWindow,
+	/**  End of the span covered (at most the daemon's clock). */
 	at: string,
 	requests: number,
 	rps: number | null,
+	/**  Total request time (web server's view), p50. */
 	p50_ms: number | null,
 	p90_ms: number | null,
 	p99_ms: number | null,
@@ -2756,6 +2973,43 @@ export type SiteStatsDto = {
 	approx: boolean,
 	/**  Adaptive sampling was active. */
 	sampled: boolean,
+	/**
+	 *  Start of the span covered: the window or `from`/`to` aligned outward to whole
+	 *  buckets and limited by the retention. `None` from a 1.0 peer.
+	 */
+	from?: string | null,
+	/**  Response body bytes. */
+	bytes?: number,
+	/**
+	 *  Requests by status class (`1xx` counts WebSocket upgrades); they add up to
+	 *  `requests`.
+	 */
+	status_1xx?: number,
+	status_2xx?: number,
+	status_3xx?: number,
+	status_4xx?: number,
+	status_5xx?: number,
+	/**
+	 *  Upstream (PHP) time percentiles, from the server's upstream time (`ut`). `None`
+	 *  without upstream requests or when the server does not log it.
+	 */
+	php_p50_ms?: number | null,
+	php_p90_ms?: number | null,
+	php_p99_ms?: number | null,
+	/**  Busy PHP workers attributed to the site (shared pools: apportioned, see `approx`). */
+	workers_active?: number | null,
+	/**
+	 *  OS processes charged to the site exactly: its apps and its dedicated pool's
+	 *  workers. `None` when the site has neither.
+	 */
+	processes?: number | null,
+	/**  End of the last request seen (at most the daemon's clock), within the retention. */
+	last_request_at?: string | null,
+	/**
+	 *  The site's metrics switch (`sites.metrics`). When off, the counters are zero and the
+	 *  sample only says so.
+	 */
+	metrics_enabled?: boolean,
 };
 
 /**  A site that depends on a tool version. */
@@ -2809,13 +3063,48 @@ export type StatsExportParams = {
 	format: StatsExportFormat,
 };
 
-/**  Params of `stats.get`. */
+/**
+ *  Params of `stats.get`.
+ * 
+ *  The span ends at `to` (API 1.1; default now). Without `from` it is the last `window`
+ *  before `to`; with `from` (API 1.1) it is `[from, to)` and `window` only labels the
+ *  result: an exact merge over an arbitrary range, aligned outward to whole buckets and
+ *  limited by the retention (ADR-0044).
+ */
 export type StatsParams = {
 	site?: SiteRef | null,
 	window?: StatsWindow,
+	from?: string | null,
+	to?: string | null,
 };
 
-/**  Aggregation window. */
+/**
+ *  Params of `stats.routes` ("Rotas mais lentas" and "Erros recentes", docs/14 §4.1).
+ *  There is no window: routes cover the two 12 h generations of the top-K (12 to 24 h,
+ *  `RoutesDto.since`) and errors the last 24 h (ADR-0044, ADR-0048).
+ */
+export type StatsRoutesParams = {
+	site: SiteRef,
+};
+
+/**
+ *  Params of `stats.series` (Performance tab charts, `forge stats <site> --series`).
+ * 
+ *  `range` picks the step ([`StatsWindow::series_step_ms`]). Without `from`, the series
+ *  covers the last `range`; with `from` it covers `[from, to)` (`to` defaults to now) at
+ *  the step of `range`. At most [`SERIES_MAX_POINTS`] points (`invalid_input` above).
+ */
+export type StatsSeriesParams = {
+	site: SiteRef,
+	range?: StatsWindow,
+	from?: string | null,
+	to?: string | null,
+};
+
+/**
+ *  Aggregation window. For `stats.series` it is the `range`, which also picks the step
+ *  (docs/14 §4.1): `1m`/`5m` → 2 s, `1h` → 10 s, `24h` → 1 min, `7d` → 1 h.
+ */
 export type StatsWindow = "1m" | "5m" | "1h" | "24h" | "7d";
 
 /**
@@ -3426,6 +3715,8 @@ export type ToolWhichParams = {
 /**  Result of `stats.top`. */
 export type TopDto = {
 	processes: ProcessUsageDto[],
+	/**  API 1.1 (ADR-0044); `None` from a 1.0 peer. */
+	machine?: MachineStatsDto | null,
 };
 
 /**  Kind of transport behind a connection. */

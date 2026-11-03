@@ -7,14 +7,14 @@ Uma aba **Desempenho** em cada site e um dashboard geral mostrando, por vhost e 
 
 | Métrica | Fonte | Precisão |
 |---|---|---|
-| Latência por request, status, bytes, host, URI, upstream usado | **Access log estruturado** do web server, gerado pelos nossos templates: Nginx `log_format forgebox escape=json '{"t":"$msec","host":"$host","s":$status,"rt":$request_time,"ut":"$upstream_response_time","b":$body_bytes_sent,"m":"$request_method","u":"$uri","up":"$upstream_addr"}'`; Apache `LogFormat "{\"t\":\"%{msec}t\",\"host\":\"%{Host}i\",\"s\":%s,\"rt_us\":%D,\"b\":%B,\"m\":\"%m\",\"u\":\"%U\",\"up\":\"%{BALANCER_WORKER_NAME}e\"}" forgebox_json` (tempo em **µs** na chave `rt_us`, `%B` em vez de `%b` para nunca emitir `-` fora de JSON válido; o parser do daemon é por servidor); Caddy JSON log nativo. O daemon faz *tail* (polling + leitura incremental, §3.2) e agrega. | Exata, por request |
+| Latência por request, status, bytes, host, URI, upstream usado | **Access log estruturado** do web server, gerado pelos nossos templates: Nginx `log_format forgebox escape=json '{"t":"$msec","host":"$host","s":$status,"rt":$request_time,"ut":"$upstream_response_time","b":$body_bytes_sent,"m":"$request_method","u":"$uri","up":"$upstream_addr"}'`; Apache `LogFormat "{\"t\":\"%{msec}t\",\"host\":\"%{Host}i\",\"s\":%s,\"rt_us\":%D,\"b\":%B,\"m\":\"%m\",\"u\":\"%U\",\"up\":\"%{BALANCER_WORKER_NAME}e\"}" forgebox_json` (tempo em **µs** na chave `rt_us`, `%B` em vez de `%b` para nunca emitir `-` fora de JSON válido); Caddy JSON log nativo. **Não há parser por servidor:** o manifesto declara o mapeamento de campos (`logs[].access`, [04](04-tool-manifest-spec.md) §1.2: ponteiros JSON + unidades) e um único parser o segue (§3.1, [ADR-0044](adr/0044-metrics-v1.md)). O daemon faz *tail* (polling + leitura incremental, §3.2) e agrega. | Exata, por request |
 | Tempo de PHP (sem rede/servidor) | `$upstream_response_time` (Nginx) / `%{..}` do mod_proxy | Exata |
 | req/s, p50/p90/p99 por janela | Agregação no daemon em histogramas **HDR** (layout do crate `hdrhistogram`: 1 µs a 10 min, 3 dígitos significativos) por site, em camadas de 2 s, 10 s, 1 min e 1 h (§3.4) | Exata a 3 dígitos (erro ≤ 1/1024 do valor) |
 | CPU/RSS por **processo** | `GetProcessTimes`/`PROCESS_MEMORY_COUNTERS_EX`/`GetProcessHandleCount` a cada 2 s, somados por Job da instância (`forge_supervisor::metrics`, [03](03-engine.md) §6; CPU % normalizado pelas CPUs lógicas, como o Gerenciador de Tarefas) | Exata por PID (±10 % de `Get-Process`, teste de aceite) |
-| CPU/RSS por **vhost** | Atribuição: workers de um pool são compartilhados entre sites da mesma versão de PHP. Dois modos: **(a) `pool_mode: shared`** (padrão) → o custo do pool é rateado entre sites proporcionalmente ao `upstream_response_time` somado na janela (estimativa, marcada como "≈"); **(b) `pool_mode: dedicated`** por site → pool exclusivo, atribuição exata. Processes (`web`, `queue`) de um site são sempre exatos (PIDs próprios). | (a) estimativa, (b) exata |
-| Memória pico por request PHP | Opcional: `conf.d/30-forgebox-metrics.ini` com `auto_prepend_file` que registra `memory_get_peak_usage()` e tempo em um ring buffer compartilhado (arquivo mmap em `tmp/metrics/php_<ver>.bin`) via extensão ou header `X-Forgebox-Mem` ecoado pelo servidor no log. **Opt-in** por site (toggle "instrumentação profunda"); overhead < 0,1 ms. | Exata quando ligado |
-| Consultas lentas | `slow_query_log` do MySQL/MariaDB e `log_min_duration_statement` do PostgreSQL ativados por instância (toggle), tail pelo daemon, correlacionados por tempo/`FORGEBOX_SITE` (comentário SQL injetado por `auto_prepend` opcional) | Boa |
-| Erros PHP | `error_log` por versão, tail, contagem por site via `FORGEBOX_SITE` no `error_log` format (`log_errors_max_len`, prefixo via `auto_prepend`) | Boa |
+| CPU/RSS por **vhost** | Atribuição: workers de um pool são compartilhados entre sites da mesma versão de PHP. Dois modos: **(a) `pool_mode: shared`** (padrão) → o custo do pool é rateado entre sites proporcionalmente ao `upstream_response_time` somado na janela (estimativa, marcada como "≈"); **(b) `pool_mode: dedicated`** por site (`forge site pool <site> dedicated`, `sites.pool_mode`; upstream `php_<ver>__<slug>`, [06](06-sites-vhosts-multi-php.md) §2.1) → pool exclusivo, atribuição exata. Processes (`web`, `queue`) de um site são sempre exatos (PIDs próprios). O servidor web **não** é atribuído a sites (aparece em `forge top` e na parcela do Forgebox, §4.2). | (a) estimativa, (b) exata |
+| Memória pico por request PHP | **M5** (adiado, [ADR-0044](adr/0044-metrics-v1.md) §13). Opcional: `conf.d/30-forgebox-metrics.ini` com `auto_prepend_file` que registra `memory_get_peak_usage()` e tempo em um ring buffer compartilhado (arquivo mmap em `tmp/metrics/php_<ver>.bin`) via extensão ou header `X-Forgebox-Mem` ecoado pelo servidor no log. **Opt-in** por site (toggle "instrumentação profunda"); overhead < 0,1 ms. | Exata quando ligado |
+| Consultas lentas | **M5** (adiado). `slow_query_log` do MySQL/MariaDB e `log_min_duration_statement` do PostgreSQL ativados por instância (toggle), tail pelo daemon, correlacionados por tempo/`FORGEBOX_SITE` (comentário SQL injetado por `auto_prepend` opcional) | Boa |
+| Erros PHP | **M5** (adiado; no v1 os "Erros recentes" são os 4xx/5xx do access log, §3.4). `error_log` por versão, tail, contagem por site via `FORGEBOX_SITE` no `error_log` format (`log_errors_max_len`, prefixo via `auto_prepend`) | Boa |
 | Disco por projeto | Varredura periódica (1 h) do `root` + `data/` dos bancos ligados ao site | Aproximada |
 
 ## 3. Pipeline no daemon (`forge-metrics`, crate novo)
@@ -28,13 +28,14 @@ proc sampler (2 s) ─▶ (pid→owner) ─▶ agrega por Instance/Pool/App ─�
                                              │
             ┌────────────────────────────────┼────────────────────────────┐
             ▼                                ▼                            ▼
-   SQLite `metrics_1m` (7 dias)    stream IPC `metrics.site{site, window}`   export OpenMetrics
-   `metrics_1h` (90 dias)          (GUI/CLI assinam com filtro)              `/_forgebox/metrics`
+   SQLite `metrics_1m` (7 dias)    API `stats.get|series|routes` e stream    `forge stats export`
+   `metrics_1h` (90 dias, §3.5)    `metrics.subscribe` → `metrics.site` (§3.6) (OpenMetrics: M5)
 ```
 - Percentis são calculados sobre histogramas HDR (layout e codificação V2 do crate `hdrhistogram`) por janela; merge de janelas é exato (não se faz média de percentis). Ver §3.4.
-- Custo alvo: < 2 % de CPU do daemon a 1.000 req/s; se o log crescer mais rápido que o tail, amostragem adaptativa (marcada na UI).
-- Rotação dos access logs feita pelo daemon (`logs/nginx/access.json.1`), tail segue a rotação.
-- Tudo é **desligável** por site ou global (`prefs.metrics.enabled`), e desligado em `portable.flag` por padrão.
+- Custo alvo: < 2 % de CPU do daemon a 1.000 req/s, **da máquina normalizada como no Gerenciador de Tarefas** (também reportado em % de um núcleo, com a linha de base ociosa), medido em máquina quieta (§3.6); se o log crescer mais rápido que o tail, amostragem adaptativa (marcada na UI).
+- Rotação dos access logs conforme `logs[].access.rotate` do manifesto, sem código por servidor: `rename-reopen` (nginx: o daemon renomeia para `access.json.1`... e roda o `reopen` do manifesto pelo caminho de reload da instância), `self` (Caddy rotaciona pelo template, `roll_size`/`roll_keep`) ou `none` (Apache, provisório: decidido por experimento no M2-E5-T12, cujo resultado por servidor entra aqui). O tail segue qualquer uma delas (§3.2).
+- Tudo é **desligável** por site (`forge site metrics <site> on|off`, `sites.metrics`, coluna `metrics_enabled`) ou global (`[metrics] enabled`), e desligado por padrão em raízes portáteis (`portable.flag`) enquanto o usuário não definir. Desligado, as linhas do site não entram no agregador; o histórico guardado fica.
+- `forge-metrics` depende só de `forge-core` (verificado pelo `cargo xtask arch-guard`); o daemon adapta as amostras do supervisor/`forge-fcgi` e mapeia os resultados para DTOs ([ADR-0044](adr/0044-metrics-v1.md) §11).
 
 ### 3.1 Parser do access log (`forge-metrics`, M2-E5-T3)
 Código puro (sem I/O nem async), usado pelo pipeline de métricas e pelo alvo `site:` dos logs do daemon ([09](09-cli.md)):
@@ -86,38 +87,62 @@ Função pura por balde (10 s). Entrada: `PoolSample` (CPU % da máquina, workin
 - **Persistência (T7).** Com `minute_outbox`, `take_minutes()` devolve cada minuto quando fecha (`complete`) e os atrasados de minutos já fechados como deltas a somar; somar é exato. A fila é limitada (8.192; as mais antigas saem e são contadas). `restore_minute` reconstrói o minuto e a hora no boot sem reenviá-los. Minuto já fechado vai ao tier 2 e os histogramas de minuto são cortados ao orçamento e ao teto na hora, não só no próximo `advance`: reidratar 24 h a 1.000 req/s tem pico de 0,33 MiB em ms e 2,31 MiB em µs (2,5 MiB e 44,8 MiB se todo minuto guardasse o histograma). Minuto restaurado ainda aberto (relógio que voltou entre dois boots) fica à parte dos atrasados: as consultas o veem e ele entra no minuto ao fechar, mas o delta `complete` desse minuto só tem os registros desta execução (minuto só restaurado não gera delta), então somar os deltas ao que está guardado continua exato.
 - **Medido** (`crates/forge-metrics/tests/agg.rs`; os testes de 24 h e o de custo rodam em release e são ignorados; i5-1135G7 com outros builds rodando). Força bruta com 1,08 milhão de amostras log-normais (resolução de µs) e 108 mil bimodais: contagens, somas e p50/p90/p99 de janelas (1m, 5m, 1h, 24h) e intervalos iguais ao `highest_equivalent` da força bruta. 60 minutos mesclados são iguais a 1 h byte a byte e iguais ao `hdrhistogram`. **Memória** (alocador que conta por thread): site ocioso ~1 KiB; site ativo a 1.000 req/s por 24 h com durações em ms (nginx; o Apache no Windows registra no tick de 15,6 ms) **1,51 MiB**; com durações em µs (o Caddy no Windows tem resolução abaixo de 1 ms) **5,1 MiB**, porque quase cada requisição vira um índice distinto com 3 dígitos (tier 0 ~1,6 MB e horas ~1,35 MB; uma codificação entrópica chegaria perto de 2 MiB, mas com um custo de CPU que não compensa). O orçamento de 2 MiB vale para logs com resolução de ms, a carga de referência (nginx, gate do M2-E5-T13); o caso em µs tem limite de regressão de 6 MiB ([ADR-0048](adr/0048-metrics-aggregator-sparse-hdr-tiers-routes.md)); 50 sites mistos (2 a 1.000, 8 a 100, 15 a 10 req/s e 25 com 1 req/min) por 24 h **36,5 MiB**; a estimativa por capacidade (`site_heap_bytes`) fica a 0,1 % do medido. **Custo:** 212 ns por registro, com um `advance` a cada 250 registros. Top-20 verdadeiro sempre presente com Zipf s de 0,7 a 1,2 sobre 10 mil rotas (10 sementes × 1 milhão de requisições cada), também com gerações de rotas de 5 min (o relatório cruza a rotação), e `count`/`count - overcount` sempre limites superior/inferior da verdade.
 
+### 3.5 Persistência (M2-E5-T7, [ADR-0044](adr/0044-metrics-v1.md) §3)
+- Uma migration (próximo número livre no rebase): `metrics_1m` (**7 dias**) e `metrics_1h` (**90 dias**), STRICT, com contagens, somas e os histogramas rt/ut como **blobs HDR V2** (sem DEFLATE) e a coluna **`format_version`**; `metrics_tail` (checkpoints do tail, §3.2); colunas `sites.pool_mode` (`shared`|`dedicated`, padrão `shared`) e `sites.metrics_enabled` (padrão 1); índice em `events(ts)` para os marcadores dos gráficos.
+- A cada minuto, os minutos fechados (`take_minutes`, §3.4) e os checkpoints vão numa única operação da thread de escrita do Store; rollup por hora, poda diária; no boot, os tiers 1 e 2 são reidratados a partir de `metrics_1m`. Percentis de qualquer período vêm de histogramas mesclados, nunca de médias.
+- Consultas acima de 24 h (séries de 7 d, `stats.get {from, to}` antigos, `forge stats export`) leem do SQLite.
+
+### 3.6 API e streams ([ADR-0044](adr/0044-metrics-v1.md) §8-§10)
+Aditivos na API 1.1; enquanto o backend não chega, cada método responde `not_implemented` com a tarefa dona.
+
+| Método | O que devolve | Tarefa |
+|---|---|---|
+| `stats.get {site?, window, from?, to?}` | `StatsDto`: um `SiteStatsDto` por site. Sem `from`, a última `window` até `to` (padrão agora); com `from`, o intervalo exato `[from, to)` alinhado para fora e limitado à retenção (`SiteStatsDto.from`/`at` dizem o trecho coberto). Campos 1.1: `bytes`, `status_1xx..5xx`, `php_p50/p90/p99_ms` (do `ut`), `workers_active`, `processes`, `last_request_at`, `metrics_enabled` | M2-E5-T8 |
+| `metrics.subscribe {site?, window, resume_from?}` | `metrics.site` com `{subscription_id, seq, sample}`: snapshot imediato (todo site casado, desligados inclusive), depois uma amostra por site ligado a cada **2 s** (`1m`/`5m`), **10 s** (`1h`) ou **60 s** (`24h`/`7d`). `seq` por assinatura a partir de `last_seq` = `resume_from` (0 sem ele); retomar manda um snapshot novo e **não** reenvia o intervalo perdido (a GUI recarrega a série); descartes da fila → `metrics.lagged {missed}` ([ADR-0015](adr/0015-ipc-protocol.md)) | M2-E5-T8 |
+| `stats.series {site, range, from?, to?}` | `SeriesDto {step_ms, from, to, points, markers}`. Passo pelo `range`: `1m`/`5m` → 2 s, `1h` → 10 s, `24h` → 1 min, `7d` → 1 h (30, 150, 360, 1.440, 168 pontos); série densa (passos vazios com zero e sem percentis); no máximo 2.000 pontos (`invalid_input` acima). Marcadores da tabela `events` (sem kinds novos): `site.php_changed`/`site.updated` do site, `service.*` do servidor web e do pool dele, `tool.updated`/`tool.rollback` do PHP dele, `config.rendered` do vhost, como `{seq, at, kind, args}`, nunca com caminho absoluto | M2-E5-T9 |
+| `stats.routes {site}` | `RoutesDto {since, total, routes, recent_errors}`: top-K (§3.4) com `count` (limite superior), `count_min`, `observed`, 4xx/5xx e p50/p90/p99 de 2 dígitos; os últimos 50 5xx e 50 4xx, mais novos primeiro | M2-E5-T9 |
+| `stats.top` | `TopDto {processes, machine}`: `MachineStatsDto {cpu_pct, logical_cpus, mem_total, mem_available, forgebox_cpu_pct, forgebox_rss, disks[{role, total, free, available}]}` com `role` = `root` ou `data` (§4.2) | M2-E5-T9 |
+| `sites.pool_mode {site, mode}` (job) / `sites.metrics {site, enabled}` | `SiteDto` com `pool_mode`/`metrics_enabled` | M2-E5-T11 |
+
+**Orçamento de CPU (gate M2-E5-T13):** 1.000 req/s, 64 conexões, 70 s, nginx na frente de um upstream com latência log-normal; CPU do `forgeboxd` num trecho estável de 60 s = Δcpu / Δparede / CPUs lógicas (como o Gerenciador de Tarefas e o sampler, [ADR-0019](adr/0019-instance-lifecycle-health-restart-metrics.md) §6) < 2 %, também em % de um núcleo; percentis do `stats.get {from, to}` a ±5 % dos do `oha` (instalado com `cargo install oha --locked --root C:/apps_src/Forgebox-wt/cache/tools`, nunca no sistema). Mediana de 3 execuções em máquina quieta, com o tipo de sessão registrado.
+
 ## 4. O que a UI mostra
 
 ### 4.1 Aba "Desempenho" do site
 - Cabeçalho: req/s atual · p50 / p90 / p99 (últimos 5 min) · taxa de erro · CPU ≈ · RAM ≈ · workers ativos.
-- Gráficos (60 s / 1 h / 24 h / 7 d): latência (bandas p50–p90–p99), throughput + erros empilhados, CPU/RAM atribuídos, memória pico por request (se instrumentação ligada).
-- Tabela "Rotas mais lentas" (por `uri` normalizado: IDs numéricos → `{id}`; v1: top-K das últimas 12 a 24 h, §3.4), "Erros recentes" (v1: últimos 50 5xx e 50 4xx do access log, §3.4; linhas do error_log com link para o editor depois), "Consultas lentas" (se habilitado).
+- Gráficos (60 s / 1 h / 24 h / 7 d, `stats.series`): latência (bandas p50–p90–p99), throughput + erros empilhados, CPU/RAM atribuídos (memória pico por request: M5).
+- Tabela "Rotas mais lentas" (`stats.routes`; por `uri` normalizado: IDs numéricos → `{id}`; v1: top-K das últimas 12 a 24 h, §3.4), "Erros recentes" (v1: últimos 50 5xx e 50 4xx do access log, §3.4; linhas do error_log com link para o editor no M5). "Consultas lentas": M5.
 - Marcadores de eventos no gráfico: troca de versão de PHP, restart, mudança de config, update. Permite ver "o p99 caiu depois de habilitar OPcache".
-- Botão **"Instrumentação profunda"** (toggle, explica overhead) e **"Pool dedicado"** (muda `pool_mode`).
+- Botão **"Pool dedicado"** (`sites.pool_mode`, mostra o custo em memória) e chave **"Métricas deste site"** (`sites.metrics`). "Instrumentação profunda" (toggle com overhead) é do M5: no v1 o controle não aparece.
 
 ### 4.2 Dashboard geral
 - Tiles por serviço com sparklines (já em [07](07-ui-ux.md)); nova seção "Projetos" com ranking por CPU/RAM/p99/erros nas últimas 24 h; "Ociosos há > 7 dias" com sugestão de parar processes.
-- Monitor da máquina: CPU/RAM/disco totais vs. parcela do Forgebox. Fonte: `forge_core::platform::SystemStats` (M2-E5-T10, [03](03-engine.md) §6): CPU da máquina = Δocupado / (Δocupado + Δocioso) entre duas amostras de `GetSystemTimes`; parcela do Forgebox = Σ Δ tempo de CPU dos processos do daemon, das instâncias, dos pools e dos apps sobre a **mesma** capacidade (`MachineSample::cpu_share_since`), nunca acima da máquina; RAM = `GlobalMemoryStatusEx` (total e disponível) vs. Σ working set; disco = `GetDiskFreeSpaceExW` do volume da raiz (e de `data/` se estiver em outro volume). Os nomes de processo do `forge top` vêm de `ProcessStats::info` (`QueryFullProcessImageNameW`) via `ImageNameCache`, em cache por `(pid, started_at)`.
+- Monitor da máquina: CPU/RAM/disco totais vs. parcela do Forgebox (`stats.top` → `TopDto.machine`, discos por papel `root`/`data`, nunca por caminho). Fonte: `forge_core::platform::SystemStats` (M2-E5-T10, [03](03-engine.md) §6): CPU da máquina = Δocupado / (Δocupado + Δocioso) entre duas amostras de `GetSystemTimes`; parcela do Forgebox = Σ Δ tempo de CPU dos processos do daemon, das instâncias, dos pools e dos apps sobre a **mesma** capacidade (`MachineSample::cpu_share_since`), nunca acima da máquina; RAM = `GlobalMemoryStatusEx` (total e disponível) vs. Σ working set; disco = `GetDiskFreeSpaceExW` do volume da raiz (e de `data/` se estiver em outro volume). Os nomes de processo do `forge top` vêm de `ProcessStats::info` (`QueryFullProcessImageNameW`) via `ImageNameCache`, em cache por `(pid, started_at)`.
 
 ### 4.3 CLI
 ```
 forge stats                           # tabela: site, rps, p50, p90, p99, err%, cpu≈, mem≈
 forge stats loja.test --window 1h --json
-forge stats loja.test --watch         # atualiza a cada 2 s
+forge stats loja.test --watch         # atualiza a cada 2 s (10 s com --window 1h, 60 s com 24h/7d)
+forge stats loja.test --from 2026-11-01T10:00:00Z --to 2026-11-01T11:00:00Z   # intervalo exato
+forge stats loja.test --series --window 24h   # pontos de 1 min (o que os gráficos desenham)
+forge stats loja.test --routes        # rotas mais lentas e erros recentes
 forge top                             # processos do Forgebox ordenados por CPU/RAM com dono (site/instance)
+forge site pool loja.test dedicated   # pool PHP exclusivo: CPU/RAM exatos
+forge site metrics loja.test off      # para de coletar métricas do site
 ```
 
 ## 5. Alertas locais (opcional)
-Regras simples por site: `p99 > 800 ms por 5 min`, `err% > 5 %`, `RAM do pool > 1 GB`, `disco < 2 GB`. Notificação do Windows + badge. Sem envio externo.
+Regras simples por site: `p99 > 800 ms por 5 min`, `err% > 5 %`, `RAM do pool > 1 GB`, `disco < 2 GB`. No v1 (M2-E5-T17) os alertas são internos à GUI (badge e destaque no dashboard); a **notificação nativa do Windows** fica para o M5 ([ADR-0044](adr/0044-metrics-v1.md) §13). Sem envio externo.
 
 ## 6. Exportação
-- Endpoint OpenMetrics `/_forgebox/metrics` (somente 127.0.0.1 ou remoto autenticado) para quem quiser Prometheus/Grafana.
-- `forge stats export loja.test --from ... --to ... -o csv|json`.
+- `forge stats export loja.test --from ... --to ... -o csv|json` (v1, M2-E5-T9; `stats.export` lê `metrics_1m`/`metrics_1h`).
+- Endpoint OpenMetrics `/_forgebox/metrics` (somente 127.0.0.1 ou remoto autenticado) para quem quiser Prometheus/Grafana: **M5**.
 
 ## 7. Privacidade
 Métricas ficam na máquina (ou no remoto). URIs são armazenadas normalizadas; query strings nunca são gravadas; telemetria opt-in do produto nunca inclui métricas de sites.
 
 ## 8. Impacto no roadmap
 - **M1**: templates já saem com `log_format` JSON e `FORGEBOX_SITE` nos params (custo zero), sampler de processos já existe.
-- **M2/M3**: crate `forge-metrics` (tail + HDR + SQLite), aba Desempenho, `forge stats`, `forge top`.
-- **M5**: instrumentação profunda, slow queries correlacionadas, alertas, OpenMetrics.
+- **M2** (épico E5, [ADR-0044](adr/0044-metrics-v1.md)): crate `forge-metrics` (tail + HDR + SQLite), pool dedicado e chave de métricas por site, aba Desempenho, dashboard "Projetos" e monitor da máquina, alertas internos à GUI, `forge stats` (`--from/--to`, `--series`, `--routes`, `export`), `forge top`.
+- **M5**: instrumentação profunda (memória pico por request, erros PHP por site), slow queries correlacionadas, notificações nativas dos alertas, OpenMetrics.

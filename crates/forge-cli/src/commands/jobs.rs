@@ -1,9 +1,10 @@
 //! `forge jobs`, `forge stats`, `forge top` (docs/09 §jobs / stats; docs/14 §4.3).
 
-use forge_ipc::api::methods::stats_export;
+use forge_ipc::api::methods::{stats_export, stats_routes, stats_series};
 use forge_ipc::api::{
-    JobIdParams, MetricsSubscribeParams, SiteRef, SiteStatsDto, StatsDto, StatsExportDto,
-    StatsExportFormat, StatsExportParams, StatsParams, StatsWindow,
+    JobIdParams, MetricsSubscribeParams, RoutesDto, SeriesDto, SiteRef, SiteStatsDto, StatsDto,
+    StatsExportDto, StatsExportFormat, StatsExportParams, StatsParams, StatsRoutesParams,
+    StatsSeriesParams, StatsWindow,
 };
 use forge_ipc::base::Timestamp;
 use forge_ipc::base::ids::JobId;
@@ -122,11 +123,137 @@ pub async fn stats(ctx: &Context, args: StatsArgs) -> CliResult<()> {
     if args.watch {
         return watch_stats(ctx, site, window).await;
     }
+    // `--series`/`--routes` require a site (clap).
+    if args.routes {
+        let site = site.ok_or_else(|| CliError::usage("--routes needs a site"))?;
+        let routes: RoutesDto = ctx.call::<stats_routes>(StatsRoutesParams { site }).await?;
+        ctx.out.emit(&routes, |out| routes_tables(out, &routes));
+        return Ok(());
+    }
+    let (from, to) = range(ctx, args.from.as_deref(), args.to.as_deref())?;
+    if args.series {
+        let site = site.ok_or_else(|| CliError::usage("--series needs a site"))?;
+        let series: SeriesDto = ctx
+            .call::<stats_series>(StatsSeriesParams {
+                site,
+                range: window,
+                from,
+                to,
+            })
+            .await?;
+        ctx.out.emit(&series, |out| series_table(out, &series));
+        return Ok(());
+    }
     let stats: StatsDto = ctx
-        .call::<forge_ipc::api::methods::stats_get>(StatsParams { site, window })
+        .call::<forge_ipc::api::methods::stats_get>(StatsParams {
+            site,
+            window,
+            from,
+            to,
+        })
         .await?;
     ctx.out.emit(&stats, |out| stats_table(out, &stats.sites));
     Ok(())
+}
+
+/// `--from`/`--to` (RFC 3339 or relative to now); `--from` must be earlier than `--to`.
+fn range(
+    ctx: &Context,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> CliResult<(Option<Timestamp>, Option<Timestamp>)> {
+    let now = Timestamp::now();
+    let from = from.map(|f| crate::parse::instant(f, now)).transpose()?;
+    let to = to.map(|t| crate::parse::instant(t, now)).transpose()?;
+    if from.is_some_and(|f| f >= to.unwrap_or(now)) {
+        return Err(CliError::usage(ctx.out.t(Msg::ExportRangeInvalid)));
+    }
+    Ok((from, to))
+}
+
+fn ms(value: Option<f64>) -> String {
+    value.map_or_else(|| "-".into(), |v| format!("{v:.0} ms"))
+}
+
+/// `forge stats <site> --series`: one row per step (the GUI draws the same points).
+fn series_table(out: &Output, series: &SeriesDto) {
+    let rows = series
+        .points
+        .iter()
+        .map(|p| {
+            vec![
+                p.at.to_string(),
+                p.requests.to_string(),
+                format!("{:.1}", p.rps),
+                ms(p.p50_ms),
+                ms(p.p90_ms),
+                ms(p.p99_ms),
+                format!("{:.1}%", p.error_pct),
+            ]
+        })
+        .collect();
+    out.table(
+        &[
+            out.t(Msg::HWhen),
+            out.t(Msg::HRequests),
+            "RPS",
+            "P50",
+            "P90",
+            "P99",
+            "ERR%",
+        ],
+        rows,
+        Msg::NoStats,
+    );
+}
+
+/// `forge stats <site> --routes`: top routes, then the recent errors.
+fn routes_tables(out: &Output, routes: &RoutesDto) {
+    let rows = routes
+        .routes
+        .iter()
+        .map(|r| {
+            vec![
+                r.method.clone(),
+                r.route.clone(),
+                r.count.to_string(),
+                ms(r.p50_ms),
+                ms(r.p99_ms),
+                format!("{:.1}%", r.error_pct),
+            ]
+        })
+        .collect();
+    out.table(
+        &[
+            "",
+            out.t(Msg::HRoute),
+            out.t(Msg::HRequests),
+            "P50",
+            "P99",
+            "ERR%",
+        ],
+        rows,
+        Msg::NoStats,
+    );
+    out.line("");
+    let rows = routes
+        .recent_errors
+        .iter()
+        .map(|e| {
+            vec![
+                e.at.to_string(),
+                e.status.to_string(),
+                e.method.clone(),
+                e.route.clone(),
+                format!("{:.0} ms", e.duration_ms),
+            ]
+        })
+        .collect();
+    out.table(
+        &[out.t(Msg::HWhen), "HTTP", "", out.t(Msg::HRoute), "RT"],
+        rows,
+        Msg::NoRecentErrors,
+    );
 }
 
 /// Live table from `metrics.subscribe` (a sample per site per tick, docs/14 §4.3).

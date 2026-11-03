@@ -15,7 +15,7 @@ configure({ asyncUtilTimeout: 5000 });
 afterEach(cleanup);
 
 // jsdom lacks these browser APIs, which Radix (Select, Slider) relies on.
-/* eslint-disable @typescript-eslint/no-empty-function, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/unbound-method */
+/* eslint-disable @typescript-eslint/no-empty-function, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/unbound-method -- jsdom stubs: empty no-op methods and feature-detection of missing APIs */
 if (typeof Element !== "undefined") {
   class ResizeObserverStub {
     observe() {}
@@ -28,4 +28,4 @@ if (typeof Element !== "undefined") {
   Element.prototype.releasePointerCapture ??= () => {};
   Element.prototype.scrollIntoView ??= () => {};
 }
-/* eslint-enable @typescript-eslint/no-empty-function, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/unbound-method */
+/* eslint-enable @typescript-eslint/no-empty-function, @typescript-eslint/no-unnecessary-condition, @typescript-eslint/unbound-method -- jsdom stubs: empty no-op methods and feature-detection of missing APIs */
