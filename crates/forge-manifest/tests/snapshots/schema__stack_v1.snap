@@ -170,6 +170,15 @@ expression: text
         "name": {
           "type": "string"
         },
+        "order": {
+          "description": "Display position among curated stacks (`onboarding`, docs/07 §5.1): lower first. The\nregistry index lists stacks with an `order` first, by it, then the others by id\n(docs/04 §5). Absent means \"after every ordered stack\".",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
         "summary": {
           "type": [
             "string",

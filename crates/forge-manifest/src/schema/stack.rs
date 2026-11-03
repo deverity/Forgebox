@@ -39,6 +39,11 @@ pub struct StackMetadata {
     pub homepage: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub deprecated: bool,
+    /// Display position among curated stacks (`onboarding`, docs/07 §5.1): lower first. The
+    /// registry index lists stacks with an `order` first, by it, then the others by id
+    /// (docs/04 §5). Absent means "after every ordered stack".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
 }
 
 /// `spec` of a Stack.
