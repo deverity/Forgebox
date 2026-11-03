@@ -13,6 +13,10 @@ export const QA_PROMPT = "PS C:\\Forgebox> ";
 export function terminalHandlers(): FakeHandlers {
   const sessions = new Map<string, T.TerminalDto>();
   const lastInput = new Map<string, number>();
+  /** What was typed on the current line of each session (to recognize `exit`). */
+  const lines = new Map<string, string>();
+  /** Characters echoed so far per session (the title marker below carries the count). */
+  const echoed = new Map<string, number>();
   return {
     "terminal.open": (params, { fake }) => {
       const id = ulid();
@@ -42,7 +46,10 @@ export function terminalHandlers(): FakeHandlers {
       const key = `${params.id}:${params.writer}`;
       if (params.input_seq <= (lastInput.get(key) ?? 0)) return ACK;
       lastInput.set(key, params.input_seq);
-      if (params.data === "exit\r") {
+      const typed = (lines.get(params.id) ?? "") + params.data;
+      const exiting = typed.endsWith("\r") && typed.slice(0, -1).trim().endsWith("exit");
+      lines.set(params.id, typed.includes("\r") ? "" : typed);
+      if (exiting) {
         fake.emitTerminal(params.id, { kind: "output", data: "exit\r\n" });
         fake.emitTerminal(params.id, { kind: "exited", exit_code: 3 });
         const dto = sessions.get(params.id);
@@ -51,7 +58,13 @@ export function terminalHandlers(): FakeHandlers {
         return ACK;
       }
       // The shell echoes what was typed (Enter starts a new prompt line).
-      const echo = params.data.replaceAll("\r", `\r\n${QA_PROMPT}`);
+      // An OSC "set title" marker follows, carrying the number of characters echoed so far: the
+      // emulator parses it right after the echo, so a test reads when the echo was handled
+      // (`onTitleChange`) wherever the cursor is.
+      const count = (echoed.get(params.id) ?? 0) + params.data.length;
+      echoed.set(params.id, count);
+      const echo =
+        params.data.replaceAll("\r", `\r\n${QA_PROMPT}`) + `\u001b]0;E:${String(count)}\u0007`;
       fake.emitTerminal(params.id, { kind: "output", data: echo });
       return ACK;
     },

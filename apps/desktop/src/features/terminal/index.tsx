@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CliCommand, EmptyState, IconButton } from "../../design/primitives";
+import { FOCUS_RING, cx } from "../../design/primitives/shared";
 import { LOCAL_CONTEXT } from "../../ipc/bridge";
 import { useCapability, useConnectionStatus, useHello, useRuntime, useSites } from "../../state";
 import {
@@ -116,7 +117,10 @@ export function TerminalPage() {
           aria-label={t("tabs.newSite")}
           value={siteChoice}
           disabled={!capability.available || siteList.length === 0}
-          className="max-w-48 rounded-control border border-stroke bg-surface px-2 py-1 text-callout text-fg-secondary"
+          className={cx(
+            "max-w-48 rounded-control border border-stroke bg-surface px-2 py-1 text-callout text-fg-secondary",
+            FOCUS_RING,
+          )}
           onChange={(event) => {
             const site = siteList.find((s) => s.id === event.target.value);
             setSiteChoice("");

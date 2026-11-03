@@ -1047,6 +1047,8 @@ export class FakeBridge implements Bridge {
     sub.attached = true;
     const topic = this.topics.get(sub.topic);
     const head = (topic?.next ?? 1) - 1;
+    // `terminal.subscribe` without `resume_from` sends the whole ring first (ADR-0040).
+    if (from === null && sub.method === "terminal.subscribe") from = 0;
     if (from === null) {
       sub.cursor = head;
       return;

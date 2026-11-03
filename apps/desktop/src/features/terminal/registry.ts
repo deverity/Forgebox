@@ -244,6 +244,10 @@ declare global {
     __FORGEBOX_TERM__?: {
       text: (key?: string) => string;
       renderer: (key?: string) => string;
+      /** The xterm `Terminal` of the tab (last one without `key`). */
+      term: (key?: string) => unknown;
+      /** Daemon id of the session of the tab. */
+      id: (key?: string) => string | null;
     };
   }
 }
@@ -263,5 +267,7 @@ function exposeForQa(): void {
       return lines.join("\n");
     },
     renderer: (key) => pick(key)?.bundle.renderer ?? "",
+    term: (key) => pick(key)?.bundle.term,
+    id: (key) => pick(key)?.session.terminalId ?? null,
   };
 }

@@ -92,7 +92,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E3-T12 | Tela Logs + `LogViewer` reutilizável | todo | — | |
 | M2-E3-T13 | Tela Mail (Mailpit nativo, preview HTML isolado, badge) | todo | — | |
 | M2-E3-T14 | Tela Bancos + aba 'Banco' do site | todo | — | |
-| M2-E3-T15 | Tela Terminal (xterm.js em abas sobre sessões do daemon) | doing | feature/M2-E3-T15-terminal-screen | |
+| M2-E3-T15 | Tela Terminal (xterm.js em abas sobre sessões do daemon) | review | feature/M2-E3-T15-terminal-screen | xterm 6 + fit/web-links/search/unicode11, WebGL com queda para DOM; abas global/site/comando (`state/terminals.ts`, `openTerminal` usada pela paleta, atalhos e bandeja), `session.ts` (fila + callback de `write`, `input_seq`, resize 50 ms, lagged → reset e replay), emuladores vivos entre telas (`registry.ts`), reanexar por `terminal.list` com `resume_from = last_seq`, banner "Processo encerrado (código N) · Reabrir", busca/copiar/colar, título com contexto remoto, i18n pt-BR/en-US, permissão de leitura do clipboard. fakeBridge ganhou stream de terminal (seq em bytes, anel inteiro sem resume_from). Medido (Edge headless, 20 MB a ~4 MB/s): eco p50 14 ms, p95 25 ms, 0 long tasks, renderer webgl; fontes offline ok; `qa:check` 318 ok. Clique do meio da bandeja e atalho global são Rust já entregues (T14/T15): sem mudança, ficam ativos porque o daemon implementa `terminal.open`; só verificação humana no gate. |
 | M2-E3-T16 | Configurações parte 1 (layout, linhas por schema, Geral, Editor/Terminal, Atalhos, Avançado) | todo | — | |
 | M2-E3-T17 | Configurações parte 2 (Rede e Segurança) | todo | — | |
 | M2-E3-T18 | Configurações parte 3 (Sistema de arquivos, Registries, Atualizações) | todo | — | |
