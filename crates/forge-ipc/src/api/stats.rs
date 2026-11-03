@@ -153,9 +153,10 @@ pub struct SiteStatsDto {
 
 /// Params of `stats.get`.
 ///
-/// Without `from` the span is the last `window`. With `from` (API 1.1) the span is
-/// `[from, to)` (`to` defaults to now) and `window` only labels the result: an exact merge
-/// over an arbitrary range, aligned outward to whole buckets (ADR-0044).
+/// The span ends at `to` (API 1.1; default now). Without `from` it is the last `window`
+/// before `to`; with `from` (API 1.1) it is `[from, to)` and `window` only labels the
+/// result: an exact merge over an arbitrary range, aligned outward to whole buckets and
+/// limited by the retention (ADR-0044).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct StatsParams {
     #[serde(default)]

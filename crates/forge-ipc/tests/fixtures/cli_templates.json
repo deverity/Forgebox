@@ -1489,6 +1489,17 @@
     "expected": "forge stats --from 2026-10-27T12:00:00Z --to 2026-10-27T13:00:00Z"
   },
   {
+    "method": "stats.get",
+    "params": {
+      "site": "loja.test",
+      "window": "1h",
+      "from": null,
+      "to": "2026-10-27T12:00:00Z"
+    },
+    "expected": "forge stats loja.test --window 1h --to 2026-10-27T12:00:00Z",
+    "note": "no from: the last window before to"
+  },
+  {
     "method": "stats.series",
     "params": {
       "site": "loja.test",

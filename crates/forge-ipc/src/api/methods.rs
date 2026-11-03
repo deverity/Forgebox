@@ -166,7 +166,7 @@ macro_rules! api_methods {
             call "jobs.get" jobs_get(JobIdParams) -> JobDto [Viewer] "forge jobs watch" => "forge jobs watch {job_id}";
             call "jobs.cancel" jobs_cancel(JobIdParams) -> JobCancelDto [Operator, mutating] "forge jobs cancel" => "forge jobs cancel {job_id}";
             // stats / metrics (ADR-0044): `from` turns the window into an exact range
-            call "stats.get" stats_get(StatsParams) -> StatsDto [Viewer] "forge stats" => "[from] forge stats {site} {from=--from} {to=--to} | forge stats {site} {window=--window}";
+            call "stats.get" stats_get(StatsParams) -> StatsDto [Viewer] "forge stats" => "[from] forge stats {site} {from=--from} {to=--to} | forge stats {site} {window=--window} {to=--to}";
             call "stats.series" stats_series(StatsSeriesParams) -> SeriesDto [Viewer] "forge stats --series" => "forge stats {site} --series {range=--window} {from=--from} {to=--to}";
             call "stats.routes" stats_routes(StatsRoutesParams) -> RoutesDto [Viewer] "forge stats --routes" => "forge stats {site} --routes";
             call "stats.top" stats_top(NoParams) -> TopDto [Viewer] "forge top" => "forge top";
