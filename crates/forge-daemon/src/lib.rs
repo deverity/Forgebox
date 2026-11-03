@@ -29,6 +29,7 @@ pub mod instance_lock;
 pub mod internal;
 pub mod logging;
 pub mod messages;
+pub mod php_ext;
 pub mod pools;
 pub mod render;
 pub mod scheduler;

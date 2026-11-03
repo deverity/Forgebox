@@ -164,6 +164,9 @@ spec:
     # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de
     # versioning.channels.*.constraint (scheme da tool) e o item só é emitido quando casa com a versão
     # instalada (ausente = sempre). Resolvido por ExtensionsConfig::zend_extensions_for.
+    # As escolhas do usuário (`php.ext_enable|disable`, M2-E2-T9) ficam por série como
+    # `ext_<nome> = true|false`: numa Tool com `config.extensions`, quick settings não podem usar o
+    # prefixo `ext_` (validação).
     env:                         # variáveis injetadas nos processos desta tool e nos `processes:` que usam esta tool como `runtime:` (ex. nodejs: NODE_EXTRA_CA_CERTS, npm_config_prefix; docs/06 §4.4). Variáveis em tempo de execução: version, series, tool, paths.<dir> (sem paths.version)
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"
@@ -308,7 +311,7 @@ logs:
 | `options` | `select`, `multi` | obrigatório nesses tipos; proibido nos demais |
 | `on` / `off` | `toggle` | valor gravado; ausentes = booleano nativo do formato (`On`/`Off` em ini, `on`/`off` em conf-directive, `true`/`false` em yaml/json, presença da flag em args) |
 | `min` / `max` / `step` | `number`, `slider` | `slider` exige `min` e `max`; `min <= max`; `step > 0` (o valor é `min` + n × `step`) |
-| `reserve` | `port` | reserva a porta no alocador (Xdebug 9003; ligado ao alocador com as extensões, M2-E2-T9) |
+| `reserve` | `port` | reserva a porta no alocador (Xdebug 9003): numa Extension, `php.xdebug` reserva o valor efetivo para o dono `<tool>@<série>/<extensão>` antes de ligar ([03 §2.3](03-engine.md)) |
 | `default` | todos | `toggle`: true/false/on/off; `select`: um de `options`; `multi`: lista contida em `options`; `port`: 1–65535; `number`/`slider`: dentro de min/max |
 | `apply` | todos | `reload` \| `restart` (padrão) \| `none` |
 | `also_set` | todos | outros alvos **do mesmo arquivo**, na sintaxe do alvo (`post_max_size`, `mysqldump/max_allowed_packet`), gravados com `{{ value }}` = o texto escrito |
@@ -448,8 +451,16 @@ spec:
       - { key: mode, ini: "xdebug.mode", type: multi, options: [off, debug, develop, coverage, profile, trace], default: [debug, develop] }
       - { key: start_with_request, ini: "xdebug.start_with_request", type: select, options: [yes, trigger, no], default: trigger }
       - { key: client_port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true }
-  toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }
+      - { key: idekey, ini: "xdebug.idekey", type: text, default: FORGEBOX }
+  toggle:
+    enable: "zend_extension=php_xdebug.dll"
+    disable: ";zend_extension=php_xdebug.dll"
+    apply: reload
+    modes:                       # presets das quick settings acima, por nome (M2-E2-T9)
+      "on": { mode: [debug, develop], start_with_request: "yes" }
+      trigger: { mode: [debug, develop], start_with_request: trigger }
 ```
+**`toggle`** (M2-E2-T9): `enable`/`disable` são as linhas que carregam ou não a extensão no arquivo que o `post_install` renderiza (`20-xdebug.ini`); a diretiva de `enable` (`zend_extension`) marca `zend: true` em `php.ext_list`. `modes` (opcional) dá nome a conjuntos de valores das quick settings da própria extensão, escritos como um `default` (`multi` em lista); cada chave precisa ser uma `config.quick_settings[].key` da extensão e o nome segue `[a-z][a-z0-9_]*` (validação). A Extension de uma tool de pool que declara `modes` é o **depurador** que `php.xdebug {mode: off|on|trigger}` dirige: `on`/`trigger` gravam `enable` e guardam o preset de mesmo nome nas quick settings da extensão por série; `off` grava `disable`. As quick settings de uma Extension não têm `file`: vão inteiras para o arquivo do `post_install` (`diretiva = "valor"`, [03 §2.3](03-engine.md)).
 `source.releases[].variants` de uma Extension aceita chaves livres (as variantes reais são as da tool alvo): o catálogo usa `php_series` (`{php_series}`) para distinguir DLLs que compartilham `ts`/`compiler` (PHP 8.4 e 8.5 são ambos `nts`/`vs17`). Como xdebug.org não publica `.sha256`, cada release traz `url` e `sha256` curados.
 
 `install` de Extension aceita `archive`, `strip_root`, `target` (obrigatório, começa com `{{ paths.version }}`), `post_install`, `uninstall` e `size_estimate_mb`. Versões de Extension usam `semver`.

@@ -20,21 +20,6 @@
     "what": "advanced instance settings"
   },
   {
-    "method": "php.ext_enable",
-    "task": "M2-E2-T9",
-    "what": "per-version extension toggles"
-  },
-  {
-    "method": "php.ext_disable",
-    "task": "M2-E2-T9",
-    "what": "per-version extension toggles"
-  },
-  {
-    "method": "php.xdebug",
-    "task": "M2-E2-T9",
-    "what": "Xdebug toggle per PHP version"
-  },
-  {
     "method": "sites.share",
     "task": "M3-E3",
     "what": "public tunnels (cloudflared, ngrok, expose)"

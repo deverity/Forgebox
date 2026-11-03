@@ -39,6 +39,7 @@ use futures::future::BoxFuture;
 use tokio::sync::Semaphore;
 
 use crate::catalog;
+use crate::php_ext;
 use crate::render;
 use crate::settings;
 use crate::vars::{PoolVars, RuntimeVars};
@@ -150,6 +151,32 @@ impl PoolManager {
             .collect()
     }
 
+    /// Pools of `versions` that run or are starting, the serving ones first.
+    pub async fn running_of(&self, versions: &[VersionId]) -> Vec<PoolHandle> {
+        let mut out: Vec<(bool, PoolHandle)> = Vec::new();
+        for handle in self.handles() {
+            if !versions.contains(&handle.version_id()) {
+                continue;
+            }
+            if let Ok(status) = handle.status(POOL_QUICK).await {
+                if matches!(status.state, PoolState::Running | PoolState::Starting) {
+                    out.push((status.serving, handle));
+                }
+            }
+        }
+        out.sort_by_key(|(serving, _)| !*serving);
+        out.into_iter().map(|(_, h)| h).collect()
+    }
+
+    /// [`render_version`] over the pools of `versions` (the versions of one series).
+    pub async fn series_render_version(
+        &self,
+        versions: &[VersionId],
+        fallback: VersionId,
+    ) -> VersionId {
+        render_version(&self.running_of(versions).await, fallback)
+    }
+
     /// The spec of `row` (an installed version of a `service.kind: pool` tool).
     pub fn spec(&self, manifest: &ToolManifest, row: &ToolVersionRow) -> Result<PoolSpec> {
         pool_spec(
@@ -207,7 +234,13 @@ impl PoolManager {
     /// Renders the configuration of `version` (its `conf.d` overlay of the render target
     /// and the quick settings of its series, `conf.d/90-forgebox-settings.ini` for PHP)
     /// and publishes `config.rendered` for what changed. Does not touch the pool.
-    pub async fn render_config(&self, version: VersionId) -> Result<()> {
+    ///
+    /// The extension choices of the series (`ext_<name>`, M2-E2-T9) shape the bundled
+    /// extension lines, and the debugger extension installed into `version` (Xdebug)
+    /// gets its model (toggle line, its own series settings), so `20-xdebug.ini` follows
+    /// what is stored. Renders run one at a time (the render queue): an extension toggle
+    /// never interleaves with the render of a blue/green swap.
+    pub async fn render_config(&self, version: VersionId) -> Result<render::Applied> {
         let _render = tokio::time::timeout(
             TURN_TIMEOUT,
             Arc::clone(&self.inner.render_turn).acquire_owned(),
@@ -230,8 +263,35 @@ impl PoolManager {
                 .query(move |conn| ToolSeriesSettingsRepo::new(conn).get(&tool_id, &series))
                 .await?
         };
-        if let Some(php) = ctx.php.as_mut() {
-            php.settings = settings::context(&tool.manifest, &stored);
+        if ctx.php.is_some() {
+            let linked = php_ext::linked(
+                &self.inner.reader,
+                &self.inner.registry,
+                &tool.manifest,
+                row.id,
+            )
+            .await?;
+            let choices = php_ext::choices(&stored);
+            let debugger = match linked
+                .iter()
+                .find(|l| php_ext::is_debugger(&l.entry.manifest))
+            {
+                Some(l) => {
+                    let ext_stored =
+                        php_ext::stored(&self.inner.reader, &l.entry.manifest.metadata.id, &series)
+                            .await?;
+                    let enabled = choices.get(&l.name) == Some(&true);
+                    php_ext::debugger_model(&l.entry.manifest, enabled, &ext_stored)
+                }
+                None => None,
+            };
+            let registry: std::collections::BTreeSet<String> =
+                linked.into_iter().map(|l| l.name).collect();
+            if let Some(php) = ctx.php.as_mut() {
+                php.settings = settings::context(&tool.manifest, &stored);
+                php_ext::apply_choices(&choices, &registry, php);
+                php.xdebug = debugger;
+            }
         }
         let mut vars = RuntimeVars::new(self.inner.layout.vars_for(&tool.manifest, &row));
         vars.prefs = (self.inner.prefs)();
@@ -253,7 +313,7 @@ impl PoolManager {
             Duration::from_secs(30),
             move || {
                 render::keep_present_extensions(&manifest, Path::new(&row.path), &mut ctx);
-                render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans).map(|_| ())
+                render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans)
             },
         )
         .await
@@ -358,6 +418,16 @@ impl PoolSwitcher for DaemonPoolSwitcher {
             }
         })
     }
+}
+
+/// The version whose folder a render of the files shared by a series must use: the
+/// series' `conf.d/10-forgebox.ini` holds `extension_dir = "<version folder>/ext"`, so it
+/// is rendered with the version whose pool runs and serves (`running`, serving first, as
+/// [`PoolManager::running_of`] answers), and with `fallback` only when no pool of the
+/// series runs. Rendering with another patch would point the workers that start later
+/// (autoscale, crash restart) at that patch's `ext/` folder.
+pub fn render_version(running: &[PoolHandle], fallback: VersionId) -> VersionId {
+    running.first().map_or(fallback, PoolHandle::version_id)
 }
 
 /// `service.pool` of `manifest` resolved for the installed `row` (pure).

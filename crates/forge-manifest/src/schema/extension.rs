@@ -87,6 +87,26 @@ pub struct Toggle {
     /// Default `restart`.
     #[serde(default, skip_serializing_if = "is_default")]
     pub apply: Apply,
+    /// Named presets of the extension's own quick settings (`config.quick_settings[].key`
+    /// → value, written like a `default`) that turning the extension on in that mode
+    /// stores (M2-E2-T9: `php.xdebug {mode: on|trigger}` picks `modes.on` /
+    /// `modes.trigger`; `off` writes the `disable` line). The Extension of a pool tool that
+    /// declares `modes` is the one `php.xdebug` drives.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub modes: BTreeMap<String, BTreeMap<String, serde_json::Value>>,
+}
+
+impl Toggle {
+    /// The directive of the `enable` line (`zend_extension` of
+    /// `zend_extension=php_xdebug.dll`), lowercased; empty when the line has no `=`.
+    pub fn directive(&self) -> String {
+        self.enable
+            .trim()
+            .trim_start_matches(';')
+            .split_once('=')
+            .map(|(d, _)| d.trim().to_ascii_lowercase())
+            .unwrap_or_default()
+    }
 }
 
 // ------------------------------------------------------------------ resolution (ADR-0043)
@@ -371,5 +391,69 @@ mod tests {
             issues[0].field,
             "spec.source.releases[0].variants.target_id"
         );
+    }
+
+    #[test]
+    fn toggle_modes_are_presets_of_the_extensions_quick_settings() {
+        let ext = xdebug();
+        let toggle = ext.spec.toggle.clone().unwrap();
+        assert_eq!(toggle.directive(), "zend_extension");
+        let modes: Vec<&str> = toggle.modes.keys().map(String::as_str).collect();
+        assert_eq!(modes, ["on", "trigger"]);
+        assert_eq!(toggle.modes["on"]["start_with_request"], "yes");
+        assert_eq!(
+            toggle.modes["trigger"]["mode"],
+            serde_json::json!(["debug", "develop"])
+        );
+        // A preset naming a key the extension does not have, a bad mode name, an empty one.
+        let mut bad = ext.clone();
+        let modes = &mut bad.spec.toggle.as_mut().unwrap().modes;
+        modes
+            .get_mut("on")
+            .unwrap()
+            .insert("nope".into(), serde_json::json!(1));
+        modes.insert("Bad".into(), BTreeMap::new());
+        let issues = crate::validate(&crate::Manifest::Extension(bad));
+        let fields: Vec<&str> = issues.iter().map(|i| i.field.as_str()).collect();
+        assert_eq!(
+            fields,
+            [
+                "spec.toggle.modes.Bad",
+                "spec.toggle.modes.Bad",
+                "spec.toggle.modes.on.nope"
+            ],
+            "{issues:#?}"
+        );
+    }
+
+    #[test]
+    fn extension_choice_keys_are_reserved_in_tools_with_extensions() {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../registry/tools/php.yaml"),
+        )
+        .unwrap();
+        let crate::Manifest::Tool(mut php) = crate::load_str(&text).unwrap() else {
+            unreachable!()
+        };
+        assert!(crate::validate(&crate::Manifest::Tool(php.clone())).is_empty());
+        php.spec.config.quick_settings[0].key = "ext_intl".into();
+        let issues = crate::validate(&crate::Manifest::Tool(php));
+        assert_eq!(issues.len(), 1, "{issues:#?}");
+        assert_eq!(issues[0].field, "spec.config.quick_settings[0].key");
+        let ext = crate::schema::tool::ExtensionsConfig {
+            source: Default::default(),
+            ini_dir: String::new(),
+            pattern: "php_{name}.dll".into(),
+            dir: "ext".into(),
+            defaults_on: Vec::new(),
+            zend_extensions: Vec::new(),
+        };
+        assert_eq!(ext.name_of("php_intl.dll").as_deref(), Some("intl"));
+        assert_eq!(
+            ext.name_of("PHP_PDO_MySQL.DLL").as_deref(),
+            Some("pdo_mysql")
+        );
+        assert_eq!(ext.name_of("php_.dll"), None);
+        assert_eq!(ext.name_of("libssl.dll"), None);
     }
 }

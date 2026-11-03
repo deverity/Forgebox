@@ -326,8 +326,8 @@ pub fn pool_state(state: &PoolState) -> ServiceState {
     }
 }
 
-/// A pool; `sites` = enabled sites it serves.
-pub fn pool(status: &PoolStatus, sites: u32) -> PoolDto {
+/// A pool; `sites` = enabled sites it serves, `xdebug` = its debugger is on (M2-E2-T9).
+pub fn pool(status: &PoolStatus, sites: u32, xdebug: bool) -> PoolDto {
     let active = status.count(WorkerPhase::Active);
     PoolDto {
         series: status.series.clone(),
@@ -348,7 +348,7 @@ pub fn pool(status: &PoolStatus, sites: u32) -> PoolDto {
         max_workers: status.max_workers,
         ports: status.workers.iter().filter_map(|w| w.port).collect(),
         sites,
-        xdebug: false,
+        xdebug,
         requests_total: Some(status.requests_total),
         rss_bytes: Some(status.rss_bytes),
     }
@@ -473,10 +473,34 @@ pub fn registry(info: &RegistryInfo) -> RegistryDto {
     }
 }
 
-pub fn xdebug_mode(enabled: bool) -> XdebugMode {
-    if enabled {
-        XdebugMode::On
-    } else {
-        XdebugMode::Off
+/// The pool of a version that has no pool actor yet (stopped), from its spec.
+pub fn stopped_pool(spec: &forge_fcgi::PoolSpec, sites: u32, xdebug: bool) -> PoolDto {
+    PoolDto {
+        series: spec.series.clone(),
+        version: spec.version.clone(),
+        version_id: spec.version_id,
+        state: ServiceState::Stopped,
+        upstream: spec.upstream.clone(),
+        workers: 0,
+        busy_workers: 0,
+        min_workers: spec.scaling.min,
+        max_workers: spec.scaling.max,
+        ports: Vec::new(),
+        sites,
+        xdebug,
+        requests_total: None,
+        rss_bytes: None,
+    }
+}
+
+/// `PhpVersionDto.xdebug` of a version: off without the debugger or with it turned off;
+/// else the preset its stored values match (`trigger`), `on` for any other value set.
+pub fn xdebug_mode(state: Option<&crate::php_ext::DebuggerState>) -> XdebugMode {
+    match state {
+        Some(s) if s.enabled => match s.mode.as_deref() {
+            Some("trigger") => XdebugMode::Trigger,
+            _ => XdebugMode::On,
+        },
+        _ => XdebugMode::Off,
     }
 }

@@ -25,10 +25,10 @@ pub async fn run(ctx: &Context, command: PhpCmd) -> CliResult<()> {
             mode,
             port,
         } => {
-            let mode = match mode {
-                XdebugArg::On => XdebugMode::On,
-                XdebugArg::Off => XdebugMode::Off,
-                XdebugArg::Trigger => XdebugMode::Trigger,
+            let (mode, label) = match mode {
+                XdebugArg::On => (XdebugMode::On, "on"),
+                XdebugArg::Off => (XdebugMode::Off, "off"),
+                XdebugArg::Trigger => (XdebugMode::Trigger, "trigger"),
             };
             let pool: PoolDto = ctx
                 .job::<php_xdebug, PoolDto>(PhpXdebugParams {
@@ -38,7 +38,7 @@ pub async fn run(ctx: &Context, command: PhpCmd) -> CliResult<()> {
                 })
                 .await?;
             ctx.out.emit(&pool, |out| {
-                out.success(out.tf(Msg::XdebugSet, &[&pool.series, &pool.xdebug]));
+                out.success(out.tf(Msg::XdebugSet, &[&pool.series, &label]));
             });
             Ok(())
         }

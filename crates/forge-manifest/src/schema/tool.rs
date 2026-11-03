@@ -946,6 +946,11 @@ pub enum QuickSettingType {
     Multi,
 }
 
+/// Prefix of the per-series stored keys that record the user's extension choices
+/// (`ext_intl = true|false`, M2-E2-T9) of a tool with `config.extensions`: reserved, no
+/// quick setting of such a tool may use it.
+pub const EXTENSION_CHOICE_PREFIX: &str = "ext_";
+
 /// `config.extensions`: bundled extensions shown as toggles.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -986,6 +991,17 @@ impl ExtensionsConfig {
     pub fn file_of(&self, version_dir: &std::path::Path, name: &str) -> std::path::PathBuf {
         self.dir_in(version_dir)
             .join(self.pattern.replace("{name}", name))
+    }
+
+    /// The extension name of a file name that follows `pattern` (`php_intl.dll` →
+    /// `intl`), compared without case like Windows file names; `None` otherwise.
+    pub fn name_of(&self, file_name: &str) -> Option<String> {
+        let (prefix, suffix) = self.pattern.split_once("{name}")?;
+        let lower = file_name.to_ascii_lowercase();
+        let name = lower
+            .strip_prefix(&prefix.to_ascii_lowercase())?
+            .strip_suffix(&suffix.to_ascii_lowercase())?;
+        (!name.is_empty()).then(|| name.to_owned())
     }
 
     /// Folder of the extension files inside `version_dir`.

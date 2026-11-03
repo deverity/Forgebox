@@ -37,3 +37,27 @@
 - O M2-E2-T5 (`tools.plan`) reaproveita `install::extension_targets` + `layout::extension::plan` para os itens `reason: extension` com `target`.
 - `tools.list` não mostra extensões; a tela de Catálogo usa `tools.info`/`tools.search` (`kind`).
 - Medido: `xdebug_install_online` (Xdebug 3.5.3 real de xdebug.org para PHP 8.4.27 NTS VS17): download + verificação + instalação em ~1,5 s, sha256 igual ao curado, overlay desligado, `php -n -d zend_extension="…" -m` lista `Xdebug`.
+
+## Adendo M2-E2-T9 — toggles de extensão e modos do Xdebug
+
+**Data:** 2026-11-03 · Implementa `php.ext_enable|disable` e `php.xdebug` (contrato da [ADR-0041](0041-ipc-additions-m2-core-screens.md)) sobre o armazenamento por série da [ADR-0042](0042-quick-settings-storage-and-apply.md).
+
+### Decisões
+1. **Escolhas de extensão como chaves reservadas da série**: `tool_series_settings (php, 8.4)` guarda `ext_<nome> = true|false`, só quando difere do padrão (embutida: `defaults_on`/`zend_extensions`; do registry: desligada). O lint proíbe quick settings `ext_*` numa Tool com `config.extensions`. Sem migration; `services.set` não aceita essas chaves (não são quick settings) e as preserva.
+2. **`toggle.modes` no esquema da Extension** (dados, não código): presets nomeados das quick settings da própria extensão. O depurador de uma tool de pool é a Extension que `extends` ela e declara `modes`; `php.xdebug {on|trigger}` guarda o preset de mesmo nome em `tool_series_settings (xdebug, 8.4)` e liga a escolha `ext_xdebug`; `off` desliga a escolha e não toca no resto. O modo reportado (`PhpVersionDto.xdebug`) é o preset cujos valores batem com os efetivos; nenhum → `on`.
+3. **Modelo de render dirigido pelo manifesto**: `XdebugModel {enabled, line, settings[]}` — a linha `toggle.enable|disable` e cada quick setting efetiva como `diretiva = "valor"` (aspas: o ini do PHP converte `yes`/`off` sem aspas em `1`/vazio). O `post_install` sem modelo continua escrevendo o arquivo desligado; `install_extension` renderiza de novo, com o que está guardado, cada série afetada uma vez, com a versão cujo pool roda e serve na série (o `extension_dir` do `10-forgebox.ini` da série é a pasta dessa versão); o alvo só quando nenhum pool da série roda.
+4. **Porta do cliente por série**: dono `{pool, "php@8.4", "xdebug"}` (`php@8.4/xdebug`). Pré-checagem na chamada (outro dono → `conflict`, listener → `port_in_use` com `pid`/`exe`, nada instalado nem escrito); já nossa → aceita, porque quem escuta nela é a IDE. A varredura de conflitos trata esse dono como porta de cliente (listener = `bound`, sem `port.conflict`). `off` não libera a reserva.
+5. **Ordem do job**: instalar (se falta; o progresso é o do `install_extension`) → reservar → guardar sob `Daemon::settings_turn` → renderizar pela fila de render do pool (`PoolManager::render_config`, a mesma do start e do blue/green, com a versão que serve) → soltar a vez → reciclar os pools da série que rodam **só se algo mudou** (idempotente).
+
+### Alternativas rejeitadas
+- **Tabela `php_extensions` (migration)**: a escolha é um par chave/valor por série, exatamente o que a 0004 guarda; uma tabela nova só duplicaria FK e ciclo de vida.
+- **Mapear `on|trigger` em Rust** (`if mode == trigger { start_with_request = trigger }`): violaria "nada de lógica por tool"; outro depurador (ou outro preset) seria código.
+- **Liberar a porta no `off`**: a IDE do usuário continua configurada nela; a reserva só evita que um pool a pegue (Laragon #374).
+- **Exigir porta livre também quando já é nossa**: quebraria `php.xdebug on` repetido com a IDE escutando.
+
+### Consequências
+- Xdebug por site (`SiteXdebug`, `FORGEBOX_XDEBUG`) continua fora (docs/03 §2.3).
+- A IDE key (`idekey`) e o `mode` fino são quick settings do `xdebug.yaml`, mas a API só os muda pelos presets; `services.set xdebug@<série>` é trabalho futuro.
+- Extensões do registry sem `modes` aparecem em `php.ext_list`, mas `php.ext_enable` delas é `invalid_input` até alguma precisar de um alvo de render próprio.
+- Primeira ativação com a IDE já escutando na porta dá `port_in_use` (o que a pré-checagem não distingue); a mensagem nomeia o processo, e a partir da reserva a IDE pode escutar à vontade.
+- Medido: `tests/php_extensions.rs` (pool falso real: `pool.worker.recycled{reason: reload}` a cada mudança, nenhum na repetição; overlay byte a byte de volta) e o online com PHP 8.4.27 + Xdebug 3.5.3 reais (ver STATUS).

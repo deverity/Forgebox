@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use forge_core::paths::ForgeRoot;
 use forge_render::{
-    InstanceModel, PhpModel, ProxyModel, RenderContext, SiteKind, SslModel, StaticLocation,
-    UpstreamModel, UpstreamServer, VhostModel, XdebugModel,
+    IniSetting, InstanceModel, PhpModel, ProxyModel, RenderContext, SiteKind, SslModel,
+    StaticLocation, UpstreamModel, UpstreamServer, VhostModel, XdebugModel,
 };
 
 pub fn pools() -> Vec<UpstreamModel> {
@@ -107,9 +107,20 @@ pub fn php_context(root: &ForgeRoot) -> RenderContext {
         zend_extensions: vec!["opcache".to_owned()],
         settings: BTreeMap::from([("memory_limit".to_owned(), "1G".to_owned())]),
         xdebug: Some(XdebugModel {
-            mode: "debug".to_owned(),
-            start_with_request: "trigger".to_owned(),
-            client_port: 9003,
+            enabled: true,
+            line: "zend_extension=php_xdebug.dll".to_owned(),
+            settings: [
+                ("xdebug.mode", "debug"),
+                ("xdebug.start_with_request", "trigger"),
+                ("xdebug.client_port", "9003"),
+                ("xdebug.idekey", "FORGEBOX"),
+            ]
+            .into_iter()
+            .map(|(key, value)| IniSetting {
+                key: key.to_owned(),
+                value: value.to_owned(),
+            })
+            .collect(),
         }),
     });
     ctx

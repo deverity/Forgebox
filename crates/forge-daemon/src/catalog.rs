@@ -66,6 +66,27 @@ pub fn extension(registry: &Registry, id: &ToolId) -> Option<ExtensionEntry> {
     }
 }
 
+/// Every extension manifest of the loaded registries (first registry wins per id), sorted
+/// by id.
+pub fn extensions(registry: &Registry) -> Vec<ExtensionEntry> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out: Vec<ExtensionEntry> = registry
+        .entries()
+        .into_iter()
+        .filter_map(|entry| match entry.manifest.as_ref() {
+            Manifest::Extension(ext) if seen.insert(entry.id.clone()) => Some(ExtensionEntry {
+                manifest: Arc::new(ext.clone()),
+                official: entry.official,
+                registry: entry.registry.clone(),
+                latest: entry.latest.clone(),
+            }),
+            _ => None,
+        })
+        .collect();
+    out.sort_by(|a, b| a.manifest.metadata.id.cmp(&b.manifest.metadata.id));
+    out
+}
+
 /// What a spec of `tools.install`/`tools.remove` names: a tool or an extension.
 #[derive(Debug, Clone)]
 pub enum Installable {

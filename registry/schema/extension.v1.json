@@ -1121,6 +1121,14 @@
         },
         "enable": {
           "type": "string"
+        },
+        "modes": {
+          "description": "Named presets of the extension's own quick settings (`config.quick_settings[].key`\n→ value, written like a `default`) that turning the extension on in that mode\nstores (M2-E2-T9: `php.xdebug {mode: on|trigger}` picks `modes.on` /\n`modes.trigger`; `off` writes the `disable` line). The Extension of a pool tool that\ndeclares `modes` is the one `php.xdebug` drives.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
+          }
         }
       },
       "additionalProperties": false,

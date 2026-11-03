@@ -16,11 +16,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use forge_core::error::{ForgeError, Result};
-use forge_core::ids::ToolId;
+use forge_core::ids::{ToolId, VersionId};
 use forge_core::jobs::{JobContext, JobProgress, JobState};
 use forge_core::store::ToolVersionRow;
 use forge_manifest::schema::ExtensionManifest;
-use forge_manifest::schema::tool::ToolManifest;
+use forge_manifest::schema::tool::{ServiceKind, ToolManifest};
 use forge_manifest::version::Constraint;
 use forge_provider::download::Priority;
 use forge_provider::layout::{
@@ -311,10 +311,18 @@ pub async fn install_extension(
     );
     let total = planned.items.len().max(1) as f32;
     let mut out = Vec::new();
+    // Series whose files the targets share, each with its first (newest) target.
+    let mut touched: BTreeMap<String, VersionId> = BTreeMap::new();
     for (index, item) in planned.items.into_iter().enumerate() {
         job.check_cancelled()?;
         let base = 5.0 + 90.0 * index as f32 / total;
         let folder = item.target.canonical_name.clone();
+        touched
+            .entry(catalog::series_of(
+                &target_tool.manifest,
+                &item.target.version,
+            ))
+            .or_insert(item.target.id);
         // Same version registered and its file still there: nothing to do (a file deleted
         // by hand is installed again).
         let present = match item.installed.as_ref().filter(|_| item.up_to_date()) {
@@ -363,11 +371,45 @@ pub async fn install_extension(
         let report: ExtensionReport = wait_layout_job(daemon, job, layout_job).await?;
         out.push(catalog::version(&daemon.reader, report.version_id).await?);
     }
+    if target_tool.manifest.spec.service.kind == ServiceKind::Pool {
+        render_series(daemon, &target_tool.manifest, &rows, &touched).await;
+    }
     job.progress(JobProgress::new().pct(100.0).message(format!(
         "{id} installed into {} version(s) of {extends}",
         out.len()
     )));
     Ok(out)
+}
+
+/// Renders the files of every series in `touched` (series → its first target) once, after
+/// an extension install: the post_install render wrote the overlay off, and the series has
+/// stored choices (M2-E2-T9: an extension the user turned on stays on). An already
+/// installed target converges too (same files, nothing written when they match).
+///
+/// The series files are shared by its versions and `10-forgebox.ini` holds the
+/// `extension_dir` of the version rendered, so each series renders with the version whose
+/// pool runs and serves ([`crate::pools::PoolManager::series_render_version`], like
+/// `php.ext_*` and `services.set`); the target only when no pool of the series runs.
+/// Rendering with the target would point later workers of the serving patch (autoscale,
+/// crash restart) at the target's `ext/` folder. A failed render is logged: the
+/// extension is installed and the next render (pool start, toggle) writes the files.
+async fn render_series(
+    daemon: &Daemon,
+    manifest: &ToolManifest,
+    rows: &[ToolVersionRow],
+    touched: &BTreeMap<String, VersionId>,
+) {
+    for (series, target) in touched {
+        let versions: Vec<VersionId> = rows
+            .iter()
+            .filter(|row| catalog::series_of(manifest, &row.version) == *series)
+            .map(|row| row.id)
+            .collect();
+        let version = daemon.pools.series_render_version(&versions, *target).await;
+        if let Err(err) = daemon.pools.render_config(version).await {
+            tracing::warn!(tool = %manifest.metadata.id, %series, %err, "configuration not rendered after the extension install");
+        }
+    }
 }
 
 #[cfg(test)]
