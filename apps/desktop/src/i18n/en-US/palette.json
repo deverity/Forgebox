@@ -19,6 +19,8 @@
     "openTerminal": "Open terminal",
     "startInstance": "Start {name}",
     "stopInstance": "Stop {name}",
+    "restartInstance": "Restart {name}",
+    "openInstance": "Open details of {name}",
     "openSite": "Open {host} in the browser"
   },
   "unavailable": "Unavailable: {reason}",

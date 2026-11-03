@@ -269,6 +269,8 @@ describe("connection banners", () => {
   });
 });
 
+const REAL_SCREENS: ReadonlySet<string> = new Set(["services"]);
+
 describe("routes", () => {
   it("redirects / to the Dashboard and each placeholder names its task", async () => {
     const h = await renderApp({ path: "/" });
@@ -281,7 +283,9 @@ describe("routes", () => {
       const link = links.find((a) => a.getAttribute("href") === f.path);
       if (link === undefined) throw new Error(`no sidebar link for ${f.path}`);
       await userEvent.click(link);
-      expect(await screen.findByTestId(`page-${f.id}`)).toHaveTextContent(f.task);
+      const page = await screen.findByTestId(`page-${f.id}`);
+      // A delivered screen no longer names its task (add its id here when its task lands).
+      if (!REAL_SCREENS.has(f.id)) expect(page).toHaveTextContent(f.task);
     }
   });
 

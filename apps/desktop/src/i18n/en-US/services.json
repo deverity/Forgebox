@@ -1,0 +1,137 @@
+{
+  "title": "Services",
+  "summary": "{running} of {total} running",
+  "category": {
+    "webserver": "Web servers",
+    "database": "Databases",
+    "cache": "Cache",
+    "mail": "Mail",
+    "runtime": "Runtimes",
+    "devtool": "Dev tools",
+    "other": "Other"
+  },
+  "state": {
+    "stopped": "Stopped",
+    "starting": "Starting",
+    "running": "Running",
+    "stopping": "Stopping",
+    "crashed": "Crashed",
+    "failed": "Failed",
+    "maintenance": "Updating"
+  },
+  "row": {
+    "running": "{state} · {uptime}",
+    "open": "Details of {name}",
+    "noPort": "No port",
+    "noMetrics": "—",
+    "metrics": "{cpu}% · {ram}",
+    "pool": "{name} pool",
+    "workers": "{busy}/{total} workers"
+  },
+  "action": {
+    "start": "Start",
+    "starting": "Starting…",
+    "started": "Started",
+    "stop": "Stop",
+    "stopping": "Stopping…",
+    "stopped": "Stopped",
+    "restart": "Restart",
+    "restarting": "Restarting…",
+    "restarted": "Restarted"
+  },
+  "empty": {
+    "title": "No services yet",
+    "description": "Install a tool that runs as a service, such as MySQL or Nginx, and it will show up here.",
+    "action": "Open the Catalog"
+  },
+  "sheet": {
+    "title": "Service details",
+    "description": "State, logs and instances of this service",
+    "tabs": "Service sections"
+  },
+  "tabs": {
+    "overview": "Overview",
+    "logs": "Logs",
+    "instances": "Instances"
+  },
+  "overview": {
+    "timeline": "State timeline",
+    "timelineLoading": "Loading history…",
+    "timelineEmpty": "No state changes recorded yet.",
+    "version": "Version",
+    "port": "Ports",
+    "pid": "Process",
+    "restarts": "Restarts",
+    "autostart": "Starts with Forgebox",
+    "yes": "Yes",
+    "no": "No",
+    "dataDir": "Data folder",
+    "size": "Data size"
+  },
+  "timeline": {
+    "service_starting": "Starting",
+    "service_running": "Running",
+    "service_stopping": "Stopping",
+    "service_stopped": "Stopped",
+    "service_crashed": "Crashed",
+    "service_failed": "Failed to start",
+    "service_maintenance": "Updating"
+  },
+  "failure": {
+    "title": "This service did not start",
+    "newPort": "New main port",
+    "portCliHint": "Type a port to see the command.",
+    "portInvalid": "Type a valid port first.",
+    "apply": "Change port",
+    "applying": "Changing…",
+    "applied": "Port changed",
+    "cancelPort": "Cancel",
+    "kill": "End {exe}",
+    "killing": "Ending…",
+    "killed": "Process ended"
+  },
+  "logs": {
+    "filter": "Filter",
+    "pause": "Pause",
+    "resume": "Resume",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Could not copy",
+    "lost": "{count} lines were lost while following.",
+    "region": "Log of {name}",
+    "loading": "Loading log…",
+    "empty": "No lines to show.",
+    "paused": "Paused: new lines are kept and appear when you resume."
+  },
+  "instances": {
+    "title": "Instances",
+    "remove": "Remove {name}",
+    "removeShort": "Remove"
+  },
+  "create": {
+    "title": "New instance",
+    "version": "Version",
+    "name": "Name",
+    "port": "Main port (optional)",
+    "dataDir": "Data folder (optional)",
+    "autostart": "Start with Forgebox",
+    "submit": "Create instance",
+    "creating": "Creating…",
+    "created": "Created",
+    "nameRequired": "Type a name for the instance.",
+    "nameInvalid": "Use lowercase letters, digits, - and _ (up to 32).",
+    "nameTaken": "An instance with this name already exists.",
+    "portInvalid": "Use a port between 1 and 65535."
+  },
+  "remove": {
+    "title": "Remove {name}",
+    "warning": "{name} will be stopped and removed. This cannot be undone.",
+    "type": "Type {name} to confirm",
+    "deleteData": "Also delete its data",
+    "confirm": "Remove instance",
+    "cancel": "Cancel",
+    "removing": "Removing…",
+    "removed": "Removed",
+    "mustType": "Type {name} to enable this."
+  }
+}

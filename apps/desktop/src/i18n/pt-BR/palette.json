@@ -18,6 +18,8 @@
     "settings": "Abrir configurações",
     "openTerminal": "Abrir terminal",
     "startInstance": "Iniciar {name}",
+    "restartInstance": "Reiniciar {name}",
+    "openInstance": "Abrir detalhes de {name}",
     "stopInstance": "Parar {name}",
     "openSite": "Abrir {host} no navegador"
   },
