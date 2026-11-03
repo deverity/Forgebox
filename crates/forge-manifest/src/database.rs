@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::schema::tool::{ClientCommand, DatabaseSpec};
+use crate::schema::tool::{ClientCommand, DatabaseSpec, MailSpec};
 
 /// Longest database name accepted.
 pub const MAX_DATABASE_LEN: usize = 64;
@@ -222,6 +222,24 @@ impl DatabaseSpec {
     }
 }
 
+impl MailSpec {
+    /// `env` of the block with `{{ instance.ports.<name> }}` replaced by the instance's
+    /// reserved ports (`forge mail env`, the Mail screen).
+    pub fn render_env(
+        &self,
+        ports: &BTreeMap<String, u16>,
+    ) -> Result<BTreeMap<String, String>, RenderError> {
+        let lookup = |name: &str| {
+            let port = name.strip_prefix("instance.ports.")?;
+            ports.get(port).map(u16::to_string)
+        };
+        self.env
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), substitute(value, &lookup)?)))
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,5 +272,27 @@ mod tests {
         ] {
             assert!(!is_ident(bad, 64), "{bad}");
         }
+    }
+
+    #[test]
+    fn mail_env_fills_the_reserved_ports() {
+        use crate::schema::tool::MailApi;
+        let spec = MailSpec {
+            api: MailApi::MailpitV1,
+            http_port: "http".into(),
+            smtp_port: "smtp".into(),
+            env: BTreeMap::from([
+                ("MAIL_HOST".to_owned(), "127.0.0.1".to_owned()),
+                (
+                    "MAIL_PORT".to_owned(),
+                    "{{ instance.ports.smtp }}".to_owned(),
+                ),
+            ]),
+        };
+        let ports = BTreeMap::from([("smtp".to_owned(), 1025_u16)]);
+        let env = spec.render_env(&ports).unwrap();
+        assert_eq!(env["MAIL_PORT"], "1025");
+        assert_eq!(env["MAIL_HOST"], "127.0.0.1");
+        assert!(spec.render_env(&BTreeMap::new()).is_err());
     }
 }

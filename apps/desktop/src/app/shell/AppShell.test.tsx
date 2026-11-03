@@ -85,8 +85,8 @@ describe("sidebar", () => {
   };
 
   it("hides the mail badge while mail.status is not implemented", async () => {
-    // The default fake daemon answers mail.status with `not_implemented` (hello says so).
-    await renderApp({ extra: { handlers: MAIL_STATUS } });
+    // A daemon without the Mailpit backend lists mail.status in hello.not_implemented.
+    await renderApp({ extra: { notImplemented: ["mail.status"], handlers: MAIL_STATUS } });
     expect(screen.getByRole("link", { name: "Mail" })).toBeInTheDocument();
     expect(screen.queryByTestId("badge-mail")).toBeNull();
     expect(screen.queryByText("3")).toBeNull();

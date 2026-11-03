@@ -8,6 +8,7 @@
 //!   into the web servers; [`settings`]: the quick settings of a manifest (docs/04 §1.3);
 //! * [`scheduler`]: periodic work with jitter (updates, registry, `tmp/`, ports) and the
 //!   reactions to site/TLS events;
+//! * [`mail`]: the captured e-mail of `spec.mail` instances and the `mail.changed` watcher;
 //! * [`terminal`]: terminal sessions hosted by the daemon (the GUI's integrated terminal);
 //! * [`shutdown`]: graceful stop in cascade with a global budget;
 //! * [`logging`]: `logs/forgeboxd.log.<date>` (JSON lines) and stdout in `--foreground`;
@@ -28,6 +29,7 @@ pub mod instance_case;
 pub mod instance_lock;
 pub mod internal;
 pub mod logging;
+pub mod mail;
 pub mod messages;
 pub mod php_ext;
 pub mod pools;

@@ -147,6 +147,8 @@ pub struct Inner {
     pub settings_turn: Arc<tokio::sync::Semaphore>,
     /// Cached sizes of the data folders of the database instances (`db.list`).
     pub db_sizes: crate::databases::SizeCache,
+    /// Last counts of the mail instances and `mail.changed` publication.
+    pub mail: crate::mail::MailHub,
 }
 
 /// Handle on the composed daemon. Cheap to clone.
