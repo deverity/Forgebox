@@ -24,10 +24,12 @@
 //! M1-E2-T5 adds [`update_history::UpdateHistoryRepo`] (updates and rollbacks);
 //! M1-E5-T2 adds [`instances::InstanceRepo`] (service instances of the daemon); M2-E2-T7
 //! adds [`tool_series_settings::ToolSeriesSettingsRepo`] (quick settings of a tool series,
-//! the PHP pools).
+//! the PHP pools); M2-E5-T7 adds [`metrics::MetricsRepo`] (per-minute and per-hour metrics, tail
+//! checkpoints).
 
 pub mod events;
 pub mod instances;
+pub mod metrics;
 pub mod migrations;
 pub mod ports;
 mod reader;
@@ -48,10 +50,13 @@ pub use instances::{
     CASE_SENSITIVE_KEY, DesiredState, EXTERNAL_DATA_DIR_KEY, InstanceRepo, InstanceRow,
     validate_instance_name,
 };
+pub use metrics::{MetricsRepo, MetricsRow, TailRow, Tier as MetricsTier};
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;
-pub use sites::{Site, SiteKind, SitePhp, SiteRepo, SiteXdebug};
+/// The SQLite connection handed to writer operations and reader queries.
+pub use rusqlite::Connection as DbConnection;
+pub use sites::{Site, SiteKind, SitePhp, SitePoolMode, SiteRepo, SiteXdebug};
 pub use tool_series_settings::{ToolSeriesSettingsRepo, is_setting_key};
 pub use tool_versions::{
     NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,

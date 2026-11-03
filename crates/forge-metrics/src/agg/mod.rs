@@ -411,6 +411,13 @@ impl Aggregator {
         self.now
     }
 
+    /// Start of the first minute that is not closed yet: every minute before it has been
+    /// handed to the outbox ([`Self::take_minutes`]). Persistence uses it to know which tail
+    /// checkpoints are fully covered by flushed minutes.
+    pub fn closed_minute_edge(&self) -> Timestamp {
+        secs_to_ts(self.clock.next_minute)
+    }
+
     /// Counters of the aggregator.
     pub fn stats(&self) -> AggStats {
         self.stats

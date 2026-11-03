@@ -240,6 +240,9 @@ No v1, "Erros recentes" vêm dos 5xx/4xx do access log (§6).
 
 **Consequências.** A UI do M2 não mostra os controles desses itens (nada de botão inerte). O docs/14 marca cada um como M5, e a exportação do v1 é `forge stats export` (CSV/JSON).
 
+## Notas de implementação
+- **M2-E5-T7.** A migration é a `0005_metrics.sql`. Os pontos de 10 s do tier 1 não são persistidos: a reidratação devolve o tier 2 (minutos e horas) e `series` passa a responder em 1 min/1 h até o tráfego novo preencher o tier 1. `metrics_tail` ganhou `closed_edge` (posição segura + borda dos minutos já gravados) para que a retomada depois de uma queda conte cada registro uma vez; detalhes em docs/14 §3.5.
+
 ## Checklist de revisão (PRs do E5)
 - [ ] Nenhum DTO novo ou estendido carrega caminho absoluto do servidor (ADR-0009).
 - [ ] Campos novos com `#[serde(default)]`; JSON 1.0 lê (teste de round trip).

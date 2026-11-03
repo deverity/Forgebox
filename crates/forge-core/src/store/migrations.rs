@@ -57,6 +57,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "tool_series_settings",
         sql: include_str!("migrations/0004_tool_series_settings.sql"),
     },
+    Migration {
+        version: 5,
+        name: "metrics",
+        sql: include_str!("migrations/0005_metrics.sql"),
+    },
 ];
 
 /// Highest schema version this build knows.
@@ -227,6 +232,53 @@ mod tests {
             assert!(!m.sql.trim().is_empty());
         }
         assert_eq!(latest_version(), MIGRATIONS.len() as u32);
+    }
+
+    #[test]
+    fn metrics_migration_keeps_existing_sites_with_defaults() {
+        // A database at schema 4 (before M2-E5-T7) with a site and an event.
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        apply(&mut conn, &MIGRATIONS[..4], None).unwrap();
+        assert_eq!(current_version(&conn).unwrap(), 4);
+        conn.execute(
+            "INSERT INTO sites (id, slug, host, kind, created_at, updated_at)              VALUES ('01J0000000000000000000000A', 'a-test', 'a.test', 'php', 'now', 'now')",
+            [],
+        )
+        .unwrap();
+        let report = apply(&mut conn, MIGRATIONS, None).unwrap();
+        assert_eq!(report.applied, vec![5]);
+        let (mode, metrics): (String, i64) = conn
+            .query_row(
+                "SELECT pool_mode, metrics_enabled FROM sites WHERE host = 'a.test'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((mode.as_str(), metrics), ("shared", 1));
+        for table in ["metrics_1m", "metrics_1h", "metrics_tail", "metrics_flush"] {
+            conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap();
+        }
+        let index: String = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'events_ts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(index, "events_ts");
+        // The new columns are checked.
+        assert!(
+            conn.execute("UPDATE sites SET pool_mode = 'weird'", [])
+                .is_err()
+        );
+        assert!(
+            conn.execute("UPDATE sites SET metrics_enabled = 2", [])
+                .is_err()
+        );
     }
 
     #[test]
