@@ -687,3 +687,74 @@ async fn flush_and_rehydrate_never_stall_the_runtime() {
         "rehydrate stalled the runtime {worst_rehydrate} us"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unreadable_minutes_never_block_rollup_prune_or_queries() {
+    let store = Store::open_in_memory().unwrap();
+    let site = SiteId::new();
+    let good = |start: i64| MetricsRow {
+        site,
+        start,
+        requests: 3,
+        status: [0, 3, 0, 0, 0],
+        bytes: 30,
+        rt_sum_us: 6000,
+        ut_sum_us: 0,
+        ut_count: 0,
+        sampled: false,
+        rt_hist: LatencyHist::from_values([1000, 2000, 3000])
+            .to_v2()
+            .unwrap(),
+        ut_hist: Vec::new(),
+        format_version: FORMAT_VERSION,
+    };
+    // The first row of the site is the garbage one: it must not be copied unchecked.
+    let garbage = MetricsRow {
+        rt_hist: vec![0xde, 0xad],
+        ..good(BASE)
+    };
+    let future_codec = MetricsRow {
+        format_version: FORMAT_VERSION + 1,
+        ..good(BASE + 120)
+    };
+    let rows_in = vec![garbage, good(BASE + 60), future_codec];
+    store
+        .writer()
+        .execute(move |conn| {
+            let repo = MetricsRepo::new(conn);
+            for r in &rows_in {
+                repo.put(MetricsTier::Minute, r)?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let mut agg = Aggregator::new(cfg(), ts(BASE + 3630));
+    let mut persister = Persister::new();
+    let report = persister
+        .tick(&mut agg, store.writer(), ts(BASE + 3630))
+        .await
+        .unwrap();
+    let rollup = report.rollup.unwrap();
+    assert_eq!((rollup.hours, rollup.skipped), (1, 2));
+    let hours = rows(&store, MetricsTier::Hour);
+    assert_eq!(hours.len(), 1);
+    assert_eq!(hours[0].requests, 3);
+
+    // A range holding the bad rows still answers, without them.
+    let now = ts(BASE + 3630);
+    let s = persist::query_range(store.reader(), site, ts(BASE), ts(BASE + 600), now)
+        .await
+        .unwrap();
+    assert_eq!(s.counters.requests, 3);
+
+    // 8 days later the tick prunes the bad minutes too.
+    let later = ts(BASE + 8 * 86_400 + 30);
+    let report = persister
+        .tick(&mut agg, store.writer(), later)
+        .await
+        .unwrap();
+    assert_eq!(report.prune.unwrap().minutes, 3);
+    assert!(rows(&store, MetricsTier::Minute).is_empty());
+}

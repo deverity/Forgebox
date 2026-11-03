@@ -383,17 +383,34 @@ impl Persister {
             flush,
             ..TickReport::default()
         };
+        let mut first_err = None;
         let hour = floor_to(secs(now), HOUR);
         if self.last_rollup_hour != Some(hour) {
-            report.rollup = Some(rollup(writer, now).await?);
-            self.last_rollup_hour = Some(hour);
+            // A failed rollup must not starve the prune: run both, then report the first error.
+            match rollup(writer, now).await {
+                Ok(r) => {
+                    report.rollup = Some(r);
+                    self.last_rollup_hour = Some(hour);
+                }
+                Err(err) => first_err = Some(err),
+            }
         }
         let day = floor_to(secs(now), DAY);
         if self.last_prune_day != Some(day) {
-            report.prune = Some(prune(writer, now).await?);
-            self.last_prune_day = Some(day);
+            match prune(writer, now).await {
+                Ok(p) => {
+                    report.prune = Some(p);
+                    self.last_prune_day = Some(day);
+                }
+                Err(err) => {
+                    first_err.get_or_insert(err);
+                }
+            }
         }
-        Ok(report)
+        match first_err {
+            Some(err) => Err(err),
+            None => Ok(report),
+        }
     }
 }
 
@@ -464,6 +481,8 @@ pub struct RollupReport {
     pub hours: usize,
     /// Minute rows read.
     pub minutes: usize,
+    /// Minute rows left out because they could not be decoded.
+    pub skipped: usize,
 }
 
 /// What a prune did.
@@ -501,6 +520,15 @@ fn rollup_in(repo: &MetricsRepo<'_>, now_s: i64) -> Result<RollupReport> {
         report.minutes += rows.len();
         let mut by_site: BTreeMap<SiteId, MetricsRow> = BTreeMap::new();
         for row in rows {
+            // An unreadable minute must not block the hour (nor the prune that follows).
+            if let Err(err) = decode(&row.rt_hist, row.format_version)
+                .and_then(|_| decode(&row.ut_hist, row.format_version))
+            {
+                tracing::warn!(%err, site = %row.site, start = row.start,
+                    "stored metrics minute skipped by rollup");
+                report.skipped += 1;
+                continue;
+            }
             let hour_row = MetricsRow { start: hour, ..row };
             match by_site.get(&hour_row.site) {
                 None => {
@@ -637,10 +665,21 @@ pub async fn query_range(
             let (mut rt, mut ut) = (LatencyHist::new(), LatencyHist::new());
             let mut sampled = false;
             for row in &rows {
+                let (row_rt, row_ut) = match (
+                    decode(&row.rt_hist, row.format_version),
+                    decode(&row.ut_hist, row.format_version),
+                ) {
+                    (Ok(a), Ok(b)) => (a, b),
+                    (Err(err), _) | (_, Err(err)) => {
+                        tracing::warn!(%err, site = %row.site, start = row.start,
+                            "stored metrics row skipped by query");
+                        continue;
+                    }
+                };
                 add_counters(&mut counters, &counters_of(row));
                 sampled |= row.sampled;
-                rt = rt.merge(&decode(&row.rt_hist, row.format_version)?);
-                ut = ut.merge(&decode(&row.ut_hist, row.format_version)?);
+                rt = rt.merge(&row_rt);
+                ut = ut.merge(&row_ut);
             }
             Ok(Summary {
                 from: at(covered_from),
