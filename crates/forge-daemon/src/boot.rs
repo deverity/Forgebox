@@ -523,6 +523,7 @@ pub async fn boot_with(
         config_owner: crate::config_owner::ConfigOwner::spawn(),
         settings_turn: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         db_sizes: crate::databases::SizeCache::default(),
+        mail: crate::mail::MailHub::default(),
     });
 
     // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web

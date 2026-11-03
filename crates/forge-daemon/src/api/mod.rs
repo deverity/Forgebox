@@ -11,6 +11,7 @@ mod daemon_api;
 mod db;
 mod fs_parity;
 mod logs;
+mod mail;
 pub(crate) mod net;
 pub mod not_implemented;
 mod php;
@@ -61,6 +62,7 @@ pub fn router(daemon: &Daemon) -> Router {
     shell::register(&mut router, daemon);
     terminal::register(&mut router, daemon);
     db::register(&mut router, daemon);
+    mail::register(&mut router, daemon);
     fs_parity::register(&mut router, daemon);
     not_implemented::register(&mut router);
     router
