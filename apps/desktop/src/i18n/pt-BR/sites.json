@@ -1,0 +1,97 @@
+{
+  "title": "Sites",
+  "search": {
+    "label": "Buscar sites",
+    "placeholder": "Buscar host, alias, pasta ou driver",
+    "clear": "Limpar busca"
+  },
+  "view": {
+    "label": "Layout",
+    "grid": "Grade",
+    "list": "Lista"
+  },
+  "new": "Novo site",
+  "count_one": "{count} site",
+  "count_other": "{count} sites",
+  "countFiltered": "{shown} de {total}",
+  "empty": {
+    "title": "Nenhum site ainda",
+    "description": "Vincule a pasta de um projeto ou aponte um host para um app local.",
+    "noMatchTitle": "Nenhum site corresponde a \"{query}\"",
+    "noMatchDescription": "A busca olha host, aliases, pasta e driver."
+  },
+  "list": {
+    "label": "Sites"
+  },
+  "card": {
+    "open": "Abrir {host} no navegador",
+    "details": "Detalhes",
+    "details_aria": "Detalhes de {host}",
+    "remove": "Remover",
+    "remove_aria": "Remover {host}",
+    "monogram": "Driver {driver}",
+    "proxy": "proxy",
+    "web": "web: {state}"
+  },
+  "badge": {
+    "php": "PHP {version}",
+    "https": "HTTPS",
+    "http": "HTTP",
+    "caseSensitive": "Aa",
+    "caseSensitiveTitle": "Pasta com diferença entre maiúsculas e minúsculas",
+    "caseInsensitive": "aA",
+    "caseInsensitiveTitle": "Pasta sem diferença entre maiúsculas e minúsculas",
+    "ws": "WebSocket"
+  },
+  "process": {
+    "running": "rodando",
+    "starting": "iniciando",
+    "stopped": "parado",
+    "failed": "falhou",
+    "updating": "atualizando"
+  },
+  "create": {
+    "title": "Novo site",
+    "description": "Escolha como o site é criado.",
+    "tabs": "Tipo de site",
+    "tabFolder": "Pasta",
+    "tabProxy": "Proxy",
+    "tabProject": "Novo projeto",
+    "projectDisabled": "Criar projetos a partir de stacks chega no marco M3.",
+    "folder": "Pasta do projeto",
+    "dropZone": "Solte aqui a pasta do projeto",
+    "dropZoneActive": "Solte para usar esta pasta",
+    "dropZoneRemote": "Arrastar e soltar está desativado: este daemon roda em outra máquina, digite o caminho como ele existe lá.",
+    "host": "Host",
+    "hostHint": "Sugerido pelo nome da pasta: <pasta>.{tld}",
+    "hostLowercased": "Hosts são sempre minúsculos: usando \"{host}\".",
+    "hostEmpty": "Informe um host.",
+    "hostSyntax": "Use letras, números, pontos e hífens, terminando em um TLD como .{tld}.",
+    "folderEmpty": "Informe a pasta do projeto.",
+    "php": "Versão do PHP",
+    "phpDefault": "Padrão",
+    "server": "Servidor web",
+    "serverDefault": "Padrão",
+    "driver": "Driver",
+    "driverAuto": "Detectar automaticamente",
+    "https": "HTTPS",
+    "upstream": "Upstream",
+    "upstreamHint": "Onde o app escuta, por exemplo http://127.0.0.1:3000",
+    "upstreamEmpty": "Informe a URL do upstream.",
+    "upstreamSyntax": "Use uma URL completa http:// ou https://.",
+    "websocket": "WebSocket (HMR, live reload)",
+    "submit": "Criar site",
+    "submitting": "Criando…",
+    "created": "Site {host} criado.",
+    "cli": "Comando equivalente"
+  },
+  "remove": {
+    "title": "Remover {host}?",
+    "description": "O site deixa de ser servido e sua configuração é removida. Os arquivos do projeto nunca são apagados.",
+    "cancel": "Cancelar",
+    "confirm": "Remover site",
+    "removing": "Removendo…",
+    "done": "Site {host} removido.",
+    "failed": "Não foi possível remover {host}."
+  }
+}

@@ -5,8 +5,11 @@
 // live behaviour of `heavy` (event storm).
 import {
   SCENARIOS,
+  fakeError,
+  fakeJob,
   registerScenario,
   type FakeBridge,
+  type FakeHandlers,
   type FakeScenario,
 } from "../../../src/ipc/fakeBridge";
 import {
@@ -16,6 +19,7 @@ import {
   heavyData,
   populatedData,
   servicePayload,
+  site,
   type QaData,
 } from "./data";
 
@@ -31,6 +35,64 @@ export const QA_SCENARIO_NAMES = [
 ] as const;
 export type QaScenarioName = (typeof QA_SCENARIO_NAMES)[number];
 
+const QA_TLD = ".test";
+
+/**
+ * `sites.add` / `sites.proxy_add` / `sites.remove` over `data.sites`, publishing the `site.*`
+ * events the daemon would (M2-E2-T15). A host outside `.test` is an `invalid_input` on `host`,
+ * like the daemon's TLD rule (docs/06 section 1.3).
+ */
+export function siteHandlers(data: QaData): FakeHandlers {
+  let next = 10_000;
+  const create = (ctx: { fake: FakeBridge }, host: string, patch: Parameters<typeof site>[2]) => {
+    if (!host.endsWith(QA_TLD)) {
+      fakeError("invalid_input", `host ${host} is not under a configured TLD`, "host_tld", {
+        field: "host",
+        host,
+        tlds: [QA_TLD],
+      });
+    }
+    if (data.sites.some((existing) => existing.host === host)) {
+      fakeError("conflict", `host ${host} is already used`, "host_in_use", { host });
+    }
+    next += 1;
+    const created = site(next, host, patch);
+    data.sites.push(created);
+    ctx.fake.publish("site.created", { v: 1, site_id: created.id, host });
+    return fakeJob({ outcome: { done: created } });
+  };
+  return {
+    "sites.add": (params, ctx) =>
+      create(ctx, (params.host ?? "").toLowerCase(), {
+        root: params.dir.replaceAll("\\", "/"),
+        secure: params.secure ?? true,
+        url: `${params.secure === false ? "http" : "https"}://${(params.host ?? "").toLowerCase()}`,
+        driver: params.driver ?? "generic-php",
+        server: params.server ?? "nginx",
+      }),
+    "sites.proxy_add": (params, ctx) =>
+      create(ctx, params.host.toLowerCase(), {
+        kind: "proxy",
+        root: null,
+        php: null,
+        upstream: params.upstream,
+        websocket: params.websocket ?? false,
+        secure: params.secure ?? true,
+        url: `https://${params.host.toLowerCase()}`,
+      }),
+    "sites.remove": (params, ctx) => {
+      if (params.confirm !== true) {
+        fakeError("invalid_input", "sites.remove needs confirm: true", "confirm_required");
+      }
+      const found = data.sites.find((s) => s.id === params.site || s.host === params.site);
+      if (found === undefined) fakeError("not_found", `site ${params.site} not found`);
+      data.sites.splice(data.sites.indexOf(found), 1);
+      ctx.fake.publish("site.removed", { v: 1, site_id: found.id, host: found.host });
+      return fakeJob({ outcome: { done: { ok: true, message: null } } });
+    },
+  };
+}
+
 /** A scenario whose snapshot handlers answer from `data`. */
 export function withData(name: string, data: QaData, extra: FakeScenario = {}): FakeScenario {
   return {
@@ -43,6 +105,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       "net.dns_status": () => DNS_STATUS,
       "tls.ca_status": () => CA_STATUS,
       "daemon.status": () => data.daemon,
+      ...siteHandlers(data),
       ...extra.handlers,
     },
   } satisfies FakeScenario;

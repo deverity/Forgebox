@@ -5,6 +5,7 @@ import type gallery from "./en-US/gallery.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
 import type shell from "./en-US/shell.json";
+import type sites from "./en-US/sites.json";
 import type tray from "./en-US/tray.json";
 
 /**
@@ -19,6 +20,7 @@ export interface Resources {
   notifications: typeof notifications;
   palette: typeof palette;
   gallery: typeof gallery;
+  sites: typeof sites;
 }
 
 declare module "i18next" {

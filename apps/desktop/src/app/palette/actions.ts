@@ -18,6 +18,18 @@ import type { ShortcutHandlers } from "../shortcuts/useShortcuts";
 /** DOM event for a "new site" request; the Sites screen (M2-E2-T15) listens to it. */
 export const NEW_SITE_EVENT = "forgebox:new-site";
 
+let newSitePending = false;
+
+/**
+ * True once after a "new site" request that the Sites screen has not handled yet (its lazy
+ * route chunk may mount after the event fired). The screen calls it on mount.
+ */
+export function takePendingNewSite(): boolean {
+  const pending = newSitePending;
+  newSitePending = false;
+  return pending;
+}
+
 type Translate = (key: string, values?: Record<string, string | number>) => string;
 
 export interface PaletteActions {
@@ -70,6 +82,7 @@ export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
   return useMemo<PaletteActions>(() => {
     const newSite = () => {
       goTo("sites");
+      newSitePending = true;
       // After the route change the Sites screen is mounted (or mounting) and opens its form.
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent(NEW_SITE_EVENT));
