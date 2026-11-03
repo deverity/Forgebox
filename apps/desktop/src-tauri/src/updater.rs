@@ -28,12 +28,13 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State, Wry};
 use tauri_plugin_updater::{Update, UpdaterExt};
+use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use forge_ipc::ApiError;
 
-use crate::bridge::errors::DISCONNECTED;
+use crate::bridge::contexts::ConnectionStatus;
 use crate::bridge::{Bridge, CallArgs};
 use crate::i18n::{self, Language, Namespace};
 use crate::prefs::PrefsStore;
@@ -44,8 +45,12 @@ pub const ENDPOINT_ENV: &str = "FORGEBOX_UPDATER_ENDPOINT";
 pub const DEV_PUBKEY: &str = include_str!("../keys/updater-dev.pub");
 /// Preference key (`prefs.json`) holding the channel.
 pub const CHANNEL_PREF: &str = "update_channel";
-/// How long the daemon gets to stop before the update is abandoned.
-pub const STOP_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long the daemon gets to stop (until it is actually gone) before the update is
+/// abandoned. The daemon's own shutdown budget is 30 s (`--shutdown-timeout`, pools, sites and
+/// instances stop inside it), so this leaves 5 s of margin for the ack and the pipe closing.
+pub const STOP_TIMEOUT: Duration = Duration::from_secs(35);
+/// Pause after the pipe closes so the process finishes exiting and releases `forgeboxd.exe`.
+pub const EXIT_SETTLE: Duration = Duration::from_millis(500);
 /// Deadline for the manifest request (a server that accepts and never answers must not hang us).
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 /// Deadline for the installer download.
@@ -674,45 +679,166 @@ impl<R: Runtime> UpdateSource for TauriSource<R> {
     }
 }
 
-/// The real daemon stop: `daemon.stop {keep_services: false}` on the `local` context.
-/// A daemon that is not running counts as stopped.
-pub struct BridgeStopper {
-    app: AppHandle<Wry>,
+/// One event of the daemon connection, as the stopper needs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkEvent {
+    Status(ConnectionStatus),
+    /// Events were missed: ask [`DaemonLink::status`] again.
+    Lagged,
+    /// The stream ended (the app is shutting down).
+    Closed,
 }
 
-impl BridgeStopper {
-    pub fn new(app: AppHandle<Wry>) -> Self {
-        Self { app }
+/// The connection state of the daemon, one event at a time.
+pub trait LinkEvents: Send + 'static {
+    fn next(&mut self) -> impl Future<Output = LinkEvent> + Send;
+}
+
+/// The small surface [`LinkedStopper`] needs from the bridge: the stop call and the state
+/// stream. A trait so the wait-until-gone logic is testable without a daemon.
+pub trait DaemonLink: Send + Sync + 'static {
+    type Events: LinkEvents;
+    /// Subscribes to state changes (call before [`DaemonLink::request_stop`]).
+    fn subscribe(&self) -> Self::Events;
+    fn status(&self) -> impl Future<Output = Result<ConnectionStatus, String>> + Send;
+    /// `daemon.stop {keep_services:false}`; returns when the daemon acknowledged (it has NOT
+    /// exited yet).
+    fn request_stop(&self) -> impl Future<Output = Result<(), String>> + Send;
+}
+
+impl<L: DaemonLink> DaemonLink for Arc<L> {
+    type Events = L::Events;
+    fn subscribe(&self) -> L::Events {
+        (**self).subscribe()
+    }
+    fn status(&self) -> impl Future<Output = Result<ConnectionStatus, String>> + Send {
+        (**self).status()
+    }
+    fn request_stop(&self) -> impl Future<Output = Result<(), String>> + Send {
+        (**self).request_stop()
     }
 }
 
-impl DaemonStop for BridgeStopper {
+/// Stops the daemon and waits until it is actually gone, not just until it acked: the daemon
+/// answers `daemon.stop` at once and then spends up to its 30 s budget stopping pools, sites
+/// and instances before it closes the pipe and exits. The caller bounds the whole call with
+/// the service's stop timeout.
+pub struct LinkedStopper<L: DaemonLink> {
+    link: L,
+    settle: Duration,
+}
+
+impl<L: DaemonLink> LinkedStopper<L> {
+    pub fn new(link: L, settle: Duration) -> Self {
+        Self { link, settle }
+    }
+}
+
+impl<L: DaemonLink> DaemonStop for LinkedStopper<L> {
     async fn stop(&self) -> Result<(), String> {
-        use crate::bridge::contexts::ConnectionStatus;
-        let bridge = self.app.state::<Bridge>();
-        let state = bridge.state("local").await.map_err(|e| e.message)?;
-        if !matches!(
-            state.status,
-            ConnectionStatus::Connected | ConnectionStatus::Reconnecting
+        // Subscribe first so a disconnect right after the ack cannot be missed.
+        let mut events = self.link.subscribe();
+        let mut status = self.link.status().await?;
+        // A reconnecting daemon may still be alive: wait for a definite state instead of
+        // taking the failed call for "stopped".
+        while matches!(
+            status,
+            ConnectionStatus::Reconnecting
+                | ConnectionStatus::Connecting
+                | ConnectionStatus::Starting
         ) {
+            status = match events.next().await {
+                LinkEvent::Status(s) => s,
+                LinkEvent::Lagged => self.link.status().await?,
+                LinkEvent::Closed => return Err("connection events ended".to_owned()),
+            };
+        }
+        if status != ConnectionStatus::Connected {
+            // Idle, Stopped, Uninitialized, Closed: no daemon to stop.
             return Ok(());
         }
-        let answer = bridge
+        self.link.request_stop().await?;
+        // Acked. The pipe closes (the context leaves `Connected`) only at the end of the
+        // daemon's shutdown, right before the process exits.
+        loop {
+            let current = match events.next().await {
+                LinkEvent::Status(s) => s,
+                LinkEvent::Lagged => self.link.status().await?,
+                LinkEvent::Closed => return Err("connection events ended".to_owned()),
+            };
+            if current != ConnectionStatus::Connected {
+                break;
+            }
+        }
+        tokio::time::sleep(self.settle).await;
+        Ok(())
+    }
+}
+
+/// The `local` context of the app's bridge.
+pub struct BridgeLink {
+    app: AppHandle<Wry>,
+}
+
+pub struct BridgeEvents {
+    rx: broadcast::Receiver<crate::bridge::contexts::ContextStateDto>,
+}
+
+impl LinkEvents for BridgeEvents {
+    async fn next(&mut self) -> LinkEvent {
+        loop {
+            match self.rx.recv().await {
+                Ok(state) if state.context == "local" => {
+                    return LinkEvent::Status(state.status);
+                }
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => return LinkEvent::Lagged,
+                Err(broadcast::error::RecvError::Closed) => return LinkEvent::Closed,
+            }
+        }
+    }
+}
+
+impl DaemonLink for BridgeLink {
+    type Events = BridgeEvents;
+
+    fn subscribe(&self) -> BridgeEvents {
+        BridgeEvents {
+            rx: self.app.state::<Bridge>().watch_states(),
+        }
+    }
+
+    async fn status(&self) -> Result<ConnectionStatus, String> {
+        let state = self
+            .app
+            .state::<Bridge>()
+            .state("local")
+            .await
+            .map_err(|e| e.message)?;
+        Ok(state.status)
+    }
+
+    async fn request_stop(&self) -> Result<(), String> {
+        self.app
+            .state::<Bridge>()
             .call(CallArgs {
                 context: "local".to_owned(),
                 method: "daemon.stop".to_owned(),
                 params: Some(json!({ "keep_services": false })),
                 request_id: None,
-                timeout_ms: Some(u64::try_from(STOP_TIMEOUT.as_millis()).unwrap_or(15_000)),
+                timeout_ms: Some(u64::try_from(STOP_TIMEOUT.as_millis()).unwrap_or(35_000)),
             })
-            .await;
-        match answer {
-            Ok(_) => Ok(()),
-            // The daemon went away while answering: that is what we wanted.
-            Err(err) if err.code == DISCONNECTED => Ok(()),
-            Err(err) => Err(err.message),
-        }
+            .await
+            .map(|_| ())
+            .map_err(|e| e.message)
     }
+}
+
+/// The real daemon stop.
+pub type BridgeStopper = LinkedStopper<BridgeLink>;
+
+pub fn bridge_stopper(app: AppHandle<Wry>) -> BridgeStopper {
+    LinkedStopper::new(BridgeLink { app }, EXIT_SETTLE)
 }
 
 /// The updater as the app manages it.
@@ -735,7 +861,7 @@ pub fn build_service(
     let emitter = app.clone();
     Arc::new(UpdateService::new(
         source,
-        BridgeStopper::new(app.clone()),
+        bridge_stopper(app.clone()),
         active,
         env!("CARGO_PKG_VERSION"),
         Box::new(move |snapshot| {
@@ -1079,5 +1205,148 @@ mod tests {
             let api = ApiError::from(err.clone());
             assert_eq!(api.reason(), Some(err.reason()));
         }
+    }
+
+    // --- LinkedStopper: the stop completes only when the daemon is gone -------------------
+
+    struct FakeEvents(broadcast::Receiver<LinkEvent>);
+
+    impl LinkEvents for FakeEvents {
+        async fn next(&mut self) -> LinkEvent {
+            match self.0.recv().await {
+                Ok(event) => event,
+                Err(broadcast::error::RecvError::Lagged(_)) => LinkEvent::Lagged,
+                Err(broadcast::error::RecvError::Closed) => LinkEvent::Closed,
+            }
+        }
+    }
+
+    struct FakeLink {
+        log: Log,
+        status: Mutex<ConnectionStatus>,
+        events: broadcast::Sender<LinkEvent>,
+    }
+
+    impl DaemonLink for FakeLink {
+        type Events = FakeEvents;
+        fn subscribe(&self) -> FakeEvents {
+            FakeEvents(self.events.subscribe())
+        }
+        async fn status(&self) -> Result<ConnectionStatus, String> {
+            Ok(*self.status.lock().unwrap())
+        }
+        async fn request_stop(&self) -> Result<(), String> {
+            // The ack arrives at once; the daemon is still running.
+            self.log.lock().unwrap().push("ack");
+            Ok(())
+        }
+    }
+
+    fn linked_service(
+        initial: ConnectionStatus,
+        timeout: Duration,
+    ) -> (
+        UpdateService<FakeSource, LinkedStopper<Arc<FakeLink>>>,
+        Arc<FakeLink>,
+        Log,
+    ) {
+        let log: Log = Arc::default();
+        let link = Arc::new(FakeLink {
+            log: log.clone(),
+            status: Mutex::new(initial),
+            events: broadcast::channel(16).0,
+        });
+        let service = UpdateService::new(
+            Arc::new(FakeSource {
+                log: log.clone(),
+                announce: Some(info()),
+                download_error: None,
+                checks: AtomicUsize::new(0),
+            }),
+            LinkedStopper::new(link.clone(), Duration::ZERO),
+            true,
+            "0.2.0",
+            Box::new(|_| {}),
+        )
+        .with_stop_timeout(timeout);
+        (service, link, log)
+    }
+
+    #[tokio::test]
+    async fn the_installer_starts_only_after_the_daemon_disconnects() {
+        let (service, link, log) =
+            linked_service(ConnectionStatus::Connected, Duration::from_secs(5));
+        service.check().await.unwrap();
+        let apply = tokio::spawn(async move { service.apply().await });
+        // The ack is in, but the daemon is still stopping its services.
+        while !log.lock().unwrap().contains(&"ack") {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !log.lock().unwrap().contains(&"install"),
+            "installer ran before exit"
+        );
+        link.events
+            .send(LinkEvent::Status(ConnectionStatus::Reconnecting))
+            .unwrap();
+        apply.await.unwrap().unwrap();
+        let log = log.lock().unwrap();
+        let ack = log.iter().position(|e| *e == "ack").unwrap();
+        let install = log.iter().position(|e| *e == "install").unwrap();
+        assert!(ack < install);
+    }
+
+    #[tokio::test]
+    async fn the_installer_never_starts_when_the_daemon_stays_connected() {
+        let (service, _link, log) =
+            linked_service(ConnectionStatus::Connected, Duration::from_millis(150));
+        service.check().await.unwrap();
+        let err = service.apply().await.unwrap_err();
+        assert!(matches!(err, UpdaterError::DaemonStopTimeout(_)), "{err:?}");
+        assert!(!log.lock().unwrap().contains(&"install"));
+    }
+
+    #[tokio::test]
+    async fn a_reconnecting_daemon_is_not_taken_for_stopped() {
+        let (service, link, log) =
+            linked_service(ConnectionStatus::Reconnecting, Duration::from_millis(150));
+        service.check().await.unwrap();
+        // Still reconnecting at the deadline: no ack, no installer.
+        let err = service.apply().await.unwrap_err();
+        assert!(matches!(err, UpdaterError::DaemonStopTimeout(_)), "{err:?}");
+        assert!(log.lock().unwrap().is_empty() || !log.lock().unwrap().contains(&"install"));
+
+        // It comes back: it gets stopped for real, then the installer runs.
+        let (service, link2, log) =
+            linked_service(ConnectionStatus::Reconnecting, Duration::from_secs(5));
+        drop(link);
+        service.check().await.unwrap();
+        let apply = tokio::spawn(async move { service.apply().await });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!log.lock().unwrap().contains(&"ack"));
+        link2
+            .events
+            .send(LinkEvent::Status(ConnectionStatus::Connected))
+            .unwrap();
+        while !log.lock().unwrap().contains(&"ack") {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(!log.lock().unwrap().contains(&"install"));
+        link2
+            .events
+            .send(LinkEvent::Status(ConnectionStatus::Stopped))
+            .unwrap();
+        apply.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn no_daemon_means_nothing_to_wait_for() {
+        let (service, _link, log) =
+            linked_service(ConnectionStatus::Stopped, Duration::from_secs(5));
+        service.check().await.unwrap();
+        service.apply().await.unwrap();
+        assert!(!log.lock().unwrap().contains(&"ack"));
+        assert!(log.lock().unwrap().contains(&"install"));
     }
 }
