@@ -6,6 +6,7 @@ import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
 import type shell from "./en-US/shell.json";
 import type tray from "./en-US/tray.json";
+import type updater from "./en-US/updater.json";
 
 /**
  * Typed keys: en-US is the source of truth. Add each new feature namespace here
@@ -19,6 +20,7 @@ export interface Resources {
   notifications: typeof notifications;
   palette: typeof palette;
   gallery: typeof gallery;
+  updater: typeof updater;
 }
 
 declare module "i18next" {

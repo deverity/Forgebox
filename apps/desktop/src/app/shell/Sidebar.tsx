@@ -10,6 +10,7 @@ import { Icon } from "./icons";
 import { StartAll } from "./StartAll";
 import { useMailUnread, useServiceCounts, useSiteCount, useUpdateCount } from "./useShellState";
 import { useSidebarCollapsed } from "./useViewportCollapse";
+import { useUpdaterSnapshot } from "../../features/updater/store";
 
 // Glyphs of the services badge (the spoken form is the sr-only text next to it).
 const DOT_ON = "●";
@@ -119,24 +120,37 @@ function NavRow({
 function Footer({ collapsed }: { collapsed: boolean }) {
   const { t } = useTranslation("shell");
   const hello = useHello();
+  const update = useUpdaterSnapshot();
   const version =
     hello === null
       ? t("sidebar.versionUnknown")
       : t("sidebar.version", { version: hello.daemon_version });
+  // Inactive (0.2.0 release): the fixed notice. Active: an announced update, or nothing extra.
+  const updater = !update.active
+    ? t("sidebar.updater")
+    : update.available === null
+      ? null
+      : t("sidebar.updateAvailable", { version: update.available.version });
+  const text = updater === null ? version : `${version} · ${updater}`;
   if (collapsed) {
     return (
       <span
-        title={`${version} · ${t("sidebar.updater")}`}
+        title={text}
+        data-update={update.available === null ? undefined : "available"}
         className="mx-auto text-caption text-fg-tertiary"
       >
         {version}
-        <span className="sr-only">{` · ${t("sidebar.updater")}`}</span>
+        {updater === null ? null : <span className="sr-only">{` · ${updater}`}</span>}
       </span>
     );
   }
   return (
-    <p className="px-3 text-caption text-fg-tertiary" data-testid="sidebar-version">
-      {`${version} · ${t("sidebar.updater")}`}
+    <p
+      className="px-3 text-caption text-fg-tertiary"
+      data-testid="sidebar-version"
+      data-update={update.available === null ? undefined : "available"}
+    >
+      {text}
     </p>
   );
 }
