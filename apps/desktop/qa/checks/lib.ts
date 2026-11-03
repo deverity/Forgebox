@@ -23,7 +23,9 @@ const SAMPLE_ID = "demo";
 export const ROUTES: readonly string[] = [
   ...FEATURES.map((f) => f.path),
   `/sites/${SAMPLE_ID}`,
-  `/catalog/${SAMPLE_ID}`,
+  // Real fixture ids of the catalog (M2-E2-T18): a tool and a stack.
+  "/catalog/php",
+  "/catalog/laravel",
   "/__gallery",
 ];
 

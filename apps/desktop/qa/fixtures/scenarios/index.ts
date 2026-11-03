@@ -4,6 +4,7 @@
 // registers `empty`, `populated`, `heavy`, `slow` and `remote` with snapshot data and the
 // live behaviour of `heavy` (event storm).
 import {
+  NOT_IMPLEMENTED,
   SCENARIOS,
   fakeError,
   fakeJob,
@@ -12,6 +13,7 @@ import {
   type FakeHandlers,
   type FakeScenario,
 } from "../../../src/ipc/fakeBridge";
+import { catalogHandlers } from "./catalog";
 import { configHandlers } from "./config";
 import {
   CA_STATUS,
@@ -96,6 +98,7 @@ export function siteHandlers(data: QaData): FakeHandlers {
 
 /** A scenario whose snapshot handlers answer from `data`. */
 export function withData(name: string, data: QaData, extra: FakeScenario = {}): FakeScenario {
+  const config = configHandlers(data);
   return {
     ...extra,
     name,
@@ -107,7 +110,8 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       "tls.ca_status": () => CA_STATUS,
       "daemon.status": () => data.daemon,
       ...siteHandlers(data),
-      ...configHandlers(data),
+      ...config,
+      ...catalogHandlers(data, config),
       ...extra.handlers,
     },
   } satisfies FakeScenario;
@@ -151,7 +155,14 @@ function define(name: string, data: QaData, base: FakeScenario, live?: LiveBehav
 export function registerQaScenarios(): void {
   const builtin = (name: string): FakeScenario => SCENARIOS.get(name)?.() ?? {};
   define("empty", emptyData(), builtin("empty"));
-  define("populated", populatedData(), { latencyMs: 0 });
+  // The catalog (M2-E2-T18) needs the provider jobs, which the daemon answers `not_implemented`
+  // until M2-E2-T5: the populated scenario offers them, like a daemon that has them.
+  define("populated", populatedData(), {
+    latencyMs: 0,
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
+      (method) => method !== "tools.releases" && method !== "tools.plan",
+    ),
+  });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
   define("slow", populatedData(), builtin("slow"));
   define("remote", populatedData(), builtin("remote"));

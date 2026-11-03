@@ -54,7 +54,7 @@ export const SCREENS: readonly ScreenDef[] = [
   {
     id: "catalog-detail",
     route: "/catalog/$id",
-    path: `/catalog/${SAMPLE_ID}`,
+    path: "/catalog/php",
     scenario: "populated",
   },
   { id: "terminal", route: "/terminal", path: "/terminal", scenario: "populated" },

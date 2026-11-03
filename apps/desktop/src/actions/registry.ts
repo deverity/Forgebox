@@ -4,7 +4,7 @@
 // feeds the call, the equivalent `forge` command shown to the user (`renderCli`) and the
 // E4-T5 parity gate (`ACTIONS` lists them all). The ESLint rule `forgebox/no-direct-mutation`
 // forbids calling a mutating method with `api.call`/`api.job`/`queue.call` outside this folder.
-import type { CallOptions, JobOptions, ParamsOf } from "../ipc/api";
+import type { CallOptions, JobHandle, JobOptions, ParamsOf } from "../ipc/api";
 import { renderCli } from "../ipc/cli";
 import { METHODS, type MethodName } from "../ipc/methods";
 import type { ReconnectQueue } from "../state/reconnectQueue";
@@ -77,6 +77,26 @@ export async function runAction<M extends MethodName, I>(
     return handle.done;
   }
   return (queue.call as (m: string, p: unknown, o: CallOptions) => Promise<unknown>)(
+    action.method,
+    params,
+    options,
+  );
+}
+
+/**
+ * Starts a job action and returns its handle at once (`job.id` is known before the job ends),
+ * for screens that follow the job themselves (install progress with cancel). `done` rejects
+ * like `runAction`; a caller that only watches the jobs store should still handle it.
+ */
+export async function startJobAction<M extends MethodName, I>(
+  queue: ReconnectQueue,
+  action: Action<M, I>,
+  input: I,
+  options: RunOptions = {},
+): Promise<JobHandle<unknown>> {
+  if (action.kind !== "job") throw new Error(`action ${action.id}: ${action.method} is not a job`);
+  const params = action.toParams(input);
+  return (queue.job as (m: string, p: unknown, o: JobOptions) => Promise<JobHandle<unknown>>)(
     action.method,
     params,
     options,

@@ -37,3 +37,20 @@ export const setToolPolicy = defineAction<"tools.policy", { tool: string; policy
   method: "tools.policy",
   toParams: ({ tool, policy }) => ({ tool, policy }),
 });
+
+/**
+ * Installs tool versions (`forge tool install php@8.4.27 --variant nts`). `yes` is set because
+ * the catalog shows the `tools.plan` (dependents and total size) before the user confirms.
+ */
+export const installTools = defineAction<
+  "tools.install",
+  { specs: readonly string[]; variant?: string | null }
+>({
+  id: "tools.install_specs",
+  method: "tools.install",
+  toParams: ({ specs, variant }) => ({
+    specs: [...specs],
+    yes: true,
+    ...(variant === undefined || variant === null || variant === "" ? {} : { variant }),
+  }),
+});
