@@ -4,6 +4,12 @@
 //! second document, the archive fetched through the download queue with its sha256 and
 //! size enforced, then `Layout::install_from_archive` (its own job, awaited here with the
 //! progress forwarded). A release without a checksum is refused by the layout engine.
+//!
+//! Extensions (`kind: Extension`, ADR-0043) go through [`install_extension`]: the
+//! releases of the extension are resolved like a tool's
+//! (`ExtensionManifest::release_view`), matched against the installed versions of the
+//! tool it extends ([`forge_provider::layout::extension::plan`]) and installed into each
+//! target by `Layout::install_extension`, one layout job per target.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -13,14 +19,19 @@ use forge_core::error::{ForgeError, Result};
 use forge_core::ids::ToolId;
 use forge_core::jobs::{JobContext, JobProgress, JobState};
 use forge_core::store::ToolVersionRow;
+use forge_manifest::schema::ExtensionManifest;
 use forge_manifest::schema::tool::ToolManifest;
 use forge_manifest::version::Constraint;
 use forge_provider::download::Priority;
-use forge_provider::layout::{InstallOptions, InstallReport, InstallRequest};
+use forge_provider::layout::{
+    ExtensionInstallRequest, ExtensionReport, ExtensionTarget, InstallOptions, InstallReport,
+    InstallRequest,
+};
 use forge_provider::provider::{Release, ResolveRequest};
 use forge_provider::update::{ArchiveFetcher, DownloadFetcher, FetchArchive, ReleaseSource};
+use serde::de::DeserializeOwned;
 
-use crate::catalog;
+use crate::catalog::{self, ExtensionEntry};
 use crate::daemon::Daemon;
 
 /// Longest wait for one download.
@@ -75,11 +86,11 @@ pub fn variant_filter(
     )))
 }
 
-async fn wait_layout_job(
+async fn wait_layout_job<T: DeserializeOwned>(
     daemon: &Daemon,
     job: &JobContext,
     id: forge_core::ids::JobId,
-) -> Result<InstallReport> {
+) -> Result<T> {
     let handle = daemon
         .jobs
         .handle(id)
@@ -198,7 +209,7 @@ pub async fn install_one(
             ..InstallOptions::default()
         },
     })?;
-    let report = wait_layout_job(daemon, job, install_job).await?;
+    let report: InstallReport = wait_layout_job(daemon, job, install_job).await?;
     let row = catalog::version(&daemon.reader, report.version_id).await?;
     // Daemon tools get their `default` instance right away (docs/08 §2 `data/<tool>/default`).
     if let Err(err) = daemon.services.ensure_defaults().await {
@@ -210,6 +221,147 @@ pub async fn install_one(
             .message(format!("{} {} installed", row.tool_id, row.version)),
     );
     Ok(row)
+}
+
+/// The versions of the extended tool an extension goes into (`rows`, newest first): the
+/// one `target` names (`php@8.4` = newest installed 8.4, `php@8.4.27`; explicit), or all
+/// of them (`None`, `php`). A version that is not installed is `version_not_installed`.
+pub fn extension_targets(
+    ext: &ExtensionManifest,
+    target_manifest: &ToolManifest,
+    rows: &[ToolVersionRow],
+    target: Option<&str>,
+) -> Result<(Vec<ToolVersionRow>, bool)> {
+    let extends = &ext.spec.extends;
+    let Some(spec) = target else {
+        return Ok((rows.to_vec(), false));
+    };
+    let (tool, version) = parse_spec(spec)?;
+    if tool != *extends {
+        return Err(ForgeError::InvalidInput(format!(
+            "{} goes into {extends}: --for takes {extends}@<version>, not {spec}",
+            ext.metadata.id
+        )));
+    }
+    let Some(version) = version else {
+        return Ok((rows.to_vec(), false));
+    };
+    match catalog::pick(target_manifest, rows, &version) {
+        Some(row) => Ok((vec![row.clone()], true)),
+        None => Err(ForgeError::VersionNotInstalled {
+            tool: extends.to_string(),
+            requested: version.clone(),
+            installed: rows.iter().map(|r| r.version.clone()).collect(),
+            fix: format!("forge tool install {extends}@{version}"),
+        }),
+    }
+}
+
+/// Installs the extension `ext` (`version`: `3.5`, `3.5.3` or `None` = newest that fits)
+/// into the version of the extended tool `target` names, or into every compatible
+/// installed version (ADR-0043). Returns the extension's rows of those targets (already
+/// installed ones included). Errors: `not_found` when the extended tool has no version
+/// or no target has a compatible build (naming the compatible series).
+pub async fn install_extension(
+    daemon: &Daemon,
+    job: &JobContext,
+    ext: &ExtensionEntry,
+    version: Option<&str>,
+    target: Option<&str>,
+) -> Result<Vec<ToolVersionRow>> {
+    let manifest = Arc::clone(&ext.manifest);
+    let id = manifest.metadata.id.clone();
+    let extends = manifest.spec.extends.clone();
+    let target_tool = catalog::require_tool(&daemon.registry, &extends)?;
+    let rows = catalog::installed(&daemon.reader, &extends, Some(&target_tool.manifest)).await?;
+    let (targets, explicit) = extension_targets(&manifest, &target_tool.manifest, &rows, target)?;
+    let view = manifest.release_view();
+    let constraint = version.map(|v| constraint_for(&view, v)).transpose()?;
+    job.progress(
+        JobProgress::new()
+            .pct(2.0)
+            .message(format!("resolving {id} for {extends}")),
+    );
+    let releases = daemon
+        .providers
+        .resolve(ResolveRequest {
+            tool: &view,
+            constraint: constraint.as_ref(),
+            variants: &BTreeMap::new(),
+            channel: None,
+        })
+        .await?;
+    let installed = catalog::installed(&daemon.reader, &id, None).await?;
+    let planned = forge_provider::layout::extension::plan(
+        &manifest,
+        &target_tool.manifest,
+        &targets,
+        explicit,
+        &releases,
+        &installed,
+    )?;
+    for (folder, why) in &planned.skipped {
+        tracing::info!(extension = %id, target = %folder, "skipped: {why}");
+        job.progress(JobProgress::new().message(format!("{folder}: {why}")));
+    }
+    let fetcher = DownloadFetcher::new(
+        daemon.downloads.clone(),
+        daemon.root.tmp_downloads(),
+        DOWNLOAD_TIMEOUT,
+    );
+    let total = planned.items.len().max(1) as f32;
+    let mut out = Vec::new();
+    for (index, item) in planned.items.into_iter().enumerate() {
+        job.check_cancelled()?;
+        let base = 5.0 + 90.0 * index as f32 / total;
+        let folder = item.target.canonical_name.clone();
+        if item.up_to_date() {
+            job.progress(JobProgress::new().pct(base).message(format!(
+                "{id} {} already installed into {extends} {folder}",
+                item.release.version
+            )));
+            if let Some(row) = item.installed {
+                out.push(row);
+            }
+            continue;
+        }
+        let mut release = item.release;
+        daemon.providers.complete(&mut release).await?;
+        job.progress(JobProgress::new().pct(base).message(format!(
+            "downloading {id} {} for {extends} {folder}",
+            release.version
+        )));
+        let archive = fetcher
+            .fetch(FetchArchive {
+                job,
+                manifest: &view,
+                release: &release,
+                priority: Priority::UserAction,
+            })
+            .await?;
+        job.check_cancelled()?;
+        job.progress(JobProgress::new().pct(base + 45.0 / total).message(format!(
+            "installing {id} {} into {extends} {folder}",
+            release.version
+        )));
+        let layout_job = daemon.layout.install_extension(ExtensionInstallRequest {
+            manifest: Arc::clone(&manifest),
+            target: ExtensionTarget {
+                manifest: Arc::clone(&target_tool.manifest),
+                row: item.target,
+            },
+            release,
+            archive,
+            options: InstallOptions::default(),
+        })?;
+        let report: ExtensionReport = wait_layout_job(daemon, job, layout_job).await?;
+        out.push(catalog::version(&daemon.reader, report.version_id).await?);
+    }
+    job.progress(JobProgress::new().pct(100.0).message(format!(
+        "{id} installed into {} version(s) of {extends}",
+        out.len()
+    )));
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -258,5 +410,51 @@ mod tests {
         );
         assert!(variant_filter(&manifest, None).unwrap().is_empty());
         assert!(variant_filter(&manifest, Some("arm64")).is_err());
+    }
+
+    fn xdebug() -> ExtensionManifest {
+        let text = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../registry/tools/xdebug.yaml"),
+        )
+        .unwrap();
+        match forge_manifest::load_str(&text).unwrap() {
+            forge_manifest::Manifest::Extension(e) => e,
+            _ => unreachable!(),
+        }
+    }
+
+    fn php_row(version: &str) -> ToolVersionRow {
+        ToolVersionRow {
+            id: forge_core::ids::VersionId::new(),
+            tool_id: ToolId::new("php").unwrap(),
+            version: version.into(),
+            canonical_name: format!("{version}-nts-vs17-x64"),
+            variant: BTreeMap::new(),
+            path: format!("C:/fb/bin/php/{version}-nts-vs17-x64"),
+            state: forge_core::store::VersionState::Installed,
+            source: forge_core::store::VersionSource::Registry,
+        }
+    }
+
+    #[test]
+    fn extension_targets_follow_the_for_spec() {
+        let (ext, php) = (xdebug(), php());
+        let rows = [php_row("8.4.27"), php_row("8.4.26"), php_row("8.3.36")];
+        let (all, explicit) = extension_targets(&ext, &php, &rows, None).unwrap();
+        assert_eq!((all.len(), explicit), (3, false));
+        let (all, explicit) = extension_targets(&ext, &php, &rows, Some("php")).unwrap();
+        assert_eq!((all.len(), explicit), (3, false));
+        // A series is its newest installed version; an exact version is that one.
+        let (one, explicit) = extension_targets(&ext, &php, &rows, Some("php@8.4")).unwrap();
+        assert!(explicit);
+        assert_eq!(one[0].version, "8.4.27");
+        let (one, _) = extension_targets(&ext, &php, &rows, Some("php@8.4.26")).unwrap();
+        assert_eq!(one[0].version, "8.4.26");
+        let err = extension_targets(&ext, &php, &rows, Some("php@8.2")).unwrap_err();
+        assert_eq!(err.code(), "not_found");
+        assert_eq!(err.details().unwrap()["reason"], "version_not_installed");
+        let err = extension_targets(&ext, &php, &rows, Some("nginx@1.30")).unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
     }
 }

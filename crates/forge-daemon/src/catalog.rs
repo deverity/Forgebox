@@ -6,8 +6,8 @@ use std::sync::Arc;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::{ToolId, VersionId};
 use forge_core::store::{StoreReader, ToolVersionRepo, ToolVersionRow, VersionState};
-use forge_manifest::schema::Manifest;
 use forge_manifest::schema::tool::{ServiceKind, ToolManifest};
+use forge_manifest::schema::{ExtensionManifest, Manifest};
 use forge_manifest::version::{Build, Version, cmp_builds};
 use forge_registry::Registry;
 
@@ -41,6 +41,50 @@ pub fn require_tool(registry: &Registry, id: &ToolId) -> Result<ToolEntry> {
             "no manifest for tool {id} in the loaded registries (forge registry update)"
         ))
     })
+}
+
+/// An extension manifest (`kind: Extension`, docs/04 §2) of a loaded registry.
+#[derive(Debug, Clone)]
+pub struct ExtensionEntry {
+    pub manifest: Arc<ExtensionManifest>,
+    pub official: bool,
+    pub registry: String,
+    pub latest: Option<String>,
+}
+
+/// The extension manifest of `id`, if a loaded registry has one.
+pub fn extension(registry: &Registry, id: &ToolId) -> Option<ExtensionEntry> {
+    let entry = registry.find(id.as_str())?;
+    match entry.manifest.as_ref() {
+        Manifest::Extension(ext) => Some(ExtensionEntry {
+            manifest: Arc::new(ext.clone()),
+            official: entry.official,
+            registry: entry.registry.clone(),
+            latest: entry.latest.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// What a spec of `tools.install`/`tools.remove` names: a tool or an extension.
+#[derive(Debug, Clone)]
+pub enum Installable {
+    Tool(ToolEntry),
+    Extension(ExtensionEntry),
+}
+
+/// [`tool`] or [`extension`], else `not_found`.
+pub fn require_installable(registry: &Registry, id: &ToolId) -> Result<Installable> {
+    if let Some(tool) = tool(registry, id) {
+        return Ok(Installable::Tool(tool));
+    }
+    extension(registry, id)
+        .map(Installable::Extension)
+        .ok_or_else(|| {
+            ForgeError::NotFound(format!(
+                "no manifest for tool {id} in the loaded registries (forge registry update)"
+            ))
+        })
 }
 
 /// Every tool manifest of the loaded registries (first registry wins per id).
