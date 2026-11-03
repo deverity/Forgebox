@@ -49,7 +49,7 @@ use ::windows::Win32::Security::SECURITY_ATTRIBUTES;
 use ::windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_FLAGS_AND_ATTRIBUTES,
     FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_MODE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, OPEN_ALWAYS, OPEN_EXISTING,
+    FILE_SHARE_WRITE, FILE_WRITE_ATTRIBUTES, OPEN_ALWAYS, OPEN_EXISTING,
 };
 use ::windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
@@ -72,14 +72,14 @@ use ::windows::Win32::System::Threading::{
     WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE, WaitForSingleObject,
 };
 use ::windows::core::{PCWSTR, PWSTR};
-use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
+use tokio::net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions};
 use tokio::sync::oneshot;
 
 use crate::error::{ForgeError, Result};
 use crate::platform::process::{
-    ASSIGN_RETRY_LIMIT, ConsoleMode, ExitSource, GroupOptions, PipeReader, ProcessCommand,
-    ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup, SpawnedProcess, StdioTarget,
-    TERMINATE_TIMEOUT,
+    ASSIGN_RETRY_LIMIT, ConsoleMode, ExitSource, GroupOptions, PipeReader, PipeWriter,
+    ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
+    SpawnedProcess, StdinSource, StdioTarget, TERMINATE_TIMEOUT,
 };
 
 /// Size of each captured pipe buffer.
@@ -424,6 +424,7 @@ impl ProcessGroup for JobGroup {
         let exit = ExitWatch::new(created.process)?;
         Ok(SpawnedProcess {
             pid: created.pid,
+            stdin: created.stdin,
             stdout: created.stdout,
             stderr: created.stderr,
             exit: ProcessExit::new(created.pid, Box::new(exit)),
@@ -455,6 +456,7 @@ impl ProcessGroup for JobGroup {
 pub(crate) struct Created {
     pub pid: u32,
     pub process: OwnedHandle,
+    pub stdin: Option<PipeWriter>,
     pub stdout: Option<PipeReader>,
     pub stderr: Option<PipeReader>,
 }
@@ -462,6 +464,7 @@ pub(crate) struct Created {
 /// Child ends of the std handles (closed right after `CreateProcessW`) and our pipe ends.
 struct Stdio {
     stdin: OwnedHandle,
+    our_stdin: Option<PipeWriter>,
     stdout: OwnedHandle,
     /// `None`: stderr shares the stdout handle (same file).
     stderr: Option<OwnedHandle>,
@@ -518,23 +521,31 @@ fn open_append(path: &Path) -> Result<OwnedHandle> {
     Ok(unsafe { owned(handle) })
 }
 
-/// Named pipe: our overlapped reading end on the tokio reactor + the child's synchronous,
-/// inheritable writing end.
-fn pipe() -> Result<(PipeReader, OwnedHandle)> {
+/// Named pipe for a captured stream: our overlapped end on the tokio reactor plus the
+/// child's synchronous, inheritable end. `ToChild` is a stdin pipe (we write, the child
+/// reads); `FromChild` is a stdout/stderr pipe (the child writes, we read).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PipeDirection {
+    FromChild,
+    ToChild,
+}
+
+fn named_pipe(direction: PipeDirection) -> Result<(NamedPipeServer, OwnedHandle)> {
     if tokio::runtime::Handle::try_current().is_err() {
         return Err(ForgeError::Internal(
             "captured stdio needs a tokio runtime context (call spawn inside spawn_blocking)"
                 .to_owned(),
         ));
     }
+    let from_child = direction == PipeDirection::FromChild;
     let name = format!(
         r"\\.\pipe\forgebox-stdio-{}-{}",
         std::process::id(),
         ulid::Ulid::generate()
     );
     let server = ServerOptions::new()
-        .access_inbound(true)
-        .access_outbound(false)
+        .access_inbound(from_child)
+        .access_outbound(!from_child)
         .first_pipe_instance(true)
         .reject_remote_clients(true)
         .pipe_mode(PipeMode::Byte)
@@ -545,12 +556,18 @@ fn pipe() -> Result<(PipeReader, OwnedHandle)> {
         .map_err(|e| ForgeError::io("creating a stdio pipe", e))?;
     let sa = inheritable();
     let wide_name = wide(OsStr::new(&name));
+    let access = if from_child {
+        ::windows::Win32::Foundation::GENERIC_WRITE.0 | FILE_READ_ATTRIBUTES.0
+    } else {
+        // FILE_WRITE_ATTRIBUTES lets the child call SetNamedPipeHandleState on its stdin.
+        FILE_GENERIC_READ.0 | FILE_WRITE_ATTRIBUTES.0
+    };
     // SAFETY: `wide_name` is NUL-terminated; `sa` outlives the call. Synchronous handle
     // (no FILE_FLAG_OVERLAPPED): children expect blocking std handles.
     let client = unsafe {
         CreateFileW(
             PCWSTR(wide_name.as_ptr()),
-            ::windows::Win32::Foundation::GENERIC_WRITE.0 | FILE_READ_ATTRIBUTES.0,
+            access,
             FILE_SHARE_MODE(0),
             Some(&raw const sa),
             OPEN_EXISTING,
@@ -564,16 +581,35 @@ fn pipe() -> Result<(PipeReader, OwnedHandle)> {
     // The reactor tried to start a background read when the server was registered,
     // before any client existed, and gave up (ERROR_PIPE_LISTENING). "Connecting" now
     // that the client end is open completes at once (ERROR_PIPE_CONNECTED) and starts
-    // the reads; without it the reader would never see any data.
+    // the reads; without it the reader would never see any data. Writes need the
+    // connected state as well.
     match futures::FutureExt::now_or_never(server.connect()) {
         Some(Ok(())) | None => {}
         Some(Err(err)) => return Err(ForgeError::io("connecting a stdio pipe", err)),
     }
+    Ok((server, client))
+}
+
+/// stdout/stderr pipe: our reading end + the child's writing end.
+fn pipe() -> Result<(PipeReader, OwnedHandle)> {
+    let (server, client) = named_pipe(PipeDirection::FromChild)?;
+    Ok((Box::pin(server), client))
+}
+
+/// stdin pipe: our writing end + the child's reading end.
+fn stdin_pipe() -> Result<(PipeWriter, OwnedHandle)> {
+    let (server, client) = named_pipe(PipeDirection::ToChild)?;
     Ok((Box::pin(server), client))
 }
 
 fn prepare_stdio(cmd: &ProcessCommand) -> Result<Stdio> {
-    let stdin = open_null(false)?;
+    let (stdin, our_stdin) = match cmd.stdin {
+        StdinSource::Null => (open_null(false)?, None),
+        StdinSource::Pipe => {
+            let (ours, theirs) = stdin_pipe()?;
+            (theirs, Some(ours))
+        }
+    };
     let (stdout, our_stdout) = match &cmd.stdout {
         StdioTarget::Pipe => {
             let (ours, theirs) = pipe()?;
@@ -593,6 +629,7 @@ fn prepare_stdio(cmd: &ProcessCommand) -> Result<Stdio> {
     };
     Ok(Stdio {
         stdin,
+        our_stdin,
         stdout,
         stderr,
         our_stdout,
@@ -783,6 +820,7 @@ pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<
     let cwd = wide(cmd.cwd.as_os_str());
     let Stdio {
         stdin,
+        our_stdin,
         stdout,
         stderr,
         our_stdout,
@@ -873,6 +911,7 @@ pub(crate) fn create_process(job: Option<&Job>, cmd: &ProcessCommand) -> Result<
     Ok(Created {
         pid: pi.dwProcessId,
         process,
+        stdin: our_stdin,
         stdout: our_stdout,
         stderr: our_stderr,
     })
@@ -1278,6 +1317,65 @@ mod tests {
         assert_eq!(
             control.watch(u32::MAX - 3).err().unwrap().code(),
             "not_found"
+        );
+    }
+
+    /// `StdinSource::Pipe`: what we write reaches the child's stdin (larger than the pipe
+    /// buffer, so the writes have to wait for the child), and dropping the writer is the
+    /// end of file that lets it finish. `sort.exe` reads everything before printing.
+    #[tokio::test]
+    async fn stdin_pipe_feeds_the_child_and_closing_it_is_eof() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let control = WindowsProcessControl::new(ProcessControlOptions::default());
+        let group = control.create_group(GroupOptions::INSTANCE).unwrap();
+        let system = system_directory();
+        let mut cmd = ProcessCommand::new(system.join("sort.exe"), &system);
+        cmd.env = control.base_env();
+        cmd.stdin = StdinSource::Pipe;
+        cmd.stdout = StdioTarget::Pipe;
+        let mut spawned = group.spawn(&cmd).unwrap();
+        let mut stdin = spawned.stdin.take().expect("stdin pipe");
+        let mut stdout = spawned.stdout.take().expect("stdout pipe");
+        let lines = 20_000_usize;
+        let writer = async move {
+            for i in (0..lines).rev() {
+                stdin
+                    .write_all(format!("line {i:06}\r\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+            stdin.flush().await.unwrap();
+            drop(stdin);
+        };
+        let reader = async move {
+            let mut out = Vec::new();
+            stdout.read_to_end(&mut out).await.unwrap();
+            out
+        };
+        let (_, out) = tokio::time::timeout(Duration::from_secs(30), async {
+            tokio::join!(writer, reader)
+        })
+        .await
+        .expect("sort finished");
+        let text = String::from_utf8(out).unwrap();
+        let got: Vec<&str> = text.lines().collect();
+        assert_eq!(got.len(), lines);
+        assert_eq!(got[0], "line 000000");
+        assert_eq!(got[lines - 1], format!("line {:06}", lines - 1));
+        assert_eq!((&mut spawned.exit).await.unwrap(), 0);
+        // Without the pipe the field stays empty.
+        let mut null = ProcessCommand::new(system.join("sort.exe"), &system);
+        null.env = control.base_env();
+        let mut spawned = group.spawn(&null).unwrap();
+        assert!(spawned.stdin.is_none());
+        assert_eq!(
+            spawned
+                .exit
+                .wait_timeout(Duration::from_secs(10))
+                .await
+                .unwrap(),
+            Some(0)
         );
     }
 

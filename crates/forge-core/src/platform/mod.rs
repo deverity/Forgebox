@@ -91,8 +91,9 @@ pub use probe::{
 };
 pub use process::{
     ASSIGN_RETRY_LIMIT, CTRL_BREAK_HELPER_NAME, ConsoleMode, ExitSource, GroupOptions, PipeReader,
-    ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
-    SpawnedProcess, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main, process_control,
+    PipeWriter, ProcessCommand, ProcessControl, ProcessControlOptions, ProcessExit, ProcessGroup,
+    SpawnedProcess, StdinSource, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main,
+    process_control,
 };
 pub use process_stats::{
     FakeProcessStats, ImageNameCache, ProcStats, ProcessInfo, ProcessStats, process_creation_time,

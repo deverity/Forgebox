@@ -30,6 +30,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+# CancellationToken of the one-shot runner (the token of forge_core::jobs).
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

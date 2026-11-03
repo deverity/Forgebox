@@ -14,7 +14,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use forge_core::platform::{ConsoleMode, ProcessCommand, ProcessControl, StdioTarget};
+use forge_core::platform::{ConsoleMode, ProcessCommand, ProcessControl, StdinSource, StdioTarget};
 use forge_core::{ForgeError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -206,6 +206,8 @@ impl SpawnSpec {
             args: self.args.iter().map(OsString::from).collect(),
             cwd: self.cwd.clone(),
             env,
+            // Supervised services never read stdin; the one-shot runner asks for a pipe.
+            stdin: StdinSource::Null,
             stdout,
             stderr,
             new_process_group: self.new_process_group,
