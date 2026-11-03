@@ -47,8 +47,8 @@ fn the_real_registry_has_zero_lint_issues() {
     let report = lint_registry(&RegistryDir::new(&registry), &context());
     let shown: Vec<String> = report.issues.iter().map(ToString::to_string).collect();
     assert!(report.issues.is_empty(), "{}", shown.join("\n"));
-    // 12 tools/extensions + 4 stacks + index.yaml.
-    assert_eq!(report.files_checked, 17);
+    // 12 tools/extensions + 5 stacks + index.yaml.
+    assert_eq!(report.files_checked, 18);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn the_initial_catalog_is_complete() {
         let expected = if id == "xdebug" { "Extension" } else { "Tool" };
         assert_eq!(manifest.kind().to_string(), expected, "{id}");
     }
-    for id in ["laravel", "wordpress", "cakephp", "nextjs"] {
+    for id in ["laravel", "wordpress", "php", "cakephp", "nextjs"] {
         let path = registry.join(format!("stacks/{id}.yaml"));
         let manifest = load_file(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         assert!(matches!(manifest, Manifest::Stack(_)), "{id}");

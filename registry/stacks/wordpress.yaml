@@ -13,7 +13,8 @@ metadata:
   summary: "PHP 8.3 + Apache + MariaDB 11.8 + Mailpit"
   description: |
     WordPress com Apache (suporta `.htaccess`), MariaDB e Mailpit para capturar os e-mails do site.
-  tags: [php, wordpress, mariadb, cms]
+  tags: [php, wordpress, mariadb, cms, onboarding]
+  order: 2
   icon: wordpress.svg
   homepage: https://wordpress.org
 spec:
