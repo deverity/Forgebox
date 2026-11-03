@@ -174,8 +174,8 @@ fn table() -> Vec<Case> {
         case(&["service", "kill-port", "1", "--pid", "4242", "--yes"], NI),
         case(&["logs", "daemon"], OK),
         case(&["logs", "nginx"], E("not_found")),
-        case(&["logs", "--list"], NI),
-        case(&["logs", "daemon", "--before", "100"], NI),
+        case(&["logs", "--list"], OK),
+        case(&["logs", "daemon", "--before", "100"], OK),
         // php
         case(&["php", "list"], OK),
         case(&["php", "pool", "status"], OK),
@@ -672,6 +672,40 @@ fn compile_daemon_fixture(name: &str, relative: &str) -> std::path::PathBuf {
 /// is the fake `mysqld` and whose client is the fake of `fixtures/fake_db_client/`:
 /// `--json` shapes, human output, the confirmation of `drop`, and `db shell` running the
 /// client attached to the console and exiting with its code.
+/// `forge logs --list --json` is the `logs.targets` document: the daemon's own log is
+/// always there, with its parser and its root-relative file.
+#[test]
+fn logs_list_prints_the_targets_document() {
+    let root = TestRoot::new(true);
+    let doc = root.json(&["logs", "--list"]);
+    let targets = doc["targets"].as_array().expect("targets");
+    let mut daemon = targets
+        .iter()
+        .find(|t| t["target"] == "daemon")
+        .expect("daemon target")
+        .clone();
+    let file = daemon["file"].as_str().expect("file").to_owned();
+    assert!(file.starts_with("logs/forgeboxd.log."), "{file}");
+    daemon["file"] = serde_json::json!("<daily file>");
+    assert_eq!(
+        daemon,
+        serde_json::json!({
+            "target": "daemon",
+            "label": "Forgebox daemon",
+            "kind": "daemon",
+            "group": "daemon",
+            "format": "json",
+            "live": true,
+            "file": "<daily file>",
+        })
+    );
+    // Human mode: a table with the same target.
+    let run = root.run(&["logs", "--list"]);
+    run.assert_success();
+    assert!(run.stdout.contains("daemon"), "{}", run.stdout);
+    root.stop_daemon();
+}
+
 #[test]
 fn db_commands_drive_the_manifest_client() {
     let root = TestRoot::new(true);

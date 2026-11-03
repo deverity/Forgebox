@@ -36,7 +36,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "LAN exposure with firewall rules",
     ),
     ("net.lan_qr", "M3-E3", "LAN QR codes"),
-    ("logs.targets", "M2-E3-T8", "listing log targets"),
     ("shell.open", "M2-E3-T9", "external terminal launcher"),
     ("shell.open_editor", "M2-E3-T9", "editor launcher"),
     ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
@@ -88,10 +87,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
 /// Roadmap task of the editor and terminal targets of `sites.open` (the browser and the
 /// file manager already work; this is a partial method, so it is not in the table).
 pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
-
-/// Roadmap task of `logs.read {before_seq}` (paging back; `logs.read` itself works, so it
-/// is not in the table).
-pub const LOGS_BEFORE_SEQ_TASK: &str = "M2-E3-T8";
 
 /// Roadmap task of `services.create {data_dir}` (ADR-0041). The method works without it.
 pub const SERVICES_DATA_DIR_TASK: &str = "M2-E2-T10";
@@ -177,7 +172,6 @@ mod tests {
         // The E3 contract (ADR-0040): each backend task owns its methods.
         for (method, task) in [
             ("db.open", "M3-E1"),
-            ("logs.targets", "M2-E3-T8"),
             ("shell.open", "M2-E3-T9"),
             ("shell.open_editor", "M2-E3-T9"),
             ("tls.ca_uninstall", "M2-E3-T11"),
