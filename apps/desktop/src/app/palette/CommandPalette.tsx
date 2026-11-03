@@ -101,7 +101,7 @@ export function CommandPalette({ open, onOpenChange, actions }: CommandPalettePr
             returnTo.current?.focus();
             returnTo.current = null;
           }}
-          className="fixed top-[14%] left-1/2 w-[560px] max-w-[calc(100%-32px)] -translate-x-1/2 overflow-hidden rounded-lg border border-stroke bg-surface-2 text-fg-primary shadow-popover"
+          className="fixed top-[14%] left-1/2 w-[560px] max-w-[calc(100%-32px)] -translate-x-1/2 overflow-hidden rounded-sheet border border-stroke bg-surface-2 text-fg-primary shadow-popover"
         >
           <Dialog.Title className="sr-only">{t("label")}</Dialog.Title>
           <Dialog.Description className="sr-only">{t("placeholder")}</Dialog.Description>
