@@ -30,6 +30,8 @@ if ($Desktop) {
     Invoke-Step 'test' { pnpm -C apps/desktop test }
     Invoke-Step 'playwright fake-bridge suite' { pnpm -C apps/desktop e2e }
     Invoke-Step 'qa:check (section 11 checklist)' { pnpm -C apps/desktop qa:check }
+    $env:QA_SHOTS_SUBSET = 'ci'; $env:QA_SHOTS_RUN = 'ci'
+    Invoke-Step 'qa:shots (CI subset)' { pnpm -C apps/desktop qa:shots }
     Invoke-Step 'tauri debug build' { pnpm -C apps/desktop tauri build --debug --no-bundle }
     Write-Host 'CI Desktop OK'
     exit 0

@@ -112,6 +112,12 @@ jobs:
       - name: qa:check (docs/07 section 11 checklist with negative self-tests)
         run: pnpm -C apps/desktop qa:check
 
+      - name: qa:shots (CI subset; cells must pass, hashes are per machine)
+        env:
+          QA_SHOTS_SUBSET: ci
+          QA_SHOTS_RUN: ci
+        run: pnpm -C apps/desktop qa:shots
+
       - name: upload Playwright reports and screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -122,6 +128,7 @@ jobs:
             apps/desktop/qa/out/test-results
             apps/desktop/qa/out/check-report
             apps/desktop/qa/out/check-results
+            apps/desktop/qa/out/shots/ci
           if-no-files-found: ignore
           retention-days: 14
 
