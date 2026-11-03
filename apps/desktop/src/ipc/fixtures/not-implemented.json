@@ -55,21 +55,6 @@
     "what": "project scaffolding from a stack"
   },
   {
-    "method": "db.list",
-    "task": "M2-E3-T5",
-    "what": "database management"
-  },
-  {
-    "method": "db.create",
-    "task": "M2-E3-T5",
-    "what": "database management"
-  },
-  {
-    "method": "db.drop",
-    "task": "M2-E3-T5",
-    "what": "database management"
-  },
-  {
     "method": "db.export",
     "task": "M2-E3-T6",
     "what": "database export"
@@ -78,16 +63,6 @@
     "method": "db.import",
     "task": "M2-E3-T6",
     "what": "database import"
-  },
-  {
-    "method": "db.shell",
-    "task": "M2-E3-T5",
-    "what": "database shell"
-  },
-  {
-    "method": "db.url",
-    "task": "M2-E3-T5",
-    "what": "database URLs"
   },
   {
     "method": "db.open",

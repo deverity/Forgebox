@@ -42,6 +42,22 @@ pub const NGINX_1_30: Archive = Archive {
     inner: "nginx-1.30.6",
 };
 
+/// MySQL 8.4.13 (curated sha256 of `registry/tools/mysql.yaml`).
+pub const MYSQL_8_4: Archive = Archive {
+    file: "mysql-8.4.13-winx64.zip",
+    url: "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.13-winx64.zip",
+    sha256: "e9cd98b1d23f122987b1afca26ad942efec5891481103d48ae3cde237fa3ea54",
+    inner: "mysql-8.4.13-winx64",
+};
+
+/// PostgreSQL 17.11 EDB binaries (curated sha256 of `registry/tools/postgresql.yaml`).
+pub const POSTGRESQL_17: Archive = Archive {
+    file: "postgresql-17.11-1-windows-x64-binaries.zip",
+    url: "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip",
+    sha256: "6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3",
+    inner: "pgsql",
+};
+
 fn shared_dir(var: &str, default: &str) -> PathBuf {
     let dir = std::env::var_os(var)
         .map(PathBuf::from)

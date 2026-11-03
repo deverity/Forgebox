@@ -139,6 +139,8 @@ pub struct Inner {
     /// `services.set` stores and renders one change at a time (the restart that follows
     /// runs outside it), so two clients never interleave writes of the same files.
     pub settings_turn: Arc<tokio::sync::Semaphore>,
+    /// Cached sizes of the data folders of the database instances (`db.list`).
+    pub db_sizes: crate::databases::SizeCache,
 }
 
 /// Handle on the composed daemon. Cheap to clone.

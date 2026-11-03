@@ -33,9 +33,14 @@ pub fn repo_registry() -> PathBuf {
 pub fn compile_fixture(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     std::fs::create_dir_all(&dir).unwrap();
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(format!("{name}.rs"));
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    // A single file (`name.rs`) or a small project folder (`name/main.rs`).
+    let single = fixtures.join(format!("{name}.rs"));
+    let source = if single.is_file() {
+        single
+    } else {
+        fixtures.join(name).join("main.rs")
+    };
     // FNV-1a of the source: a new executable whenever the fixture changes.
     let hash = std::fs::read(&source)
         .unwrap()
