@@ -165,13 +165,17 @@ fn table() -> Vec<Case> {
         ),
         case(&["service", "ports"], OK),
         // Port 1 is free: without --pid there is nothing to terminate; with one, the CLI
-        // asks (no terminal: usage error) and the daemon answers not_implemented (E3-T11).
+        // asks (no terminal: usage error); with --yes the daemon opens the pid (M2-E3-T11):
+        // no such process.
         case(&["service", "kill-port", "1"], E("not_found")),
         case(
-            &["service", "kill-port", "1", "--pid", "4242"],
+            &["service", "kill-port", "1", "--pid", "4000000000"],
             E("invalid_input"),
         ),
-        case(&["service", "kill-port", "1", "--pid", "4242", "--yes"], NI),
+        case(
+            &["service", "kill-port", "1", "--pid", "4000000000", "--yes"],
+            E("not_found"),
+        ),
         case(&["logs", "daemon"], OK),
         case(&["logs", "nginx"], E("not_found")),
         case(&["logs", "--list"], NI),
@@ -190,8 +194,10 @@ fn table() -> Vec<Case> {
         case(&["site", "list"], OK),
         case(&["site", "add", "{WWW}/demo", "--host", "demo.test"], OK),
         case(&["site", "info", "demo.test"], OK),
-        case(&["site", "env", "demo.test"], NI),
-        case(&["site", "env", "demo.test", "--reveal"], NI),
+        // M2-E3-T11: the folder has no .env (an empty list).
+        case(&["site", "env", "demo.test"], OK),
+        case(&["site", "env", "demo.test", "--reveal"], OK),
+        case(&["site", "env", "nosuch.test"], E("not_found")),
         case(&["site", "php", "demo.test", "8.4"], E("invalid_input")),
         case(&["site", "secure", "demo.test"], OK),
         case(&["site", "unsecure", "demo.test"], OK),
@@ -253,7 +259,8 @@ fn table() -> Vec<Case> {
             E("needs_elevation"),
         ),
         case(&["tls", "ca", "rotate"], E("invalid_input")),
-        case(&["tls", "ca", "uninstall"], NI),
+        // Portable root: the OS store is never touched (M2-E3-T11).
+        case(&["tls", "ca", "uninstall"], E("forbidden")),
         case(
             &[
                 "tls",

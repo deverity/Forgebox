@@ -4,14 +4,16 @@
 
 use base64::Engine as _;
 use forge_core::error::{ForgeError, Result};
+use forge_core::event::EventKind;
 use forge_core::platform::TrustScope;
 use forge_ipc::api::methods::{
-    tls_ca_export, tls_ca_install, tls_ca_rotate, tls_ca_status, tls_export, tls_issue, tls_list,
-    tls_renew,
+    tls_ca_export, tls_ca_install, tls_ca_rotate, tls_ca_status, tls_ca_uninstall, tls_export,
+    tls_issue, tls_list, tls_renew,
 };
 use forge_ipc::api::{
-    CaInstallParams, CaRotateParams, CaStatusDto, CertExportDto, CertFormat, CertificateListDto,
-    JobDto, NoParams, PemDto, TlsExportParams, TlsHostParams, TlsRenewParams, TrustScopeDto,
+    CaInstallParams, CaRotateParams, CaStatusDto, CaUninstallParams, CertExportDto, CertFormat,
+    CertificateListDto, JobDto, NoParams, PemDto, TlsCaUntrustedPayload, TlsExportParams,
+    TlsHostParams, TlsRenewParams, TrustScopeDto,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_tls::{LeafRequest, RenewScope};
@@ -23,6 +25,7 @@ use crate::daemon::Daemon;
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, tls_ca_status, ca_status);
     route!(router, daemon, tls_ca_install, ca_install);
+    route!(router, daemon, tls_ca_uninstall, ca_uninstall);
     route!(router, daemon, tls_ca_export, ca_export);
     route!(router, daemon, tls_ca_rotate, ca_rotate);
     route!(router, daemon, tls_issue, issue);
@@ -62,11 +65,46 @@ async fn ca_status(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<CaSta
     Ok(convert::ca_status(&daemon.tls.status().await?))
 }
 
-async fn ca_install(daemon: Daemon, params: CaInstallParams, ctx: Ctx) -> Result<JobDto> {
-    let scope = match params.scope {
+fn trust_scope(scope: TrustScopeDto) -> TrustScope {
+    match scope {
         TrustScopeDto::CurrentUser => TrustScope::CurrentUser,
         TrustScopeDto::LocalMachine => TrustScope::LocalMachine,
-    };
+    }
+}
+
+/// Version of the `tls.ca_untrusted` payload.
+const CA_UNTRUSTED_V: u32 = 1;
+
+/// `tls.ca_uninstall` (job, admin; ADR-0045): removes the current CA and every older
+/// Forgebox root recorded in `certs/ca/trust.json` from one store. `current_user` asks
+/// the Windows confirmation dialog once per root present; `local_machine` goes through
+/// `forgebox-helper` (`trust.remove_machine_root`, which removes only a constrained
+/// Forgebox CA). Idempotent: nothing trusted = nothing asked, the same status. Publishes
+/// `tls.ca_untrusted` for each root removed. The CA files stay (issuing goes on; the
+/// sites are simply not trusted until `tls.ca_install`).
+async fn ca_uninstall(daemon: Daemon, params: CaUninstallParams, ctx: Ctx) -> Result<JobDto> {
+    let scope = trust_scope(params.scope);
+    let d = daemon.clone();
+    daemon.job(&ctx, "tls.ca_uninstall", move |_job| async move {
+        let removed = d.tls.uninstall_ca(scope).await?;
+        for thumbprint in &removed {
+            tracing::info!(%scope, %thumbprint, "tls: local CA untrusted");
+            let payload = TlsCaUntrustedPayload {
+                v: CA_UNTRUSTED_V,
+                scope: params.scope,
+                thumbprint_sha1: thumbprint.to_hex(),
+            };
+            d.bus.publish(
+                EventKind::TlsCaUntrusted,
+                serde_json::to_value(payload).unwrap_or_default(),
+            );
+        }
+        Ok(convert::ca_status(&d.tls.status().await?))
+    })
+}
+
+async fn ca_install(daemon: Daemon, params: CaInstallParams, ctx: Ctx) -> Result<JobDto> {
+    let scope = trust_scope(params.scope);
     let d = daemon.clone();
     daemon.job(&ctx, "tls.ca_install", move |_job| async move {
         d.tls.ensure_ca().await?;

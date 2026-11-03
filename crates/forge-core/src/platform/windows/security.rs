@@ -114,7 +114,7 @@ pub fn process_is_elevated() -> Result<bool> {
     result.map(|()| elevation.TokenIsElevated != 0)
 }
 
-fn token_user_sid(token: HANDLE) -> Result<String> {
+pub(crate) fn token_user_sid(token: HANDLE) -> Result<String> {
     let mut len = 0u32;
     // SAFETY: size query: no buffer, `len` receives the required size. The call fails
     // with ERROR_INSUFFICIENT_BUFFER by design.

@@ -16,6 +16,7 @@
 //! - [`import`]: `forge import laragon` (scan a Laragon installation into an `ImportPlan`,
 //!   apply it, structured report).
 //! - [`parity`]: Git/`.gitattributes`/`.editorconfig` parity for `forge new`/`site add`.
+//! - [`dotenv`]: the site's `.env`/`.env.local` for `sites.env`, with secret detection.
 //!
 //! - [`proxy`]: reverse-proxy sites (`ProxyModel`: upstream, WebSocket, headers, TLS).
 //! - [`apps`]: Procfile 2.0 processes (`$PORT`, `runtime:`, deterministic `PATH`,
@@ -23,6 +24,7 @@
 
 pub mod apps;
 pub mod case_parity;
+pub mod dotenv;
 pub mod drivers;
 pub mod import;
 pub mod lint_case;

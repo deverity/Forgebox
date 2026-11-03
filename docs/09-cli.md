@@ -52,7 +52,7 @@ forge service set php@8.3 memory_limit=1G upload_max_filesize=256M   # quick set
 forge service set mysql/default                     # sem pares: os ajustes com valores atuais e padrões, e as portas (ports.<nome>)
 forge service update mysql/default [--autostart|--no-autostart] [--arg <a>]... [--no-args] [--env K=V]... [--no-env] [--restart never|failure|always] [--restart-max N] [--restart-window <s>] [--version 8.4.14]
 forge service ports                                 # mapa de portas e donos (inclui conflitos externos)
-forge service kill-port 80 [--pid 4412]             # encerra o processo de fora do Forgebox que ocupa a porta (pede confirmação)
+forge service kill-port 80 [--pid 4412]             # encerra o processo de fora do Forgebox que ocupa a porta (pede confirmação; recusa Forgebox, serviços, sistema e outros usuários: docs/11 §4)
 forge logs <alvo> [-f] [-n N] [--since 10m] [--grep x] [--before <seq>]    # nginx | nginx.error | php@8.3 | mysql/default | site:loja.test | app:loja.test/web (os dois últimos: M2-E3-T8)
 forge logs --list                                   # alvos disponíveis (logs.targets)
 ```
@@ -83,7 +83,7 @@ forge site driver loja.test laravel|auto            # fixa o driver do framework
 forge site alias loja.test add admin.loja.test
 forge site open loja.test [--editor|--terminal|--explorer]
 forge site info loja.test                           # diagnóstico: site.dns, site.certificate (aviso < 30 dias), site.php_pool, site.root_access
-forge site env loja.test [--reveal]                 # .env/.env.local do site com segredos mascarados (--reveal: só admin)
+forge site env loja.test [--reveal]                 # .env/.env.local da pasta do projeto, segredos mascarados no daemon (--reveal: só admin; docs/11 §6)
 forge site pool loja.test shared|dedicated          # pool PHP compartilhado (CPU/RAM ≈) ou exclusivo (exatos, upstream php_<ver>__<slug>); job
 forge site metrics loja.test on|off                 # liga/desliga as métricas do site (desligadas por padrão em raízes portáteis)
 forge park <dir> [--tld .test] | forge unpark <dir> | forge parked
@@ -202,7 +202,7 @@ Rodam só no cliente (sem método): `forge daemon start` (inicia o `forgeboxd`),
 
 Sem comando da CLI (só a GUI e o protocolo): `tools.icon` (ícone SVG do catálogo, sanitizado; a GUI o guarda pelo `sha256`, ver abaixo), `net.port_check` (valida o campo de porta), `system.hello`, `system.ping`, `events.*`, `terminal.*` (o terminal integrado: sessões no daemon, `admin`, não `local_only`; o equivalente mostrado é `forge shell`: a sessão tem o mesmo ambiente de `forge shell`/`forge env` — o builder de `shell.env`, com as versões da pasta ou do site, mais `FORGEBOX_TERMINAL=1` —, roda o shell de `terminal.integrated_shell` (`pwsh` → `powershell` → `cmd`; o PowerShell já vem com `forge completions powershell` carregado) e no máximo `terminal.max_sessions` (16) ficam abertas; ver [03 §7.2.1](03-engine.md)) e `shell.open_editor` (abre um arquivo no editor na linha/coluna; `local_only`).
 
-API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md), aditiva na 1.1): os métodos novos (`logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`, `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) e os de bancos/e-mail ainda sem backend (`mail.*`, …) respondem `not_implemented` citando a tarefa dona (`M2-E3-T7`…`T11`; `db.open` → `M3-E1`) até o backend chegar — `system.hello.not_implemented` os lista. `terminal.*` funcionam desde o M2-E3-T4, `db.list|create|drop|url|shell` desde o M2-E3-T5 e `db.export|import` desde o M2-E3-T6.
+API do E3 ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md), aditiva na 1.1): os métodos novos (`logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`, `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`) e os de bancos/e-mail ainda sem backend (`mail.*`, …) respondem `not_implemented` citando a tarefa dona (`M2-E3-T7`…`T11`; `db.open` → `M3-E1`) até o backend chegar — `system.hello.not_implemented` os lista. `terminal.*` funcionam desde o M2-E3-T4, `db.list|create|drop|url|shell` desde o M2-E3-T5, `db.export|import` desde o M2-E3-T6 e `tls.ca_uninstall`, `services.kill_port_holder` e `sites.env` desde o M2-E3-T11 ([ADR-0045](adr/0045-security-extras-ca-uninstall-port-holder-env.md)).
 
 API do E2 ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md), aditiva na 1.1): `tools.releases` e `tools.plan` (jobs, `viewer`; nada é baixado), `services.update` (job, `admin`) responde `not_implemented` citando a tarefa dona (`M2-E2-T10`) até o backend chegar, e `tools.history` e `tools.icon` funcionam desde o M2-E2-T4 (abaixo); `sites.driver` (job, `operator`) e `tls.list` (`viewer`) saíram desse grupo no M2-E2-T6 e funcionam, e `services.settings` (`viewer`; o bloco `advanced` só vai para admin) e `services.set` respondem desde o M2-E2-T7; `tools.install|remove` com `--for` (`target`) funcionam desde o M2-E2-T8 (extensões por versão alvo, [ADR-0043](adr/0043-extension-install.md); `--for` com tool comum é `invalid_input`) e `service create --data-dir` cita M2-E2-T10, em vez de ignorar o parâmetro. O plano de uma stack (`tools.plan {stack}`) e os `args`/`env` de `services.update` (`launch`) não têm comando equivalente: a GUI não mostra comando em vez de mostrar um errado.
 
