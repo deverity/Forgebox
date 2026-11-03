@@ -72,7 +72,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E2-T12 | Tela Serviços (lista agrupada + detalhe: Visão geral, Logs, Instâncias) | todo | — | |
 | M2-E2-T13 | Formulário de quick settings + abas Configuração, Versões e Avançado | todo | — | |
 | M2-E2-T14 | Dashboard (tiles com sparklines, Atenção, Projetos, sites recentes, atividade) | todo | — | |
-| M2-E2-T15 | Tela Sites (grid/lista, busca instantânea, criar, remover) | todo | — | |
+| M2-E2-T15 | Tela Sites (grid/lista, busca instantânea, criar, remover) | doing | feature/M2-E2-T15-sites-screen | |
 | M2-E2-T16 | Detalhe do site (Geral com troca de PHP ao vivo, Processos, Diagnóstico) | todo | — | |
 | M2-E2-T17 | Tela PHP (colunas por série, pools, CLI padrão, extensões, Xdebug, atualizações) | todo | — | |
 | M2-E2-T18 | Catálogo (busca/filtros, página da tool, instalar com progresso, stacks) | todo | — | |
