@@ -795,3 +795,187 @@ fn db_commands_drive_the_manifest_client() {
     assert_eq!(failing.code, 7, "{failing:#?}");
     assert!(failing.stdout.contains("fake-shell"), "{failing:#?}");
 }
+
+// ---------------------------------------------------------------- mail with a fake Mailpit
+
+/// `POST <path>` to the fake Mailpit's HTTP port (its test controls, no client needed).
+fn fake_mailpit_post(http_port: u16, path: &str) {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", http_port)).unwrap();
+    write!(
+        stream,
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+    .unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).unwrap();
+    assert!(reply.starts_with("HTTP/1.1 200"), "{reply}");
+}
+
+/// `forge mail ...` against a real `forgeboxd` whose `mailpit/default` is the fake of
+/// `fixtures/fake_mailpit.rs`: the `--json` shapes of every subcommand, an attachment
+/// written with `-o` (exact bytes) and refused without it, and one human-mode table.
+#[test]
+fn mail_commands_drive_the_fake_mailpit() {
+    let root = TestRoot::new(true);
+    let toml_path = root.path.join("etc").join("forgebox.toml");
+    let toml = std::fs::read_to_string(&toml_path).unwrap();
+    // The file ends inside `[ports.ranges]`.
+    let (smtp_range, http_range) = (free_port(), free_port());
+    let toml = format!("{toml}mail = [{smtp_range}, {http_range}]\n");
+    std::fs::write(&toml_path, toml).unwrap();
+    let dir = root.path.join("bin/mailpit/1.32.0");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(
+        compile_daemon_fixture("fake_mailpit", "fake_mailpit.rs"),
+        dir.join("mailpit.exe"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("fake-mode.txt"), "polite").unwrap();
+    let _daemon = start_daemon(&root);
+    struct StopOnDrop<'a>(&'a TestRoot);
+    impl Drop for StopOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.stop_daemon();
+        }
+    }
+    let _stop = StopOnDrop(&root);
+
+    let started = std::time::Instant::now();
+    let status = loop {
+        let status = root.json(&["mail", "status"]);
+        if status["running"] == true && status["messages"].is_u64() {
+            break status;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(60),
+            "mailpit never ran: {status}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    };
+    let smtp = status["smtp_port"].as_u64().expect("smtp_port");
+    assert_eq!(status["messages"], 0);
+    assert_eq!(status["unread"], 0);
+    let ui_url = status["ui_url"].as_str().expect("ui_url");
+    let http_port: u16 = ui_url
+        .rsplit(':')
+        .next()
+        .unwrap()
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+
+    fake_mailpit_post(http_port, "/fake/inject?count=2&subject=Order");
+    fake_mailpit_post(
+        http_port,
+        "/fake/inject?count=1&subject=Invoice&attachment=2048",
+    );
+    let status = root.json(&["mail", "status"]);
+    assert_eq!(
+        (status["messages"].as_u64(), status["unread"].as_u64()),
+        (Some(3), Some(3))
+    );
+
+    // list: newest first, paging, --unread and --search.
+    let list = root.json(&["mail", "list"]);
+    assert_eq!(
+        (list["total"].as_u64(), list["unread"].as_u64()),
+        (Some(3), Some(3))
+    );
+    let first = &list["messages"][0];
+    assert_eq!(first["id"], "msg3");
+    assert_eq!(first["subject"], "Invoice 3");
+    assert_eq!(first["from"], "Loja <loja@example.test>");
+    assert_eq!(first["read"], false);
+    assert_eq!(first["attachments"], 1);
+    assert_eq!(first["to"], serde_json::json!(["ana@example.test"]));
+    let page = root.json(&["mail", "list", "--limit", "1", "--offset", "1"]);
+    assert_eq!(page["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(page["messages"][0]["id"], "msg2");
+    assert_eq!(page["total"], 3);
+    let found = root.json(&["mail", "list", "--search", "order"]);
+    assert_eq!(found["total"], 2);
+    assert_eq!(found["messages"].as_array().unwrap().len(), 2);
+
+    // show keeps or marks; read toggles.
+    let kept = root.json(&["mail", "show", "msg1", "--keep-unread"]);
+    assert_eq!(kept["summary"]["id"], "msg1");
+    assert_eq!(kept["text"], "body of msg1");
+    assert_eq!(root.json(&["mail", "status"])["unread"], 3);
+    let shown = root.json(&["mail", "show", "msg1"]);
+    assert_eq!(shown["summary"]["subject"], "Order 1");
+    assert_eq!(root.json(&["mail", "status"])["unread"], 2);
+    assert_eq!(root.json(&["mail", "read", "msg2"])["ok"], true);
+    assert_eq!(root.json(&["mail", "status"])["unread"], 1);
+    assert_eq!(root.json(&["mail", "list", "--unread"])["total"], 1);
+    assert_eq!(
+        root.json(&["mail", "read", "msg1", "msg2", "--unread"])["ok"],
+        true
+    );
+    assert_eq!(root.json(&["mail", "status"])["unread"], 3);
+
+    // attachments: -o writes the exact bytes; without -o nothing is written.
+    let detail = root.json(&["mail", "show", "msg3", "--keep-unread"]);
+    let part = &detail["attachments"][0];
+    assert_eq!(part["part_id"], "1");
+    assert_eq!(part["file_name"], "a.bin");
+    assert_eq!(part["size_bytes"], 2048);
+    let out = root.path.join("a.bin");
+    let saved = root.json(&[
+        "mail",
+        "show",
+        "msg3",
+        "--attachment",
+        "1",
+        "-o",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(saved["filename"], "a.bin");
+    assert_eq!(saved["bytes"], 2048);
+    assert_eq!(saved["path"], out.display().to_string());
+    assert_eq!(std::fs::read(&out).unwrap(), vec![b'x'; 2048]);
+    std::fs::remove_file(&out).unwrap();
+    let human =
+        root.forge()
+            .env("FORGE_LANG", "en")
+            .run(&["mail", "show", "msg3", "--attachment", "1"]);
+    human.assert_success();
+    assert!(
+        human.stdout.contains("a.bin is binary: use -o <file>"),
+        "{human:#?}"
+    );
+    assert!(
+        !out.exists(),
+        "a binary attachment is never written without -o"
+    );
+    assert!(!root.path.join("a.bin").exists());
+
+    // one human-mode table.
+    let human = root.forge().env("FORGE_LANG", "en").run(&["mail", "list"]);
+    human.assert_success();
+    assert!(
+        human.stdout.contains("Invoice 3") && human.stdout.contains("msg1"),
+        "{human:#?}"
+    );
+
+    // env.
+    let env = root.json(&["mail", "env"]);
+    assert_eq!(env["vars"]["MAIL_PORT"], smtp.to_string());
+
+    // delete asks for confirmation; clear too.
+    let refused = root.run(&["--json", "mail", "delete", "msg1"]);
+    assert_eq!(refused.code, 2, "{refused:#?}");
+    assert_eq!(refused.error_code(), "invalid_input");
+    assert_eq!(root.json(&["mail", "delete", "msg1", "--yes"])["ok"], true);
+    assert_eq!(root.json(&["mail", "status"])["messages"], 2);
+    let refused = root.run(&["--json", "mail", "clear"]);
+    assert_eq!(refused.code, 2, "{refused:#?}");
+    assert_eq!(root.json(&["mail", "clear", "--yes"])["ok"], true);
+    let status = root.json(&["mail", "status"]);
+    assert_eq!(
+        (status["messages"].as_u64(), status["unread"].as_u64()),
+        (Some(0), Some(0))
+    );
+    let empty = root.forge().env("FORGE_LANG", "en").run(&["mail", "list"]);
+    empty.assert_success();
+}
