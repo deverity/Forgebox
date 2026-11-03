@@ -9,6 +9,11 @@
 //! store the choices under `Daemon::settings_turn` → render through the pool render queue
 //! ([`crate::pools::PoolManager::render_config`]) → recycle the running pools of the
 //! series when something changed. Run twice, the second run changes nothing.
+//!
+//! A series spec (`8.4`) names the version whose pool serves the series when one runs
+//! ([`pick_rendered`]): the series files are rendered with it, so the change (the DLL
+//! check, the Xdebug install) acts on it and the answer describes it; with no pool
+//! running, the newest installed patch.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -79,6 +84,55 @@ async fn pick(daemon: &Daemon, version: &str) -> Result<(ToolEntry, ToolVersionR
         .cloned()
         .ok_or_else(|| ForgeError::NotFound(format!("PHP {version} is not installed")))?;
     Ok((tool, row))
+}
+
+/// A version spec resolved for a change rendered into the series files.
+struct Resolved {
+    tool: ToolEntry,
+    /// The version the change applies to: the exact version asked for, else the version
+    /// whose pool serves the series (the one [`render_and_recycle`] renders with), else
+    /// the newest installed patch ([`catalog::pick`]).
+    row: ToolVersionRow,
+    series: String,
+    /// The installed versions of the series.
+    versions: Vec<ToolVersionRow>,
+    /// The version whose pool runs and serves the series, if one runs.
+    serving: Option<ToolVersionRow>,
+    /// Whether the spec named one version (`8.4.27`, `8.4.27-nts-vs17-x64`), not a series.
+    exact: bool,
+}
+
+/// Resolves `version` like [`pick`], except that a series spec (`8.4`) resolves to the
+/// version whose pool serves it when one runs: the series files are rendered with that
+/// version (its extension folder, its linked extensions), so an extension change acts on
+/// it and its DTOs describe it.
+async fn pick_rendered(daemon: &Daemon, version: &str) -> Result<Resolved> {
+    let tool = pool_tool(daemon)?;
+    let all = rows(daemon, &tool).await?;
+    let row = catalog::pick(&tool.manifest, &all, version)
+        .cloned()
+        .ok_or_else(|| ForgeError::NotFound(format!("PHP {version} is not installed")))?;
+    let spec = version.trim().trim_start_matches('v');
+    let exact = row.canonical_name == spec || row.version == spec;
+    let series = catalog::series_of(&tool.manifest, &row.version);
+    let versions = series_versions(&tool, &all, &series);
+    let running = super::settings::running_pools(daemon, &versions).await;
+    let serving = running
+        .first()
+        .and_then(|h| versions.iter().find(|v| v.id == h.version_id()))
+        .cloned();
+    let row = match (&serving, exact) {
+        (Some(serving), false) => serving.clone(),
+        _ => row,
+    };
+    Ok(Resolved {
+        tool,
+        row,
+        series,
+        versions,
+        serving,
+        exact,
+    })
 }
 
 /// The debugger state of every installed version of the pool tool (empty without one):
@@ -157,7 +211,7 @@ async fn pool_status(
     let sites = daemon.sites.list().await?;
     let plan = daemon.web.php_plan(&sites).await.unwrap_or_default();
     let filter = match &params.version {
-        Some(v) => Some(pick(&daemon, v).await?.1.id),
+        Some(v) => Some(pick_rendered(&daemon, v).await?.row.id),
         None => None,
     };
     let states = debugger_states(&daemon).await;
@@ -270,7 +324,7 @@ async fn ext_list_of(
 }
 
 async fn ext_list(daemon: Daemon, params: PhpVersionParams, _ctx: Ctx) -> Result<PhpExtListDto> {
-    let (tool, row) = pick(&daemon, &params.version).await?;
+    let Resolved { tool, row, .. } = pick_rendered(&daemon, &params.version).await?;
     ext_list_of(&daemon, &tool, &row).await
 }
 
@@ -406,10 +460,14 @@ async fn ext_toggle(
     ctx: Ctx,
     enable: bool,
 ) -> Result<JobDto> {
-    let (tool, row) = pick(&daemon, &params.version).await?;
+    let Resolved {
+        tool,
+        row,
+        series,
+        versions,
+        ..
+    } = pick_rendered(&daemon, &params.version).await?;
     let target = ext_target(&daemon, &tool, &row, &params.extension).await?;
-    let series = catalog::series_of(&tool.manifest, &row.version);
-    let versions = series_versions(&tool, &rows(&daemon, &tool).await?, &series);
     let verb = if enable { "enable" } else { "disable" };
     let d = daemon.clone();
     daemon.job(
@@ -528,8 +586,21 @@ async fn installed_into(
 
 /// `php.xdebug` (job): see the module docs. `off` turns the extension off and keeps its
 /// port reserved; `on`/`trigger` store the manifest preset of that mode.
+///
+/// A series spec acts on the version whose pool serves the series (the series files are
+/// rendered with it), so that is where a missing Xdebug is installed and what the job
+/// answers. Turning it on for an exact version that does not serve while the serving one
+/// has no Xdebug is a `conflict` naming the serving version: the series files would keep
+/// it off.
 async fn xdebug(daemon: Daemon, params: PhpXdebugParams, ctx: Ctx) -> Result<JobDto> {
-    let (tool, row) = pick(&daemon, &params.version).await?;
+    let Resolved {
+        tool,
+        row,
+        series,
+        versions,
+        serving,
+        exact,
+    } = pick_rendered(&daemon, &params.version).await?;
     let tool_id = tool.manifest.metadata.id.clone();
     let ext = php_ext::debugger(&daemon.registry, &tool_id).ok_or_else(|| {
         ForgeError::NotFound(format!(
@@ -537,7 +608,6 @@ async fn xdebug(daemon: Daemon, params: PhpXdebugParams, ctx: Ctx) -> Result<Job
         ))
     })?;
     let ext_id = ext.manifest.metadata.id.clone();
-    let series = catalog::series_of(&tool.manifest, &row.version);
     let mode = match params.mode {
         XdebugMode::Off => None,
         XdebugMode::On => Some("on"),
@@ -555,6 +625,14 @@ async fn xdebug(daemon: Daemon, params: PhpXdebugParams, ctx: Ctx) -> Result<Job
             return Err(ForgeError::InvalidInput("port: 0 is not a port".into()));
         }
         changes.insert(setting.key.clone(), Some(port.to_string()));
+    }
+    if let Some(serving) = serving.as_ref().filter(|s| exact && s.id != row.id) {
+        if mode.is_some() && !installed_into(&daemon, &tool, &ext, serving).await? {
+            return Err(ForgeError::Conflict(format!(
+                "{tool_id} {} serves the {series} series and has no {ext_id}; the series files                  are rendered with it, so {ext_id} would stay off: run it for {series} (or {})                  to install it there, or stop the {} pool first",
+                serving.version, serving.version, serving.version
+            )));
+        }
     }
     let owner = php_ext::client_port_owner(&tool_id, &series, &ext_id)?;
     // The port the enabled extension will use: the one asked for, else the stored one,
@@ -575,7 +653,6 @@ async fn xdebug(daemon: Daemon, params: PhpXdebugParams, ctx: Ctx) -> Result<Job
     if let Some(port) = reserve {
         check_client_port(&daemon, port, &owner).await?;
     }
-    let versions = series_versions(&tool, &rows(&daemon, &tool).await?, &series);
     let name = php_ext::ext_name(tool.manifest.spec.config.extensions.as_ref(), &ext.manifest);
     let label = format!("php.xdebug {} {}", row.version, mode.unwrap_or("off"));
     let d = daemon.clone();

@@ -23,6 +23,9 @@
 //!   files (`10-forgebox.ini`, whose `extension_dir` is a version folder) are rendered
 //!   with 8.4.27, the serving version, not with the target; with no pool running, with
 //!   the target.
+//! * `php.xdebug` with 8.4.26 (Xdebug) and 8.4.27 (none): `8.4 trigger` while 8.4.26
+//!   serves acts on 8.4.26 (no install into the newest patch, the overlay loads the DLL,
+//!   the DTOs describe 8.4.26); `8.4.26 trigger` while 8.4.27 serves is a `conflict`.
 //! * Online (ignored): real PHP 8.4.27 + real Xdebug 3.5.3 from xdebug.org installed by
 //!   `php.xdebug on` itself; `php -m` with the series overlays (what the pool's workers
 //!   read) lists Xdebug.
@@ -310,19 +313,21 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// The official registry copied to `dir` with Xdebug's 8.3 build moved to
+/// The official registry copied to `dir` with Xdebug's builds for `series` moved to
 /// `https://127.0.0.1:<port>` (release URLs must be https), unsigned: the store marks it
-/// trusted (development only). Installing Xdebug into 8.3 then really starts the download
-/// inside the job, and fails there.
-fn local_registry(dir: &Path, port: u16) {
+/// trusted (development only). Installing Xdebug into one of them then really starts the
+/// download inside the job, and fails there.
+fn local_registry(dir: &Path, port: u16, series: &[&str]) {
     copy_dir(&repo_registry(), dir);
     std::fs::remove_file(dir.join("index.yaml.minisig")).unwrap();
     let path = dir.join("tools/xdebug.yaml");
-    let text = std::fs::read_to_string(&path).unwrap();
-    let from = "url: https://xdebug.org/files/php_xdebug-3.5.3-8.3-";
-    let to = format!("url: https://127.0.0.1:{port}/php_xdebug-3.5.3-8.3-");
-    assert!(text.contains(from));
-    let text = text.replace(from, &to);
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    for series in series {
+        let from = format!("url: https://xdebug.org/files/php_xdebug-3.5.3-{series}-");
+        let to = format!("url: https://127.0.0.1:{port}/php_xdebug-3.5.3-{series}-");
+        assert!(text.contains(&from), "{from}");
+        text = text.replace(&from, &to);
+    }
     std::fs::write(&path, &text).unwrap();
     let manifest_sha = hex(&sha2::Sha256::digest(text.as_bytes()));
     let index = std::fs::read_to_string(dir.join("index.yaml")).unwrap();
@@ -443,6 +448,19 @@ async fn xdebug_call(
     Ok((done, pool))
 }
 
+/// `PhpVersionDto.xdebug` of the exact `version`.
+async fn exact_mode(client: &Client, version: &str) -> XdebugMode {
+    client
+        .call::<php_list>(NoParams {})
+        .await
+        .unwrap()
+        .versions
+        .into_iter()
+        .find(|v| v.version == version)
+        .unwrap()
+        .xdebug
+}
+
 async fn version_mode(client: &Client, series: &str) -> XdebugMode {
     client
         .call::<php_list>(NoParams {})
@@ -475,7 +493,7 @@ fn port_free(port: u16) -> bool {
 async fn xdebug_modes_reserve_the_client_port_and_install_inside_the_job() {
     let server = NotTls::start();
     let registry = tempfile::Builder::new().prefix("fbreg-").tempdir().unwrap();
-    local_registry(registry.path(), server.port);
+    local_registry(registry.path(), server.port, &["8.3"]);
     let root = TestRoot::new();
     let (php84, php83) = {
         std::fs::create_dir_all(root.root.db().parent().unwrap()).unwrap();
@@ -763,6 +781,118 @@ async fn extension_install_renders_the_series_with_the_serving_version() {
     install().await;
     let text = std::fs::read_to_string(&overlay).unwrap();
     assert!(text.contains(&ext_dir("8.4.26-nts-vs17-x64")), "{text}");
+
+    let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
+    assert!(status.success(), "{status}");
+}
+
+/// `php.xdebug` with two 8.4 patches: 8.4.26 (Xdebug installed, as T8 leaves it) and
+/// 8.4.27 (newer, no Xdebug). The series files are rendered with the serving version, so:
+/// * 8.4.27 serving, `php.xdebug 8.4.26 trigger` (exact, not serving) is a `conflict`
+///   naming 8.4.27, with nothing written or reserved;
+/// * 8.4.26 serving, `php.xdebug 8.4 trigger` acts on 8.4.26 (not the newest patch): no
+///   install into 8.4.27 (its builds point at a local server that would fail the job),
+///   `20-xdebug.ini` loads `php_xdebug.dll`, and `PoolDto`, `PhpVersionDto` and
+///   `php.ext_list 8.4` describe 8.4.26.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn xdebug_for_a_series_acts_on_the_serving_version() {
+    let server = NotTls::start();
+    let registry = tempfile::Builder::new().prefix("fbreg-").tempdir().unwrap();
+    local_registry(registry.path(), server.port, &["8.4"]);
+    let root = TestRoot::new();
+    let php27 = {
+        std::fs::create_dir_all(root.root.db().parent().unwrap()).unwrap();
+        let store = Store::open(&root.root.db()).unwrap();
+        seed_registry(&store, registry.path());
+        let php26 = php_version(&root, &store, "8.4.26-nts-vs17-x64");
+        let php27 = php_version(&root, &store, "8.4.27-nts-vs17-x64");
+        seed_xdebug(&root, &store, &php26, "8.4");
+        php27
+    };
+    let mut daemon = spawn_daemon(&root, &[]);
+    let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
+    let overlay = long(&root.root.etc()).join("php/8.4/conf.d/20-xdebug.ini");
+    let seeded = std::fs::read(&overlay).unwrap();
+    let port = if port_free(9003) {
+        None
+    } else {
+        Some(free_port())
+    };
+    let services = |start: bool, target: &'static str| {
+        let client = &client;
+        async move {
+            let targets = ServiceTargetsParams {
+                targets: vec![target.into()],
+            };
+            let job = if start {
+                client.call::<services_start>(targets).await.unwrap()
+            } else {
+                client.call::<services_stop>(targets).await.unwrap()
+            };
+            wait_job(client, job.id, Duration::from_secs(60)).await;
+        }
+    };
+
+    // 8.4.27 serves without Xdebug: turning it on for 8.4.26 alone would not load.
+    services(true, "php@8.4.27").await;
+    let err = xdebug_job(&client, "8.4.26", XdebugMode::Trigger, port)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "conflict", "{err:?}");
+    assert!(err.message.contains("8.4.27"), "{err:?}");
+    assert_eq!(std::fs::read(&overlay).unwrap(), seeded, "nothing written");
+    assert_eq!(xdebug_reservation(&client, "php@8.4/xdebug").await, None);
+
+    // 8.4.26 serves: the series spec acts on it.
+    services(false, "php@8.4.27").await;
+    services(true, "php@8.4.26").await;
+    let (_, pool) = xdebug_call(&client, XdebugMode::Trigger, port)
+        .await
+        .unwrap();
+    assert_eq!(server.hits(), 0, "nothing downloaded for 8.4.27");
+    assert!(
+        !PathBuf::from(&php27.path)
+            .join("ext/php_xdebug.dll")
+            .exists()
+    );
+    let text = std::fs::read_to_string(&overlay).unwrap();
+    assert!(
+        text.contains(
+            "
+zend_extension=php_xdebug.dll
+"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "
+xdebug.start_with_request = \"trigger\"
+"
+        ),
+        "{text}"
+    );
+    assert!(pool.xdebug, "{pool:?}");
+    assert_eq!(
+        (pool.series.as_str(), pool.version.as_str()),
+        ("8.4", "8.4.26"),
+        "{pool:?}"
+    );
+    assert_eq!(exact_mode(&client, "8.4.26").await, XdebugMode::Trigger);
+    assert_eq!(exact_mode(&client, "8.4.27").await, XdebugMode::Off);
+    let list = client
+        .call::<php_ext_list>(PhpVersionParams {
+            version: "8.4".into(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(list.version, "8.4.26");
+    assert!(
+        list.extensions
+            .iter()
+            .any(|e| e.name == "xdebug" && e.enabled && !e.bundled),
+        "{list:?}"
+    );
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
