@@ -69,36 +69,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("shell.open", "M2-E3-T9", "external terminal launcher"),
     ("shell.open_editor", "M2-E3-T9", "editor launcher"),
     (
-        "terminal.open",
-        "M2-E3-T4",
-        "daemon-hosted terminal sessions",
-    ),
-    (
-        "terminal.list",
-        "M2-E3-T4",
-        "daemon-hosted terminal sessions",
-    ),
-    (
-        "terminal.input",
-        "M2-E3-T4",
-        "daemon-hosted terminal sessions",
-    ),
-    (
-        "terminal.resize",
-        "M2-E3-T4",
-        "daemon-hosted terminal sessions",
-    ),
-    (
-        "terminal.close",
-        "M2-E3-T4",
-        "daemon-hosted terminal sessions",
-    ),
-    (
-        "terminal.subscribe",
-        "M2-E3-T4",
-        "daemon-hosted terminal sessions",
-    ),
-    (
         "system.config_list",
         "M2-E3-T10",
         "configuration document with schema",
@@ -264,12 +234,6 @@ mod tests {
             ("logs.targets", "M2-E3-T8"),
             ("shell.open", "M2-E3-T9"),
             ("shell.open_editor", "M2-E3-T9"),
-            ("terminal.open", "M2-E3-T4"),
-            ("terminal.list", "M2-E3-T4"),
-            ("terminal.input", "M2-E3-T4"),
-            ("terminal.resize", "M2-E3-T4"),
-            ("terminal.close", "M2-E3-T4"),
-            ("terminal.subscribe", "M2-E3-T4"),
             ("system.config_list", "M2-E3-T10"),
             ("tls.ca_uninstall", "M2-E3-T11"),
             ("services.kill_port_holder", "M2-E3-T11"),
@@ -283,8 +247,9 @@ mod tests {
             );
             assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
         }
-        // terminal.unsubscribe is a server built-in (closes any stream of the connection).
-        assert!(!methods().iter().any(|m| m == "terminal.unsubscribe"));
+        // The terminal backend exists (M2-E3-T4); terminal.unsubscribe is a server
+        // built-in (closes any stream of the connection).
+        assert!(!methods().iter().any(|m| m.starts_with("terminal.")));
         assert!(crate::api::SERVER_BUILTINS.contains(&"terminal.unsubscribe"));
     }
 

@@ -8,6 +8,7 @@
 //!   into the web servers; [`settings`]: the quick settings of a manifest (docs/04 §1.3);
 //! * [`scheduler`]: periodic work with jitter (updates, registry, `tmp/`, ports) and the
 //!   reactions to site/TLS events;
+//! * [`terminal`]: terminal sessions hosted by the daemon (the GUI's integrated terminal);
 //! * [`shutdown`]: graceful stop in cascade with a global budget;
 //! * [`logging`]: `logs/forgeboxd.log.<date>` (JSON lines) and stdout in `--foreground`;
 //! * [`instance_lock`]: the single-instance mutex and `state/locks/forgeboxd.lock`.
@@ -32,6 +33,7 @@ pub mod scheduler;
 pub mod services;
 pub mod settings;
 pub mod shutdown;
+pub mod terminal;
 pub mod update_feed;
 pub mod vars;
 pub mod web;
