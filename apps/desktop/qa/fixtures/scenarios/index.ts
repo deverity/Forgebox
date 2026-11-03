@@ -12,6 +12,7 @@ import {
   type FakeHandlers,
   type FakeScenario,
 } from "../../../src/ipc/fakeBridge";
+import { configHandlers } from "./config";
 import {
   CA_STATUS,
   DNS_STATUS,
@@ -106,6 +107,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       "tls.ca_status": () => CA_STATUS,
       "daemon.status": () => data.daemon,
       ...siteHandlers(data),
+      ...configHandlers(data),
       ...extra.handlers,
     },
   } satisfies FakeScenario;

@@ -1,5 +1,6 @@
 // Service actions (docs/07 §1.7). Mutating methods are registered here so the ESLint rule
 // `forgebox/no-direct-mutation` and the E4-T5 parity gate can see every one of them.
+import type { ServiceUpdateParams } from "../ipc/generated";
 import { defineAction } from "./registry";
 
 /** "Start all": `services.start` with no targets (the daemon reads that as all). */
@@ -91,4 +92,34 @@ export const killPortHolder = defineAction<
   id: "services.kill_port_holder",
   method: "services.kill_port_holder",
   toParams: ({ port, pid }) => ({ port, pid, confirm: true }),
+});
+
+/** Applies the changed quick settings (`forge service set php@8.4 memory_limit=1G`). */
+export const setServiceSettings = defineAction<
+  "services.set",
+  { target: string; settings: Record<string, string> }
+>({
+  id: "services.set_settings",
+  method: "services.set",
+  toParams: ({ target, settings }) => ({ target, settings }),
+});
+
+/** Opens the config files of a target in the editor (local only). */
+export const openServiceConfig = defineAction<"services.config", string>({
+  id: "services.open_config",
+  method: "services.config",
+  toParams: (target) => ({ target }),
+});
+
+/** The advanced settings of an instance; absent fields keep their value. */
+export type AdvancedPatch = Omit<ServiceUpdateParams, "instance">;
+
+/** Updates the advanced settings of an instance (`forge service update mysql/default ...`). */
+export const updateInstance = defineAction<
+  "services.update",
+  { instance: string; patch: AdvancedPatch }
+>({
+  id: "services.update_instance",
+  method: "services.update",
+  toParams: ({ instance, patch }) => ({ instance, ...patch }),
 });

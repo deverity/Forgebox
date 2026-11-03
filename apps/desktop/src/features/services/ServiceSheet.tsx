@@ -9,15 +9,27 @@ import { StatusDot } from "../../design/primitives/StatusDot";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import type { InstanceDto, ToolDto } from "../../ipc/generated";
 import { InstancesTab } from "./InstancesTab";
+import { AdvancedTab } from "./tabs/AdvancedTab";
+import { ConfigTab } from "./tabs/ConfigTab";
+import { VersionsTab } from "./tabs/VersionsTab";
 import { LogsTab } from "./LogsTab";
 import { dotState, isActive, targetOf, uptimeMs } from "./model";
 import { OverviewTab } from "./OverviewTab";
 import { ToolIcon } from "./ToolIcon";
 
-export const SERVICE_TABS = ["overview", "logs", "instances"] as const;
+export const SERVICE_TABS = [
+  "overview",
+  "config",
+  "logs",
+  "instances",
+  "versions",
+  "advanced",
+] as const;
 export type ServiceTab = (typeof SERVICE_TABS)[number];
 
-const TAB_CLASS = `-mb-px border-b-2 border-transparent px-3 py-2 text-callout text-fg-secondary hover:text-fg-primary ${FOCUS_RING} data-[state=active]:border-accent data-[state=active]:text-fg-primary`;
+const [, CONFIG_TAB, LOGS_TAB, INSTANCES_TAB, VERSIONS_TAB, ADVANCED_TAB] = SERVICE_TABS;
+
+const TAB_CLASS = `-mb-px border-b-2 border-transparent shrink-0 px-2.5 py-2 text-callout text-fg-secondary hover:text-fg-primary ${FOCUS_RING} data-[state=active]:border-accent data-[state=active]:text-fg-primary`;
 
 export interface ServiceSheetProps {
   instance: InstanceDto | undefined;
@@ -98,7 +110,10 @@ export function ServiceSheet({ instance, tool, now, onClose }: ServiceSheetProps
               setTab(value as ServiceTab);
             }}
           >
-            <Tabs.List aria-label={t("sheet.tabs")} className="flex border-b border-stroke">
+            <Tabs.List
+              aria-label={t("sheet.tabs")}
+              className="flex overflow-x-auto border-b border-stroke"
+            >
               {SERVICE_TABS.map((id) => (
                 <Tabs.Trigger key={id} value={id} className={TAB_CLASS}>
                   {t(`tabs.${id}`)}
@@ -109,14 +124,17 @@ export function ServiceSheet({ instance, tool, now, onClose }: ServiceSheetProps
               <OverviewTab
                 instance={instance}
                 onShowLogs={() => {
-                  setTab(SERVICE_TABS[1]);
+                  setTab(LOGS_TAB);
                 }}
               />
             </Tabs.Content>
-            <Tabs.Content value={SERVICE_TABS[1]} className={`pt-4 ${FOCUS_RING}`}>
+            <Tabs.Content value={LOGS_TAB} className={`pt-4 ${FOCUS_RING}`}>
               <LogsTab key={target} target={target} />
             </Tabs.Content>
-            <Tabs.Content value={SERVICE_TABS[2]} className={`pt-4 ${FOCUS_RING}`}>
+            <Tabs.Content value={CONFIG_TAB} className={`pt-4 ${FOCUS_RING}`}>
+              <ConfigTab key={target} target={target} />
+            </Tabs.Content>
+            <Tabs.Content value={INSTANCES_TAB} className={`pt-4 ${FOCUS_RING}`}>
               <InstancesTab
                 instance={instance}
                 tool={tool}
@@ -124,6 +142,12 @@ export function ServiceSheet({ instance, tool, now, onClose }: ServiceSheetProps
                   if (id === instance.id) onClose();
                 }}
               />
+            </Tabs.Content>
+            <Tabs.Content value={VERSIONS_TAB} className={`pt-4 ${FOCUS_RING}`}>
+              <VersionsTab key={instance.tool} tool={instance.tool} />
+            </Tabs.Content>
+            <Tabs.Content value={ADVANCED_TAB} className={`pt-4 ${FOCUS_RING}`}>
+              <AdvancedTab key={target} target={target} version={instance.version} />
             </Tabs.Content>
           </Tabs.Root>
         </div>
