@@ -25,6 +25,7 @@ import {
   site,
   type QaData,
 } from "./data";
+import { siteDetailHandlers } from "./siteDetail";
 
 export const QA_SCENARIO_NAMES = [
   "empty",
@@ -99,7 +100,14 @@ export function siteHandlers(data: QaData): FakeHandlers {
 /** A scenario whose snapshot handlers answer from `data`. */
 export function withData(name: string, data: QaData, extra: FakeScenario = {}): FakeScenario {
   const config = configHandlers(data);
+  const detail = siteDetailHandlers(data);
+  const catalog = catalogHandlers(data, config);
+  const answered = { ...detail, ...catalog };
   return {
+    // The Site detail and the catalog answer `tools.plan` etc. before their backend tasks land.
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
+      (method) => !(method in answered),
+    ),
     ...extra,
     name,
     handlers: {
@@ -110,8 +118,9 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       "tls.ca_status": () => CA_STATUS,
       "daemon.status": () => data.daemon,
       ...siteHandlers(data),
+      ...detail,
       ...config,
-      ...catalogHandlers(data, config),
+      ...catalog,
       ...extra.handlers,
     },
   } satisfies FakeScenario;

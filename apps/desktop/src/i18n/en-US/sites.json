@@ -93,5 +93,131 @@
     "removing": "Removing…",
     "done": "Site {host} removed.",
     "failed": "Could not remove {host}."
+  },
+  "detail": {
+    "loading": "Loading site",
+    "notFound": {
+      "title": "Site not found",
+      "description": "This site no longer exists or the id is wrong.",
+      "back": "Back to Sites"
+    },
+    "header": {
+      "back": "Sites",
+      "openUrl": "Open {url}",
+      "explorer": "Explorer",
+      "editor": "Editor",
+      "terminal": "Terminal",
+      "actions": "Open the project"
+    },
+    "tabs": {
+      "general": "General",
+      "processes": "Processes",
+      "diagnostics": "Diagnostics"
+    },
+    "general": {
+      "host": "Host",
+      "aliases": "Aliases",
+      "noAliases": "No aliases",
+      "root": "Folder",
+      "copyRoot": "Copy folder",
+      "copied": "Copied",
+      "copyFailed": "Could not copy",
+      "noRoot": "None (proxy)",
+      "driver": "Driver",
+      "driverNone": "Not detected",
+      "driverInput": "Driver name",
+      "driverApply": "Set driver",
+      "driverApplying": "Setting…",
+      "driverAuto": "Detect again",
+      "server": "Web server",
+      "upstream": "Upstream",
+      "https": "HTTPS",
+      "httpsOn": "On",
+      "httpsOff": "Off",
+      "cert": {
+        "loading": "Checking certificate",
+        "none": "No certificate yet",
+        "valid": "Certificate valid until {date}",
+        "expiring": "Certificate expires in {days} days",
+        "expired": "Certificate expired",
+        "untrusted": "Certificate not trusted by this machine"
+      },
+      "php": "PHP version",
+      "phpNone": "This site does not run PHP.",
+      "kind": "Kind"
+    },
+    "php": {
+      "label": "PHP version",
+      "notInstalled": "{series} (not installed)",
+      "switching": "Switching to {version}…",
+      "installing": "Installing PHP {version}…",
+      "done": "PHP {version} is active",
+      "progress": "Switching PHP to {version}",
+      "installProgress": "Installing PHP {version}",
+      "restored": "PHP stays at {version}.",
+      "retry": "Try again",
+      "confirm": {
+        "title": "Install PHP {version}?",
+        "description": "PHP {version} is not installed yet. Forgebox can download it and then switch {host} to it.",
+        "size": "Download: {size}",
+        "sizeApprox": "Download: about {size}",
+        "sizeNone": "Nothing to download.",
+        "sizeLoading": "Calculating the download size…",
+        "sizeFailed": "Could not calculate the download size.",
+        "confirm": "Install and switch",
+        "cancel": "Keep the current PHP"
+      },
+      "dismiss": "Dismiss"
+    },
+    "processes": {
+      "title": "Processes",
+      "empty": "No processes",
+      "emptyDescription": "Add a Procfile to the project to run workers, queues or a dev server here.",
+      "loading": "Loading processes",
+      "state": {
+        "running": "running",
+        "starting": "starting",
+        "stopped": "stopped",
+        "stopping": "stopping",
+        "crashed": "crashed",
+        "failed": "failed",
+        "maintenance": "updating"
+      },
+      "port": "Port {port}",
+      "pid": "PID {pid}",
+      "start": "Start",
+      "starting": "Starting…",
+      "stop": "Stop",
+      "stopping": "Stopping…",
+      "restart": "Restart",
+      "restarting": "Restarting…",
+      "logs": "Logs",
+      "logsSoon": "Logs per process arrive with the Logs screen.",
+      "autostart": "Starts with the site",
+      "refresh": "Refresh"
+    },
+    "diagnostics": {
+      "title": "Diagnostics",
+      "loading": "Running checks",
+      "run": "Check again",
+      "empty": "No checks reported.",
+      "status": {
+        "ok": "OK",
+        "warn": "Warning",
+        "fail": "Failed",
+        "skipped": "Skipped"
+      },
+      "fix": "How to fix",
+      "copyFix": "Copy fix",
+      "copied": "Copied",
+      "copyFailed": "Could not copy",
+      "dns": {
+        "test": "Test DNS",
+        "testing": "Testing…",
+        "ok": "{host} resolves to {addresses} (via {via}).",
+        "failed": "{host} does not resolve to this machine (via {via}).",
+        "none": "nothing"
+      }
+    }
   }
 }
