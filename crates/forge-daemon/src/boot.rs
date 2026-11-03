@@ -263,7 +263,15 @@ pub struct BootOptions {
     pub update_source: Option<Arc<dyn UpdateSource>>,
     /// Terminal tunables (ring size, reaping delay).
     pub terminal: Option<crate::terminal::TerminalOptions>,
+    /// Builds the certificate trust store from the daemon's helper client (tests:
+    /// `forge_core::platform::MemoryTrustStore`, so no OS store is ever written; the
+    /// helper client carries `platform.elevation()`, a `FakeElevation` in tests).
+    pub trust_store: Option<TrustStoreFactory>,
 }
+
+/// See [`BootOptions::trust_store`].
+pub type TrustStoreFactory =
+    Arc<dyn Fn(HelperClient) -> Arc<dyn forge_core::platform::TrustStore> + Send + Sync>;
 
 /// Runs the whole sequence. `lock` is the instance mutex taken by `main`, which also
 /// prepared the root folders (`ForgeRoot::init`, reported in `init_report`) and read
@@ -366,13 +374,22 @@ pub async fn boot_with(
         root.state_registry().join("cache"),
     ))?);
     let helper_policy = HelperPolicy::from_config(&root, &config)?;
-    let helper = HelperClient::for_root(&root, helper_policy);
+    // The platform's elevation (a `FakeElevation` when a test injects one).
+    let helper = HelperClient::new(
+        Arc::clone(platform.elevation()),
+        root.path().join(forge_core::helper::HELPER_EXE_NAME),
+        helper_policy,
+    );
+    let trust_store = match &options.trust_store {
+        Some(factory) => factory(helper.clone()),
+        None => platform::trust_store(Some(helper.clone())),
+    };
     let tls = TlsManager::spawn(
         &actors,
         &root,
         TlsConfig::for_root(&root, &config),
         platform.shared_file_acl(),
-        platform::trust_store(Some(helper.clone())),
+        trust_store,
     );
     let sites = SiteService::new(
         store.writer().clone(),

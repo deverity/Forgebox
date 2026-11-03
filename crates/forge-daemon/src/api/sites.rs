@@ -10,16 +10,17 @@ use forge_core::error::{ForgeError, Result};
 use forge_core::ids::SiteId;
 use forge_core::store::{Site, SiteKind, SitePhp};
 use forge_ipc::api::methods::{
-    sites_add, sites_alias, sites_down, sites_driver, sites_info, sites_list, sites_open,
-    sites_park, sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove, sites_run,
-    sites_secure, sites_server, sites_unpark, sites_up,
+    sites_add, sites_alias, sites_down, sites_driver, sites_env, sites_info, sites_list,
+    sites_open, sites_park, sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove,
+    sites_run, sites_secure, sites_server, sites_unpark, sites_up,
 };
 use forge_ipc::api::{
-    Ack, CheckDto, CheckStatus, JobDto, ListAction, NoParams, ParkParams, ParkedDirDto,
-    ParkedListDto, ProcessAction, ProjectParams, ProjectUpDto, ProxyAddParams, SiteAddParams,
-    SiteAliasParams, SiteDriverParams, SiteDto, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams,
-    SiteOpenTarget, SiteParams, SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams,
-    SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams, SiteServerParams,
+    Ack, CheckDto, CheckStatus, DotenvFileDto, DotenvVarDto, JobDto, ListAction, NoParams,
+    ParkParams, ParkedDirDto, ParkedListDto, ProcessAction, ProjectParams, ProjectUpDto,
+    ProxyAddParams, Role, SiteAddParams, SiteAliasParams, SiteDriverParams, SiteDto, SiteEnvDto,
+    SiteEnvParams, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams, SiteOpenTarget, SiteParams,
+    SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams, SiteRef, SiteRemoveParams,
+    SiteRunParams, SiteSecureParams, SiteServerParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::apps::AppSite;
@@ -48,6 +49,8 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, sites_ps, ps);
     route!(router, daemon, sites_run, run);
     route!(router, daemon, sites_open, open);
+    route!(router, daemon, sites_env, env);
+    router.timeout::<sites_env>(ENV_BUDGET);
     // The shell may load the browser before it answers; more than the 1 s default.
     router.timeout::<sites_open>(OPEN_BUDGET);
     // `sites.info` runs the DNS, certificate, pool and folder checks side by side.
@@ -60,6 +63,9 @@ const INFO_BUDGET: std::time::Duration = std::time::Duration::from_secs(8);
 const CHECK_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 /// `site.certificate` warns below this many days left.
 const CERT_WARN_DAYS: i64 = 30;
+
+/// Budget of `sites.env` (two small files, read in `spawn_blocking`).
+const ENV_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 
 /// Budget of the shell call of `sites.open`.
 const OPEN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
@@ -113,6 +119,71 @@ async fn open(daemon: Daemon, params: SiteOpenParams, _ctx: Ctx) -> Result<Ack> 
         }
     }
     Ok(Ack::ok())
+}
+
+/// `sites.env` (operator; ADR-0045): the `.env` and `.env.local` of the site's project
+/// folder, read by the daemon, linked sites outside `www/` included. Values of secret
+/// keys (`forge_sites::dotenv::is_secret`) leave the daemon only with `reveal`, which
+/// needs the admin role (checked here: the method table has one role per method). The
+/// request names a site, never a path: no other file is reachable through it.
+async fn env(daemon: Daemon, params: SiteEnvParams, ctx: Ctx) -> Result<SiteEnvDto> {
+    let role = ctx.session().role;
+    if params.reveal && !role.allows(Role::Admin) {
+        return Err(ForgeError::Forbidden(format!(
+            "revealing secret values of .env needs the admin role (this connection is {role})"
+        )));
+    }
+    let site = find(&daemon, &params.site).await?;
+    let root = site.root.clone().filter(|r| !r.is_empty());
+    let files = match root {
+        // A proxy has no folder, so no `.env`.
+        None => Vec::new(),
+        Some(root) => {
+            let root = PathBuf::from(root);
+            forge_core::runtime::spawn_blocking_timeout(
+                "reading the site's .env files",
+                ENV_BUDGET - std::time::Duration::from_millis(500),
+                move || {
+                    let dir = forge_sites::lint_case::project_dir_for_root(&root);
+                    Ok(forge_sites::dotenv::read_project(&dir))
+                },
+            )
+            .await?
+        }
+    };
+    if params.reveal {
+        tracing::info!(
+            site = %site.host,
+            client = %ctx.session().client.name,
+            "audit: .env secrets revealed"
+        );
+    }
+    let files = files
+        .into_iter()
+        .map(|file| DotenvFileDto {
+            name: file.name.to_owned(),
+            path: forge_core::paths::posix_string(&forge_core::paths::plain_path(&file.path)),
+            vars: file
+                .vars
+                .into_iter()
+                .map(|var| {
+                    let secret = var.secret();
+                    DotenvVarDto {
+                        value: (!secret || params.reveal).then_some(var.value),
+                        key: var.key,
+                        secret,
+                        line: var.line,
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+    Ok(SiteEnvDto {
+        site_id: site.id,
+        host: site.host,
+        files,
+        revealed: params.reveal,
+    })
 }
 
 /// The site a reference designates.

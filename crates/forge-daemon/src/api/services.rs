@@ -5,16 +5,20 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use forge_core::error::{ForgeError, Result};
+use forge_core::event::EventKind;
 use forge_core::ids::{InstanceId, VersionId};
 use forge_core::model::port::{OwnerKind, PortReservation};
+use forge_core::platform::{KILL_EXIT_CODE, KillPolicy};
 use forge_ipc::api::methods::{
-    services_config, services_config_files, services_create, services_ports, services_reload,
-    services_remove, services_restart, services_start, services_status, services_stop,
+    services_config, services_config_files, services_create, services_kill_port_holder,
+    services_ports, services_reload, services_remove, services_restart, services_start,
+    services_status, services_stop,
 };
 use forge_ipc::api::{
-    Ack, ConfigFilesDto, ExternalPortDto, FileRefDto, InstanceDto, JobDto, NoParams, PoolDto,
-    PortHolderDto, PortMapDto, PortProtocol, ServiceCreateParams, ServiceRemoveParams,
-    ServiceStatusDto, ServiceTarget, ServiceTargetParams, ServiceTargetsParams,
+    Ack, ConfigFilesDto, ExternalPortDto, FileRefDto, InstanceDto, JobDto, KillPortHolderParams,
+    NoParams, PoolDto, PortHolderDto, PortHolderKilledPayload, PortMapDto, PortProtocol,
+    ServiceCreateParams, ServiceRemoveParams, ServiceStatusDto, ServiceTarget, ServiceTargetParams,
+    ServiceTargetsParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_supervisor::QUICK_ASK_TIMEOUT;
@@ -37,7 +41,18 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, services_config, config);
     route!(router, daemon, services_config_files, config_files);
     route!(router, daemon, services_ports, ports);
+    route!(router, daemon, services_kill_port_holder, kill_port_holder);
+    // Service list, port table, termination and the wait for the exit (5 s at most).
+    router.timeout::<services_kill_port_holder>(KILL_BUDGET);
 }
+
+/// Budget of `services.kill_port_holder`: the OS work runs in one `spawn_blocking`
+/// bounded by [`KILL_BLOCKING`]; the rest is a margin for the reply.
+const KILL_BUDGET: Duration = Duration::from_secs(12);
+/// Budget of the blocking part (inspect, re-check the table, terminate, wait the exit).
+const KILL_BLOCKING: Duration = Duration::from_secs(10);
+/// Version of the `port.holder_killed` payload.
+const PORT_HOLDER_KILLED_V: u32 = 1;
 
 /// What a target designates: instances and/or pools (`php@8.3`).
 struct Targets {
@@ -457,4 +472,97 @@ async fn ports(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<PortMapDt
         })
         .collect();
     Ok(PortMapDto { ports, external })
+}
+
+/// `services.kill_port_holder` (admin, `local_only`, ADR-0045): ends the process that
+/// holds `port`, after checking **again**, with a handle on that process open (its pid
+/// cannot be recycled meanwhile), that it still listens on `port` and that
+/// [`KillPolicy`] allows it: never the daemon, a Forgebox process (Job tree, the root's
+/// executables, Forgebox programs), a critical or system process, a service, session 0,
+/// another user's process or a Windows program. Publishes the audit event
+/// `port.holder_killed` and logs it.
+async fn kill_port_holder(daemon: Daemon, params: KillPortHolderParams, ctx: Ctx) -> Result<Ack> {
+    let KillPortHolderParams { port, pid, confirm } = params;
+    if !confirm {
+        return Err(ForgeError::InvalidInput(
+            "ending a process is destructive: confirm must be true".into(),
+        ));
+    }
+    if port == 0 {
+        return Err(ForgeError::InvalidInput("port 0 is not a port".into()));
+    }
+    let tree = daemon.job_tree.clone();
+    let ours = forge_core::runtime::spawn_blocking_timeout(
+        "listing the Forgebox processes",
+        Duration::from_secs(2),
+        move || tree.pids(),
+    )
+    .await?;
+    let policy = KillPolicy::for_daemon(daemon.root.path(), ours);
+    // Cheap refusals before any process is opened.
+    policy.check_pid(pid)?;
+    let table = std::sync::Arc::clone(daemon.platform.port_table());
+    let terminator = std::sync::Arc::clone(daemon.platform.process_terminator());
+    let client = ctx.session().client.name.clone();
+    let asker = client.clone();
+    let facts = forge_core::runtime::spawn_blocking_timeout(
+        "ending the port holder",
+        KILL_BLOCKING,
+        move || {
+            terminator.terminate_checked(pid, KILL_EXIT_CODE, &mut |facts| {
+                // With the handle open the pid is this process: does it still listen?
+                // (First, so a holder that went away reads as such.)
+                let holds = table
+                    .listeners()?
+                    .iter()
+                    .any(|l| l.port == port && l.pid == pid);
+                if !holds {
+                    return Err(ForgeError::Conflict(format!(
+                        "PID {pid} no longer listens on port {port}: check the port again"
+                    )));
+                }
+                policy.check(facts)?;
+                // Logged before acting: should the caller time out, the trail stays.
+                tracing::warn!(
+                    port,
+                    pid,
+                    exe = %facts.exe_display(),
+                    client = %asker,
+                    "audit: terminating the port holder"
+                );
+                Ok(())
+            })
+        },
+    )
+    .await;
+    let facts = match facts {
+        Ok(facts) => facts,
+        Err(err) => {
+            tracing::warn!(port, pid, %client, %err, "services.kill_port_holder refused");
+            return Err(err);
+        }
+    };
+    let exe = facts
+        .exe_path
+        .as_deref()
+        .map(forge_core::paths::posix_string);
+    tracing::warn!(
+        port,
+        pid,
+        exe = exe.as_deref().unwrap_or("?"),
+        %client,
+        "audit: port holder terminated"
+    );
+    let payload = PortHolderKilledPayload {
+        v: PORT_HOLDER_KILLED_V,
+        port,
+        pid,
+        exe,
+        client: Some(client),
+    };
+    daemon.bus.publish(
+        EventKind::PortHolderKilled,
+        serde_json::to_value(payload).unwrap_or_default(),
+    );
+    Ok(Ack::ok())
 }

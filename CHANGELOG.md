@@ -11,6 +11,7 @@ O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de 
 ### Adicionado
 - Esqueleto do desktop (`apps/desktop`): Vite 8, React 19, TypeScript 6, Tailwind 4, vitest, ESLint 9 e crate Tauri `forgebox-desktop` (`Forgebox.exe`) no workspace Cargo; compila sem Node e sem `dist` (M2-E1-T1).
 - `cargo xtask arch-guard`: falha se `forge-cli`, `forge-mcp` ou `forgebox-desktop` dependerem de outro crate do workspace além de `forge-ipc`, ou se o desktop depender direto de `windows`/`windows-sys` (M2-E1-T1).
+- `forge tls ca uninstall [--scope user|machine]` (`tls.ca_uninstall`): tira a CA do Forgebox (e as antigas registradas) do store, resolvendo o problema conhecido da 0.1.0; `forge service kill-port <porta> --pid <n>` (`services.kill_port_holder`): encerra quem ocupa a porta só depois de conferir de novo, no mesmo handle, que ele ainda escuta nela e não é do Forgebox, serviço, processo crítico/do sistema ou de outro usuário, com evento de auditoria; `forge site env <host> [--reveal]` (`sites.env`): `.env`/`.env.local` do site com segredos mascarados no daemon. O helper só remove de `LocalMachine\Root` uma CA que ele aceitaria instalar (M2-E3-T11, ADR-0045).
 
 ## [0.1.0] — 2026-10-28
 

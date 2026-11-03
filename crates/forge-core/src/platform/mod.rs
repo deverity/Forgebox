@@ -56,6 +56,7 @@ pub mod net_table;
 pub mod privileged;
 pub mod probe;
 pub mod process;
+pub mod process_kill;
 pub mod process_stats;
 pub mod pty;
 pub mod runtime_deps;
@@ -95,6 +96,10 @@ pub use process::{
     SpawnedProcess, StdinSource, StdioTarget, TERMINATE_TIMEOUT, ctrl_break_helper_main,
     process_control,
 };
+pub use process_kill::{
+    FORGEBOX_EXE_NAMES, KILL_EXIT_CODE, KILL_WAIT, KillPolicy, ProcessAccount, ProcessFacts,
+    ProcessTerminator, process_terminator,
+};
 pub use process_stats::{
     FakeProcessStats, ImageNameCache, ProcStats, ProcessInfo, ProcessStats, process_creation_time,
     process_stats,
@@ -115,7 +120,7 @@ pub use system_stats::{
     FakeSystemStats, MachineSample, SYSTEM_STATS_TIMEOUT, SystemStats, UnsupportedSystemStats,
     VolumeSpace, sample_machine, system_stats, volume_space,
 };
-pub use trust_store::{CertThumbprint, TrustScope, TrustStore, trust_store};
+pub use trust_store::{CertThumbprint, MemoryTrustStore, TrustScope, TrustStore, trust_store};
 pub use user_env::{
     MemoryUserEnv, PathValue, UserEnv, expand_env_refs, normalize_path_entry, user_env,
 };
@@ -299,6 +304,7 @@ pub struct Platform {
     user_env: Arc<dyn UserEnv>,
     shell_opener: Arc<dyn ShellOpener>,
     pty: Arc<dyn PtySpawner>,
+    terminator: Arc<dyn ProcessTerminator>,
 }
 
 impl fmt::Debug for Platform {
@@ -319,8 +325,8 @@ impl Platform {
     /// [`Platform::with_system_stats`], [`Platform::with_code_sign`], [`Platform::with_file_acl`],
     /// [`Platform::with_port_table`], [`Platform::with_runtime_deps`],
     /// [`Platform::with_elevation`], [`Platform::with_net_adapters`],
-    /// [`Platform::with_user_env`], [`Platform::with_shell_opener`] and
-    /// [`Platform::with_pty_spawner`].
+    /// [`Platform::with_user_env`], [`Platform::with_shell_opener`],
+    /// [`Platform::with_pty_spawner`] and [`Platform::with_process_terminator`].
     pub fn new(
         name: &'static str,
         link_fs: Arc<dyn LinkFs>,
@@ -342,6 +348,7 @@ impl Platform {
             user_env: user_env(),
             shell_opener: shell_opener(),
             pty: pty_spawner(),
+            terminator: process_terminator(),
         }
     }
 
@@ -414,6 +421,12 @@ impl Platform {
     /// Replaces the pseudo console spawner (fakes in tests).
     pub fn with_pty_spawner(mut self, pty: Arc<dyn PtySpawner>) -> Self {
         self.pty = pty;
+        self
+    }
+
+    /// Replaces the process terminator of `services.kill_port_holder` (fakes in tests).
+    pub fn with_process_terminator(mut self, terminator: Arc<dyn ProcessTerminator>) -> Self {
+        self.terminator = terminator;
         self
     }
 
@@ -506,6 +519,12 @@ impl Platform {
     /// Starts processes in pseudo consoles (shared, so it can move into `spawn_blocking`).
     pub fn pty_spawner(&self) -> &Arc<dyn PtySpawner> {
         &self.pty
+    }
+
+    /// Ends a process after a last check on the same handle (`services.kill_port_holder`,
+    /// ADR-0045; shared, so it can move into `spawn_blocking`).
+    pub fn process_terminator(&self) -> &Arc<dyn ProcessTerminator> {
+        &self.terminator
     }
 }
 

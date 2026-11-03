@@ -231,10 +231,10 @@ describe("failure", () => {
     expect(
       await within(card).findByText("forge service set redis/default ports.main=6380"),
     ).toBeInTheDocument();
-    // The Kill action is offered with the holder named; `services.kill_port_holder` is
-    // not implemented yet, so the capability gate disables it with the reason.
+    // The Kill action is offered with the holder named; `services.kill_port_holder`
+    // exists since M2-E3-T11, so a local admin may use it.
     const kill = within(card).getByRole("button", { name: /End redis-server\.exe/ });
-    expect(kill).toBeDisabled();
+    expect(kill).toBeEnabled();
   });
 
   it("changes the port through services.set with string settings", async () => {

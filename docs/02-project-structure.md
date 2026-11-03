@@ -64,7 +64,10 @@ Forgebox/
 │   │                             #   user_env.rs: UserEnv (PATH persistente do usuário), PathValue (lista crua, sem duplicatas),
 │   │                             #   MemoryUserEnv (fake em memória); probe.rs também tem run_probe_with_env (ações run);
 │   │                             #   trust_store.rs: TrustStore (raízes por CertThumbprint SHA-1, CurrentUser/LocalMachine,
-│   │                             #   verify_server: cadeia pelo verificador do SO com raiz exclusiva, revogação opcional);
+│   │                             #   verify_server: cadeia pelo verificador do SO com raiz exclusiva, revogação opcional;
+│   │                             #   MemoryTrustStore: fake em memória, LocalMachine pelo HelperClient);
+│   │                             #   process_kill.rs: KillPolicy (pura: o que services.kill_port_holder recusa), ProcessFacts,
+│   │                             #   ProcessTerminator (checa e encerra pelo mesmo handle; ADR-0045);
 │   │                             #   privileged.rs: PrivilegedOps + privileged_ops() (mudanças de máquina do forgebox-helper:
 │   │                             #   NRPT, hosts, LocalMachine\Root, firewall, Defender, instalador verificado; ADR-0024);
 │   │                             #   secure_file.rs: open_no_follow/final_path (arquivos da raiz sem seguir links);
@@ -100,6 +103,8 @@ Forgebox/
 │   │                             #   CreateProcessW suspenso → ProcessGroup::assign → ResumeThread; thread forgebox-pty dona
 │   │                             #   do HPCON: ResizePseudoConsole e ClosePseudoConsole sem travar quem chama; limpa a marca
 │   │                             #   "ignorar Ctrl+C" herdada antes do spawn),
+│   │                             #   process_kill.rs (OpenProcess TERMINATE|QUERY_LIMITED|SYNCHRONIZE, IsProcessCritical, token
+│   │                             #   TokenUser/TokenSessionId, EnumServicesStatusExW, TerminateProcess + WaitForSingleObject),
 │   │                             #   process_stats.rs (GetProcessTimes, GetProcessMemoryInfo/PROCESS_MEMORY_COUNTERS_EX, GetProcessHandleCount,
 │   │                             #   QueryFullProcessImageNameW: image_path compartilhado com net_table.rs),
 │   │                             #   system_stats.rs (GetSystemTimes: ocupado = kernel − ocioso + usuário, GlobalMemoryStatusEx,
@@ -207,6 +212,7 @@ Forgebox/
 │   │       │                     #   refs.rs (extração por regex por tipo de arquivo, manifestos, PSR-4), resolve.rs (listagens
 │   │       │                     #   exatas, candidatos .js/index/_parcial/.blade.php), fix.rs (renomear/editar, auto, prévia)
 │   │       ├── case_parity.rs    # estado Aa/aA por site (pasta do projeto), reverify no boot, jobs site_case e lint_case
+│   │       ├── dotenv.rs         # sites.env: .env/.env.local da pasta do projeto (sem seguir links, ≤ 256 KiB), parser, is_secret (ADR-0045)
 │   │       ├── parity.rs         # git_parity_init: core.ignorecase/autocrlf=false, .gitattributes, .editorconfig (forge new)
 │   │       ├── vhost.rs          # gera modelo de vhost (independente de servidor) → forge-render
 │   │       ├── proxy.rs          # sites proxy (Node/Next/Vite...): ProxyOptions (websocket, headers), ProxyTarget, proxy_vhost → ProxyModel

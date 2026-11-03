@@ -65,21 +65,6 @@
     "what": "editor launcher"
   },
   {
-    "method": "tls.ca_uninstall",
-    "task": "M2-E3-T11",
-    "what": "removing the local CA"
-  },
-  {
-    "method": "services.kill_port_holder",
-    "task": "M2-E3-T11",
-    "what": "terminating a port holder"
-  },
-  {
-    "method": "sites.env",
-    "task": "M2-E3-T11",
-    "what": "masked .env viewer"
-  },
-  {
     "method": "stats.get",
     "task": "M2-E5-T8",
     "what": "per-site metrics (forge-metrics)"

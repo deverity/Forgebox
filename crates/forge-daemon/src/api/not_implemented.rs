@@ -39,13 +39,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("logs.targets", "M2-E3-T8", "listing log targets"),
     ("shell.open", "M2-E3-T9", "external terminal launcher"),
     ("shell.open_editor", "M2-E3-T9", "editor launcher"),
-    ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
-    (
-        "services.kill_port_holder",
-        "M2-E3-T11",
-        "terminating a port holder",
-    ),
-    ("sites.env", "M2-E3-T11", "masked .env viewer"),
     ("stats.get", "M2-E5-T8", "per-site metrics (forge-metrics)"),
     (
         "stats.top",
@@ -180,9 +173,6 @@ mod tests {
             ("logs.targets", "M2-E3-T8"),
             ("shell.open", "M2-E3-T9"),
             ("shell.open_editor", "M2-E3-T9"),
-            ("tls.ca_uninstall", "M2-E3-T11"),
-            ("services.kill_port_holder", "M2-E3-T11"),
-            ("sites.env", "M2-E3-T11"),
         ] {
             let err = error(method);
             assert_eq!(err.code(), "not_implemented", "{method}");
@@ -191,6 +181,10 @@ mod tests {
                 "{method}: {err}"
             );
             assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+        }
+        // The security extras exist (M2-E3-T11).
+        for method in ["tls.ca_uninstall", "services.kill_port_holder", "sites.env"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
         }
         // The terminal backend exists (M2-E3-T4); terminal.unsubscribe is a server
         // built-in (closes any stream of the connection).

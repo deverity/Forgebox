@@ -72,7 +72,9 @@ ulid = { workspace = true }
 # PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE; the machine counters and process image names
 # (M2-E5-T10): GetSystemTimes, GlobalMemoryStatusEx, GetDiskFreeSpaceExW and
 # QueryFullProcessImageNameW (features already listed: System_Threading,
-# System_SystemInformation, Storage_FileSystem).
+# System_SystemInformation, Storage_FileSystem); ending a port holder (M2-E3-T11,
+# ADR-0045): IsProcessCritical/TerminateProcess (System_Threading) and the services hosted
+# by a pid (EnumServicesStatusExW, System_Services).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
@@ -100,6 +102,7 @@ windows = { workspace = true, features = [
     "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
+    "Win32_System_Services",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_System_Variant",
