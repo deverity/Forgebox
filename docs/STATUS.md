@@ -118,7 +118,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E5-T17 | Seção 'Projetos' do Dashboard, sites ociosos, monitor da máquina, alertas de performance | todo | — | |
 | M2-E4-T1 | Fixtures gravadas de um daemon real (`cargo xtask qa-fixtures`) | todo | — | |
 | M2-E4-T2 | Matriz de screenshots, folhas de contato e docs/07 §12 | todo | — | |
-| M2-E4-T3 | Checklist §11 automatizado (`qa:check`) com autotestes negativos | todo | — | |
+| M2-E4-T3 | Checklist §11 automatizado (`qa:check`) com autotestes negativos | doing | feature/M2-E4-T3-qa-checklist-automation | |
 | M2-E4-T4 | Orçamentos de performance e resiliência (docs/07 §10, docs/03 §7.5) | todo | — | |
 | M2-E4-T5 | Gate de paridade GUI/CLI (`gui-commands.json` + `cli-only.yaml`) | todo | — | |
 | M2-E4-T6 | Passe inicial de QA no shell e primitivas (achados, correções, tamanho mínimo, `--on-accent`) | todo | — | |
