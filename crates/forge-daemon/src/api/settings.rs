@@ -579,7 +579,7 @@ async fn set_instance(
 }
 
 /// Pools of `versions` that run (serving first).
-async fn running_pools(d: &Daemon, versions: &[ToolVersionRow]) -> Vec<PoolHandle> {
+pub(crate) async fn running_pools(d: &Daemon, versions: &[ToolVersionRow]) -> Vec<PoolHandle> {
     let mut out: Vec<(bool, PoolHandle)> = Vec::new();
     for handle in d.pools.handles() {
         if !versions.iter().any(|v| v.id == handle.version_id()) {

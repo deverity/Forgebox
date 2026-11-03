@@ -331,6 +331,7 @@ pub async fn install_extension(
             }
             continue;
         }
+        let target_id = item.target.id;
         let mut release = item.release;
         daemon.providers.complete(&mut release).await?;
         job.progress(JobProgress::new().pct(base).message(format!(
@@ -362,6 +363,14 @@ pub async fn install_extension(
         })?;
         let report: ExtensionReport = wait_layout_job(daemon, job, layout_job).await?;
         out.push(catalog::version(&daemon.reader, report.version_id).await?);
+        // The post_install render wrote the overlay off; render it again with what the
+        // series has stored (M2-E2-T9: an extension the user turned on stays on).
+        if target_tool.manifest.spec.service.kind == forge_manifest::schema::tool::ServiceKind::Pool
+        {
+            if let Err(err) = daemon.pools.render_config(target_id).await {
+                tracing::warn!(extension = %id, target = %folder, %err, "configuration not rendered after the install");
+            }
+        }
     }
     job.progress(JobProgress::new().pct(100.0).message(format!(
         "{id} installed into {} version(s) of {extends}",

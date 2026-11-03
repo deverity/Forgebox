@@ -397,7 +397,10 @@ async fn port_loop(daemon: Daemon, stop: CancellationToken) {
         let instances = crate::api::instance_names(&daemon);
         let result = daemon
             .ports
-            .conflicts(|_owner, pid| pid == own_pid || ours.contains(&pid))
+            // A client port (Xdebug's, M2-E2-T9) is listened on by the IDE: expected.
+            .conflicts(|owner, pid| {
+                pid == own_pid || ours.contains(&pid) || crate::php_ext::is_client_port(owner)
+            })
             .await;
         match result {
             Ok(conflicts) => {

@@ -19,17 +19,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("tools.plan", "M2-E2-T5", "install plans"),
     ("services.update", "M2-E2-T10", "advanced instance settings"),
     (
-        "php.ext_enable",
-        "M2-E2-T9",
-        "per-version extension toggles",
-    ),
-    (
-        "php.ext_disable",
-        "M2-E2-T9",
-        "per-version extension toggles",
-    ),
-    ("php.xdebug", "M2-E2-T9", "Xdebug toggle per PHP version"),
-    (
         "sites.share",
         "M3-E3",
         "public tunnels (cloudflared, ngrok, expose)",
@@ -238,9 +227,6 @@ mod tests {
             ("tools.releases", "M2-E2-T5"),
             ("tools.plan", "M2-E2-T5"),
             ("services.update", "M2-E2-T10"),
-            ("php.ext_enable", "M2-E2-T9"),
-            ("php.ext_disable", "M2-E2-T9"),
-            ("php.xdebug", "M2-E2-T9"),
         ] {
             let err = error(method);
             assert_eq!(err.code(), "not_implemented", "{method}");
@@ -253,7 +239,7 @@ mod tests {
         }
         // Partial methods (they work without the new parameter) stay out of the table, and
         // so do the ones whose backend landed (M2-E2-T4: history and icons; M2-E2-T7: quick
-        // settings).
+        // settings; M2-E2-T9: extensions and Xdebug).
         for method in [
             "tools.install",
             "tools.remove",
@@ -262,6 +248,9 @@ mod tests {
             "services.create",
             "services.settings",
             "services.set",
+            "php.ext_enable",
+            "php.ext_disable",
+            "php.xdebug",
         ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }

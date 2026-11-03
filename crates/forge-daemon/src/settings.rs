@@ -205,7 +205,12 @@ pub fn canonical(setting: &QuickSetting, raw: &str) -> Result<String> {
 
 /// The manifest's `default` as stored text (`None` when there is none or it is unusable).
 pub fn default_text(setting: &QuickSetting) -> Option<String> {
-    let default = setting.default.as_ref()?;
+    value_text(setting, setting.default.as_ref()?)
+}
+
+/// A value written in a manifest the way a `default` is (a `multi` as a list; a scalar
+/// otherwise) as stored text, `None` when unusable (`toggle.modes` presets, M2-E2-T9).
+pub fn value_text(setting: &QuickSetting, default: &Value) -> Option<String> {
     let raw = match (setting.kind, default) {
         (QuickSettingType::Multi, Value::Array(items)) => items
             .iter()
@@ -238,10 +243,15 @@ pub fn effective<'m>(
     manifest: &'m ToolManifest,
     stored: &BTreeMap<String, String>,
 ) -> Vec<(&'m QuickSetting, String)> {
-    manifest
-        .spec
-        .config
-        .quick_settings
+    effective_of(&manifest.spec.config.quick_settings, stored)
+}
+
+/// [`effective`] over a list of quick settings (an Extension's `config.quick_settings`).
+pub fn effective_of<'m>(
+    quick_settings: &'m [QuickSetting],
+    stored: &BTreeMap<String, String>,
+) -> Vec<(&'m QuickSetting, String)> {
+    quick_settings
         .iter()
         .filter_map(|s| {
             stored_text(s, stored)

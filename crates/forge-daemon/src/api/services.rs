@@ -130,8 +130,15 @@ async fn snapshot(daemon: &Daemon, only: Option<&Targets>) -> Result<ServiceStat
     }
     let sites = daemon.sites.list().await.unwrap_or_default();
     let plan = daemon.web.php_plan(&sites).await.unwrap_or_default();
+    let statuses = daemon.pools.statuses().await;
+    // Only with pools to describe: the state reads the store.
+    let debugger = if statuses.is_empty() {
+        BTreeMap::new()
+    } else {
+        super::php::debugger_states(daemon).await
+    };
     let mut pools: Vec<PoolDto> = Vec::new();
-    for status in daemon.pools.statuses().await {
+    for status in statuses {
         if let Some(only) = only {
             if !only.pools.contains(&status.version_id) {
                 continue;
@@ -144,6 +151,7 @@ async fn snapshot(daemon: &Daemon, only: Option<&Targets>) -> Result<ServiceStat
         pools.push(convert::pool(
             &status,
             u32::try_from(count).unwrap_or(u32::MAX),
+            debugger.get(&status.version_id).is_some_and(|s| s.enabled),
         ));
     }
     Ok(ServiceStatusDto { instances, pools })
@@ -386,13 +394,16 @@ pub(crate) fn instance_names(daemon: &Daemon) -> BTreeMap<String, String> {
 }
 
 /// Name of the owner of a port reservation: `<tool>/<instance>` for an instance
-/// (`mysql/default`, from [`instance_names`]), `<kind>/<id>` for any other owner.
+/// (`mysql/default`, from [`instance_names`]), `<tool>@<series>/<extension>` for the
+/// client port of a series (`php@8.4/xdebug`, M2-E2-T9), `<kind>/<id>` for any other
+/// owner.
 pub(crate) fn owner_name(
     instances: &BTreeMap<String, String>,
     owner: &forge_core::model::port::ReservationOwner,
 ) -> String {
     match (owner.kind, instances.get(&owner.id)) {
         (OwnerKind::Instance, Some(name)) => name.clone(),
+        _ if crate::php_ext::is_client_port(owner) => format!("{}/{}", owner.id, owner.port_name),
         _ => format!("{}/{}", owner.kind.as_str(), owner.id),
     }
 }

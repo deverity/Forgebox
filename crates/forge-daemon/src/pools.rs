@@ -39,6 +39,7 @@ use futures::future::BoxFuture;
 use tokio::sync::Semaphore;
 
 use crate::catalog;
+use crate::php_ext;
 use crate::render;
 use crate::settings;
 use crate::vars::{PoolVars, RuntimeVars};
@@ -207,7 +208,13 @@ impl PoolManager {
     /// Renders the configuration of `version` (its `conf.d` overlay of the render target
     /// and the quick settings of its series, `conf.d/90-forgebox-settings.ini` for PHP)
     /// and publishes `config.rendered` for what changed. Does not touch the pool.
-    pub async fn render_config(&self, version: VersionId) -> Result<()> {
+    ///
+    /// The extension choices of the series (`ext_<name>`, M2-E2-T9) shape the bundled
+    /// extension lines, and the debugger extension installed into `version` (Xdebug)
+    /// gets its model (toggle line, its own series settings), so `20-xdebug.ini` follows
+    /// what is stored. Renders run one at a time (the render queue): an extension toggle
+    /// never interleaves with the render of a blue/green swap.
+    pub async fn render_config(&self, version: VersionId) -> Result<render::Applied> {
         let _render = tokio::time::timeout(
             TURN_TIMEOUT,
             Arc::clone(&self.inner.render_turn).acquire_owned(),
@@ -230,8 +237,35 @@ impl PoolManager {
                 .query(move |conn| ToolSeriesSettingsRepo::new(conn).get(&tool_id, &series))
                 .await?
         };
-        if let Some(php) = ctx.php.as_mut() {
-            php.settings = settings::context(&tool.manifest, &stored);
+        if ctx.php.is_some() {
+            let linked = php_ext::linked(
+                &self.inner.reader,
+                &self.inner.registry,
+                &tool.manifest,
+                row.id,
+            )
+            .await?;
+            let choices = php_ext::choices(&stored);
+            let debugger = match linked
+                .iter()
+                .find(|l| php_ext::is_debugger(&l.entry.manifest))
+            {
+                Some(l) => {
+                    let ext_stored =
+                        php_ext::stored(&self.inner.reader, &l.entry.manifest.metadata.id, &series)
+                            .await?;
+                    let enabled = choices.get(&l.name) == Some(&true);
+                    php_ext::debugger_model(&l.entry.manifest, enabled, &ext_stored)
+                }
+                None => None,
+            };
+            let registry: std::collections::BTreeSet<String> =
+                linked.into_iter().map(|l| l.name).collect();
+            if let Some(php) = ctx.php.as_mut() {
+                php.settings = settings::context(&tool.manifest, &stored);
+                php_ext::apply_choices(&choices, &registry, php);
+                php.xdebug = debugger;
+            }
         }
         let mut vars = RuntimeVars::new(self.inner.layout.vars_for(&tool.manifest, &row));
         vars.prefs = (self.inner.prefs)();
@@ -253,7 +287,7 @@ impl PoolManager {
             Duration::from_secs(30),
             move || {
                 render::keep_present_extensions(&manifest, Path::new(&row.path), &mut ctx);
-                render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans).map(|_| ())
+                render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans)
             },
         )
         .await
