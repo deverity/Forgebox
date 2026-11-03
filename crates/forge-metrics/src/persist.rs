@@ -29,9 +29,10 @@
 //! - **Rollup** ([`rollup`]): every hour fully past is rebuilt from its `metrics_1m` rows
 //!   (histograms merged, never percentiles averaged). The newest rolled hour and the one before
 //!   are rebuilt on every run so late deltas are not missed; the rebuild replaces the row. The
-//!   minute rows are read and merged on the blocking pool through [`StoreReader`] (decoded
-//!   accumulators, one encode per hour row); the writer only gets short operations with the
-//!   finished hour rows (one per hour), so it is never held for the CPU work.
+//!   minute rows are read through [`StoreReader`] (SQL only), then merged in a separate
+//!   `spawn_blocking` task (decoded accumulators, one encode per hour row); the writer only gets
+//!   short operations with the finished hour rows (one per hour), so neither the read
+//!   connection nor the writer is ever held for the CPU work.
 //! - **Prune** ([`prune`]): `metrics_1m` 7 days, `metrics_1h` 90 days.
 //! - **Rehydrate** ([`rehydrate`]): at boot the last 24 h of `metrics_1m` go back to tier 2 (the
 //!   minutes and the hours above them) through [`Aggregator::restore_minute`]. The 10 s points of
@@ -41,7 +42,11 @@
 //!   the minute retention, minute rows for the rest.
 //!
 //! No SQLite call runs on a tokio worker: writes go through [`StoreWriter`], reads through
-//! [`StoreReader`], and histogram (de)coding runs in `spawn_blocking`.
+//! [`StoreReader`], and histogram (de)coding runs in `spawn_blocking` (`on_blocking`). The
+//! (de)coding never runs inside a `StoreReader::query` closure: the store-read timeout bounds the
+//! SQL alone, so a busy machine slowing the CPU work cannot turn a read into a `timeout`
+//! (decoding a V2 histogram builds a full `hdrhistogram`; 9,000 minute rows take seconds in a
+//! debug build), and the read connection goes back to the pool before that work starts.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
@@ -114,6 +119,17 @@ fn decode(bytes: &[u8], version: u32) -> Result<LatencyHist> {
         )));
     }
     LatencyHist::from_v2(bytes).map_err(hist_err)
+}
+
+/// Runs CPU-bound histogram work on the blocking pool, outside any store operation.
+async fn on_blocking<T, F>(what: &'static str, f: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ForgeError::Internal(format!("{what} task failed: {e}")))
 }
 
 /// The row of a minute delta (encodes the histograms).
@@ -349,12 +365,11 @@ impl Persister {
                 .collect();
             // Encoding is CPU work proportional to the histograms: off the tokio workers. The
             // deltas come back with the rows so a failure never loses them.
-            let (rows, deltas) = tokio::task::spawn_blocking(move || {
+            let (rows, deltas) = on_blocking("metrics encode", move || {
                 let rows: Result<Vec<MetricsRow>> = deltas.iter().map(delta_row).collect();
                 (rows, deltas)
             })
-            .await
-            .map_err(|e| ForgeError::Internal(format!("metrics encode task failed: {e}")))?;
+            .await?;
             match rows {
                 Ok(rows) => self.queue.push_back(Batch {
                     op_id: RequestId::new().to_string(),
@@ -566,8 +581,9 @@ const ROLLUP_CHUNK_HOURS: i64 = 6;
 /// (the newest rolled hour and the one before are rebuilt: late deltas). Idempotent. Hours whose
 /// minutes are partly pruned are never rebuilt.
 ///
-/// The CPU work (decode, exact merge, one encode per hour row) runs in `reader` calls on the
-/// blocking pool; the writer only receives the finished hour rows, one short operation per hour
+/// Each chunk is one `reader` call that only runs the SQL; the CPU work (decode, exact merge, one
+/// encode per hour row) then runs in its own blocking task, so the store-read timeout never
+/// covers it. The writer only receives the finished hour rows, one short operation per hour
 /// (docs/03 section 7.1: short transactions).
 pub async fn rollup(
     reader: &StoreReader,
@@ -597,13 +613,13 @@ pub async fn rollup(
     };
     while hour < end {
         let chunk_end = (hour + ROLLUP_CHUNK_HOURS * HOUR).min(end);
-        let (hours, minutes, skipped) = reader
+        let rows = reader
             .query(move |conn| {
-                let rows =
-                    MetricsRepo::new(conn).range(MetricsTier::Minute, None, hour, chunk_end)?;
-                Ok(merge_hours(rows))
+                MetricsRepo::new(conn).range(MetricsTier::Minute, None, hour, chunk_end)
             })
             .await?;
+        let (hours, minutes, skipped) =
+            on_blocking("metrics rollup merge", move || merge_hours(rows)).await?;
         report.minutes += minutes;
         report.skipped += skipped;
         for (_, rows) in hours {
@@ -741,24 +757,26 @@ pub async fn rehydrate(
     agg.advance(now);
     let to = floor_to(secs(now), MINUTE) + MINUTE;
     let from = floor_to(secs(now) - dur_secs(window.min(RETENTION_1M)), MINUTE);
-    let (deltas, skipped) = reader
-        .query(move |conn| {
-            let rows = MetricsRepo::new(conn).range(MetricsTier::Minute, None, from, to)?;
-            let mut deltas = Vec::with_capacity(rows.len());
-            let mut skipped = 0;
-            for row in &rows {
-                match row_delta(row) {
-                    Ok(d) => deltas.push(d),
-                    Err(err) => {
-                        tracing::warn!(%err, site = %row.site, start = row.start,
-                            "stored metrics minute skipped");
-                        skipped += 1;
-                    }
+    let rows = reader
+        .query(move |conn| MetricsRepo::new(conn).range(MetricsTier::Minute, None, from, to))
+        .await?;
+    // 24 h of 50 sites is 72,000 rows to decode: never inside the store-read timeout.
+    let (deltas, skipped) = on_blocking("metrics rehydrate decode", move || {
+        let mut deltas = Vec::with_capacity(rows.len());
+        let mut skipped = 0;
+        for row in &rows {
+            match row_delta(row) {
+                Ok(d) => deltas.push(d),
+                Err(err) => {
+                    tracing::warn!(%err, site = %row.site, start = row.start,
+                        "stored metrics minute skipped");
+                    skipped += 1;
                 }
             }
-            Ok((deltas, skipped))
-        })
-        .await?;
+        }
+        (deltas, skipped)
+    })
+    .await?;
     let restored = deltas.len();
     for (i, d) in deltas.into_iter().enumerate() {
         agg.restore_minute(d);
@@ -784,7 +802,7 @@ pub async fn query_range(
     let now_s = secs(now);
     let to_s = secs(to).min(now_s);
     let from_s = secs(from).min(to_s);
-    reader
+    let (rows, covered_from, covered_to) = reader
         .query(move |conn| {
             let repo = MetricsRepo::new(conn);
             // First hour that has all its minutes: older time is read from the hour rows.
@@ -810,36 +828,41 @@ pub async fn query_range(
                 }
                 covered_to = min_to;
             }
-            let mut counters = Counters::default();
-            let (mut rt, mut ut) = (LatencyHist::new(), LatencyHist::new());
-            let mut sampled = false;
-            for row in &rows {
-                let (row_rt, row_ut) = match (
-                    decode(&row.rt_hist, row.format_version),
-                    decode(&row.ut_hist, row.format_version),
-                ) {
-                    (Ok(a), Ok(b)) => (a, b),
-                    (Err(err), _) | (_, Err(err)) => {
-                        tracing::warn!(%err, site = %row.site, start = row.start,
-                            "stored metrics row skipped by query");
-                        continue;
-                    }
-                };
-                add_counters(&mut counters, &counters_of(row));
-                sampled |= row.sampled;
-                rt = rt.merge(&row_rt);
-                ut = ut.merge(&row_ut);
-            }
-            Ok(Summary {
-                from: at(covered_from),
-                to: at(covered_to),
-                counters,
-                rt: rt.percentiles(),
-                ut: ut.percentiles(),
-                sampled,
-            })
+            Ok((rows, covered_from, covered_to))
         })
-        .await
+        .await?;
+    // Up to 7 days of minute rows to decode and merge: outside the store-read timeout.
+    on_blocking("metrics range merge", move || {
+        let mut counters = Counters::default();
+        let (mut rt, mut ut) = (LatencyHist::new(), LatencyHist::new());
+        let mut sampled = false;
+        for row in &rows {
+            let (row_rt, row_ut) = match (
+                decode(&row.rt_hist, row.format_version),
+                decode(&row.ut_hist, row.format_version),
+            ) {
+                (Ok(a), Ok(b)) => (a, b),
+                (Err(err), _) | (_, Err(err)) => {
+                    tracing::warn!(%err, site = %row.site, start = row.start,
+                        "stored metrics row skipped by query");
+                    continue;
+                }
+            };
+            add_counters(&mut counters, &counters_of(row));
+            sampled |= row.sampled;
+            rt = rt.merge(&row_rt);
+            ut = ut.merge(&row_ut);
+        }
+        Summary {
+            from: at(covered_from),
+            to: at(covered_to),
+            counters,
+            rt: rt.percentiles(),
+            ut: ut.percentiles(),
+            sampled,
+        }
+    })
+    .await
 }
 
 #[cfg(test)]
