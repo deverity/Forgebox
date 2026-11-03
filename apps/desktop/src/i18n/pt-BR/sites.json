@@ -93,5 +93,131 @@
     "removing": "Removendo…",
     "done": "Site {host} removido.",
     "failed": "Não foi possível remover {host}."
+  },
+  "detail": {
+    "loading": "Carregando o site",
+    "notFound": {
+      "title": "Site não encontrado",
+      "description": "Este site não existe mais ou o id está errado.",
+      "back": "Voltar para Sites"
+    },
+    "header": {
+      "back": "Sites",
+      "openUrl": "Abrir {url}",
+      "explorer": "Explorer",
+      "editor": "Editor",
+      "terminal": "Terminal",
+      "actions": "Abrir o projeto"
+    },
+    "tabs": {
+      "general": "Geral",
+      "processes": "Processos",
+      "diagnostics": "Diagnóstico"
+    },
+    "general": {
+      "host": "Host",
+      "aliases": "Aliases",
+      "noAliases": "Sem aliases",
+      "root": "Pasta",
+      "copyRoot": "Copiar pasta",
+      "copied": "Copiado",
+      "copyFailed": "Não foi possível copiar",
+      "noRoot": "Nenhuma (proxy)",
+      "driver": "Driver",
+      "driverNone": "Não detectado",
+      "driverInput": "Nome do driver",
+      "driverApply": "Definir driver",
+      "driverApplying": "Definindo…",
+      "driverAuto": "Detectar de novo",
+      "server": "Servidor web",
+      "upstream": "Upstream",
+      "https": "HTTPS",
+      "httpsOn": "Ligado",
+      "httpsOff": "Desligado",
+      "cert": {
+        "loading": "Verificando o certificado",
+        "none": "Sem certificado ainda",
+        "valid": "Certificado válido até {date}",
+        "expiring": "O certificado vence em {days} dias",
+        "expired": "Certificado vencido",
+        "untrusted": "Certificado não confiável nesta máquina"
+      },
+      "php": "Versão do PHP",
+      "phpNone": "Este site não roda PHP.",
+      "kind": "Tipo"
+    },
+    "php": {
+      "label": "Versão do PHP",
+      "notInstalled": "{series} (não instalado)",
+      "switching": "Trocando para {version}…",
+      "installing": "Instalando o PHP {version}…",
+      "done": "PHP {version} ativo",
+      "progress": "Trocando o PHP para {version}",
+      "installProgress": "Instalando o PHP {version}",
+      "restored": "O PHP continua em {version}.",
+      "retry": "Tentar de novo",
+      "confirm": {
+        "title": "Instalar o PHP {version}?",
+        "description": "O PHP {version} ainda não está instalado. O Forgebox pode baixá-lo e depois trocar {host} para ele.",
+        "size": "Download: {size}",
+        "sizeApprox": "Download: cerca de {size}",
+        "sizeNone": "Nada para baixar.",
+        "sizeLoading": "Calculando o tamanho do download…",
+        "sizeFailed": "Não foi possível calcular o tamanho do download.",
+        "confirm": "Instalar e trocar",
+        "cancel": "Manter o PHP atual"
+      },
+      "dismiss": "Dispensar"
+    },
+    "processes": {
+      "title": "Processos",
+      "empty": "Nenhum processo",
+      "emptyDescription": "Adicione um Procfile ao projeto para rodar workers, filas ou um servidor de desenvolvimento aqui.",
+      "loading": "Carregando os processos",
+      "state": {
+        "running": "rodando",
+        "starting": "iniciando",
+        "stopped": "parado",
+        "stopping": "parando",
+        "crashed": "caiu",
+        "failed": "falhou",
+        "maintenance": "atualizando"
+      },
+      "port": "Porta {port}",
+      "pid": "PID {pid}",
+      "start": "Iniciar",
+      "starting": "Iniciando…",
+      "stop": "Parar",
+      "stopping": "Parando…",
+      "restart": "Reiniciar",
+      "restarting": "Reiniciando…",
+      "logs": "Logs",
+      "logsSoon": "Os logs por processo chegam com a tela de Logs.",
+      "autostart": "Inicia com o site",
+      "refresh": "Atualizar"
+    },
+    "diagnostics": {
+      "title": "Diagnóstico",
+      "loading": "Executando as verificações",
+      "run": "Verificar de novo",
+      "empty": "Nenhuma verificação reportada.",
+      "status": {
+        "ok": "OK",
+        "warn": "Aviso",
+        "fail": "Falhou",
+        "skipped": "Ignorada"
+      },
+      "fix": "Como corrigir",
+      "copyFix": "Copiar correção",
+      "copied": "Copiado",
+      "copyFailed": "Não foi possível copiar",
+      "dns": {
+        "test": "Testar DNS",
+        "testing": "Testando…",
+        "ok": "{host} resolve para {addresses} (via {via}).",
+        "failed": "{host} não resolve para esta máquina (via {via}).",
+        "none": "nada"
+      }
+    }
   }
 }

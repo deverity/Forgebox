@@ -23,3 +23,44 @@ export const removeSite = defineAction<"sites.remove", string>({
   method: "sites.remove",
   toParams: (site) => ({ site, confirm: true }),
 });
+
+/** Live PHP switch of one site (`forge site php loja.test 8.4`, docs/06 section 2.2). */
+export const switchSitePhp = defineAction<"sites.php", { site: string; php: string }>({
+  id: "sites.switch_php",
+  method: "sites.php",
+  toParams: ({ site, php }) => ({ site, php }),
+});
+
+/** Opens the site on the daemon's machine (`local_only`): browser, explorer, editor, terminal. */
+export const openSite = defineAction<
+  "sites.open",
+  { site: string; with: ParamsOf<"sites.open">["with"] }
+>({
+  id: "sites.open",
+  method: "sites.open",
+  toParams: ({ site, with: target }) => ({ site, with: target }),
+});
+
+/** Start, stop or restart one Procfile process (`forge run loja.test web start`). */
+export const runSiteProcess = defineAction<
+  "sites.run",
+  { site: string; process: string; action: ParamsOf<"sites.run">["action"] }
+>({
+  id: "sites.run_process",
+  method: "sites.run",
+  toParams: ({ site, process, action }) => ({ site, process, action }),
+});
+
+/** Overrides the framework driver; `driver: null` detects it again (`forge site driver X auto`). */
+export const setSiteDriver = defineAction<"sites.driver", { site: string; driver: string | null }>({
+  id: "sites.set_driver",
+  method: "sites.driver",
+  toParams: ({ site, driver }) => ({ site, driver }),
+});
+
+/** Installs a missing tool version after the user confirmed (`forge tool install php@8.4`). */
+export const installToolSpec = defineAction<"tools.install", string>({
+  id: "tools.install_spec",
+  method: "tools.install",
+  toParams: (spec) => ({ specs: [spec] }),
+});

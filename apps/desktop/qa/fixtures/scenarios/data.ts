@@ -89,6 +89,26 @@ export function site(n: number, host: string, patch: Partial<T.SiteDto> = {}): T
   } satisfies T.SiteDto;
 }
 
+/** A Procfile process of the QA site `n`. */
+export function siteProcess(
+  n: number,
+  name: string,
+  command: string,
+  state: T.ServiceState,
+  pid: number | null,
+): T.SiteProcessDto {
+  return {
+    site_id: fakeId("01QAS1TE", n),
+    host: "loja.test",
+    name,
+    command,
+    state,
+    pid,
+    port: name === "web" ? 8000 : null,
+    autostart: name === "web",
+  };
+}
+
 export function tool(id: string, patch: Partial<T.ToolDto> = {}): T.ToolDto {
   return {
     id,
@@ -162,7 +182,14 @@ export function populatedData(): QaData {
   return {
     instances: [mysql, instance(2, "redis", "default"), mailpit],
     sites: [
-      site(1, "loja.test"),
+      site(1, "loja.test", {
+        driver: "laravel",
+        aliases: ["www.loja.test"],
+        processes: [
+          siteProcess(1, "web", "php artisan serve", "running", 6100),
+          siteProcess(1, "queue", "php artisan queue:work", "stopped", null),
+        ],
+      }),
       site(2, "blog.test", { secure: false, url: "http://blog.test" }),
       site(3, "api.test", { kind: "proxy", upstream: "http://127.0.0.1:3000" }),
     ],

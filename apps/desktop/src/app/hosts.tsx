@@ -73,7 +73,11 @@ export function SiteTabsHost({ siteId }: { siteId: string }) {
         ))}
       </Tabs.List>
       {tabs.map((tab) => (
-        <Tabs.Content key={tab.id} value={tab.id} className="min-h-0 flex-1 overflow-y-auto p-4">
+        <Tabs.Content
+          key={tab.id}
+          value={tab.id}
+          className={`min-h-0 flex-1 overflow-y-auto p-4 ${FOCUS_RING}`}
+        >
           <SlotBoundary id={tab.id}>
             <Suspense fallback={null}>
               <tab.component siteId={siteId} />

@@ -291,7 +291,8 @@ describe("routes", () => {
 
   it("opens /sites/:id with the param", async () => {
     await renderApp({ path: "/sites/abc" });
-    expect(await screen.findByText("Site abc")).toBeInTheDocument();
+    // The detail screen (M2-E2-T16) says so when the id is not a site.
+    expect(await screen.findByText("Site not found")).toBeInTheDocument();
   });
 
   it("routes /diagnostics from the status bar chips", async () => {
@@ -341,9 +342,13 @@ describe("slot registries", () => {
 
   it("renders a registered site tab and a dashboard section", async () => {
     const unregister = featureModule();
-    await renderApp({ path: "/sites/abc" });
-    expect(await screen.findByRole("tab", { name: "Logs" })).toBeInTheDocument();
-    expect(screen.getByText("Performance of abc")).toBeInTheDocument();
+    await renderApp({ path: "/sites/01JSITE00000000000000000LJA" });
+    // The built-in tabs (Geral, Processos, Diagnóstico) are covered by the Site detail tests.
+    const logs = await screen.findByRole("tab", { name: "Logs" });
+    await userEvent.click(logs);
+    expect(
+      await screen.findByText("Performance of 01JSITE00000000000000000LJA"),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("link", { name: "Dashboard" }));
     expect(await screen.findByText("Projects section")).toBeInTheDocument();
