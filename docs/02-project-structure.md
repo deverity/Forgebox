@@ -420,7 +420,7 @@ Forgebox/
 │   └── fixtures/                 # zips mínimos fake de "tools" para testar providers/extract/layout;
 │       │                         #   registry/ (assinado com a chave dev, 2 tools + 1 stack) e registry-bad-sha/ (sha errado no índice)
 └── .github/
-    └── workflows/                # ci.yml (fmt, clippy, build, test, deny, arch-guard, lint-registry, artefatos gerados, pnpm build), dependabot.yml, PULL_REQUEST_TEMPLATE.md, release.yml (build, sign, latest.json)
+    └── workflows/                # ci.yml (fmt, clippy, build, test, deny, arch-guard, lint-registry, artefatos gerados, pnpm build), PULL_REQUEST_TEMPLATE.md (sem dependabot.yml: desativado em 2026-11-03 a pedido do usuário), release.yml (build, sign, latest.json)
 ```
 
 ## Regras de organização
