@@ -256,7 +256,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!((mode.as_str(), metrics), ("shared", 1));
-        for table in ["metrics_1m", "metrics_1h", "metrics_tail"] {
+        for table in ["metrics_1m", "metrics_1h", "metrics_tail", "metrics_flush"] {
             conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| {
                 r.get::<_, i64>(0)
             })

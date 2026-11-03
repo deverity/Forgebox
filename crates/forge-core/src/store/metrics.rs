@@ -221,6 +221,23 @@ impl<'c> MetricsRepo<'c> {
         )?)
     }
 
+    /// Records the flush operation `op_id` at `at` (Unix seconds). Returns `false` when it was
+    /// recorded already: the caller must then skip the work, a previous attempt committed it.
+    pub fn claim_flush(&self, op_id: &str, at: i64) -> Result<bool> {
+        Ok(self
+            .conn
+            .prepare_cached("INSERT OR IGNORE INTO metrics_flush (op_id, at) VALUES (?1, ?2)")?
+            .execute(params![op_id, at])?
+            > 0)
+    }
+
+    /// Forgets flush operations recorded before `before` (Unix seconds).
+    pub fn prune_flushes(&self, before: i64) -> Result<usize> {
+        Ok(self
+            .conn
+            .execute("DELETE FROM metrics_flush WHERE at < ?1", [before])?)
+    }
+
     /// Deletes every row of a removed site from both tiers.
     pub fn delete_site(&self, site: SiteId) -> Result<usize> {
         let mut n = 0;
@@ -331,6 +348,17 @@ mod tests {
         assert_eq!(repo.delete_site(a).unwrap(), 3);
         assert_eq!(repo.count(Tier::Minute).unwrap(), 0);
         assert_eq!(repo.newest(Tier::Hour).unwrap(), None);
+    }
+
+    #[test]
+    fn a_flush_op_id_is_claimed_once_and_pruned_by_age() {
+        let store = Store::open_in_memory().unwrap();
+        let repo = MetricsRepo::new(store.conn());
+        assert!(repo.claim_flush("op1", 100).unwrap());
+        assert!(!repo.claim_flush("op1", 200).unwrap());
+        assert!(repo.claim_flush("op2", 300).unwrap());
+        assert_eq!(repo.prune_flushes(250).unwrap(), 1);
+        assert!(repo.claim_flush("op1", 400).unwrap());
     }
 
     #[test]

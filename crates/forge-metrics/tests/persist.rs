@@ -146,7 +146,9 @@ async fn three_sites_two_hours_roll_up_exactly_and_prune_with_a_simulated_clock(
     // Rollup of the two hours that ended: 6 rows, histograms merged (p99 of the hour, not an
     // average of minute p99s) and equal to the brute-force oracle.
     let now = ts(BASE + 2 * 3600 + 30);
-    let rolled = persist::rollup(store.writer(), now).await.unwrap();
+    let rolled = persist::rollup(store.reader(), store.writer(), now)
+        .await
+        .unwrap();
     assert_eq!((rolled.hours, rolled.minutes), (6, 360));
     let hours = rows(&store, MetricsTier::Hour);
     assert_eq!(hours.len(), 6);
@@ -167,7 +169,9 @@ async fn three_sites_two_hours_roll_up_exactly_and_prune_with_a_simulated_clock(
         assert_eq!(row.rt_sum_us, values.iter().sum::<u64>());
     }
     // Running it again changes nothing.
-    persist::rollup(store.writer(), now).await.unwrap();
+    persist::rollup(store.reader(), store.writer(), now)
+        .await
+        .unwrap();
     assert_eq!(rows(&store, MetricsTier::Hour), hours);
 
     // Prune with a simulated clock: nothing is old yet; after 7 days + 1 h the first hour of
@@ -180,7 +184,9 @@ async fn three_sites_two_hours_roll_up_exactly_and_prune_with_a_simulated_clock(
     assert_eq!(rows(&store, MetricsTier::Minute).len(), 360 - 3 * 65);
     assert_eq!(rows(&store, MetricsTier::Hour).len(), 6);
     // Rolling up later does not rebuild an hour whose minutes are partly gone.
-    persist::rollup(store.writer(), week).await.unwrap();
+    persist::rollup(store.reader(), store.writer(), week)
+        .await
+        .unwrap();
     assert_eq!(rows(&store, MetricsTier::Hour), hours);
     let far = ts(BASE + 90 * 86_400 + 2 * 3600 + 1);
     let p = persist::prune(store.writer(), far).await.unwrap();
@@ -506,7 +512,9 @@ async fn a_failed_write_keeps_minutes_and_positions_for_the_next_flush() {
         .flush(&mut agg, store.writer(), ts(BASE + 140))
         .await
         .unwrap();
-    assert_eq!((report.rows, report.checkpoints), (1, 1));
+    // The failed batch is re-sent first, then the newer one (the position is rewritten with
+    // the newer edge).
+    assert_eq!((report.rows, report.checkpoints), (1, 2));
     assert_eq!(persister.carried(), 0);
     let tails = persist::load_checkpoints(store.reader()).await.unwrap();
     assert_eq!(tails[0].1.checkpoint.offset, 10);
@@ -733,7 +741,7 @@ async fn unreadable_minutes_never_block_rollup_prune_or_queries() {
     let mut agg = Aggregator::new(cfg(), ts(BASE + 3630));
     let mut persister = Persister::new();
     let report = persister
-        .tick(&mut agg, store.writer(), ts(BASE + 3630))
+        .tick(&mut agg, store.reader(), store.writer(), ts(BASE + 3630))
         .await
         .unwrap();
     let rollup = report.rollup.unwrap();
@@ -752,9 +760,128 @@ async fn unreadable_minutes_never_block_rollup_prune_or_queries() {
     // 8 days later the tick prunes the bad minutes too.
     let later = ts(BASE + 8 * 86_400 + 30);
     let report = persister
-        .tick(&mut agg, store.writer(), later)
+        .tick(&mut agg, store.reader(), store.writer(), later)
         .await
         .unwrap();
     assert_eq!(report.prune.unwrap().minutes, 3);
     assert!(rows(&store, MetricsTier::Minute).is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_timed_out_flush_that_still_commits_is_not_applied_twice() {
+    // The writer reports Timeout ("outcome unknown") while the operation keeps running and
+    // commits. The retry must not add the same minutes again (docs/14 section 3.5).
+    let store = Store::open_in_memory().unwrap();
+    let writer = store.writer().clone();
+    let sites: Vec<SiteId> = (0..100).map(|_| SiteId::new()).collect();
+    let mut agg = Aggregator::new(
+        AggConfig {
+            minute_outbox_cap: 10_000,
+            ..cfg()
+        },
+        ts(BASE),
+    );
+    // The timeout is generous for the writer to pick the operation up and short against the
+    // 4,000 rows it then writes.
+    let mut persister = Persister::new().with_write_timeout(Duration::from_millis(30));
+    for minute in 0..40_i64 {
+        for &site in &sites {
+            feed(
+                &mut agg,
+                site,
+                &record(BASE + minute * 60 + 5, 1000 + minute as u64, 200),
+            );
+            feed(&mut agg, site, &record(BASE + minute * 60 + 9, 90_000, 500));
+        }
+    }
+    persister.observe(
+        "a.log",
+        Some(Log::checkpoint(1)),
+        Some(ts(BASE + 39 * 60 + 9)),
+    );
+    let err = persister
+        .flush(&mut agg, &writer, ts(BASE + 41 * 60))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "timeout", "{err}");
+    assert!(persister.carried() > 0);
+    // Wait for the writer to finish what the caller stopped waiting for.
+    writer.flush(Duration::from_secs(60)).await.unwrap();
+    let committed = rows(&store, MetricsTier::Minute).len();
+    assert_eq!(
+        committed, 4000,
+        "the timed out operation should have committed"
+    );
+
+    let report = persister
+        .flush(&mut agg, &writer, ts(BASE + 41 * 60 + 5))
+        .await
+        .unwrap();
+    assert_eq!(report.replayed, 1);
+    assert_eq!((report.rows, report.merged), (0, 0));
+    assert_eq!(persister.carried(), 0);
+    let stored = rows(&store, MetricsTier::Minute);
+    assert_eq!(stored.len(), 4000);
+    for row in &stored {
+        assert_eq!((row.requests, row.status[1], row.status[4]), (2, 1, 1));
+        assert_eq!(
+            row.rt_sum_us,
+            1000 + (row.start - BASE) as u64 / 60 + 90_000
+        );
+        assert_eq!(LatencyHist::from_v2(&row.rt_hist).unwrap().total(), 2);
+        assert_eq!(LatencyHist::from_v2(&row.ut_hist).unwrap().total(), 2);
+    }
+    // A third flush has nothing left to do.
+    let again = persister
+        .flush(&mut agg, &writer, ts(BASE + 42 * 60))
+        .await
+        .unwrap();
+    assert_eq!((again.rows, again.replayed), (0, 0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rolling_up_50_sites_over_3_hours_keeps_each_writer_operation_short() {
+    let store = Store::open_in_memory().unwrap();
+    let sites: Vec<SiteId> = (0..50).map(|_| SiteId::new()).collect();
+    let mut rng = Rng(7);
+    let mut agg = Aggregator::new(cfg(), ts(BASE));
+    let mut persister = Persister::new();
+    for minute in 0..180_i64 {
+        for &site in &sites {
+            for k in 0..5 {
+                feed(
+                    &mut agg,
+                    site,
+                    &record(BASE + minute * 60 + 10 * k, rng.duration(), 200),
+                );
+            }
+        }
+        persister
+            .flush(&mut agg, store.writer(), ts(BASE + (minute + 1) * 60 + 3))
+            .await
+            .unwrap();
+    }
+    assert_eq!(rows(&store, MetricsTier::Minute).len(), 50 * 180);
+
+    let now = ts(BASE + 3 * 3600 + 30);
+    let mut worst = Vec::new();
+    for run in 0..6 {
+        let report = persist::rollup(store.reader(), store.writer(), now)
+            .await
+            .unwrap();
+        // The first run builds the 3 hours; later ones rebuild the newest rolled hour and the
+        // one before it.
+        let (hours, ops) = if run == 0 { (150, 3) } else { (100, 2) };
+        assert_eq!((report.hours, report.writer_ops), (hours, ops));
+        assert_eq!(report.minutes, hours * 60);
+        worst.push(report.writer_time_max);
+    }
+    worst.sort();
+    let median = worst[worst.len() / 2];
+    eprintln!("rollup 50 sites x 3 h, longest writer operation: {worst:?} (median {median:?})");
+    assert!(median <= Duration::from_millis(5), "median {median:?}");
+
+    let hours = rows(&store, MetricsTier::Hour);
+    assert_eq!(hours.len(), 150);
+    assert!(hours.iter().all(|h| h.requests == 300));
 }

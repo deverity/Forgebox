@@ -65,6 +65,15 @@ CREATE TABLE metrics_tail (
     updated_at     TEXT NOT NULL
 ) STRICT, WITHOUT ROWID;
 
+-- Idempotence guard of the minute flush (docs/14 section 3.5): a flush attempt carries an op id
+-- (ULID) that is recorded in the same writer operation as its rows. A writer timeout means
+-- "outcome unknown", so the caller re-sends the same op id and the second run is skipped when
+-- the first one committed. Pruned with the minute retention.
+CREATE TABLE metrics_flush (
+    op_id  TEXT PRIMARY KEY,
+    at     INTEGER NOT NULL
+) STRICT, WITHOUT ROWID;
+
 ALTER TABLE sites ADD COLUMN pool_mode TEXT NOT NULL DEFAULT 'shared'
     CHECK (pool_mode IN ('shared', 'dedicated'));
 ALTER TABLE sites ADD COLUMN metrics_enabled INTEGER NOT NULL DEFAULT 1

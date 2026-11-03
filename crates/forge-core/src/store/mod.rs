@@ -54,6 +54,8 @@ pub use metrics::{MetricsRepo, MetricsRow, TailRow, Tier as MetricsTier};
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;
+/// The SQLite connection handed to writer operations and reader queries.
+pub use rusqlite::Connection as DbConnection;
 pub use sites::{Site, SiteKind, SitePhp, SitePoolMode, SiteRepo, SiteXdebug};
 pub use tool_series_settings::{ToolSeriesSettingsRepo, is_setting_key};
 pub use tool_versions::{

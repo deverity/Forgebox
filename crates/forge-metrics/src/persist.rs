@@ -10,6 +10,11 @@
 //!   neither. Histograms are encoded (HDR V2) on the blocking pool before the writer sees them;
 //!   a minute already stored (late deltas, a minute resumed after a clock jump) is merged with
 //!   the stored one, which is exact because deltas add up.
+//! - **Idempotence.** Merging is additive, so a flush must never apply twice. A writer
+//!   `Timeout` means "outcome unknown" (the operation may still commit), therefore every
+//!   attempt is a `Batch` with an op id (ULID) that the operation records in `metrics_flush`
+//!   in the same savepoint as its rows; a second run of the same id is skipped. A batch whose
+//!   write failed stays queued with its id and is re-sent, as is, before anything newer.
 //! - **Checkpoints.** A tail batch carries the file position after it. A position may only be
 //!   stored once every record before it is in a stored minute, otherwise a crash would resume
 //!   after records that were never persisted. [`Persister::observe`] queues each batch with the
@@ -23,7 +28,10 @@
 //!   their minute was flushed (late) and were not flushed yet are lost with the crash.
 //! - **Rollup** ([`rollup`]): every hour fully past is rebuilt from its `metrics_1m` rows
 //!   (histograms merged, never percentiles averaged). The newest rolled hour and the one before
-//!   are rebuilt on every run so late deltas are not missed; the rebuild replaces the row.
+//!   are rebuilt on every run so late deltas are not missed; the rebuild replaces the row. The
+//!   minute rows are read and merged on the blocking pool through [`StoreReader`] (decoded
+//!   accumulators, one encode per hour row); the writer only gets short operations with the
+//!   finished hour rows (one per hour), so it is never held for the CPU work.
 //! - **Prune** ([`prune`]): `metrics_1m` 7 days, `metrics_1h` 90 days.
 //! - **Rehydrate** ([`rehydrate`]): at boot the last 24 h of `metrics_1m` go back to tier 2 (the
 //!   minutes and the hours above them) through [`Aggregator::restore_minute`]. The 10 s points of
@@ -39,8 +47,10 @@ use std::collections::{BTreeMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use forge_core::error::{ForgeError, Result};
-use forge_core::ids::SiteId;
-use forge_core::store::{MetricsRepo, MetricsRow, MetricsTier, StoreReader, StoreWriter, TailRow};
+use forge_core::ids::{RequestId, SiteId};
+use forge_core::store::{
+    DbConnection, MetricsRepo, MetricsRow, MetricsTier, StoreReader, StoreWriter, TailRow,
+};
 use jiff::Timestamp;
 
 use crate::agg::{Aggregator, Counters, MinuteDelta, Summary};
@@ -205,6 +215,8 @@ pub struct FlushReport {
     pub checkpoints: usize,
     /// Time the operation held the writer thread.
     pub writer_time: Duration,
+    /// Batches skipped because an earlier attempt had committed them (after a timeout).
+    pub replayed: usize,
 }
 
 /// What [`Persister::tick`] did.
@@ -215,12 +227,27 @@ pub struct TickReport {
     pub prune: Option<PruneReport>,
 }
 
+/// One flush attempt: the encoded rows and positions, with the op id that makes the write
+/// idempotent. Kept in the queue until the writer confirms it (or says it ran before).
+#[derive(Debug, Clone)]
+struct Batch {
+    op_id: String,
+    rows: Vec<MetricsRow>,
+    tails: Vec<(String, TailRow)>,
+    /// Unix seconds recorded with the op id (for the prune).
+    at: i64,
+}
+
 /// Owner-side state of the persistence: minutes not stored yet and tail positions waiting for
 /// their minutes.
 #[derive(Debug, Default)]
 pub struct Persister {
-    /// Deltas whose write failed, written with the next flush.
+    /// Deltas that could not be encoded, tried again with the next flush.
     carry: Vec<MinuteDelta>,
+    /// Batches whose write failed, re-sent (same op id) before anything newer.
+    queue: VecDeque<Batch>,
+    /// Writer timeout of a flush operation (`None`: the store default).
+    write_timeout: Option<Duration>,
     /// Latest safe position per tail key (rewritten, with the new edge, at every flush).
     safe: BTreeMap<String, Checkpoint>,
     /// Batches in arrival order per tail key.
@@ -232,6 +259,13 @@ pub struct Persister {
 impl Persister {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets the timeout of the writer operation of a flush (default: the store's write
+    /// timeout). A timeout is "outcome unknown"; the retry is idempotent.
+    pub fn with_write_timeout(mut self, timeout: Duration) -> Self {
+        self.write_timeout = Some(timeout);
+        self
     }
 
     /// Notes a batch handed to the aggregator: `key` is the tailer key, `newest` the latest
@@ -260,7 +294,7 @@ impl Persister {
 
     /// Minutes waiting for a write (after a failed one).
     pub fn carried(&self) -> usize {
-        self.carry.len()
+        self.carry.len() + self.queue.iter().map(|b| b.rows.len()).sum::<usize>()
     }
 
     /// Batches queued for a checkpoint (diagnostics).
@@ -298,7 +332,8 @@ impl Persister {
     }
 
     /// Stores the closed minutes and the covered positions in one writer operation. On error
-    /// nothing is lost: the minutes and positions are kept for the next flush.
+    /// nothing is lost: the batch stays queued with its op id and is re-sent by the next flush,
+    /// which is safe even when the failure was a timeout of an operation that did commit.
     pub async fn flush(
         &mut self,
         agg: &mut Aggregator,
@@ -306,68 +341,44 @@ impl Persister {
         now: Timestamp,
     ) -> Result<FlushReport> {
         let (deltas, edge) = self.prepare(agg, now);
-        if deltas.is_empty() && self.safe.is_empty() {
-            return Ok(FlushReport::default());
-        }
-        let tails: Vec<(String, TailRow)> = self
-            .safe
-            .iter()
-            .map(|(k, c)| (k.clone(), tail_row(c, edge)))
-            .collect();
-        // Encoding is CPU work proportional to the histograms: off the tokio workers. The
-        // deltas come back with the rows so a failure never loses them.
-        let (rows, deltas) = tokio::task::spawn_blocking(move || {
-            let rows: Result<Vec<MetricsRow>> = deltas.iter().map(delta_row).collect();
-            (rows, deltas)
-        })
-        .await
-        .map_err(|e| ForgeError::Internal(format!("metrics encode task failed: {e}")))?;
-        let rows = match rows {
-            Ok(rows) => rows,
-            Err(err) => {
-                self.carry = deltas;
-                return Err(err);
-            }
-        };
-        let stamp = now.to_string();
-        let result = writer
-            .execute(move |conn| {
-                let started = Instant::now();
-                let repo = MetricsRepo::new(conn);
-                let mut report = FlushReport::default();
-                for row in &rows {
-                    match repo.get(MetricsTier::Minute, row.site, row.start)? {
-                        None => repo.put(MetricsTier::Minute, row)?,
-                        Some(old) => {
-                            let merged = match merge_rows(&old, row) {
-                                Ok(m) => m,
-                                Err(err) => {
-                                    tracing::warn!(%err, site = %row.site, start = row.start,
-                                        "stored metrics minute unreadable, replaced");
-                                    row.clone()
-                                }
-                            };
-                            repo.put(MetricsTier::Minute, &merged)?;
-                            report.merged += 1;
-                        }
-                    }
-                    report.rows += 1;
-                }
-                for (key, tail) in &tails {
-                    repo.put_tail(key, tail, &stamp)?;
-                    report.checkpoints += 1;
-                }
-                report.writer_time = started.elapsed();
-                Ok(report)
+        if !(deltas.is_empty() && self.safe.is_empty()) {
+            let tails: Vec<(String, TailRow)> = self
+                .safe
+                .iter()
+                .map(|(k, c)| (k.clone(), tail_row(c, edge)))
+                .collect();
+            // Encoding is CPU work proportional to the histograms: off the tokio workers. The
+            // deltas come back with the rows so a failure never loses them.
+            let (rows, deltas) = tokio::task::spawn_blocking(move || {
+                let rows: Result<Vec<MetricsRow>> = deltas.iter().map(delta_row).collect();
+                (rows, deltas)
             })
-            .await;
-        match result {
-            Ok(report) => Ok(report),
-            Err(err) => {
-                self.carry = deltas;
-                Err(err)
+            .await
+            .map_err(|e| ForgeError::Internal(format!("metrics encode task failed: {e}")))?;
+            match rows {
+                Ok(rows) => self.queue.push_back(Batch {
+                    op_id: RequestId::new().to_string(),
+                    rows,
+                    tails,
+                    at: secs(now),
+                }),
+                Err(err) => {
+                    self.carry = deltas;
+                    return Err(err);
+                }
             }
         }
+        let mut total = FlushReport::default();
+        while let Some(batch) = self.queue.front() {
+            let report = send_batch(writer, self.write_timeout, batch.clone(), now).await?;
+            self.queue.pop_front();
+            total.rows += report.rows;
+            total.merged += report.merged;
+            total.checkpoints += report.checkpoints;
+            total.writer_time += report.writer_time;
+            total.replayed += report.replayed;
+        }
+        Ok(total)
     }
 
     /// One scheduler step: a flush every call, plus the hourly rollup and the daily prune when
@@ -375,6 +386,7 @@ impl Persister {
     pub async fn tick(
         &mut self,
         agg: &mut Aggregator,
+        reader: &StoreReader,
         writer: &StoreWriter,
         now: Timestamp,
     ) -> Result<TickReport> {
@@ -387,7 +399,7 @@ impl Persister {
         let hour = floor_to(secs(now), HOUR);
         if self.last_rollup_hour != Some(hour) {
             // A failed rollup must not starve the prune: run both, then report the first error.
-            match rollup(writer, now).await {
+            match rollup(reader, writer, now).await {
                 Ok(r) => {
                     report.rollup = Some(r);
                     self.last_rollup_hour = Some(hour);
@@ -411,6 +423,55 @@ impl Persister {
             Some(err) => Err(err),
             None => Ok(report),
         }
+    }
+}
+
+/// One writer operation: claims the op id, then merges the rows and stores the positions. An
+/// op id seen before means an earlier attempt committed the whole batch: nothing to do.
+async fn send_batch(
+    writer: &StoreWriter,
+    timeout: Option<Duration>,
+    batch: Batch,
+    now: Timestamp,
+) -> Result<FlushReport> {
+    let stamp = now.to_string();
+    let op = move |conn: &mut DbConnection| {
+        let started = Instant::now();
+        let repo = MetricsRepo::new(conn);
+        let mut report = FlushReport::default();
+        if !repo.claim_flush(&batch.op_id, batch.at)? {
+            report.replayed = 1;
+            report.writer_time = started.elapsed();
+            return Ok(report);
+        }
+        for row in &batch.rows {
+            match repo.get(MetricsTier::Minute, row.site, row.start)? {
+                None => repo.put(MetricsTier::Minute, row)?,
+                Some(old) => {
+                    let merged = match merge_rows(&old, row) {
+                        Ok(m) => m,
+                        Err(err) => {
+                            tracing::warn!(%err, site = %row.site, start = row.start,
+                                "stored metrics minute unreadable, replaced");
+                            row.clone()
+                        }
+                    };
+                    repo.put(MetricsTier::Minute, &merged)?;
+                    report.merged += 1;
+                }
+            }
+            report.rows += 1;
+        }
+        for (key, tail) in &batch.tails {
+            repo.put_tail(key, tail, &stamp)?;
+            report.checkpoints += 1;
+        }
+        report.writer_time = started.elapsed();
+        Ok(report)
+    };
+    match timeout {
+        Some(t) => writer.execute_timeout(t, op).await,
+        None => writer.execute(op).await,
     }
 }
 
@@ -483,6 +544,12 @@ pub struct RollupReport {
     pub minutes: usize,
     /// Minute rows left out because they could not be decoded.
     pub skipped: usize,
+    /// Writer operations made (one per hour that has rows).
+    pub writer_ops: usize,
+    /// Longest time one writer operation held the writer thread.
+    pub writer_time_max: Duration,
+    /// Total time the writer operations held the writer thread.
+    pub writer_time: Duration,
 }
 
 /// What a prune did.
@@ -492,61 +559,142 @@ pub struct PruneReport {
     pub hours: usize,
 }
 
+/// Hours read and merged per reader call (bounds the memory of a catch-up).
+const ROLLUP_CHUNK_HOURS: i64 = 6;
+
 /// Rebuilds the hour rows of every hour fully past at `now`, from the first one not rolled yet
 /// (the newest rolled hour and the one before are rebuilt: late deltas). Idempotent. Hours whose
 /// minutes are partly pruned are never rebuilt.
-pub async fn rollup(writer: &StoreWriter, now: Timestamp) -> Result<RollupReport> {
+///
+/// The CPU work (decode, exact merge, one encode per hour row) runs in `reader` calls on the
+/// blocking pool; the writer only receives the finished hour rows, one short operation per hour
+/// (docs/03 section 7.1: short transactions).
+pub async fn rollup(
+    reader: &StoreReader,
+    writer: &StoreWriter,
+    now: Timestamp,
+) -> Result<RollupReport> {
     let now_s = secs(now);
-    writer
-        .execute(move |conn| rollup_in(&MetricsRepo::new(conn), now_s))
-        .await
-}
-
-fn rollup_in(repo: &MetricsRepo<'_>, now_s: i64) -> Result<RollupReport> {
     let mut report = RollupReport::default();
-    let Some(oldest) = repo.oldest(MetricsTier::Minute)? else {
+    let end = floor_to(now_s, HOUR);
+    let plan = reader
+        .query(move |conn| {
+            let repo = MetricsRepo::new(conn);
+            let Some(oldest) = repo.oldest(MetricsTier::Minute)? else {
+                return Ok(None);
+            };
+            // First hour whose 7 days of minutes are complete.
+            let complete_from = ceil_to(now_s - dur_secs(RETENTION_1M), HOUR);
+            let mut start = floor_to(oldest, HOUR).max(complete_from);
+            if let Some(newest) = repo.newest(MetricsTier::Hour)? {
+                start = start.max(newest - HOUR);
+            }
+            Ok(Some(start))
+        })
+        .await?;
+    let Some(mut hour) = plan else {
         return Ok(report);
     };
-    let end = floor_to(now_s, HOUR);
-    // First hour whose 7 days of minutes are complete.
-    let complete_from = ceil_to(now_s - dur_secs(RETENTION_1M), HOUR);
-    let mut start = floor_to(oldest, HOUR).max(complete_from);
-    if let Some(newest) = repo.newest(MetricsTier::Hour)? {
-        start = start.max(newest - HOUR);
-    }
-    let mut hour = start;
     while hour < end {
-        let rows = repo.range(MetricsTier::Minute, None, hour, hour + HOUR)?;
-        report.minutes += rows.len();
-        let mut by_site: BTreeMap<SiteId, MetricsRow> = BTreeMap::new();
-        for row in rows {
-            // An unreadable minute must not block the hour (nor the prune that follows).
-            if let Err(err) = decode(&row.rt_hist, row.format_version)
-                .and_then(|_| decode(&row.ut_hist, row.format_version))
-            {
-                tracing::warn!(%err, site = %row.site, start = row.start,
-                    "stored metrics minute skipped by rollup");
-                report.skipped += 1;
-                continue;
-            }
-            let hour_row = MetricsRow { start: hour, ..row };
-            match by_site.get(&hour_row.site) {
-                None => {
-                    by_site.insert(hour_row.site, hour_row);
-                }
-                Some(acc) => {
-                    let merged = merge_rows(acc, &hour_row)?;
-                    by_site.insert(hour_row.site, merged);
-                }
-            }
+        let chunk_end = (hour + ROLLUP_CHUNK_HOURS * HOUR).min(end);
+        let (hours, minutes, skipped) = reader
+            .query(move |conn| {
+                let rows =
+                    MetricsRepo::new(conn).range(MetricsTier::Minute, None, hour, chunk_end)?;
+                Ok(merge_hours(rows))
+            })
+            .await?;
+        report.minutes += minutes;
+        report.skipped += skipped;
+        for (_, rows) in hours {
+            let n = rows.len();
+            let spent = writer
+                .execute(move |conn| {
+                    let started = Instant::now();
+                    let repo = MetricsRepo::new(conn);
+                    for row in &rows {
+                        repo.put(MetricsTier::Hour, row)?;
+                    }
+                    Ok(started.elapsed())
+                })
+                .await?;
+            report.hours += n;
+            report.writer_ops += 1;
+            report.writer_time += spent;
+            report.writer_time_max = report.writer_time_max.max(spent);
         }
-        for row in by_site.values() {
-            repo.put(MetricsTier::Hour, row)?;
-            report.hours += 1;
-        }
-        hour += HOUR;
+        hour = chunk_end;
     }
     Ok(report)
+}
+
+/// Exact running total of one (hour, site): decoded histograms stay decoded until the end.
+struct HourAcc {
+    counters: Counters,
+    sampled: bool,
+    rt: LatencyHist,
+    ut: LatencyHist,
+}
+
+/// Merges minute rows into hour rows, grouped by hour. Returns `(hour, rows)` in time order,
+/// the number of minute rows read and the number skipped as unreadable (they must not block the
+/// hour, nor the prune that follows). Blocking work: call it on the blocking pool.
+fn merge_hours(minutes: Vec<MetricsRow>) -> (Vec<(i64, Vec<MetricsRow>)>, usize, usize) {
+    let read = minutes.len();
+    let mut skipped = 0;
+    let mut acc: BTreeMap<(i64, SiteId), HourAcc> = BTreeMap::new();
+    for row in &minutes {
+        let (rt, ut) = match (
+            decode(&row.rt_hist, row.format_version),
+            decode(&row.ut_hist, row.format_version),
+        ) {
+            (Ok(rt), Ok(ut)) => (rt, ut),
+            (Err(err), _) | (_, Err(err)) => {
+                tracing::warn!(%err, site = %row.site, start = row.start,
+                    "stored metrics minute skipped by rollup");
+                skipped += 1;
+                continue;
+            }
+        };
+        let entry = acc
+            .entry((floor_to(row.start, HOUR), row.site))
+            .or_insert_with(|| HourAcc {
+                counters: Counters::default(),
+                sampled: false,
+                rt: LatencyHist::new(),
+                ut: LatencyHist::new(),
+            });
+        add_counters(&mut entry.counters, &counters_of(row));
+        entry.sampled |= row.sampled;
+        entry.rt = entry.rt.merge(&rt);
+        entry.ut = entry.ut.merge(&ut);
+    }
+    let mut hours: Vec<(i64, Vec<MetricsRow>)> = Vec::new();
+    for ((hour, site), a) in acc {
+        let (Ok(rt_hist), Ok(ut_hist)) = (encode(&a.rt), encode(&a.ut)) else {
+            tracing::warn!(%site, hour, "hour histogram could not be encoded, hour row skipped");
+            continue;
+        };
+        let row = MetricsRow {
+            site,
+            start: hour,
+            requests: a.counters.requests,
+            status: a.counters.status,
+            bytes: a.counters.bytes,
+            rt_sum_us: a.counters.rt_sum_us,
+            ut_sum_us: a.counters.ut_sum_us,
+            ut_count: a.counters.ut_count,
+            sampled: a.sampled,
+            rt_hist,
+            ut_hist,
+            format_version: FORMAT_VERSION,
+        };
+        match hours.last_mut() {
+            Some((h, rows)) if *h == hour => rows.push(row),
+            _ => hours.push((hour, vec![row])),
+        }
+    }
+    (hours, read, skipped)
 }
 
 /// Deletes minutes older than [`RETENTION_1M`] and hours older than [`RETENTION_1H`] at `now`.
@@ -555,6 +703,7 @@ pub async fn prune(writer: &StoreWriter, now: Timestamp) -> Result<PruneReport> 
     writer
         .execute(move |conn| {
             let repo = MetricsRepo::new(conn);
+            repo.prune_flushes(floor_to(now_s - dur_secs(RETENTION_1M), MINUTE))?;
             Ok(PruneReport {
                 minutes: repo.prune(
                     MetricsTier::Minute,
