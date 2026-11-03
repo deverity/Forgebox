@@ -8,6 +8,7 @@ import type palette from "./en-US/palette.json";
 import type services from "./en-US/services.json";
 import type shell from "./en-US/shell.json";
 import type sites from "./en-US/sites.json";
+import type terminal from "./en-US/terminal.json";
 import type tray from "./en-US/tray.json";
 import type updater from "./en-US/updater.json";
 
@@ -27,6 +28,7 @@ export interface Resources {
   services: typeof services;
   sites: typeof sites;
   catalog: typeof catalog;
+  terminal: typeof terminal;
 }
 
 declare module "i18next" {
