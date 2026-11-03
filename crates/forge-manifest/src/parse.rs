@@ -1689,6 +1689,11 @@ impl Checker<'_> {
                     "needs 1 <= max and min <= max",
                 );
             }
+            for (i, log) in pool.logs.iter().enumerate() {
+                self.not_empty(&format!("{f}.logs[{i}].label"), &log.label);
+                self.not_empty(&format!("{f}.logs[{i}].path"), &log.path);
+                self.log_access(&format!("{f}.logs[{i}]"), log);
+            }
             if let Some(health) = &pool.health {
                 if !health.fastcgi.starts_with('/') {
                     self.push(

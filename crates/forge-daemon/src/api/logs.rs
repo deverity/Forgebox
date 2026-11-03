@@ -7,7 +7,9 @@
 //!   the instance actor, numbered like the files);
 //! * `<tool>.<file>` — a log the manifest declares (`nginx.error` → the `logs[]` entry
 //!   whose file name starts with `error`);
-//! * `<pool tool>@<series>` — the newest worker log of that pool;
+//! * `<pool tool>@<series>` — the first log the pool's manifest declares
+//!   (`service.pool.logs[]`, e.g. PHP's `error_log`, with its `format`), or the newest
+//!   worker log of the pool when it declares none or the file does not exist yet;
 //! * `site:<host>` — the web server's JSON access log (the manifest `logs[].access`
 //!   mapping, read by `forge-metrics`' parser), only the requests whose host is the
 //!   site's or one of its aliases, with `LogLineDto.access` filled and the level from the
@@ -356,6 +358,22 @@ fn manifest_log(
     Ok(None)
 }
 
+/// The first log a pool's manifest declares (`service.pool.logs[]`) for the installed
+/// `row`, with the path resolved.
+fn pool_log(
+    daemon: &Daemon,
+    manifest: &forge_manifest::schema::tool::ToolManifest,
+    row: &forge_core::store::ToolVersionRow,
+) -> Option<(LogSpec, PathBuf)> {
+    let spec = manifest.spec.service.pool.as_ref()?.logs.first()?.clone();
+    let path = daemon
+        .layout
+        .vars_for(manifest, row)
+        .substitute(&spec.path)
+        .ok()?;
+    Some((spec, PathBuf::from(path)))
+}
+
 async fn resolve(daemon: &Daemon, target: &str) -> Result<Target> {
     let target = target.trim();
     if target == "daemon" {
@@ -388,7 +406,14 @@ async fn resolve(daemon: &Daemon, target: &str) -> Result<Target> {
             .ok_or_else(|| ForgeError::NotFound(format!("{tool}@{version} is not installed")))?;
         let series = catalog::series_of(&entry.manifest, &row.version);
         let dir = daemon.root.logs().join(tool).join(series);
-        let file = tokio::task::spawn_blocking(move || {
+        let declared = pool_log(daemon, &entry.manifest, row);
+        let found = tokio::task::spawn_blocking(move || {
+            // The declared log is a fixed file; only without it the newest worker log.
+            if let Some((spec, path)) = declared {
+                if path.is_file() {
+                    return Some((path, spec.format));
+                }
+            }
             let files = std::fs::read_dir(&dir)
                 .map(|e| {
                     e.flatten()
@@ -397,13 +422,13 @@ async fn resolve(daemon: &Daemon, target: &str) -> Result<Target> {
                         .collect()
                 })
                 .unwrap_or_default();
-            newest(files)
+            newest(files).map(|file| (file, None))
         })
         .await
         .ok()
         .flatten()
         .ok_or_else(|| ForgeError::NotFound(format!("no log of {target} yet")))?;
-        return Ok(Target::set(LogSet::rotated(file), None));
+        return Ok(Target::set(LogSet::rotated(found.0), found.1));
     }
     if let Some((tool, file)) = target.split_once('.') {
         if !tool.contains('/') {
@@ -522,6 +547,19 @@ impl Filter {
     fn file_line(&self, seq: u64, text: String) -> Option<LogLineDto> {
         self.line(seq, text, LogSource::File, None)
     }
+
+    /// Whether lines can be dropped (another site's host, `grep`).
+    fn drops(&self) -> bool {
+        self.grep.is_some() || self.shaper.filters()
+    }
+
+    /// Shapes (and filters) a batch of raw file lines. CPU-bound: call it off the runtime.
+    fn file_lines(&self, lines: Vec<(u64, String)>) -> Vec<LogLineDto> {
+        lines
+            .into_iter()
+            .filter_map(|(seq, text)| self.file_line(seq, text))
+            .collect()
+    }
 }
 
 /// Runs blocking set I/O off the runtime, with the read deadline.
@@ -574,22 +612,27 @@ async fn read(daemon: Daemon, params: LogsReadParams, _ctx: Ctx) -> Result<LogCh
     // Lines that can be dropped (grep, since, a site's other hosts) need a wider scan to
     // fill `limit`; the next page starts at the oldest line returned, so pages never
     // overlap nor skip a kept line.
-    let scan = if params.grep.is_some() || since.is_some() || filter.shaper.filters() {
+    let scan = if filter.drops() || since.is_some() {
         SCAN_LIMIT
     } else {
         limit
     };
     let before = params.before_seq;
-    let (snapshot, lines) =
-        blocking("reading a log", move || read_before(&set, before, scan)).await?;
-    let mut out: Vec<LogLineDto> = lines
-        .into_iter()
-        .filter_map(|(seq, text)| filter.file_line(seq, text))
-        .filter(|l| since.is_none_or(|s| l.ts.is_none_or(|ts| ts >= s)))
-        .collect();
-    if out.len() > limit {
-        out.drain(..out.len() - limit);
-    }
+    // Reading, shaping, filtering and cutting to `limit` all run off the runtime: up to
+    // SCAN_LIMIT lines are parsed per request.
+    let (snapshot, out) = blocking("reading a log", move || {
+        let (snapshot, lines) = read_before(&set, before, scan)?;
+        let mut out: Vec<LogLineDto> = filter
+            .file_lines(lines)
+            .into_iter()
+            .filter(|l| since.is_none_or(|s| l.ts.is_none_or(|ts| ts >= s)))
+            .collect();
+        if out.len() > limit {
+            out.drain(..out.len() - limit);
+        }
+        Ok((snapshot, out))
+    })
+    .await?;
     Ok(LogChunkDto {
         target: params.target,
         lines: out,
@@ -628,8 +671,8 @@ struct Replay {
     snapshot: Snapshot,
 }
 
-/// Reads what `start` asks for up to `upto`. Blocking.
-fn read_replay(set: &LogSet, start: Start, upto: u64) -> std::io::Result<Replay> {
+/// Reads what `start` asks for up to `upto`, at most the newest `cap` lines. Blocking.
+fn read_replay(set: &LogSet, start: Start, upto: u64, cap: u64) -> std::io::Result<Replay> {
     for _ in 0..10 {
         let snapshot = set.snapshot()?;
         let (mut from, mut lost) = match start {
@@ -642,8 +685,8 @@ fn read_replay(set: &LogSet, start: Start, upto: u64) -> std::io::Result<Replay>
         };
         from = from.max(snapshot.first_seq);
         if from <= upto {
-            // Only the newest REPLAY_LIMIT lines are replayed; older ones are lagged.
-            let newest = set.tail_start(&snapshot, REPLAY_LIMIT, upto)?;
+            // Only the newest `cap` lines are replayed; older ones are lagged.
+            let newest = set.tail_start(&snapshot, cap, upto)?;
             if newest > from {
                 lost += set.count_range(&snapshot, from, newest - 1)?;
                 from = newest;
@@ -667,6 +710,30 @@ fn read_replay(set: &LogSet, start: Start, upto: u64) -> std::io::Result<Replay>
     Err(std::io::Error::other("the log kept rotating"))
 }
 
+/// The raw lines a replay of `start` has to read and its cap. A `tail` of a target that
+/// drops lines (another site's host, `grep`) reads a wide window of raw lines, because the
+/// last N raw lines may hold few or none of the kept ones; [`finish_replay`] cuts it back
+/// to N.
+fn replay_window(start: Start, filter: &Filter) -> (Start, u64) {
+    match start {
+        Start::Tail(_) if filter.drops() => (Start::Tail(SCAN_LIMIT as u64), SCAN_LIMIT as u64),
+        other => (other, REPLAY_LIMIT),
+    }
+}
+
+/// Shapes the lines of a replay (blocking; `replay` calls it off the runtime) and keeps
+/// the last N of a `tail`.
+fn finish_replay(start: Start, filter: &Filter, lines: Vec<(u64, String)>) -> Vec<LogLineDto> {
+    let mut out = filter.file_lines(lines);
+    if let Start::Tail(n) = start {
+        let n = usize::try_from(n).unwrap_or(usize::MAX);
+        if out.len() > n {
+            out.drain(..out.len() - n);
+        }
+    }
+    out
+}
+
 /// Sends the lines `start` asks for, up to `upto` (inclusive). `wait_disk`: `upto` comes
 /// from an instance whose writer may not have flushed yet; wait for it a little. `false`
 /// once the stream is closed.
@@ -682,10 +749,14 @@ async fn replay(
         return !sender.is_closed();
     }
     let started = tokio::time::Instant::now();
+    let (window, cap) = replay_window(start, filter);
     let mut pause = DISK_POLL;
     let found = loop {
         let s = set.clone();
-        let found = blocking("replaying a log", move || read_replay(&s, start, upto)).await;
+        let found = blocking("replaying a log", move || {
+            read_replay(&s, window, upto, cap)
+        })
+        .await;
         match found {
             Ok(r) if wait_disk && r.missing > 0 && started.elapsed() < DISK_WAIT => {
                 tokio::select! {
@@ -709,10 +780,18 @@ async fn replay(
         "log replay"
     );
     sender.lagged(found.lost);
-    for (seq, text) in found.lines {
-        let Some(dto) = filter.file_line(seq, text) else {
-            continue;
-        };
+    let shaped = {
+        let filter = filter.clone();
+        let lines = found.lines;
+        blocking("shaping a log", move || {
+            Ok(finish_replay(start, &filter, lines))
+        })
+        .await
+    };
+    let Ok(shaped) = shaped else {
+        return !sender.is_closed();
+    };
+    for dto in shaped {
         if !sender.send_wait(&envelope(sender, dto), REPLAY_WAIT).await {
             return false;
         }
@@ -752,8 +831,12 @@ async fn poll_set(mut follower: Follower, sender: StreamSender, filter: Filter) 
             () = sender.closed() => return,
             () = tokio::time::sleep(POLL) => {}
         }
+        let shaping = filter.clone();
         let polled = tokio::task::spawn_blocking(move || {
-            let polled = follower.poll();
+            // Polling and shaping (parsers, redaction) stay off the runtime.
+            let polled = follower
+                .poll()
+                .map(|p| (p.lost, shaping.file_lines(p.lines)));
             (follower, polled)
         })
         .await;
@@ -766,11 +849,8 @@ async fn poll_set(mut follower: Follower, sender: StreamSender, filter: Filter) 
                 continue;
             }
         };
-        sender.lagged(polled.lost);
-        for (seq, text) in polled.lines {
-            let Some(dto) = filter.file_line(seq, text) else {
-                continue;
-            };
+        sender.lagged(polled.0);
+        for dto in polled.1 {
             if !sender.send(&envelope(&sender, dto)) {
                 return;
             }
@@ -984,39 +1064,54 @@ async fn targets(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<LogTarg
         }
     }
 
-    // PHP pools: `<tool>@<series>` for each installed series that has a log folder.
+    // Pools: `<tool>@<series>` for each installed series that has a log folder; the file
+    // and format are the pool's first declared log (like `resolve`).
+    struct PoolRow {
+        tool: String,
+        series: String,
+        log: Option<(LogSpec, PathBuf)>,
+    }
     let mut pools = Vec::new();
     for pool in catalog::pool_tools(&daemon.registry) {
         let id = pool.manifest.metadata.id.clone();
         let rows = catalog::installed(&daemon.reader, &id, Some(&pool.manifest))
             .await
             .unwrap_or_default();
-        let series: BTreeSet<String> = rows
-            .iter()
-            .map(|r| catalog::series_of(&pool.manifest, &r.version))
-            .collect();
-        for series in series {
-            pools.push((id.to_string(), series));
+        let mut seen = BTreeSet::new();
+        for row in &rows {
+            let series = catalog::series_of(&pool.manifest, &row.version);
+            if seen.insert(series.clone()) {
+                pools.push(PoolRow {
+                    tool: id.to_string(),
+                    series,
+                    log: pool_log(&daemon, &pool.manifest, row),
+                });
+            }
         }
     }
     let base = daemon.root.logs();
     let pools = tokio::task::spawn_blocking(move || {
         pools
             .into_iter()
-            .filter(|(tool, series)| base.join(tool).join(series).is_dir())
+            .filter(|p| base.join(&p.tool).join(&p.series).is_dir())
+            .map(|p| (base.join(&p.tool).join(&p.series), p))
             .collect::<Vec<_>>()
     })
     .await
     .unwrap_or_default();
-    for (tool, series) in pools {
+    for (dir, pool) in pools {
+        let (format, file) = match pool.log {
+            Some((spec, path)) => (spec.format, rel(&root, &path)),
+            None => (None, rel(&root, &dir)),
+        };
         out.push(target_dto(
-            format!("{tool}@{series}"),
-            format!("{tool} {series} · pool"),
+            format!("{}@{}", pool.tool, pool.series),
+            format!("{} {} · pool", pool.tool, pool.series),
             LogTargetKind::Pool,
-            &tool,
-            None,
+            &pool.tool,
+            format,
             true,
-            Some(rel(&root, &daemon.root.logs().join(&tool).join(&series))),
+            Some(file),
         ));
     }
 
@@ -1115,18 +1210,18 @@ mod tests {
         let set = rotated_set(dir.path());
         let seqs = |r: &Replay| r.lines.iter().map(|(s, _)| *s).collect::<Vec<_>>();
         // Inside the retained lines: exactly what follows the cursor.
-        let r = read_replay(&set, Start::After(107), 110).unwrap();
+        let r = read_replay(&set, Start::After(107), 110, REPLAY_LIMIT).unwrap();
         assert_eq!((r.lost, seqs(&r), r.missing), (0, vec![108, 109, 110], 0));
         // Before them: the rotated-away lines are counted.
-        let r = read_replay(&set, Start::After(95), 110).unwrap();
+        let r = read_replay(&set, Start::After(95), 110, REPLAY_LIMIT).unwrap();
         assert_eq!((r.lost, r.lines.len(), r.missing), (5, 10, 0));
         // An instance ahead of its file: the lines not written yet are missing.
-        let r = read_replay(&set, Start::Tail(3), 112).unwrap();
+        let r = read_replay(&set, Start::Tail(3), 112, REPLAY_LIMIT).unwrap();
         assert_eq!((r.lost, seqs(&r), r.missing), (0, vec![110], 2));
         // Nothing to replay.
-        let r = read_replay(&set, Start::After(110), 110).unwrap();
+        let r = read_replay(&set, Start::After(110), 110, REPLAY_LIMIT).unwrap();
         assert_eq!((r.lost, r.lines.len(), r.missing), (0, 0, 0));
-        let r = read_replay(&set, Start::Live, 110).unwrap();
+        let r = read_replay(&set, Start::Live, 110, REPLAY_LIMIT).unwrap();
         assert_eq!((r.lost, r.lines.len(), r.missing), (0, 0, 0));
     }
 
@@ -1138,11 +1233,11 @@ mod tests {
         let text: String = (1..=total).map(|i| format!("{i}\n")).collect();
         std::fs::write(&file, text).unwrap();
         let set = LogSet::rotated(&file);
-        let r = read_replay(&set, Start::After(0), total).unwrap();
+        let r = read_replay(&set, Start::After(0), total, REPLAY_LIMIT).unwrap();
         assert_eq!(r.lost, 250);
         assert_eq!(r.lines.len() as u64, REPLAY_LIMIT);
         assert_eq!(r.lines[0], (251, "251".to_owned()));
-        let r = read_replay(&set, Start::Tail(REPLAY_LIMIT), total).unwrap();
+        let r = read_replay(&set, Start::Tail(REPLAY_LIMIT), total, REPLAY_LIMIT).unwrap();
         assert_eq!((r.lost, r.lines.len() as u64), (0, REPLAY_LIMIT));
     }
 
@@ -1356,6 +1451,37 @@ mod tests {
         assert_eq!(p2, vec![9, 12, 15, 18]);
         let p3 = page(Some(p2[0]), 4);
         assert_eq!(p3, vec![3, 6]);
+    }
+
+    #[test]
+    fn a_site_tail_reads_a_wide_window_and_keeps_the_last_lines_of_the_site() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("access.json");
+        let host = |i: u32| match i % 3 {
+            0 => "loja.test",
+            1 => "other.test",
+            _ => "blog.test",
+        };
+        let text: String = (1..=30)
+            .map(|i| format!("{}\n", access_line(f64::from(i), host(i), 200, "/")))
+            .collect();
+        std::fs::write(&file, text).unwrap();
+        let set = LogSet::rotated(&file);
+        let filter = filter_of(site_shaper(&site("loja.test", &[])));
+        let start = Start::Tail(4);
+        let (window, cap) = replay_window(start, &filter);
+        let replay = read_replay(&set, window, 30, cap).unwrap();
+        let got: Vec<u64> = finish_replay(start, &filter, replay.lines)
+            .into_iter()
+            .map(|l| l.seq)
+            .collect();
+        // The last 4 raw lines hold one line of the site; the window finds its last 4.
+        assert_eq!(got, vec![21, 24, 27, 30]);
+        // A target that drops nothing keeps reading just N lines.
+        let plain = filter_of(Shaper::plain(None));
+        let (window, cap) = replay_window(start, &plain);
+        let replay = read_replay(&set, window, 30, cap).unwrap();
+        assert_eq!(replay.lines.len(), 4);
     }
 
     #[test]
