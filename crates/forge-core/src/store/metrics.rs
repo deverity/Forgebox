@@ -43,6 +43,9 @@ pub struct TailRow {
     pub offset: u64,
     pub head_len: u16,
     pub head_hash: u64,
+    /// Unix seconds: records read before this position and older than it are stored in
+    /// `metrics_1m` already (see `forge_metrics::persist`).
+    pub closed_edge: i64,
 }
 
 /// Which table of rows.
@@ -106,6 +109,7 @@ fn tail_from_row(row: &Row<'_>) -> rusqlite::Result<TailRow> {
         offset: read_u64(row, 1)?,
         head_len: row.get(2)?,
         head_hash: row.get::<_, i64>(3)?.cast_unsigned(),
+        closed_edge: row.get(4)?,
     })
 }
 
@@ -183,11 +187,11 @@ impl<'c> MetricsRepo<'c> {
 
     /// Number of rows of the tier.
     pub fn count(&self, tier: Tier) -> Result<u64> {
-        let n: i64 = self.conn.query_row(
-            &format!("SELECT count(*) FROM {}", tier.table()),
-            [],
-            |r| r.get(0),
-        )?;
+        let n: i64 =
+            self.conn
+                .query_row(&format!("SELECT count(*) FROM {}", tier.table()), [], |r| {
+                    r.get(0)
+                })?;
         Ok(n.cast_unsigned())
     }
 
@@ -234,10 +238,10 @@ impl<'c> MetricsRepo<'c> {
         self.conn
             .prepare_cached(
                 "INSERT INTO metrics_tail (path_key, creation_time, \"offset\", head_len, \
-                 head_hash, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+                 head_hash, closed_edge, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
                  ON CONFLICT (path_key) DO UPDATE SET creation_time = excluded.creation_time, \
                  \"offset\" = excluded.\"offset\", head_len = excluded.head_len, \
-                 head_hash = excluded.head_hash, updated_at = excluded.updated_at",
+                 head_hash = excluded.head_hash, closed_edge = excluded.closed_edge,                  updated_at = excluded.updated_at",
             )?
             .execute(params![
                 path_key,
@@ -245,6 +249,7 @@ impl<'c> MetricsRepo<'c> {
                 to_i64(tail.offset, "offset")?,
                 tail.head_len,
                 tail.head_hash.cast_signed(),
+                tail.closed_edge,
                 updated_at,
             ])?;
         Ok(())
@@ -255,7 +260,7 @@ impl<'c> MetricsRepo<'c> {
         Ok(self
             .conn
             .prepare_cached(
-                "SELECT creation_time, \"offset\", head_len, head_hash FROM metrics_tail \
+                "SELECT creation_time, \"offset\", head_len, head_hash, closed_edge FROM metrics_tail \
                  WHERE path_key = ?1",
             )?
             .query_row([path_key], tail_from_row)
@@ -265,10 +270,10 @@ impl<'c> MetricsRepo<'c> {
     /// Every stored tailer position.
     pub fn tails(&self) -> Result<Vec<(String, TailRow)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT creation_time, \"offset\", head_len, head_hash, path_key FROM metrics_tail \
+            "SELECT creation_time, \"offset\", head_len, head_hash, closed_edge, path_key FROM metrics_tail \
              ORDER BY path_key",
         )?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(4)?, tail_from_row(r)?)))?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(5)?, tail_from_row(r)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
@@ -349,6 +354,7 @@ mod tests {
             offset: 12_345,
             head_len: 256,
             head_hash: u64::MAX - 5,
+            closed_edge: 1_767_225_660,
         };
         repo.put_tail("c:/x/access.log", &tail, "t").unwrap();
         assert_eq!(repo.tail("c:/x/access.log").unwrap(), Some(tail));

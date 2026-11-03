@@ -24,11 +24,16 @@
 //! 10 min, 10 s points and minutes for 24 h, hours), the top routes and the recent errors,
 //! and answers windows, ranges and series from them with exact merges (docs/14 section 3.4).
 //! [`hist`] has the histogram layout and its persisted form.
+//!
+//! [`persist`] stores the closed minutes and the tail checkpoints in SQLite, rolls them up to
+//! hours, prunes, rehydrates the aggregator at boot and answers ranges over 24 h
+//! (docs/14 section 3.5).
 
 pub mod agg;
 pub mod attribution;
 pub mod hist;
 mod parse;
+pub mod persist;
 mod record;
 mod route;
 mod router;

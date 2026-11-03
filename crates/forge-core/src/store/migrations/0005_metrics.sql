@@ -59,6 +59,9 @@ CREATE TABLE metrics_tail (
     "offset"       INTEGER NOT NULL CHECK ("offset" >= 0),
     head_len       INTEGER NOT NULL CHECK (head_len BETWEEN 0 AND 256),
     head_hash      INTEGER NOT NULL,
+    -- Unix seconds: every record of the log read before this position whose minute starts
+    -- before it is in metrics_1m; a resume drops those records when it re-reads them.
+    closed_edge    INTEGER NOT NULL DEFAULT 0,
     updated_at     TEXT NOT NULL
 ) STRICT, WITHOUT ROWID;
 

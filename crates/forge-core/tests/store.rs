@@ -317,7 +317,7 @@ fn migration_0004_upgrades_a_schema_3_database() {
     let store = Store::open(&path).unwrap();
     let report = store.migration_report();
     assert_eq!(report.from_version, 3);
-    assert_eq!(report.applied, vec![4]);
+    assert_eq!(report.applied, vec![4, 5]);
     assert!(report.backup.is_some(), "backed up before migrating");
     let settings: String = store
         .conn()
@@ -344,4 +344,36 @@ fn migration_0004_upgrades_a_schema_3_database() {
         )
         .unwrap_err();
     assert!(err.to_string().contains("CHECK"), "{err}");
+}
+
+#[test]
+fn migration_0005_upgrades_a_schema_4_database_keeping_sites() {
+    use forge_core::store::{SitePoolMode, SiteRepo};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("forgebox.db");
+    {
+        let mut conn = rusqlite::Connection::open(&path).unwrap();
+        let report = migrations::apply(&mut conn, &MIGRATIONS[..4], None).unwrap();
+        assert_eq!(report.to_version, 4);
+        conn.execute_batch(
+            "INSERT INTO sites (id, slug, host, kind, created_at, updated_at) VALUES \
+             ('01J0000000000000000000000A', 'a-test', 'a.test', 'php', \
+              '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'), \
+             ('01J0000000000000000000000B', 'b-test', 'b.test', 'static', \
+              '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');",
+        )
+        .unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.migration_report().from_version, 4);
+    assert_eq!(store.migration_report().applied, vec![5]);
+    assert!(store.migration_report().backup.is_some());
+    let sites = SiteRepo::new(store.conn()).list().unwrap();
+    assert_eq!(sites.len(), 2);
+    assert!(
+        sites
+            .iter()
+            .all(|s| s.pool_mode == SitePoolMode::Shared && s.metrics_enabled)
+    );
 }

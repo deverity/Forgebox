@@ -40,7 +40,8 @@ Forgebox/
 │   │       │                     #   writer.rs (thread de escrita, lotes com SAVEPOINT), reader.rs (pool query_only p/ spawn_blocking),
 │   │       │                     #   ports.rs (PortRepo: reservas de porta), update_history.rs (UpdateHistoryRepo: updates e rollbacks),
 │   │       │                     #   instances.rs (InstanceRepo: instâncias de serviço, desired_state, settings),
-│   │       │                     #   tool_series_settings.rs (quick settings por (tool, série): pools de PHP, migration 0004)
+│   │       │                     #   tool_series_settings.rs (quick settings por (tool, série): pools de PHP, migration 0004),
+│   │       │                     #   metrics.rs (MetricsRepo: metrics_1m/1h e checkpoints do tail, migration 0005)
 │   │       ├── model/            # Tool, ToolVersion, Instance, Site, Proxy, App, Port, Certificate (hoje: port.rs —
 │   │       │                     #   PortReservation, ReservationOwner, OwnerKind, PortState, PortHolder e o trait
 │   │       │                     #   PortReservations: o alocador visto por quem não depende de forge-net, ex. forge-fcgi)
