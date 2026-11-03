@@ -100,7 +100,7 @@ export function ErrorNotice({
                   data-forge-cli={cli ?? undefined}
                   data-disabled-reason={reason}
                   // A disabled button cannot take focus: the wrapper does, so the reason is reachable.
-                  // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+                  // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the wrapper takes focus so the disabled reason is reachable
                   tabIndex={reason === undefined ? undefined : 0}
                   className="inline-flex"
                 >

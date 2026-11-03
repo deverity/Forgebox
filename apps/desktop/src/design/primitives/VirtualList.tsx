@@ -33,7 +33,7 @@ export function VirtualList<T>({
   const parentRef = useRef<HTMLDivElement>(null);
   // TanStack's virtualizer returns unmemoizable functions; this component is deliberately not
   // compiled by React Compiler and does not pass them to memoized children.
-  // eslint-disable-next-line react-hooks/incompatible-library
+  // eslint-disable-next-line react-hooks/incompatible-library -- useVirtualizer is used as documented, results are not memoized
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
