@@ -1312,6 +1312,19 @@ impl Checker<'_> {
                 );
             }
             self.duplicate(&format!("{f}.key"), &mut keys, &qs.key);
+            // The per-series storage keeps the extension toggles of a tool with
+            // `config.extensions` as `ext_<name>` (M2-E2-T9), next to its quick settings.
+            if config.extensions.is_some()
+                && qs
+                    .key
+                    .starts_with(crate::schema::tool::EXTENSION_CHOICE_PREFIX)
+            {
+                self.push(
+                    IssueCode::InvalidId,
+                    format!("{f}.key"),
+                    "`ext_*` keys are reserved for the extension toggles (php.ext_enable)",
+                );
+            }
             if let Some(file) = &qs.file {
                 if !ids.contains(file) {
                     self.push(
@@ -2093,6 +2106,29 @@ impl Checker<'_> {
         if let Some(toggle) = &spec.toggle {
             self.not_empty("spec.toggle.enable", &toggle.enable);
             self.not_empty("spec.toggle.disable", &toggle.disable);
+            // `modes` presets store the extension's own quick settings (M2-E2-T9).
+            for (mode, values) in &toggle.modes {
+                let f = format!("spec.toggle.modes.{mode}");
+                if !is_key(mode) {
+                    self.push(
+                        IssueCode::InvalidId,
+                        &f,
+                        "mode names use [a-z0-9_] and start with a letter",
+                    );
+                }
+                if values.is_empty() {
+                    self.push(IssueCode::InvalidValue, &f, "a mode sets at least one key");
+                }
+                for key in values.keys() {
+                    if !spec.config.quick_settings.iter().any(|q| &q.key == key) {
+                        self.push(
+                            IssueCode::InvalidReference,
+                            format!("{f}.{key}"),
+                            format!("no config.quick_settings entry with key `{key}`"),
+                        );
+                    }
+                }
+            }
         }
         let scope = Scope {
             kind: Kind::Extension,

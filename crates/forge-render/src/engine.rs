@@ -261,16 +261,44 @@ mod tests {
         assert!(off.contains("\n;zend_extension = xdebug\n"), "{off}");
         assert!(!off.contains("\nzend_extension"), "{off}");
         assert!(!off.contains("xdebug.mode = "), "{off}");
+        // With the model (M2-E2-T9): the manifest's toggle line and quick settings.
+        let model = |enabled: bool, line: &str| {
+            json!({"php": {"series": "8.4", "xdebug": {
+                "enabled": enabled,
+                "line": line,
+                "settings": [
+                    {"key": "xdebug.mode", "value": "debug,develop"},
+                    {"key": "xdebug.start_with_request", "value": "yes"},
+                    {"key": "xdebug.client_port", "value": "9003"},
+                ],
+            }}})
+        };
         let on = e
             .render(
                 "php/xdebug.ini.j2",
-                &json!({"php": {"series": "8.4", "xdebug": {
-                    "mode": "debug", "start_with_request": "trigger", "client_port": 9003
-                }}}),
+                &model(true, "zend_extension=php_xdebug.dll"),
             )
             .unwrap();
-        assert!(on.contains("\nzend_extension = xdebug\n"), "{on}");
-        assert!(on.contains("xdebug.client_port = 9003\n"), "{on}");
+        assert!(on.contains("\nzend_extension=php_xdebug.dll\n"), "{on}");
+        // Quoted: an unquoted `yes` is the ini boolean "1".
+        assert!(
+            on.contains("\nxdebug.start_with_request = \"yes\"\n"),
+            "{on}"
+        );
+        assert!(on.contains("\nxdebug.client_port = \"9003\"\n"), "{on}");
+        assert!(on.contains("\nxdebug.mode = \"debug,develop\"\n"), "{on}");
+        let disabled = e
+            .render(
+                "php/xdebug.ini.j2",
+                &model(false, ";zend_extension=php_xdebug.dll"),
+            )
+            .unwrap();
+        assert!(
+            disabled.contains("\n;zend_extension=php_xdebug.dll\n"),
+            "{disabled}"
+        );
+        assert!(!disabled.contains("xdebug.mode"), "{disabled}");
+        assert!(!disabled.contains("\nzend_extension"), "{disabled}");
     }
 
     #[test]

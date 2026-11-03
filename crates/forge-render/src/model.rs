@@ -514,15 +514,25 @@ impl PrefsModel {
     }
 }
 
-/// Xdebug settings of a PHP series.
+/// Xdebug of a PHP series (`conf.d/20-xdebug.ini`), all from the extension's manifest
+/// (M2-E2-T9): the `toggle` line and the quick settings, so the template has no Xdebug
+/// directive of its own beyond the fixed client host.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct XdebugModel {
-    /// `off`, `debug`, `develop`, `coverage`...
-    pub mode: String,
-    /// `trigger`, `yes`, `no`.
-    pub start_with_request: String,
-    /// Client port (9003).
-    pub client_port: u16,
+    /// Loaded (`toggle.enable`) or installed but not loaded (`toggle.disable`).
+    pub enabled: bool,
+    /// The `toggle` line for `enabled` (`zend_extension=php_xdebug.dll`).
+    pub line: String,
+    /// Effective quick settings as `ini directive = written value`, in manifest order
+    /// (`xdebug.mode = debug,develop`, `xdebug.client_port = 9003`).
+    pub settings: Vec<IniSetting>,
+}
+
+/// One `directive = value` line of a generated ini file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IniSetting {
+    pub key: String,
+    pub value: String,
 }
 
 /// PHP specific context.

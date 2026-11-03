@@ -1,13 +1,17 @@
-; Xdebug for PHP {{ php.series }}. xdebug.mode=off keeps the extension loaded but inert.
-{% if php.xdebug %}
-zend_extension = xdebug
+; Xdebug for PHP {{ php.series }}, turned on and off per PHP version by Forgebox (php.xdebug).
+; The load line and the values come from the extension's manifest (toggle, quick settings).
+{% if php.xdebug and php.xdebug.enabled %}
+{{ php.xdebug.line }}
 
 [xdebug]
-xdebug.mode = {{ php.xdebug.mode }}
-xdebug.start_with_request = {{ php.xdebug.start_with_request }}
+{% for setting in php.xdebug.settings %}
+{{ setting.key }} = {{ setting.value | quote }}
+{% endfor %}
 xdebug.client_host = 127.0.0.1
-xdebug.client_port = {{ php.xdebug.client_port }}
 xdebug.discover_client_host = 0
+{% elif php.xdebug %}
+; Installed and disabled: forge php xdebug {{ php.series }} on|trigger turns it on.
+{{ php.xdebug.line }}
 {% else %}
 ; Installed and disabled (ADR-0043): Xdebug is turned on per PHP version by Forgebox.
 ;zend_extension = xdebug

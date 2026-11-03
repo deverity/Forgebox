@@ -23,9 +23,9 @@ pub use drift::Drift;
 pub use engine::Engine;
 pub use managed::{CommentStyle, WriteOutcome};
 pub use model::{
-    ExtraModel, InstanceModel, PathsModel, PhpModel, PrefsModel, ProxyModel, RenderContext,
-    SiteKind, SslModel, StaticLocation, ToolModel, UpstreamModel, UpstreamServer, VhostModel,
-    XdebugModel,
+    ExtraModel, IniSetting, InstanceModel, PathsModel, PhpModel, PrefsModel, ProxyModel,
+    RenderContext, SiteKind, SslModel, StaticLocation, ToolModel, UpstreamModel, UpstreamServer,
+    VhostModel, XdebugModel,
 };
 pub use targets::{Ownership, RenderedFile, Target};
 
