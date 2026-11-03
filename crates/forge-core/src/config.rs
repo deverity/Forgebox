@@ -383,12 +383,42 @@ pub struct EditorConfig {
     pub command: Option<String>,
 }
 
-/// `[terminal]`: external terminal command. `None`: auto-detect.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Shells the integrated terminal knows (`terminal.integrated_shell`, `terminal.open
+/// {shell}`), in auto-detection order.
+pub const INTEGRATED_SHELLS: [&str; 3] = ["pwsh", "powershell", "cmd"];
+
+/// Default of `terminal.max_sessions`.
+pub const DEFAULT_TERMINAL_MAX_SESSIONS: u32 = 16;
+
+/// Largest `terminal.max_sessions` accepted: each session holds a console host process, a
+/// reader thread and a 1 MiB output ring.
+pub const TERMINAL_MAX_SESSIONS_LIMIT: u32 = 256;
+
+/// `[terminal]`: the external terminal command (`command`, `None`: auto-detect) and the
+/// integrated terminal hosted by the daemon (docs/07 §5.10, docs/03 §7.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerminalConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// Shell of the integrated terminal: `pwsh`, `powershell` or `cmd`. `None`: the first
+    /// one found in that order. A configured shell that is missing falls back the same
+    /// way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integrated_shell: Option<String>,
+    /// Integrated terminal sessions open at once (running or exited and not reaped yet);
+    /// one more is refused with `conflict`. Default 16.
+    pub max_sessions: u32,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            command: None,
+            integrated_shell: None,
+            max_sessions: DEFAULT_TERMINAL_MAX_SESSIONS,
+        }
+    }
 }
 
 /// `[path]` (docs/03 §5.2, docs/08 §3): what `forge_provider::layout::path::ensure` puts on
@@ -517,6 +547,19 @@ impl ForgeConfig {
             parse_hhmm(&q.start)?;
             parse_hhmm(&q.end)?;
         }
+        if let Some(shell) = &self.terminal.integrated_shell {
+            if !INTEGRATED_SHELLS.contains(&shell.as_str()) {
+                return invalid(format!(
+                    "terminal.integrated_shell {shell:?} must be one of {INTEGRATED_SHELLS:?}"
+                ));
+            }
+        }
+        if !(1..=TERMINAL_MAX_SESSIONS_LIMIT).contains(&self.terminal.max_sessions) {
+            return invalid(format!(
+                "terminal.max_sessions must be between 1 and {TERMINAL_MAX_SESSIONS_LIMIT}, got {}",
+                self.terminal.max_sessions
+            ));
+        }
         Ok(())
     }
 }
@@ -539,6 +582,8 @@ mod tests {
         assert_eq!(c.updates.quiet_hours, None);
         assert_eq!(c.editor.command, None);
         assert_eq!(c.terminal.command, None);
+        assert_eq!(c.terminal.integrated_shell, None);
+        assert_eq!(c.terminal.max_sessions, 16);
         assert!(c.path.current_links && !c.path.shims);
         assert_eq!(c.dns, DnsConfig::default());
         assert_eq!(c.tlds(), vec![".test".to_owned()]);
@@ -581,6 +626,8 @@ mod tests {
         });
         c.updates.metered = MeteredPolicy::Allow;
         c.editor.command = Some("code".into());
+        c.terminal.integrated_shell = Some("cmd".into());
+        c.terminal.max_sessions = 4;
         c.path.shims = true;
         let text = c.to_toml().unwrap();
         assert!(text.starts_with(CONFIG_HEADER));
@@ -624,6 +671,14 @@ mod tests {
             "[updates]\nquiet_hours = { start = \"25:00\", end = \"07:00\" }",
             "[updates]\nmetered = \"sometimes\"",
             "case_sensitive = \"yes\"",
+            "[terminal]
+integrated_shell = \"bash\"",
+            "[terminal]
+integrated_shell = \"PWSH\"",
+            "[terminal]
+max_sessions = 0",
+            "[terminal]
+max_sessions = 257",
         ] {
             let err = ForgeConfig::from_toml(bad).unwrap_err();
             assert_eq!(err.code(), "config_invalid", "{bad}: {err}");

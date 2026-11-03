@@ -1,5 +1,6 @@
 //! `shell.*`: the user `PATH` entries of Forgebox (`forge path show|add|remove`) and the
-//! environment of a project (`forge env`, `forge exec`). `shell.open` is later work.
+//! environment of a project (`forge env`, `forge exec`; [`forgebox_env`] is also the
+//! environment of the integrated terminal, `terminal.open`). `shell.open` is later work.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -98,14 +99,27 @@ fn quote_ps(s: &str) -> String {
     format!("'{}'", s.replace('\'', "''"))
 }
 
-/// Environment for a project (`forge env`, `forge exec`): each installed tool with a
-/// `current` link at the version the project selects (`install.version_files` up from
-/// `dir`), an override, or `current`. `PATH` gets the version folders first and then
+/// The Forgebox part of a child's environment: folders for the front of `PATH` and
+/// variables to set (see [`forgebox_env`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ForgeboxEnv {
+    pub path_prepend: Vec<String>,
+    pub vars: BTreeMap<String, String>,
+}
+
+/// Environment for a project, shared by `shell.env` (`forge env`, `forge exec`) and the
+/// integrated terminal (`terminal.open`): each installed tool with a `current` link at
+/// the version the project selects (`install.version_files` up from `dir`), an override
+/// in `versions`, or `current`. `PATH` gets the version folders first and then
 /// `bin/shims` (commands that only exist as shims, such as `composer`); `vars` carries
 /// the tool's `config.env` for that version (`PHPRC`, `PHP_INI_SCAN_DIR`), so a CLI run
 /// sees the same configuration as the services.
-async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellEnvDto> {
-    let manifests = installed_manifests(&daemon).await?;
+pub(crate) async fn forgebox_env(
+    daemon: &Daemon,
+    dir: Option<&str>,
+    versions: &BTreeMap<String, String>,
+) -> Result<ForgeboxEnv> {
+    let manifests = installed_manifests(daemon).await?;
     let mut path_prepend = Vec::new();
     let mut vars = BTreeMap::new();
     for manifest in manifests {
@@ -115,10 +129,10 @@ async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellE
         }
         let id = manifest.metadata.id.clone();
         let rows = catalog::installed(&daemon.reader, &id, Some(&manifest)).await?;
-        let explicit = params.versions.get(id.as_str()).cloned();
+        let explicit = versions.get(id.as_str()).cloned();
         let mut wanted = explicit.clone();
         if wanted.is_none() {
-            if let Some(dir) = params.dir.clone() {
+            if let Some(dir) = dir.map(str::to_owned) {
                 let files = install.version_files.clone();
                 wanted = tokio::task::spawn_blocking(move || {
                     let mut current = Some(PathBuf::from(dir));
@@ -189,6 +203,13 @@ async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellE
         }
     }
     path_prepend.push(daemon.root.bin_shims().to_string_lossy().replace('/', "\\"));
+    Ok(ForgeboxEnv { path_prepend, vars })
+}
+
+/// `shell.env`: [`forgebox_env`] plus the script in the requested format.
+async fn env(daemon: Daemon, params: ShellEnvParams, _ctx: Ctx) -> Result<ShellEnvDto> {
+    let ForgeboxEnv { path_prepend, vars } =
+        forgebox_env(&daemon, params.dir.as_deref(), &params.versions).await?;
     let script = match params.format {
         ShellFormat::Json => None,
         ShellFormat::Powershell => {

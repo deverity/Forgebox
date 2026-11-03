@@ -265,12 +265,13 @@ Forgebox/
 │   │   │                         #   pools.rs (pools ← service.pool, por VersionId), web.rs (sites → pools → servidores web,
 │   │   │                         #   UpstreamListener), render.rs (alvos do forge-render, TemplateRenderer do layout),
 │   │   │                         #   install.rs (tools.install: provider → download → layout), scheduler.rs (tarefas periódicas
-│   │   │                         #   e reações), shutdown.rs (parada em cascata), messages.rs (pt-BR), api/ (um módulo por grupo,
+│   │   │                         #   e reações), shutdown.rs (parada em cascata), terminal.rs (sessões de terminal: TerminalManager,
+│   │   │                         #   ator por sessão, anel de saída; docs/03 §7.2.1), messages.rs (pt-BR), api/ (um módulo por grupo,
 │   │   │                         #   convert.rs domínio → DTO, not_implemented.rs com a tarefa do roadmap)
-│   │   └── tests/                # processo real em raiz temporária: lifecycle.rs, up_down_loop.rs (aceite 100×);
+│   │   └── tests/                # processo real em raiz temporária: lifecycle.rs, up_down_loop.rs (aceite 100×), terminal.rs;
 │   │                             #   #[ignore] com binários oficiais (common/online.rs): php_pool_online.rs,
 │   │                             #   web_nginx_php_online.rs, mailpit_service_online.rs; concurrency.rs (orçamentos de
-│   │                             #   docs/03 §7.6 com fixtures/fake_mailpit.rs: serviço travado, cliente lento, download + start)
+│   │                             #   docs/03 §7.6 com fixtures/fake_mailpit.rs: serviço travado, cliente lento, download + start, enxurrada de terminal)
 │   ├── forge-cli/                # bin forge.exe (lib forge_cli + main.rs): cli.rs (árvore clap com todos os comandos de docs/09),
 │   │   │                         #   commands/*.rs (um por grupo), context.rs (flags globais + cliente), connect.rs (mensagens do daemon automático
 │   │   │                         #   de forge_ipc::client::local),
