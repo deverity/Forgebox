@@ -10,7 +10,10 @@
 //! * **heavy download + start**: in the daemon's runtime, with the daemon's download
 //!   engine pulling large files at full speed (sha256 included), starting a service is
 //!   not more than 10 % slower than the baseline (both measured interleaved, round by
-//!   round, so outside load on a shared machine weighs on both alike).
+//!   round, so outside load on a shared machine weighs on both alike);
+//! * **terminal flood** (M2-E3-T4): a terminal session prints a big file; the API answers
+//!   in < 50 ms (p99) and a subscriber that never reads slows neither the session nor
+//!   another subscriber by more than 10 %.
 //!
 //! The service is `tests/fixtures/fake_mailpit.rs` (compiled with rustc), installed as
 //! `bin/mailpit/1.32.0/mailpit.exe`: the daemon finds it through the manifest's
@@ -30,11 +33,13 @@ use std::time::{Duration, Instant};
 
 use forge_ipc::Client;
 use forge_ipc::api::methods::{
-    daemon_status, jobs_get, logs_subscribe, services_status, services_stop,
+    daemon_status, jobs_get, logs_subscribe, services_status, services_stop, terminal_input,
+    terminal_list, terminal_open, terminal_subscribe,
 };
 use forge_ipc::api::{
     JobIdParams, JobState, LogsSubscribeParams, NoParams, ServiceState, ServiceTarget,
-    ServiceTargetsParams,
+    ServiceTargetsParams, TerminalInputParams, TerminalItemDto, TerminalOpenParams,
+    TerminalSubscribeParams,
 };
 use forge_ipc::client::SubscriptionItem;
 use futures::{SinkExt, StreamExt};
@@ -346,6 +351,266 @@ async fn a_log_subscriber_that_never_reads_slows_down_nothing() {
     }
     assert!(lagged, "the silent subscriber must get logs.lagged");
     drop(silent);
+
+    let (status, _) = common::stop(&client, &mut daemon, Duration::from_secs(60)).await;
+    assert!(status.success(), "{status}");
+}
+
+// ------------------------------------------------------------------ terminal flood
+
+/// Size of the terminal flood in MB: `FORGEBOX_TERMINAL_FLOOD_MB` (the acceptance run of
+/// M2-E3-T4 uses 50), 8 by default.
+fn terminal_flood_mb() -> usize {
+    std::env::var("FORGEBOX_TERMINAL_FLOOD_MB")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8)
+}
+
+/// A raw connection that says hello, subscribes to terminal `id` and then never reads
+/// again (its pipe and the daemon's queue for it fill up).
+async fn silent_terminal_subscriber(
+    root: &TestRoot,
+    id: forge_core::ids::TerminalId,
+) -> forge_ipc::transport::Connection {
+    let token = forge_ipc::Credentials::local(&root.root, "slow", "0").unwrap();
+    let mut conn = forge_ipc::transport::local_transport(&root.root)
+        .connect()
+        .await
+        .unwrap();
+    let rid = || forge_core::ids::RequestId::new().to_string();
+    for frame in [
+        json!({"jsonrpc": "2.0", "id": 1, "method": "system.hello", "request_id": rid(),
+               "params": {"token": token.token.secret(), "client": {"name": "slow", "version": "0"},
+                          "api_version": {"major": 1, "minor": 1}}}),
+        json!({"jsonrpc": "2.0", "id": 2, "method": "terminal.subscribe", "request_id": rid(),
+               "params": {"id": id}}),
+    ] {
+        conn.sink.send(frame.to_string()).await.unwrap();
+        loop {
+            let text = tokio::time::timeout(Duration::from_secs(10), conn.stream.next())
+                .await
+                .expect("answer in time")
+                .unwrap()
+                .unwrap();
+            let answer: Value = serde_json::from_str(&text).unwrap();
+            if answer.get("id").is_some() {
+                assert!(answer["result"].is_object(), "{answer}");
+                break;
+            }
+        }
+    }
+    conn
+}
+
+/// Bytes the session produced so far (`terminal.list`).
+async fn produced(client: &Client) -> u64 {
+    client
+        .call::<terminal_list>(NoParams {})
+        .await
+        .unwrap()
+        .terminals
+        .first()
+        .map_or(0, |t| t.last_seq)
+}
+
+fn p99(mut samples: Vec<Duration>) -> Duration {
+    samples.sort();
+    let i = (samples.len() * 99).div_ceil(100).saturating_sub(1);
+    samples[i]
+}
+
+/// A session prints a big file (docs/03 §7.6 style, M2-E3-T4): the API keeps answering
+/// in < 50 ms (p99), and a subscriber that never reads slows neither the session nor the
+/// subscriber that reads (≤ 10 %; windows without, with and again without it), which
+/// gets every byte; the silent one is told it lagged.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_terminal_flood_neither_slows_the_api_nor_waits_for_a_silent_subscriber() {
+    let _shared = HEAVY.read().await;
+    let root = TestRoot::new();
+    let files = tempfile::tempdir().unwrap();
+    let flood = files.path().join("flood.txt");
+    {
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&flood).unwrap());
+        let (mut written, mut n) = (0, 0_u64);
+        while written < terminal_flood_mb() * 1_000_000 {
+            let line = format!("flood line {n:09} {}\r\n", "x".repeat(150));
+            file.write_all(line.as_bytes()).unwrap();
+            written += line.len();
+            n += 1;
+        }
+        file.flush().unwrap();
+    }
+    let mut daemon = spawn_daemon(&root, &[]);
+    let (client, _) = connect(&root, &mut daemon, Duration::from_secs(30)).await;
+    let dto = client
+        .call::<terminal_open>(TerminalOpenParams {
+            dir: None,
+            site: None,
+            versions: Default::default(),
+            shell: Some("cmd".into()),
+            command: Vec::new(),
+            env: Default::default(),
+            cols: 200,
+            rows: 50,
+            title: None,
+        })
+        .await
+        .unwrap();
+
+    // The reading subscriber, on its own connection.
+    let (reader_client, _) = connect(&root, &mut daemon, Duration::from_secs(30)).await;
+    let mut sub = reader_client
+        .subscribe::<terminal_subscribe>(TerminalSubscribeParams {
+            id: dto.id,
+            resume_from: None,
+        })
+        .await
+        .unwrap();
+    let received = Arc::new(AtomicU64::new(0));
+    let reading = {
+        let received = received.clone();
+        tokio::spawn(async move {
+            let (mut lagged, mut exit) = (0, None);
+            while let Some(item) = sub.next_item().await {
+                match item {
+                    SubscriptionItem::Item(envelope) => match envelope.item {
+                        TerminalItemDto::Output { .. } => {
+                            received.store(envelope.seq, Ordering::Relaxed);
+                        }
+                        TerminalItemDto::Exited { exit_code } => {
+                            exit = Some(exit_code);
+                            break;
+                        }
+                    },
+                    SubscriptionItem::Lagged { missed } => lagged += missed,
+                }
+            }
+            (lagged, exit)
+        })
+    };
+
+    // Status latencies during the whole flood.
+    let sampling = Arc::new(AtomicBool::new(true));
+    let sampler = {
+        let (client, sampling) = (client.clone(), sampling.clone());
+        tokio::spawn(async move {
+            let mut samples = Vec::new();
+            while sampling.load(Ordering::Relaxed) {
+                let (services, daemon_lat) = status_latencies(&client).await;
+                samples.push(services);
+                samples.push(daemon_lat);
+                tokio::time::sleep(Duration::from_millis(15)).await;
+            }
+            samples
+        })
+    };
+
+    client
+        .call::<terminal_input>(TerminalInputParams {
+            id: dto.id,
+            writer: forge_core::ids::TerminalWriterId::new(),
+            data: format!("type \"{}\" & exit\r", flood.display()),
+            input_seq: std::num::NonZeroU64::new(1).unwrap(),
+        })
+        .await
+        .unwrap();
+    // Let the flood settle, then: alone, with a silent subscriber, alone again (the
+    // silent one stays connected but is past the ring by then and only lags).
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let window = Duration::from_millis(1500);
+    let rate = |from: u64, to: u64, took: Duration| (to - from) as f64 / took.as_secs_f64();
+    let (t0, p0) = (Instant::now(), produced(&client).await);
+    tokio::time::sleep(window).await;
+    let (t1, p1) = (Instant::now(), produced(&client).await);
+    let mut silent = silent_terminal_subscriber(&root, dto.id).await;
+    let (t2, p2, r2) = (
+        Instant::now(),
+        produced(&client).await,
+        received.load(Ordering::Relaxed),
+    );
+    tokio::time::sleep(window).await;
+    let (t3, p3, r3) = (
+        Instant::now(),
+        produced(&client).await,
+        received.load(Ordering::Relaxed),
+    );
+    tokio::time::sleep(window).await;
+    let (t4, p4) = (Instant::now(), produced(&client).await);
+    let before = rate(p0, p1, t1 - t0);
+    let with_silent = rate(p2, p3, t3 - t2);
+    let after = rate(p3, p4, t4 - t3);
+    let reader_with_silent = rate(r2, r3, t3 - t2);
+    let still_running = client
+        .call::<terminal_list>(NoParams {})
+        .await
+        .unwrap()
+        .terminals[0]
+        .exit_code
+        .is_none();
+    assert!(
+        still_running,
+        "the flood ended before the measures did: raise FORGEBOX_TERMINAL_FLOOD_MB"
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(600);
+    let (lagged_reader, exit) = loop {
+        if reading.is_finished() {
+            break reading.await.unwrap();
+        }
+        assert!(Instant::now() < deadline, "the flood ends");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let total = produced(&client).await;
+    sampling.store(false, Ordering::Relaxed);
+    let samples = sampler.await.unwrap();
+    let worst = samples.iter().max().copied().unwrap_or_default();
+    let p99 = p99(samples.clone());
+    // The silent subscriber fell behind by more than the ring: reading again, it lags.
+    let mut silent_lagged = false;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !silent_lagged && Instant::now() < deadline {
+        let Ok(Some(Ok(text))) =
+            tokio::time::timeout(Duration::from_secs(5), silent.stream.next()).await
+        else {
+            break;
+        };
+        silent_lagged = text.contains("\"terminal.lagged\"");
+    }
+    drop(silent);
+    println!(
+        "terminal flood of {} MB: {total} bytes rendered; {:.2} MB/s alone, {:.2} MB/s with a \
+         silent subscriber, {:.2} MB/s alone again (reader {:.2} MB/s meanwhile); \
+         {} status samples: p99 {p99:?}, max {worst:?}; reader lagged {lagged_reader} bytes",
+        terminal_flood_mb(),
+        before / 1e6,
+        with_silent / 1e6,
+        after / 1e6,
+        reader_with_silent / 1e6,
+        samples.len(),
+    );
+    assert_eq!(exit, Some(Some(0)), "`type … & exit` ends with 0");
+    assert_eq!(
+        received.load(Ordering::Relaxed),
+        total,
+        "the reader got everything"
+    );
+    assert_eq!(lagged_reader, 0, "the reader kept up");
+    assert!(samples.len() >= 200, "{} samples", samples.len());
+    assert!(p99 < STATUS_BUDGET, "status p99 {p99:?} during the flood");
+    let baseline = (before + after) / 2.0;
+    assert!(
+        with_silent >= baseline * 0.9,
+        "the silent subscriber slowed the session: {with_silent:.0} B/s vs {baseline:.0} B/s"
+    );
+    assert!(
+        reader_with_silent >= baseline * 0.9,
+        "the silent subscriber slowed the reader: {reader_with_silent:.0} B/s vs {baseline:.0} B/s"
+    );
+    assert!(
+        silent_lagged,
+        "the silent subscriber must get terminal.lagged"
+    );
 
     let (status, _) = common::stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
