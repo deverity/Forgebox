@@ -67,7 +67,8 @@ pub fn latest_version(scheme: VersionScheme, releases: &[StaticRelease]) -> Opti
         .map(|v| v.as_str().to_owned())
 }
 
-/// The entries of `tools/` and `stacks/`, sorted by id.
+/// The entries of `tools/` (sorted by id) and `stacks/` (stacks with `metadata.order` first,
+/// by that order, then the others; ties and the rest by id: docs/04 §5).
 pub fn build_entries(
     dir: &RegistryDir,
 ) -> Result<(Vec<RegistryEntry>, Vec<RegistryEntry>), IndexError> {
@@ -76,7 +77,8 @@ pub fn build_entries(
         message: e.to_string(),
     })?;
     let mut tools = Vec::new();
-    let mut stacks = Vec::new();
+    // Each stack keeps its `metadata.order` until the sort below.
+    let mut stacks: Vec<(Option<u32>, RegistryEntry)> = Vec::new();
     for path in files {
         let bytes = std::fs::read(&path).map_err(|e| IndexError::Io {
             path: path.clone(),
@@ -104,13 +106,16 @@ pub fn build_entries(
                 categories: categories(m.metadata.category),
                 latest: latest_version(VersionScheme::Semver, &m.spec.source.releases),
             }),
-            Manifest::Stack(m) => stacks.push(RegistryEntry {
-                id: m.metadata.id.clone(),
-                path: relative,
-                sha256,
-                categories: Vec::new(),
-                latest: None,
-            }),
+            Manifest::Stack(m) => stacks.push((
+                m.metadata.order,
+                RegistryEntry {
+                    id: m.metadata.id.clone(),
+                    path: relative,
+                    sha256,
+                    categories: Vec::new(),
+                    latest: None,
+                },
+            )),
             other => {
                 return Err(IndexError::Misplaced {
                     path,
@@ -120,7 +125,15 @@ pub fn build_entries(
         }
     }
     tools.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
-    stacks.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
+    // `order` present sorts before absent (`is_none()` is false); then by order, then id.
+    stacks.sort_by(|(oa, a), (ob, b)| {
+        (oa.is_none(), oa.unwrap_or(0), a.id.as_str()).cmp(&(
+            ob.is_none(),
+            ob.unwrap_or(0),
+            b.id.as_str(),
+        ))
+    });
+    let stacks = stacks.into_iter().map(|(_, entry)| entry).collect();
     Ok((tools, stacks))
 }
 

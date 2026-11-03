@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../schema/stack.v1.json
+# "PHP genérico" card of onboarding (docs/07 §5.1). No `create_with`: the schema does not require
+# it, and this stack creates no framework project. The `generic-php` driver (docs/06 §1.2) serves
+# the folder as it is (index.php in the root, public/, public_html/ or web/). No `env_patch` and no
+# `post_create` either: there is no framework to configure, and StackSite has no generic database
+# field, so none is invented here.
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata:
+  id: php
+  name: PHP genérico
+  summary: "PHP 8.4 + Composer + Nginx + MySQL 8.4 + Mailpit"
+  description: |
+    PHP sem framework: PHP 8.4, Composer, Nginx, MySQL 8.4 e Mailpit para capturar os e-mails.
+    O site usa o driver `generic-php`, que serve a pasta do projeto como ela está.
+  tags: [php, generic, mysql, onboarding]
+  icon: php.svg
+  homepage: https://www.php.net
+  order: 3
+spec:
+  tools:
+    - { id: php, series: "8.4" }
+    - { id: composer }
+    - { id: nginx }
+    - { id: mysql, series: "8.4", instance: default }
+    - { id: mailpit, instance: default }
+  site:
+    driver: generic-php
+    php: "8.4"
+    secure: true

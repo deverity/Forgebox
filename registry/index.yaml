@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-10-29T08:58:27Z
+  updated_at: 2026-11-03T13:16:41Z
   tools:
   - id: apache
     path: tools/apache.yaml
@@ -81,15 +81,18 @@ spec:
     - devtool
     latest: 3.5.3
   stacks:
+  - id: laravel
+    path: stacks/laravel.yaml
+    sha256: efa09ff18f6676452ae74198370871ebef7d5e2dda76b1cd841efaa215dbcc2e
+  - id: wordpress
+    path: stacks/wordpress.yaml
+    sha256: 928aeecc96017e553c132b3705dd9a6ffe13e82e610e39078ce3cdf7466479da
+  - id: php
+    path: stacks/php.yaml
+    sha256: e94e8ddacb8ed0fa1a3e72cf029ada3441c7b8961430989c2a5653289ea9a81c
+  - id: nextjs
+    path: stacks/nextjs.yaml
+    sha256: d67bdcc77770edc85fe204b0d028fe2aff4f0858f4d5364a9df8855f6224e19e
   - id: cakephp
     path: stacks/cakephp.yaml
     sha256: afbe694a96a6339fcf2000984446a7427dcbf3ca400f47d051d77a7c6476504a
-  - id: laravel
-    path: stacks/laravel.yaml
-    sha256: e3a4ff8880cfe73328d7de8c12234311e3e6cd6352b0ea6d138b1e9578cad6c7
-  - id: nextjs
-    path: stacks/nextjs.yaml
-    sha256: dac25a00ee6e3c9b16ee8a6ebd461592fd003378dcc9d786038f883b608397e6
-  - id: wordpress
-    path: stacks/wordpress.yaml
-    sha256: 892c09d4201e0b55956c19ec07833630ac8b540325408798e5811bd2ff43c068

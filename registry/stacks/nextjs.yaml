@@ -10,7 +10,8 @@ metadata:
   summary: "Node 22 + Nginx como proxy reverso"
   description: |
     Projeto Next.js servido por proxy reverso (Nginx) com HTTPS local e WebSocket para o HMR.
-  tags: [node, nextjs, react, proxy]
+  tags: [node, nextjs, react, proxy, onboarding]
+  order: 4
   icon: nextjs.svg
   homepage: https://nextjs.org
 spec:
