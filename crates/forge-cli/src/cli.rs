@@ -53,7 +53,7 @@ pub enum Command {
     #[command(subcommand)]
     Daemon(DaemonCmd),
     /// Diagnóstico completo: PATH, DNS, CA, portas, vcredist, Defender, versões.
-    Doctor,
+    Doctor(DoctorArgs),
     /// Busca no(s) registry(ies).
     Search(SearchArgs),
     /// Catálogo de ferramentas: instalar, remover, atualizar.
@@ -184,7 +184,15 @@ pub enum DaemonCmd {
     /// Logs do daemon.
     Logs(DaemonLogsArgs),
     /// Diagnóstico completo (igual a `forge doctor`).
-    Doctor,
+    Doctor(DoctorArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Grava um pacote de suporte (diagnóstico, status, versões e as últimas 500 linhas do
+    /// log do daemon) em um arquivo JSON.
+    #[arg(long, value_name = "ARQUIVO")]
+    pub export: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Args)]

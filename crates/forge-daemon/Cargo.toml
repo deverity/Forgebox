@@ -27,7 +27,7 @@ console = ["forge-core/console"]
 embed-resource = { workspace = true }
 
 [dependencies]
-forge-core = { path = "../forge-core" }
+forge-core = { path = "../forge-core", features = ["schemars"] }
 forge-manifest = { path = "../forge-manifest" }
 forge-registry = { path = "../forge-registry" }
 forge-provider = { path = "../forge-provider" }

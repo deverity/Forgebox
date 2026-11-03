@@ -61,6 +61,7 @@ fn table() -> Vec<Case> {
         case(&["daemon", "logs", "-n", "5"], OK),
         case(&["daemon", "doctor"], OkOrFail),
         case(&["doctor"], OkOrFail),
+        case(&["doctor", "--export", "{TMP}/support.json"], OkOrFail),
         // tool / catalog
         case(&["search", "nginx"], OK),
         case(&["search", "--category", "db"], OK),
@@ -378,7 +379,7 @@ fn table() -> Vec<Case> {
             &["backup", "schedule", "daily", "25:00"],
             E("invalid_input"),
         ),
-        case(&["config", "list"], NI),
+        case(&["config", "list"], OK),
         case(&["config", "get", "tld"], OK),
         case(&["config", "set", "tld", ".test"], OK),
         case(&["self-update", "--check"], NI),

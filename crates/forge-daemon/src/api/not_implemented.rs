@@ -93,11 +93,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "M2-E3-T4",
         "daemon-hosted terminal sessions",
     ),
-    (
-        "system.config_list",
-        "M2-E3-T10",
-        "configuration document with schema",
-    ),
     ("tls.ca_uninstall", "M2-E3-T11", "removing the local CA"),
     (
         "services.kill_port_holder",
@@ -256,7 +251,6 @@ mod tests {
             ("terminal.resize", "M2-E3-T4"),
             ("terminal.close", "M2-E3-T4"),
             ("terminal.subscribe", "M2-E3-T4"),
-            ("system.config_list", "M2-E3-T10"),
             ("tls.ca_uninstall", "M2-E3-T11"),
             ("services.kill_port_holder", "M2-E3-T11"),
             ("sites.env", "M2-E3-T11"),

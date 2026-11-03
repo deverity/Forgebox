@@ -43,7 +43,7 @@ pub async fn run(ctx: &Context, command: DaemonCmd) -> CliResult<()> {
             )
             .await
         }
-        DaemonCmd::Doctor => doctor(ctx).await,
+        DaemonCmd::Doctor(args) => doctor(ctx, args).await,
     }
 }
 
@@ -200,7 +200,84 @@ fn version_check(ctx: &Context, daemon_version: &str, api: forge_ipc::api::ApiVe
     }
 }
 
-pub async fn doctor(ctx: &Context) -> CliResult<()> {
+/// Number of daemon log lines kept in a support bundle.
+const EXPORT_LOG_LINES: u32 = 500;
+
+/// Support bundle (`forge doctor --export`), composed on the client from public methods
+/// only, so it also works against a remote daemon.
+#[derive(Debug, serde::Serialize)]
+struct SupportBundle<'a> {
+    /// Bundle format.
+    v: u32,
+    /// Seconds since the epoch on the machine that ran `forge`.
+    created_unix: u64,
+    forge_version: &'static str,
+    api_version: String,
+    doctor: &'a DoctorReportDto,
+    status: &'a DaemonStatusDto,
+    /// Installed tool versions (`id` -> versions).
+    tools: Vec<(String, Vec<String>)>,
+    /// Newest daemon log lines, oldest first.
+    daemon_log: Vec<String>,
+}
+
+async fn export_bundle(
+    ctx: &Context,
+    path: &std::path::Path,
+    report: &DoctorReportDto,
+) -> CliResult<()> {
+    let client: &Client = ctx.client().await?;
+    let status = client.daemon_status(NoParams {}).await?;
+    let tools = client
+        .call::<forge_ipc::api::methods::tools_list>(forge_ipc::api::ToolListParams {
+            installed: true,
+            updates: false,
+        })
+        .await?
+        .tools
+        .into_iter()
+        .map(|t| {
+            (
+                t.id.to_string(),
+                t.installed.iter().map(|v| v.version.clone()).collect(),
+            )
+        })
+        .collect();
+    // A daemon without logs must not make the export fail: the rest is still useful.
+    let daemon_log = match client
+        .logs_read(forge_ipc::api::LogsReadParams {
+            target: "daemon".into(),
+            since_secs: None,
+            grep: None,
+            limit: Some(EXPORT_LOG_LINES),
+            before_seq: None,
+        })
+        .await
+    {
+        Ok(chunk) => chunk.lines.iter().map(|l| l.text.clone()).collect(),
+        Err(err) => vec![format!("(daemon log unavailable: {err})")],
+    };
+    let bundle = SupportBundle {
+        v: 1,
+        created_unix: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs()),
+        forge_version: env!("CARGO_PKG_VERSION"),
+        api_version: API_VERSION.to_string(),
+        doctor: report,
+        status: &status,
+        tools,
+        daemon_log,
+    };
+    let text = serde_json::to_string_pretty(&bundle)
+        .map_err(|e| CliError::new("internal", e.to_string()))?;
+    tokio::fs::write(path, text)
+        .await
+        .map_err(|e| CliError::new("io", format!("{}: {e}", path.display())))?;
+    Ok(())
+}
+
+pub async fn doctor(ctx: &Context, args: crate::cli::DoctorArgs) -> CliResult<()> {
     let client: &Client = ctx.client().await?;
     let mut report: DoctorReportDto = ctx
         .job::<daemon_doctor, DoctorReportDto>(DoctorParams::default())
@@ -210,6 +287,12 @@ pub async fn doctor(ctx: &Context) -> CliResult<()> {
         .checks
         .push(version_check(ctx, &hello.daemon_version, hello.api_version));
     let (ok, warnings, failures) = render::check_totals(&report.checks);
+    if let Some(path) = &args.export {
+        export_bundle(ctx, path, &report).await?;
+        if !ctx.out.json {
+            ctx.out.info(format!("export: {}", path.display()));
+        }
+    }
     ctx.out.emit(&report, |out| {
         render::checks(out, &report.checks);
         out.line("");

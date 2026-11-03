@@ -200,7 +200,8 @@ pub struct ConfigDocumentDto {
     /// JSON Schema (2020-12) of the configuration, with titles and descriptions.
     #[specta(type = specta_typescript::Unknown)]
     pub schema: serde_json::Value,
-    /// Dotted keys set in `forgebox.toml` (the others are defaults).
+    /// Dotted keys whose value differs from the default (the file stores every key, so a
+    /// key set to its default counts as default).
     #[serde(default)]
     pub set_keys: Vec<String>,
 }

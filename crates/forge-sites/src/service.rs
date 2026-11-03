@@ -55,13 +55,14 @@ pub struct SiteService {
     writer: StoreWriter,
     reader: StoreReader,
     bus: EventBus,
-    rules: SiteRules,
+    /// Replaced when the TLDs change (`forgebox.toml`); never held across an `.await`.
+    rules: std::sync::Arc<std::sync::RwLock<SiteRules>>,
 }
 
 impl std::fmt::Debug for SiteService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SiteService")
-            .field("rules", &self.rules)
+            .field("rules", &self.rules())
             .finish_non_exhaustive()
     }
 }
@@ -72,20 +73,31 @@ impl SiteService {
             writer,
             reader,
             bus,
-            rules,
+            rules: std::sync::Arc::new(std::sync::RwLock::new(rules)),
         }
     }
 
     /// Rules applied to host names.
-    pub fn rules(&self) -> &SiteRules {
-        &self.rules
+    pub fn rules(&self) -> SiteRules {
+        self.rules
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Replaces the rules (a TLD preference changed): later hosts are checked against them.
+    pub fn set_rules(&self, rules: SiteRules) {
+        *self
+            .rules
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = rules;
     }
 
     /// Creates an explicit (or, with `draft.parked`, an implicit) site. Names already
     /// used by a **parked** site replace it; names used by an explicit site are a
     /// `Conflict`. Emits `site.removed` for replaced sites, then `site.created`.
     pub async fn create(&self, draft: SiteDraft) -> Result<Created> {
-        let (site, warnings) = draft.into_site(&self.rules)?;
+        let (site, warnings) = draft.into_site(&self.rules())?;
         let to_insert = site.clone();
         let replaced = self
             .writer
@@ -125,7 +137,7 @@ impl SiteService {
     /// `Ok(None)` when an explicit site (or an existing parked one) already owns it.
     pub async fn create_parked_if_free(&self, mut draft: SiteDraft) -> Result<Option<Site>> {
         draft.parked = true;
-        let (site, _) = draft.into_site(&self.rules)?;
+        let (site, _) = draft.into_site(&self.rules())?;
         let to_insert = site.clone();
         let inserted = self
             .writer
@@ -152,7 +164,7 @@ impl SiteService {
     /// Replaces the stored site with `site` (same id), revalidating host and aliases and
     /// refreshing `updated_at`/`slug`. Emits `site.updated`.
     pub async fn update(&self, mut site: Site) -> Result<Site> {
-        site.host = normalize_host(&site.host, &self.rules)?.value;
+        site.host = normalize_host(&site.host, &self.rules())?.value;
         site.slug = slug_for_host(&site.host);
         let mut aliases = Vec::new();
         for raw in &site.aliases {

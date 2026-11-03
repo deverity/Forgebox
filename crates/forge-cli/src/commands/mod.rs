@@ -23,7 +23,7 @@ use crate::error::CliResult;
 pub async fn run(ctx: &Context, command: Command) -> CliResult<()> {
     match command {
         Command::Daemon(cmd) => daemon::run(ctx, cmd).await,
-        Command::Doctor => daemon::doctor(ctx).await,
+        Command::Doctor(args) => daemon::doctor(ctx, args).await,
         Command::Search(args) => tool::search(ctx, args).await,
         Command::Tool(cmd) => tool::run(ctx, cmd).await,
         Command::Use(args) => tool::use_version(ctx, args).await,

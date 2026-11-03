@@ -197,7 +197,7 @@ pub fn php_selection(value: &str) -> Result<SitePhp> {
     })
 }
 
-pub(super) async fn reconcile_quietly(daemon: &Daemon, reason: &str) {
+pub(crate) async fn reconcile_quietly(daemon: &Daemon, reason: &str) {
     if let Err(err) = daemon.web.reconcile(reason).await {
         tracing::warn!(%err, reason, "reconcile failed");
     }
@@ -719,23 +719,7 @@ fn parked_path(daemon: &Daemon, dir: &str) -> PathBuf {
     }
 }
 
-pub(super) async fn save_config(
-    daemon: &Daemon,
-    config: forge_core::config::ForgeConfig,
-) -> Result<()> {
-    let path = daemon.root.forgebox_toml();
-    let saved = config.clone();
-    forge_core::runtime::spawn_blocking_timeout(
-        "saving forgebox.toml",
-        std::time::Duration::from_secs(5),
-        move || saved.save(&path),
-    )
-    .await?;
-    daemon.set_config(config);
-    Ok(())
-}
-
-pub(super) async fn reconcile_parked(daemon: &Daemon) {
+pub(crate) async fn reconcile_parked(daemon: &Daemon) {
     let config = daemon.config();
     let dirs: Vec<forge_sites::ParkedDir> = config
         .parked_dirs
@@ -761,17 +745,23 @@ async fn park(daemon: Daemon, params: ParkParams, _ctx: Ctx) -> Result<ParkedDir
     if !exists {
         return Err(ForgeError::NotFound(format!("folder {}", dir.display())));
     }
-    let mut config = (*daemon.config()).clone();
     let text = forge_core::paths::posix_string(&dir);
-    if !config
-        .parked_dirs
-        .iter()
-        .any(|d| forge_core::paths::posix_string(&parked_path(&daemon, d)) == text)
     {
-        config.parked_dirs.push(text.clone());
-        save_config(&daemon, config).await?;
+        let (d, text) = (daemon.clone(), text.clone());
+        // The owner reconciles the parked folders when the list changes.
+        crate::config_owner::update(&daemon, move |config| {
+            let mut next = config.clone();
+            if !next
+                .parked_dirs
+                .iter()
+                .any(|p| forge_core::paths::posix_string(&parked_path(&d, p)) == text)
+            {
+                next.parked_dirs.push(text);
+            }
+            Ok(next)
+        })
+        .await?;
     }
-    reconcile_parked(&daemon).await;
     let tld = daemon.config().tld.clone();
     let count = daemon
         .sites
@@ -794,16 +784,17 @@ async fn park(daemon: Daemon, params: ParkParams, _ctx: Ctx) -> Result<ParkedDir
 
 async fn unpark(daemon: Daemon, params: ParkParams, _ctx: Ctx) -> Result<Ack> {
     let text = forge_core::paths::posix_string(&parked_path(&daemon, &params.dir));
-    let mut config = (*daemon.config()).clone();
-    let before = config.parked_dirs.len();
-    config
-        .parked_dirs
-        .retain(|d| forge_core::paths::posix_string(&parked_path(&daemon, d)) != text);
-    if config.parked_dirs.len() == before {
-        return Err(ForgeError::NotFound(format!("{text} is not parked")));
-    }
-    save_config(&daemon, config).await?;
-    reconcile_parked(&daemon).await;
+    let d = daemon.clone();
+    crate::config_owner::update(&daemon, move |config| {
+        let mut next = config.clone();
+        next.parked_dirs
+            .retain(|p| forge_core::paths::posix_string(&parked_path(&d, p)) != text);
+        if next.parked_dirs.len() == config.parked_dirs.len() {
+            return Err(ForgeError::NotFound(format!("{text} is not parked")));
+        }
+        Ok(next)
+    })
+    .await?;
     Ok(Ack::ok())
 }
 
@@ -881,7 +872,7 @@ async fn upsert(daemon: &Daemon, draft: SiteDraft) -> Result<Site> {
         .await?
     {
         Some(existing) => {
-            let (mut site, _) = draft.into_site(daemon.sites.rules())?;
+            let (mut site, _) = draft.into_site(&daemon.sites.rules())?;
             site.id = existing.id;
             site.slug = existing.slug;
             site.created_at = existing.created_at;

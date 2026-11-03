@@ -311,9 +311,14 @@ pub async fn config(ctx: &Context, command: ConfigCmd) -> CliResult<()> {
             .await?
         }
     };
-    ctx.out.emit(&value, |out| match &value.value {
-        serde_json::Value::String(text) => out.line(text),
-        other => out.line(other.to_string()),
+    ctx.out.emit(&value, |out| {
+        match &value.value {
+            serde_json::Value::String(text) => out.line(text),
+            other => out.line(other.to_string()),
+        }
+        if !value.requires.is_empty() {
+            out.warn(out.tf(Msg::ConfigRequires, &[&value.requires.join(", ")]));
+        }
     });
     Ok(())
 }

@@ -13,9 +13,9 @@ Flags globais (valem em qualquer posição, antes ou depois do comando): `--json
 ### daemon
 ```
 forge daemon status | start | stop | restart | logs [-f] [-n N] | doctor
-forge doctor                      # diagnóstico completo: PATH, DNS, CA, portas, vcredist, Defender, versões
+forge doctor [--export <arquivo>]   # diagnóstico completo: PATH, DNS, CA, portas, vcredist, Defender, versões
 ```
-`daemon status|start|stop|restart` nunca iniciam o daemon só para perguntar (ou parar) algo: `status` de um daemon parado diz "parado" e sai com 1 (`{"running": false}` no `--json`); `stop` de um daemon parado sai com 0; `restart` de um parado o inicia. `stop` e `restart` só voltam quando o pipe sumiu / o novo daemon responde. `doctor` roda o job `daemon.doctor` (checagens `root.writable`, `store.schema`, `dns.*`, `tls.*`, `port.<n>`, `runtime.vcredist`, `path.user` — entradas do Forgebox no PATH do usuário —, `defender.exclusion` — raiz excluída do Defender, lida com `Get-MpPreference`; só administradores veem a lista —, `versions.daemon`, `registry.*`, `service.*`) e acrescenta `versions.cli` (forge × daemon × API). Sai com 1 se alguma checagem falhou (avisos não contam).
+`daemon status|start|stop|restart` nunca iniciam o daemon só para perguntar (ou parar) algo: `status` de um daemon parado diz "parado" e sai com 1 (`{"running": false}` no `--json`); `stop` de um daemon parado sai com 0; `restart` de um parado o inicia. `stop` e `restart` só voltam quando o pipe sumiu / o novo daemon responde. `doctor` roda o job `daemon.doctor` (checagens `root.writable`, `store.schema`, `dns.*`, `tls.*`, `port.<n>`, `runtime.vcredist`, `path.user` — entradas do Forgebox no PATH do usuário —, `defender.exclusion` — raiz excluída do Defender, lida com `Get-MpPreference`; só administradores veem a lista —, `versions.daemon`, `registry.*`, `service.*`) e acrescenta `versions.cli` (forge × daemon × API). Sai com 1 se alguma checagem falhou (avisos não contam). Checagens com correção automática trazem `fix_method` (e `fix_params`) no `--json`: `dns.policy.<tld>` → `net.dns_enable`, `tls.ca_trusted` → `tls.ca_install {scope: current_user}`, `path.user` → `shell.path_add`; a GUI mostra o botão "Corrigir" e roda de novo a checagem. `--export <arquivo>` grava um pacote de suporte em JSON, montado no cliente só com métodos públicos (funciona também contra um daemon remoto): `{v, created_unix, forge_version, api_version, doctor, status, tools, daemon_log}` — resultado do doctor, `daemon.status`, versões instaladas por ferramenta e as últimas 500 linhas do log do daemon (`logs.read`; se o log falhar, uma linha avisa e o resto é gravado).
 O daemon em si é `forgeboxd [--root <dir>] [--foreground] [--log-level <filtro>]` (`--listen` é do modo remoto, M6-E3, e `--self-update <arquivo>` do M4-E1: ambos recusados com código 2 por enquanto). Saída 0 = parada limpa, 4 = já existe um daemon nesta raiz (mutex `Global\Forgebox.Daemon[-<chave>]`, mensagem pt-BR no stderr), 1 = falha no boot. Ctrl+C, Ctrl+Break, fechar o console e `daemon.stop` fazem o mesmo shutdown gracioso; `daemon.restart` faz o shutdown e inicia um daemon novo ([ADR-0029](adr/0029-daemon-composition.md)).
 
 ### tool / catálogo
@@ -175,6 +175,9 @@ forge import laragon C:\laragon [--dry-run] [--copy-tools] [--move-data] [--conv
 forge bundle export php@8.3 nginx -o stack.fbx | forge bundle import stack.fbx
 forge backup now [mysql/default] | forge backup schedule daily 02:00
 forge config list | get|set <chave> [valor]        # forgebox.toml (list: valores efetivos; --json traz padrões e o JSON Schema)
+# config set: gravações passam por um único dono no daemon (sem atualização perdida), são aplicadas ao vivo quando possível
+#   (dns.enabled liga/desliga o resolvedor; tld/dns.extra_tlds recarregam zonas, pastas parked e web) e publicam config.changed {keys, requires};
+#   `requires` lista o que falta fazer (tls.ca_rotate depois de mudar o TLD) e o `forge` imprime como aviso.
 forge self-update [--check] [--channel beta]
 forge completions powershell|bash|zsh
 forge mcp serve                                      # servidor MCP via stdio para IDEs/agentes
