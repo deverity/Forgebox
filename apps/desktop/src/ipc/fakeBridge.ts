@@ -887,6 +887,11 @@ export class FakeBridge implements Bridge {
         return {
           value: { tool: params.tool, entries: [] } as unknown as T.UpdateHistoryDto,
         };
+      // M2-E3-T7: the daemon answers mail.* itself; with no Mailpit instance (the fake has
+      // none unless a scenario handler says otherwise) mail.status is `not_found`.
+      case "mail.status":
+        reject(apiError("not_found", "no mail instance (install one: forge tool install mailpit)"));
+        return undefined;
       case "jobs.get": {
         const job = this.jobs.get(String(params.job_id));
         if (job === undefined)
