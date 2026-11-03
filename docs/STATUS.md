@@ -69,7 +69,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E2-T9 | Extensões PHP e modos do Xdebug (`php.ext_*`, `php.xdebug`, IDE key) | todo | — | |
 | M2-E2-T10 | Backend de configurações avançadas da instância (`services.update`, `data_dir`) | todo | — | |
 | M2-E2-T11 | Detecção de primeira execução e escolha da raiz | todo | — | |
-| M2-E2-T12 | Tela Serviços (lista agrupada + detalhe: Visão geral, Logs, Instâncias) | todo | — | |
+| M2-E2-T12 | Tela Serviços (lista agrupada + detalhe: Visão geral, Logs, Instâncias) | doing | feature/M2-E2-T12-services-screen | |
 | M2-E2-T13 | Formulário de quick settings + abas Configuração, Versões e Avançado | todo | — | |
 | M2-E2-T14 | Dashboard (tiles com sparklines, Atenção, Projetos, sites recentes, atividade) | todo | — | |
 | M2-E2-T15 | Tela Sites (grid/lista, busca instantânea, criar, remover) | todo | — | |
