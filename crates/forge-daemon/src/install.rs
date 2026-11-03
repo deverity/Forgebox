@@ -315,7 +315,13 @@ pub async fn install_extension(
         job.check_cancelled()?;
         let base = 5.0 + 90.0 * index as f32 / total;
         let folder = item.target.canonical_name.clone();
-        if item.up_to_date() {
+        // Same version registered and its file still there: nothing to do (a file deleted
+        // by hand is installed again).
+        let present = match item.installed.as_ref().filter(|_| item.up_to_date()) {
+            Some(row) => tokio::fs::try_exists(&row.path).await.unwrap_or(false),
+            None => false,
+        };
+        if present {
             job.progress(JobProgress::new().pct(base).message(format!(
                 "{id} {} already installed into {extends} {folder}",
                 item.release.version

@@ -686,6 +686,8 @@ impl Layout {
         id: VersionId,
     ) -> Result<RemovedExtension> {
         let tool = manifest.metadata.id.clone();
+        // The extended tool's turn first: an install into the same target waits.
+        let _turn = self.tool_turn(&manifest.spec.extends).await?;
         let rows = self.versions(&tool).await?;
         let row = rows
             .iter()
@@ -693,9 +695,6 @@ impl Layout {
             .cloned()
             .ok_or_else(|| ForgeError::NotFound(format!("{tool} installation {id}")))?;
         let link = ExtensionLink::of(&row);
-        let _turn = self
-            .tool_turn(link.as_ref().map_or(&manifest.spec.extends, |l| &l.tool))
-            .await?;
         let targets = self.versions(&manifest.spec.extends).await?;
         let target_row = |link: &ExtensionLink| targets.iter().find(|t| t.id == link.id).cloned();
         let vars_of = |row: &ToolVersionRow| {
