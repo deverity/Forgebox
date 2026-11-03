@@ -14,6 +14,7 @@ pub mod i18n;
 pub mod perf;
 pub mod prefs;
 pub mod shortcuts;
+pub mod tray;
 pub mod updater;
 pub mod window;
 pub mod window_state;
@@ -81,7 +82,8 @@ pub fn run() {
             let runtime = tauri::async_runtime::handle();
             let _guard = runtime.inner().enter();
             let sink = Arc::new(TauriConnectionSink(app.handle().clone()));
-            app.manage(Bridge::new(sink, BridgeOptions::default()));
+            let bridge = Bridge::new(sink, BridgeOptions::default());
+            app.manage(bridge.clone());
 
             let boot = boot
                 .join()
@@ -89,6 +91,13 @@ pub fn run() {
             let shell = Arc::new(WindowShell::new(launch, clock, boot, appearance, forced));
             app.manage(shell.clone());
             window::create_main_window(app.handle(), &shell)?;
+            // The tray (docs/07 §7) exists from the start; it connects after the first paint.
+            // `--perf-startup` measures the window alone.
+            if !shell.launch().perf_startup {
+                if let Err(err) = tray::menu::install(app.handle(), &shell, &bridge) {
+                    tracing::warn!(%err, "tray icon not created; closing the window exits");
+                }
+            }
             window::spawn_ready_watchdog(app.handle());
             let updater = updater::build_service(app.handle(), &activation, shell.prefs().clone());
             app.manage(updater.clone());
@@ -127,6 +136,7 @@ pub fn run() {
             updater::updater_check,
             updater::updater_apply,
             shortcuts::shortcuts_sync,
+            tray::menu::tray_motion,
         ])
         .build(context)
         .expect("error while building the Forgebox desktop application");

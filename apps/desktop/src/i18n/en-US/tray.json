@@ -1,7 +1,49 @@
 {
-  "open": "Open Forgebox",
-  "start_all": "Start all services",
-  "stop_all": "Stop all services",
+  "title": "Forgebox · {context}",
+  "context": {
+    "local": "Local",
+    "add_remote": "Add remote (M6)"
+  },
+  "status": {
+    "all_running": "All services running",
+    "failed": "{count} failed",
+    "daemon_down": "Daemon unavailable",
+    "connecting": "Connecting to the daemon…",
+    "no_services": "No services created"
+  },
   "services_running": "{running} of {total} services running",
-  "quit": "Quit"
+  "tooltip": {
+    "remote": "Remote: {context}",
+    "php": "PHP CLI {version}"
+  },
+  "open": "Open dashboard",
+  "services": {
+    "menu": "Manage services",
+    "open": "Open Services"
+  },
+  "sites": {
+    "menu": "Sites",
+    "empty": "No sites"
+  },
+  "php": {
+    "menu": "PHP CLI",
+    "empty": "No PHP versions",
+    "version": "PHP {version}"
+  },
+  "start_all": "Start all",
+  "restart_all": "Restart all",
+  "stop_all": "Stop all",
+  "logs": "View logs",
+  "mail": "Mail",
+  "mail_unread": "Mail ({count} unread)",
+  "terminal": "Terminal",
+  "settings": "Settings",
+  "quit": "Quit",
+  "quit_dialog": {
+    "title": "Quit Forgebox",
+    "message": "Services keep running in the daemon after Forgebox closes. Stop them too?",
+    "stop": "Stop services and quit",
+    "keep": "Keep services and quit",
+    "cancel": "Cancel"
+  }
 }

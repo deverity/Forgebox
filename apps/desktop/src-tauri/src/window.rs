@@ -520,6 +520,11 @@ impl WindowShell {
         self.lock().tray_available = available;
     }
 
+    /// The OS appearance snapshot last applied (the tray picks its icon variant from it).
+    pub fn snapshot(&self) -> AppearanceSnapshot {
+        self.lock().snapshot.clone()
+    }
+
     /// The `--perf-startup` line for the marks so far.
     pub fn perf_line(&self, error: Option<&'static str>) -> PerfLine {
         let inner = self.lock();
@@ -912,6 +917,8 @@ pub fn refresh_appearance<R: Runtime>(app: &AppHandle<R>) {
             if let Some(window) = handle.get_webview_window(MAIN_LABEL) {
                 shell.apply_snapshot(&window, snapshot, generation);
             }
+            // The taskbar theme picks the tray icon variant (docs/07 §7).
+            crate::tray::menu::refresh_appearance(&handle);
         });
     });
 }
@@ -993,6 +1000,7 @@ pub fn spawn_ready_watchdog<R: Runtime>(app: &AppHandle<R>) {
             after_ms = wait.as_millis() as u64,
             "no ready from the webview; showing the window"
         );
+        crate::tray::menu::activate(&app);
         let focus = shell.lock().focus_requested;
         if show_on_ready(shell.launch, focus) {
             let handle = app.clone();
@@ -1031,6 +1039,10 @@ pub async fn ready(
     }
     let shell = shell.inner().clone();
     let first = shell.clock.mark_ready(SystemTime::now());
+    if first && !shell.launch.perf_startup {
+        // After the first paint the tray connects (never before: ADR-0034).
+        crate::tray::menu::activate(&app);
+    }
     if first && shell.launch.perf_startup {
         crate::perf::print_line(&shell.perf_line(None));
         app.exit(0);

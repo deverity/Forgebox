@@ -164,8 +164,13 @@ pub fn apply_language(language: &str) -> Result<(), String> {
 
 /// Keeps Rust in sync with the UI language (async like every command, docs/03 §7.5).
 #[tauri::command]
-pub async fn set_language(language: String) -> Result<(), String> {
-    apply_language(&language)
+pub async fn set_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
+    apply_language(&language)?;
+    // The tray menu and tooltip are rebuilt in the new language.
+    if let Some(tray) = tauri::Manager::try_state::<crate::tray::Tray>(&app) {
+        tray.language_changed();
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -179,6 +184,34 @@ mod tests {
         (Namespace::Tray, "stop_all"),
         (Namespace::Tray, "services_running"),
         (Namespace::Tray, "quit"),
+        (Namespace::Tray, "title"),
+        (Namespace::Tray, "context.local"),
+        (Namespace::Tray, "context.add_remote"),
+        (Namespace::Tray, "status.all_running"),
+        (Namespace::Tray, "status.failed"),
+        (Namespace::Tray, "status.daemon_down"),
+        (Namespace::Tray, "status.connecting"),
+        (Namespace::Tray, "status.no_services"),
+        (Namespace::Tray, "tooltip.remote"),
+        (Namespace::Tray, "tooltip.php"),
+        (Namespace::Tray, "services.menu"),
+        (Namespace::Tray, "services.open"),
+        (Namespace::Tray, "sites.menu"),
+        (Namespace::Tray, "sites.empty"),
+        (Namespace::Tray, "php.menu"),
+        (Namespace::Tray, "php.empty"),
+        (Namespace::Tray, "php.version"),
+        (Namespace::Tray, "restart_all"),
+        (Namespace::Tray, "logs"),
+        (Namespace::Tray, "mail"),
+        (Namespace::Tray, "mail_unread"),
+        (Namespace::Tray, "terminal"),
+        (Namespace::Tray, "settings"),
+        (Namespace::Tray, "quit_dialog.title"),
+        (Namespace::Tray, "quit_dialog.message"),
+        (Namespace::Tray, "quit_dialog.stop"),
+        (Namespace::Tray, "quit_dialog.keep"),
+        (Namespace::Tray, "quit_dialog.cancel"),
         (Namespace::Notifications, "service_crashed"),
         (Namespace::Notifications, "service_restarted"),
         (Namespace::Notifications, "update_available"),
