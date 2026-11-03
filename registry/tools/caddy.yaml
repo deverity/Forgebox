@@ -17,6 +17,7 @@ metadata:
   tags: [caddy, webserver, proxy]
   homepage: https://caddyserver.com
   docs: https://caddyserver.com/docs/
+  changelog_url: https://github.com/caddyserver/caddy/releases
   license: Apache-2.0
   icon: caddy.svg
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]

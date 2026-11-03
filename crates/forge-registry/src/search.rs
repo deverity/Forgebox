@@ -3,7 +3,8 @@
 //! Ranking, best first: exact `id` (1000) > exact name (900) > `id` prefix (700) > name
 //! prefix (600) > `id` contains (500) > name contains (400) > tag equal (300) > tag contains
 //! (200). A query with several words needs every word to match; its score is the lowest word
-//! score. An empty query lists everything (score 0) in id order. Matching ignores case
+//! score. An empty query lists everything (score 0) in index order (registry priority, then the
+//! order of the index: tools by id, stacks by `metadata.order`). Matching ignores case
 //! (user input), unlike generated configs and paths (docs/15). Ties keep the order the
 //! caller gave (registry priority) after sorting by id.
 
@@ -32,6 +33,8 @@ pub struct CatalogEntry {
     /// Newest stable version according to the index.
     pub latest: Option<String>,
     pub manifest: Arc<Manifest>,
+    /// The icon the index lists, when its file was available (hash verified).
+    pub icon: Option<crate::index::LoadedIcon>,
 }
 
 impl CatalogEntry {
@@ -173,6 +176,10 @@ pub fn search(entries: &[CatalogEntry], query: &str, category: Option<Category>)
             })
         })
         .collect();
+    if terms.is_empty() {
+        // A listing keeps the order of the catalog: registry priority, then the index order.
+        return hits;
+    }
     // Stable sort: equal (score, id) keep the registry priority order of the input.
     hits.sort_by(|a, b| {
         (Reverse(a.score), a.entry.id.as_str()).cmp(&(Reverse(b.score), b.entry.id.as_str()))
@@ -206,6 +213,7 @@ mod tests {
             sha256: String::new(),
             latest: None,
             manifest: Arc::new(manifest),
+            icon: None,
         }
     }
 

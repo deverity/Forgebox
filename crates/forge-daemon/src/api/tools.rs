@@ -11,17 +11,19 @@ use std::time::Duration;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::ToolId;
 use forge_core::jobs::JobState;
-use forge_core::store::{SiteRepo, ToolVersionRepo, ToolVersionRow};
+use forge_core::store::{SiteRepo, ToolVersionRepo, ToolVersionRow, UpdateHistoryRepo};
 use forge_ipc::api::methods::{
-    tools_check_updates, tools_discover, tools_info, tools_install, tools_list, tools_policy,
-    tools_remove, tools_rollback, tools_search, tools_update, tools_use, tools_which,
+    tools_check_updates, tools_discover, tools_history, tools_icon, tools_info, tools_install,
+    tools_list, tools_policy, tools_remove, tools_rollback, tools_search, tools_update, tools_use,
+    tools_which,
 };
 use forge_ipc::api::{
-    Ack, AvailableVersionDto, CatalogEntryDto, CatalogKind, CatalogSearchDto, JobDto, NoParams,
-    SiteUsageDto, ToolDiscoverDto, ToolDto, ToolInfoDto, ToolInstallParams, ToolInstallResultDto,
-    ToolListDto, ToolListParams, ToolParams, ToolPolicyParams, ToolRemoveParams,
-    ToolRollbackParams, ToolSearchParams, ToolUpdateDto, ToolUpdateParams, ToolUpdatesDto,
-    ToolUseParams, ToolVersionDto, ToolWhichParams, UpdatePolicy, WhichDto,
+    Ack, AvailableVersionDto, CatalogEntryDto, CatalogKind, CatalogSearchDto, IconDto, JobDto,
+    NoParams, SiteUsageDto, ToolDiscoverDto, ToolDto, ToolHistoryParams, ToolInfoDto,
+    ToolInstallParams, ToolInstallResultDto, ToolListDto, ToolListParams, ToolParams,
+    ToolPolicyParams, ToolRemoveParams, ToolRollbackParams, ToolSearchParams, ToolUpdateDto,
+    ToolUpdateParams, ToolUpdatesDto, ToolUseParams, ToolVersionDto, ToolWhichParams,
+    UpdateHistoryDto, UpdatePolicy, WhichDto,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_manifest::schema::tool::ServiceKind;
@@ -30,7 +32,7 @@ use forge_provider::update::{ApplyRequest, AvailableUpdate, RollbackRequest};
 
 use super::convert;
 use super::route;
-use crate::catalog::{self, ExtensionEntry, Installable, ToolEntry};
+use crate::catalog::{self, ExtensionEntry, Installable, StackEntry, ToolEntry};
 use crate::daemon::Daemon;
 use crate::install;
 
@@ -38,6 +40,8 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, tools_search, search);
     route!(router, daemon, tools_list, list);
     route!(router, daemon, tools_info, info);
+    route!(router, daemon, tools_history, history);
+    route!(router, daemon, tools_icon, icon);
     route!(router, daemon, tools_install, install_tools);
     route!(router, daemon, tools_remove, remove);
     route!(router, daemon, tools_update, update);
@@ -54,19 +58,29 @@ async fn search(daemon: Daemon, params: ToolSearchParams, _ctx: Ctx) -> Result<C
         .category
         .as_deref()
         .and_then(forge_registry::search::parse_category);
-    let installed: BTreeSet<ToolId> = catalog::all_installed(&daemon.reader)
-        .await?
-        .into_iter()
-        .map(|r| r.tool_id)
-        .collect();
+    let installed = catalog::all_installed(&daemon.reader).await?;
+    // Manifest metadata only: no network (`forge search` works offline). An empty text
+    // lists the catalog in index order.
     let entries = daemon
         .registry
         .search(&params.text, category)
         .into_iter()
         .map(|hit| {
             let entry = hit.entry;
-            // API 1.1 metadata (ADR-0041): what the index entry already says is filled here;
-            // color, icon, platforms, sizes and updates come with M2-E2-T4.
+            let facts = catalog::facts(&daemon.registry, &entry.manifest);
+            let rows: Vec<ToolVersionRow> = installed
+                .iter()
+                .filter(|r| r.tool_id == entry.id)
+                .cloned()
+                .collect();
+            let update_available = catalog::tool(&daemon.registry, &entry.id)
+                .and_then(|tool| catalog::offline_update(&tool, &rows));
+            let platforms: Vec<String> = facts
+                .platforms
+                .iter()
+                .copied()
+                .map(convert::platform_text)
+                .collect();
             CatalogEntryDto {
                 id: entry.id.clone(),
                 name: entry.name().to_owned(),
@@ -77,21 +91,71 @@ async fn search(daemon: Daemon, params: ToolSearchParams, _ctx: Ctx) -> Result<C
                 tags: entry.tags().to_vec(),
                 registry: entry.registry.clone(),
                 versions: entry.latest.clone().into_iter().collect(),
-                installed: installed.contains(&entry.id),
+                installed: !rows.is_empty(),
                 kind: convert::catalog_kind(entry.kind()),
                 summary: entry.summary().map(str::to_owned),
-                color: None,
-                icon_sha256: None,
-                platforms: Vec::new(),
-                native: true,
+                color: facts.color,
+                icon_sha256: entry.icon.as_ref().map(|i| i.sha256.clone()),
+                native: facts.platforms.is_empty()
+                    || facts.platforms.contains(&convert::host_platform()),
+                platforms,
                 official: entry.official,
                 latest: entry.latest.clone(),
-                update_available: None,
-                size_estimate_bytes: None,
+                update_available,
+                size_estimate_bytes: facts.size_estimate_bytes,
             }
         })
         .collect();
     Ok(CatalogSearchDto { entries })
+}
+
+/// `tools.icon`: the SVG of a catalog entry from the verified registry cache, checked by
+/// [`forge_registry::icon::sanitize_svg`] (`verification_failed` when it is not safe,
+/// `not_found` without an icon).
+async fn icon(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<IconDto> {
+    let entry = daemon.registry.find(params.tool.as_str()).ok_or_else(|| {
+        ForgeError::NotFound(format!(
+            "no catalog entry {} in the loaded registries",
+            params.tool
+        ))
+    })?;
+    let icon = entry
+        .icon
+        .ok_or_else(|| ForgeError::NotFound(format!("{} has no icon", params.tool)))?;
+    let svg = forge_registry::icon::sanitize_svg(&icon.bytes)?;
+    Ok(IconDto {
+        tool: params.tool,
+        svg,
+        sha256: icon.sha256,
+    })
+}
+
+/// `tools.history`: `update_history` rows, newest first (docs/05 §4).
+async fn history(daemon: Daemon, params: ToolHistoryParams, _ctx: Ctx) -> Result<UpdateHistoryDto> {
+    const DEFAULT_LIMIT: usize = 50;
+    const MAX_LIMIT: usize = 500;
+    let limit = params
+        .limit
+        .map_or(DEFAULT_LIMIT, |n| (n as usize).clamp(1, MAX_LIMIT));
+    let tool = params.tool.clone();
+    let series = params.series.clone();
+    // The repository filters by tool only: with a series the newest MAX_LIMIT rows of the
+    // tool are read and filtered here.
+    let fetch = if series.is_some() { MAX_LIMIT } else { limit };
+    let rows = daemon
+        .reader
+        .query(move |conn| UpdateHistoryRepo::new(conn).list(Some(&tool), fetch))
+        .await?;
+    let entries = rows
+        .into_iter()
+        .filter(|r| series.as_ref().is_none_or(|s| r.series.as_ref() == Some(s)))
+        .take(limit)
+        .map(convert::history_entry)
+        .collect();
+    Ok(UpdateHistoryDto {
+        tool: params.tool,
+        entries,
+    })
 }
 
 async fn policy_of(daemon: &Daemon, tool: &ToolEntry) -> UpdatePolicy {
@@ -183,6 +247,9 @@ async fn list(daemon: Daemon, params: ToolListParams, _ctx: Ctx) -> Result<ToolL
 }
 
 async fn info(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<ToolInfoDto> {
+    if let Some(stack) = catalog::stack(&daemon.registry, &params.tool) {
+        return Ok(stack_info(&stack));
+    }
     let tool = match catalog::require_installable(&daemon.registry, &params.tool)? {
         Installable::Tool(tool) => tool,
         Installable::Extension(ext) => return extension_info(&daemon, &ext).await,
@@ -213,23 +280,57 @@ async fn info(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<ToolInfoD
             channel: Some("stable".into()),
         })
         .collect();
-    // The API 1.1 metadata (Markdown description, links, variants, suggests, extensions
-    // and stacks) is M2-E2-T4 (ADR-0041).
+    let meta = &tool.manifest.metadata;
+    let update_available = catalog::offline_update(&tool, &rows);
+    let mut dto = tool_dto(&daemon, &tool, rows, &[]).await;
+    dto.update_available = update_available;
     Ok(ToolInfoDto {
-        tool: tool_dto(&daemon, &tool, rows, &[]).await,
+        tool: dto,
         available,
         used_by,
         kind: CatalogKind::Tool,
-        description_md: None,
-        homepage: None,
+        description_md: meta.description.clone(),
+        homepage: meta.homepage.clone(),
+        docs: meta.docs.clone(),
+        changelog_url: meta.changelog_url.clone(),
+        license: meta.license.clone(),
+        variants: convert::variant_defs(&tool.manifest.spec.versioning.variants),
+        suggests: tool.manifest.spec.suggests.clone(),
+        extends: None,
+        stack: None,
+    })
+}
+
+/// `tools.info` of a stack: `kind: stack` and `stack.tools`. A stack installs nothing by
+/// itself, so there are no installed rows.
+fn stack_info(stack: &StackEntry) -> ToolInfoDto {
+    let meta = &stack.manifest.metadata;
+    ToolInfoDto {
+        tool: ToolDto {
+            id: meta.id.clone(),
+            name: meta.name.clone(),
+            category: None,
+            description: meta.summary.clone(),
+            installed: Vec::new(),
+            current: None,
+            policy: UpdatePolicy::Manual,
+            latest: None,
+            update_available: None,
+            has_service: false,
+        },
+        available: Vec::new(),
+        used_by: Vec::new(),
+        kind: CatalogKind::Stack,
+        description_md: meta.description.clone(),
+        homepage: meta.homepage.clone(),
         docs: None,
         changelog_url: None,
         license: None,
         variants: Vec::new(),
         suggests: Vec::new(),
         extends: None,
-        stack: None,
-    })
+        stack: Some(convert::stack_dto(&stack.manifest)),
+    }
 }
 
 /// The installed rows of extension `ext`, ordered by target (newest target build first,
@@ -293,7 +394,7 @@ async fn extension_info(daemon: &Daemon, ext: &ExtensionEntry) -> Result<ToolInf
         description_md: meta.description.clone(),
         homepage: meta.homepage.clone(),
         docs: meta.docs.clone(),
-        changelog_url: None,
+        changelog_url: meta.changelog_url.clone(),
         license: meta.license.clone(),
         variants: Vec::new(),
         suggests: Vec::new(),

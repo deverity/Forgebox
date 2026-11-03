@@ -916,6 +916,9 @@ impl Checker<'_> {
         if let Some(url) = &m.docs {
             self.url("metadata.docs", url, false);
         }
+        if let Some(url) = &m.changelog_url {
+            self.url("metadata.changelog_url", url, true);
+        }
         for (i, maintainer) in m.maintainers.iter().enumerate() {
             self.not_empty(&format!("metadata.maintainers[{i}].name"), &maintainer.name);
             if let Some(url) = &maintainer.url {
@@ -2304,6 +2307,16 @@ impl Checker<'_> {
                     format!("{f}.path"),
                     "manifests are .yaml files",
                 );
+            }
+            if let Some(icon) = &entry.icon {
+                self.relative_path(&format!("{f}.icon.path"), &icon.path);
+                if !(icon.path.starts_with("icons/") && icon.path.ends_with(".svg")) {
+                    self.push(
+                        IssueCode::InvalidPath,
+                        format!("{f}.icon.path"),
+                        "icons are .svg files of icons/",
+                    );
+                }
             }
         }
     }

@@ -625,6 +625,28 @@ fn index_entries(
                             format!("cannot read {}: {e}", entry.path),
                         )),
                     }
+                    if let Some(icon) = &entry.icon {
+                        // The icon hash is signed with the index like the manifests' are.
+                        let actual = icon
+                            .path
+                            .strip_prefix("icons/")
+                            .filter(|name| !name.contains(['/', '\\']))
+                            .and_then(|name| std::fs::read(root.join("icons").join(name)).ok())
+                            .map(|bytes| crate::index::sha256_hex(&bytes));
+                        if actual.as_deref() != Some(icon.sha256.as_str()) {
+                            issues.push(LintIssue::new(
+                                index,
+                                IssueCode::IndexMismatch,
+                                Some(format!("{field}.icon.sha256")),
+                                format!(
+                                    "sha256 of {} is {}, the index says {}",
+                                    icon.path,
+                                    actual.as_deref().unwrap_or("(unreadable)"),
+                                    icon.sha256
+                                ),
+                            ));
+                        }
+                    }
                     if item.id() != Some(&entry.id) || !kinds.contains(&kind) {
                         issues.push(LintIssue::new(
                             index,

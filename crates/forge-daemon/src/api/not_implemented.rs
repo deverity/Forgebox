@@ -17,8 +17,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ),
     ("tools.releases", "M2-E2-T5", "listing provider releases"),
     ("tools.plan", "M2-E2-T5", "install plans"),
-    ("tools.history", "M2-E2-T4", "update history"),
-    ("tools.icon", "M2-E2-T4", "catalog icons"),
     ("services.update", "M2-E2-T10", "advanced instance settings"),
     (
         "php.ext_enable",
@@ -239,8 +237,6 @@ mod tests {
         for (method, task) in [
             ("tools.releases", "M2-E2-T5"),
             ("tools.plan", "M2-E2-T5"),
-            ("tools.history", "M2-E2-T4"),
-            ("tools.icon", "M2-E2-T4"),
             ("services.update", "M2-E2-T10"),
             ("php.ext_enable", "M2-E2-T9"),
             ("php.ext_disable", "M2-E2-T9"),
@@ -256,10 +252,13 @@ mod tests {
             assert_eq!(err.details().unwrap()["args"]["method"], method);
         }
         // Partial methods (they work without the new parameter) stay out of the table, and
-        // so do the ones whose backend landed (M2-E2-T7: quick settings).
+        // so do the ones whose backend landed (M2-E2-T4: history and icons; M2-E2-T7: quick
+        // settings).
         for method in [
             "tools.install",
             "tools.remove",
+            "tools.history",
+            "tools.icon",
             "services.create",
             "services.settings",
             "services.set",

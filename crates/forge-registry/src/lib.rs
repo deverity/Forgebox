@@ -4,6 +4,7 @@
 //! * [`source`]: `Dir`, `Http` and `Git` registry sources (git through the machine's `git`).
 //! * [`index`]: minisign verification of `index.yaml`, sha256 of every manifest, policy for
 //!   third-party registries (no `post_install.run`).
+//! * [`icon`]: the SVG check behind `tools.icon`.
 //! * [`cache`]: `state/registry/<name>/`, re-verified on every read.
 //! * [`search`]: id/name/tag search with a simple ranking.
 //! * [`service`]: [`Registry`], the async service (`refresh` returns a `JobId`, `find`,
@@ -16,6 +17,7 @@
 
 pub mod cache;
 pub mod discover;
+pub mod icon;
 pub mod index;
 pub mod messages;
 pub mod search;
@@ -26,7 +28,7 @@ pub use discover::{
     Confidence, DiscoveredVersion, ImportReport, NameHint, discover, discover_in,
     import_discovered, parse_folder_name,
 };
-pub use index::{LoadOptions, Verification, VerifyOptions};
+pub use index::{LoadOptions, LoadedIcon, Verification, VerifyOptions};
 pub use search::{CatalogEntry, MatchKind, SearchHit};
 pub use service::{LoadReport, LoadSource, Registry, RegistryConfig, RegistryInfo, ServiceOptions};
 pub use source::RegistrySource;
