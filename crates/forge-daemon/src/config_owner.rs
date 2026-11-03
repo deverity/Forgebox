@@ -27,6 +27,7 @@ use forge_core::config::ForgeConfig;
 use forge_core::error::{ForgeError, Result};
 use forge_core::event::EventKind;
 use forge_ipc::api::ConfigChangedPayload;
+use futures::FutureExt;
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 
@@ -65,8 +66,16 @@ impl ConfigOwner {
     pub fn spawn() -> Self {
         let (tx, mut rx) = mpsc::channel::<Turn>(32);
         tokio::spawn(async move {
+            // A panic in one turn (docs/03 §7, ADR-0011) is isolated here: the caller's
+            // oneshot is dropped (it becomes `Internal`) and the loop keeps serving.
             while let Some(turn) = rx.recv().await {
-                turn.await;
+                if std::panic::AssertUnwindSafe(turn)
+                    .catch_unwind()
+                    .await
+                    .is_err()
+                {
+                    tracing::error!("config owner: a preferences turn panicked");
+                }
             }
         });
         Self { tx }
@@ -85,9 +94,14 @@ impl ConfigOwner {
         self.tx
             .send_timeout(job, SEND_TIMEOUT)
             .await
-            .map_err(|_| ForgeError::Timeout {
-                operation: "queueing a preferences write".into(),
-                after: SEND_TIMEOUT,
+            .map_err(|err| match err {
+                mpsc::error::SendTimeoutError::Closed(_) => {
+                    ForgeError::Internal("the preferences owner stopped".into())
+                }
+                mpsc::error::SendTimeoutError::Timeout(_) => ForgeError::Timeout {
+                    operation: "queueing a preferences write".into(),
+                    after: SEND_TIMEOUT,
+                },
             })?;
         match tokio::time::timeout(TURN_TIMEOUT, answer).await {
             Ok(Ok(result)) => result,
@@ -294,6 +308,21 @@ mod tests {
         let requires = requires_for(&config, &["tld".to_owned()]);
         assert!(requires.contains(&"tls.ca_rotate".to_owned()));
         assert!(requires_for(&config, &["case_sensitive".to_owned()]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_panicking_turn_does_not_stop_the_owner() {
+        let owner = ConfigOwner::spawn();
+        let failed = owner
+            .run(async {
+                if true {
+                    panic!("boom");
+                }
+                Ok(())
+            })
+            .await;
+        assert!(matches!(failed, Err(ForgeError::Internal(_))));
+        assert_eq!(owner.run(async { Ok(7) }).await.unwrap(), 7);
     }
 
     #[tokio::test]
