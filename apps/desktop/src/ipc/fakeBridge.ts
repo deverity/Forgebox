@@ -65,7 +65,7 @@ export interface FakeJobScript<R = unknown> {
   stepMs?: number;
   /** Default `{ done: null }`. */
   outcome?: { done: R } | { failed: ApiErrorDto } | { cancelled: true };
-  /** Runs until `jobs.cancel` instead of ending by itself. */
+  /** Runs until `jobs.cancel` or `FakeBridge.completeJob` instead of ending by itself. */
   hold?: boolean;
 }
 
@@ -304,6 +304,7 @@ export interface FakeCall {
 interface JobRecord {
   dto: T.JobDto;
   timers: ReturnType<typeof setTimeout>[];
+  outcome: NonNullable<FakeJobScript["outcome"]>;
 }
 
 function delay(ms: number): Promise<void> {
@@ -630,6 +631,19 @@ export class FakeBridge implements Bridge {
     return [...this.jobs.values()].map((job) => structuredClone(job.dto));
   }
 
+  /**
+   * Ends a running job now, with `outcome` or its script's (default `{ done: null }`), and
+   * publishes `job.done|failed|cancelled` like the daemon. A test that must observe the job
+   * while it runs uses `hold: true` and ends it here, instead of racing a `stepMs` timer
+   * against a loaded machine. Returns false when the job is unknown or already over.
+   */
+  completeJob(jobId: string, outcome?: NonNullable<FakeJobScript["outcome"]>): boolean {
+    const job = this.jobs.get(jobId);
+    if (job?.dto.state !== "running") return false;
+    this.finishJob(job, outcome ?? job.outcome);
+    return true;
+  }
+
   /** Streams open right now. */
   openStreams(): number {
     return this.subscriptions.size;
@@ -946,7 +960,7 @@ export class FakeBridge implements Bridge {
       result: null,
       error: null,
     };
-    const job: JobRecord = { dto, timers: [] };
+    const job: JobRecord = { dto, timers: [], outcome: script.outcome ?? { done: null } };
     this.jobs.set(id, job);
     // Like the JobRegistry: `job.started` is published before the answer leaves.
     this.publish("job.started", {
@@ -971,7 +985,7 @@ export class FakeBridge implements Bridge {
       at += stepMs;
       job.timers.push(
         setTimeout(() => {
-          this.finishJob(job, script.outcome ?? { done: null });
+          this.finishJob(job, job.outcome);
         }, at),
       );
     }
