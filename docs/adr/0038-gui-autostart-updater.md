@@ -1,0 +1,27 @@
+# ADR-0038 — Autostart da GUI e atualizador do app (inativo na 0.2.0)
+
+**Status:** aceito · **Data:** 2026-11-03 · Implementa [05 §5](../05-providers-and-updates.md) e [07 §7](../07-ui-ux.md); complementa a [ADR-0034](0034-desktop-shell-architecture.md) (ponte) e a [ADR-0035](0035-window-chrome-materials.md) (`--minimized`, instância única).
+
+## Contexto
+O `Forgebox.exe` precisa (a) iniciar com o Windows já minimizado na bandeja e (b) se atualizar sozinho. O instalador substitui o `forgeboxd.exe`, que fica travado enquanto roda. Decisão do usuário (2026-10-28): o fluxo completo é implementado e testado, mas **sai inativo na 0.2.0** (sem chave pública de produção nem endpoint); chave e endpoint ficam para o M4-E1.
+
+## Decisão
+1. **Autostart por `tauri-plugin-autostart`** (chave `HKCU\...\Run`, argumento `--minimized`, o mesmo que `window::LaunchArgs` entende), atrás do trait `AutostartBackend { enable(args), disable, is_enabled }`. Os testes usam um backend em memória; nenhum teste toca o registro real. No **modo portátil** (`GuiDataSource::Portable`) o autostart é recusado com motivo localizado (`unsupported_platform`, `reason = autostart_portable`) e o backend nunca é chamado: uma pasta portátil não deixa rastros nem aponta o Run para uma pasta que o usuário pode mover. Comandos `autostart_get`/`autostart_set` para onboarding e configurações; I/O do registro em `spawn_blocking`.
+2. **Atualizador por `tauri-plugin-updater`**, sem a feature `zip` (só desempacota instaladores zipados legados e puxa `zip` 4.x com avisos RUSTSEC abertos; as atualizações NSIS do Tauri 2 são `.exe` puros). Assinatura minisign verificada dentro de `download`.
+3. **Ativação por política pura** (`updater::decide`): ativo somente com `plugins.updater.pubkey` **e** `endpoints` preenchidos em `tauri.conf.json`. O `tauri.conf.json` versionado traz ambos vazios, então o build de release é inativo (um teste lê o arquivo). Em build **debug**, `FORGEBOX_UPDATER_ENDPOINT` aponta o atualizador para um servidor local e a chave pública de dev (`src-tauri/keys/updater-dev.pub`, só para testes) passa a valer; em release a variável é ignorada, para o ambiente nunca redirecionar de onde saem instaladores. A chave privada de dev foi descartada: os testes geram pares minisign descartáveis e injetam a pública.
+4. **Canais** `stable`/`beta` na preferência `update_channel` do `prefs.json` da GUI (ADR-0034 §5). O endpoint é um template com `{channel_file}` (`latest.json` / `latest-beta.json`).
+5. **Verificação**: ao iniciar (20 s depois, nunca no primeiro paint), a cada 24 h e sob demanda (`updater_check`). O changelog (`notes` do manifesto) aparece na UI antes de aplicar e o usuário confirma.
+6. **Aplicar** (`UpdateService::apply`): baixa e **verifica a assinatura**; `await daemon.stop {keep_services:false}` com timeout de **15 s** (o instalador precisa substituir o `forgeboxd.exe` travado; sem daemon conectado, nada a parar); só então roda o instalador `passive`, que relança o app; a GUI sobe e inicia o daemon sozinha. **Se o stop falhar ou estourar o prazo, o instalador não é iniciado** e o erro (localizado) fica no estado, com a atualização ainda disponível para nova tentativa. Assinatura inválida aborta antes de tocar no daemon.
+7. **Estado**: `UpdateService` é uma máquina de estados (`idle/checking/up_to_date/available/downloading/stopping/installing/error`) sobre dois traits (`UpdateSource`, `DaemonStop`); nenhum lock std atravessa `.await` e o instalador roda em `spawn_blocking`. Cada mudança emite `forge://updater` (payload `UpdaterSnapshot`); o rodapé da sidebar mostra versão e estado e a bandeja usa o mesmo evento (ou `updater_status`) para o ponto azul. As mensagens de erro vêm do namespace `updater` (pt-BR/en-US), compartilhado entre Rust e UI.
+8. **Teste**: `tests/updater.rs` sobe um servidor HTTP local com `latest.json` e o plugin real num app mock do Tauri, com pares minisign gerados: versão nova detectada, igual/menor ignorada, canal beta, assinatura de outra chave e bytes adulterados rejeitados com causa localizada, falha do stop não inicia o instalador. O `build.rs` embute o manifesto common-controls v6 nos binários de teste de integração (sem ele o exe de teste que linka o Tauri inteiro morre com `0xc0000139`).
+
+## Alternativas descartadas
+- *Registro via `winreg` próprio:* duplicaria o plugin e traria Win32 para o `src-tauri` (ADR-0035).
+- *Ativar o atualizador com endpoint do GitHub já na 0.2.0:* contra a decisão do usuário; sem chave de produção não há como assinar.
+- *Variável de ambiente valendo em release:* abriria um vetor de redirecionamento do instalador.
+- *Parar o daemon dentro do instalador:* o NSIS não fala a API; o app tem o contexto (timeout, erro localizado).
+
+## Consequências
+- Ativar em produção (M4-E1) é preencher `pubkey` e `endpoints` no `tauri.conf.json`, ligar `bundle.createUpdaterArtifacts` e publicar `latest.json` + `.sig`; nenhum código muda.
+- A bandeja (M2-E1-T15) lê `forge://updater`/`updater_status` para o ponto azul; `UpdaterPanel` e `AutostartToggle` ficam em `features/updater` para as Configurações (M2-E3-T18) e o onboarding montarem.
+- Atualizar o daemon sozinho (`forgeboxd --self-update`, handoff de Job Objects) continua sendo v1.1 ([05 §5](../05-providers-and-updates.md)).
