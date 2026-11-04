@@ -18,9 +18,30 @@ const SCENARIOS_UNDER_TEST = ["errors", "not-implemented", "daemon-down"] as con
  * test below fails when an entry stops reproducing, so whoever fixes the screen has to delete
  * the line (the stale-entry guard), and a new offender outside the list fails the build.
  */
-const KNOWN_OPEN: Record<string, string> = {};
+const SITE = "/sites/01QAS1TE000000000000000001";
+const KNOWN_OPEN: Record<string, string> = {
+  "/dashboard|errors": "R-15 (E4-T10): Projetos stays a skeleton",
+  "/dashboard|not-implemented": "R-16 (E4-T9): tiles stay skeletons",
+  "/services|not-implemented": "R-16 (E4-T9)",
+  "/sites|errors": "R-09 (E4-T9)",
+  "/sites|not-implemented": "R-09 (E4-T9)",
+  "/php|not-implemented": "R-16 (E4-T9)",
+  "/databases|not-implemented": "R-16 (E4-T10)",
+  "/logs|not-implemented": "R-16 (E4-T10)",
+  "/logs|daemon-down": "R-16 (E4-T10)",
+  [`${SITE}|errors`]: "R-10 (E4-T9)",
+  [`${SITE}|not-implemented`]: "R-10 (E4-T9)",
+  [`${SITE}|daemon-down`]: "R-10 (E4-T9)",
+  "/catalog/php|not-implemented": "R-16 (E4-T9)",
+  "/catalog/php|daemon-down": "R-16 (E4-T9)",
+  "/catalog/laravel|not-implemented": "R-16 (E4-T9)",
+  "/catalog/laravel|daemon-down": "R-16 (E4-T9)",
+};
 
-for (const route of ROUTES) {
+/** The gallery shows skeletons on purpose (it is the primitives catalogue). */
+const GALLERY = "/__gallery";
+
+for (const route of ROUTES.filter((r) => r !== GALLERY)) {
   for (const scenario of SCENARIOS_UNDER_TEST) {
     const key = `${route}|${scenario}`;
     test(`no eternal skeleton: ${route} scenario ${scenario}`, async ({ page }) => {
