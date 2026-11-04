@@ -14,7 +14,8 @@
 //!   one the reservation moves (`services.ports`), `my.ini` is re-rendered and the
 //!   service runs on the new port; a block edited by hand refuses the change and a render
 //!   still reports `config.drift_detected`.
-//! * **Concurrency** (docs/03 §7.6): `services.status` answers in < 50 ms during a
+//! * **Concurrency** (docs/03 §7.6): `services.status` answers in < 50 ms (p99 of ≥ 200
+//!   samples, none over 500 ms; under outside load, [`common::LatencyVerdict`]) during a
 //!   `services.set ports.smtp=…` that restarts the stubborn fake Mailpit (CTRL_C and
 //!   CTRL_BREAK ignored: the whole stop cascade runs).
 //! * **Online** (ignored; the official PHP 8.4.27 zip): the set recycles the running pool
@@ -563,6 +564,18 @@ async fn instance_settings_and_port_moves_keep_the_users_text() {
 
 // ---------------------------------------------------------------- concurrency
 
+/// [`LATENCY_SAMPLES`] `services.status` latencies, paced like the move's loop.
+async fn sample_services_status(client: &Client) -> Vec<Duration> {
+    let mut samples = Vec::with_capacity(LATENCY_SAMPLES);
+    while samples.len() < LATENCY_SAMPLES {
+        let asked = Instant::now();
+        client.call::<services_status>(NoParams {}).await.unwrap();
+        samples.push(asked.elapsed());
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    samples
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn status_answers_while_a_port_move_restarts_a_stubborn_service() {
     let root = TestRoot::new();
@@ -576,6 +589,8 @@ async fn status_answers_while_a_port_move_restarts_a_stubborn_service() {
     let mut daemon = spawn_daemon(&root, &[]);
     let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
     let first = wait_running(&client, "mailpit", Duration::from_secs(60)).await;
+    // The "free" window before (outside load weighs on it like on the move).
+    let before = sample_services_status(&client).await;
 
     let smtp = free_port();
     let job = client
@@ -586,13 +601,11 @@ async fn status_answers_while_a_port_move_restarts_a_stubborn_service() {
         .await
         .unwrap();
     let started = Instant::now();
-    let mut worst = Duration::ZERO;
-    let mut samples = 0u32;
+    let mut samples: Vec<Duration> = Vec::new();
     let finished = loop {
         let asked = Instant::now();
         client.call::<services_status>(NoParams {}).await.unwrap();
-        worst = worst.max(asked.elapsed());
-        samples += 1;
+        samples.push(asked.elapsed());
         let state = client
             .call::<jobs_get>(JobIdParams { job_id: job.id })
             .await
@@ -604,22 +617,25 @@ async fn status_answers_while_a_port_move_restarts_a_stubborn_service() {
             started.elapsed() < Duration::from_secs(90),
             "set still running"
         );
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
     };
     let took = started.elapsed();
-    println!("ports.smtp move took {took:?}; {samples} samples, services.status max {worst:?}");
     assert_eq!(finished.state, JobState::Done, "{:?}", finished.error);
     assert!(
         took >= Duration::from_secs(5),
         "the stubborn service went through its stop cascade ({took:?})"
     );
-    assert!(samples > 50, "{samples} samples");
-    assert!(worst < STATUS_BUDGET, "services.status took {worst:?}");
     assert_eq!(
         reserved_port(&client, "mailpit/default", "smtp").await,
         Some(smtp)
     );
     let now = wait_running(&client, "mailpit", Duration::from_secs(60)).await;
+    // And the "free" window after, with the new instance running.
+    let after = sample_services_status(&client).await;
+    // docs/03 §7.6: p99 under the budget, and no answer waited for the cascade.
+    let verdict = LatencyVerdict::new(STATUS_BUDGET, &samples, &[&before, &after]);
+    println!("ports.smtp move took {took:?}; services.status {verdict}");
+    assert!(verdict.ok(), "services.status during the move: {verdict}");
     assert_ne!(now.pid, first.pid);
     assert_eq!(port_of(&now, "smtp"), smtp);
     assert!(std::net::TcpStream::connect(("127.0.0.1", smtp)).is_ok());

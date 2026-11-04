@@ -73,6 +73,92 @@ pub fn compile_fixture(name: &str) -> PathBuf {
     exe
 }
 
+/// Samples each latency window needs: its p99 then ignores at most two of them.
+pub const LATENCY_SAMPLES: usize = 200;
+
+/// No single status answer may take this long while something else is stuck (on a machine
+/// whose own noise stays under it): an order of magnitude over the 50 ms budget, yet far
+/// under what a daemon waiting on the stuck thing takes (a stop cascade step is seconds
+/// long, an actor ask times out after 1 s, a client that never reads never frees anything).
+pub const LATENCY_CEILING: Duration = Duration::from_millis(500);
+
+/// How much worse than the windows without the stuck thing (measured right before and
+/// after, under the same outside load) the window with it may be when the machine itself
+/// is over the budget.
+pub const LOAD_FACTOR: u32 = 2;
+
+/// The 99th percentile of `samples`.
+pub fn p99(samples: &[Duration]) -> Duration {
+    let mut sorted = samples.to_vec();
+    sorted.sort();
+    let i = (sorted.len() * 99).div_ceil(100).saturating_sub(1);
+    sorted.get(i).copied().unwrap_or_default()
+}
+
+/// The status-latency budget of docs/03 §7.6 for a window measured while something is
+/// stuck, against windows measured right before and after without it.
+///
+/// The budget is a p99 (`budget`, 50 ms) plus a ceiling for any single answer
+/// ([`LATENCY_CEILING`]). On a shared 4-core machine another build can starve every thread
+/// of the test for whole scheduler quanta (M2-GATE-B16: p99 100-200 ms, single answers up
+/// to 700 ms, with or without the stuck thing), so both limits rise to [`LOAD_FACTOR`]
+/// times what the free windows measured: outside load weighs on both sides, while a daemon
+/// that waits on the stuck thing is far worse than its own free windows.
+#[derive(Debug)]
+pub struct LatencyVerdict {
+    pub samples: usize,
+    pub p99: Duration,
+    pub max: Duration,
+    pub free_samples: Vec<usize>,
+    pub free_p99: Duration,
+    pub free_max: Duration,
+    pub allowed_p99: Duration,
+    pub allowed_max: Duration,
+}
+
+impl LatencyVerdict {
+    pub fn new(budget: Duration, stuck: &[Duration], free: &[&[Duration]]) -> Self {
+        let max_of = |s: &[Duration]| s.iter().max().copied().unwrap_or_default();
+        let free_p99 = free.iter().map(|s| p99(s)).max().unwrap_or_default();
+        let free_max = free.iter().map(|s| max_of(s)).max().unwrap_or_default();
+        Self {
+            samples: stuck.len(),
+            p99: p99(stuck),
+            max: max_of(stuck),
+            free_samples: free.iter().map(|s| s.len()).collect(),
+            free_p99,
+            free_max,
+            allowed_p99: budget.max(free_p99 * LOAD_FACTOR),
+            allowed_max: LATENCY_CEILING.max(free_max * LOAD_FACTOR),
+        }
+    }
+
+    pub fn ok(&self) -> bool {
+        self.samples >= LATENCY_SAMPLES
+            && self.free_samples.iter().all(|&n| n >= LATENCY_SAMPLES)
+            && self.p99 < self.allowed_p99
+            && self.max < self.allowed_max
+    }
+}
+
+impl std::fmt::Display for LatencyVerdict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} samples: p99 {:?} (allowed {:?}), max {:?} (allowed {:?}); without it {:?} \
+             samples: p99 {:?}, max {:?}",
+            self.samples,
+            self.p99,
+            self.allowed_p99,
+            self.max,
+            self.allowed_max,
+            self.free_samples,
+            self.free_p99,
+            self.free_max
+        )
+    }
+}
+
 /// `n` distinct free TCP ports, as a TOML list body. Used for a private `databases` range so
 /// parallel test processes never reserve (and then fail to bind) each other's ports.
 pub fn free_ports(n: usize) -> String {

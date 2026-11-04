@@ -6,7 +6,9 @@
 //!   answers `services.status` and `daemon.status` (`forge status`) in < 50 ms;
 //! * **slow client**: a client subscribes to the service's logs and stops reading; the
 //!   service keeps writing at its pace (nothing waits for that client), another client
-//!   keeps receiving the newest lines and the API keeps answering in < 50 ms;
+//!   keeps receiving the newest lines and the API keeps answering in < 50 ms (p99 of
+//!   ≥ 200 samples, none over 500 ms; under outside load, no worse than twice the windows
+//!   without the silent client, [`common::LatencyVerdict`]);
 //! * **heavy download + start**: in the daemon's runtime, with the daemon's download
 //!   engine pulling large files at full speed (sha256 included), starting a service is
 //!   not more than 10 % slower than the baseline (both measured interleaved, round by
@@ -138,6 +140,25 @@ async fn status_latencies(client: &Client) -> (Duration, Duration) {
     (services, started.elapsed())
 }
 
+/// `services.status` and `daemon.status` latencies, sampled for at least `window` and at
+/// least [`LATENCY_SAMPLES`] times (a loaded machine stretches the window a little).
+async fn sample_status(client: &Client, window: Duration) -> (Vec<Duration>, Vec<Duration>) {
+    let started = Instant::now();
+    let (mut services_took, mut daemon_took) = (Vec::new(), Vec::new());
+    while started.elapsed() < window || services_took.len() < LATENCY_SAMPLES {
+        assert!(
+            started.elapsed() < Duration::from_secs(60),
+            "{} status samples in a minute",
+            services_took.len()
+        );
+        let (services, daemon_lat) = status_latencies(client).await;
+        services_took.push(services);
+        daemon_took.push(daemon_lat);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    (services_took, daemon_took)
+}
+
 /// Last count the fake wrote. It rewrites the file with `fs::write` (truncate, then
 /// write), so a read can land in between and see it empty: that is retried, not taken
 /// for 0 (which made the rate subtractions underflow under a loaded `cargo test`).
@@ -264,8 +285,8 @@ async fn a_log_subscriber_that_never_reads_slows_down_nothing() {
     tokio::time::sleep(window).await;
     let baseline = (read_progress(&dir) - p0) as f64 / window.as_secs_f64();
 
-    // A subscriber that never reads, and a normal one that does.
-    let mut silent = silent_log_subscriber(&root, "mailpit/default").await;
+    // A client that reads, then the status latencies with only it (the "free" window
+    // before; outside load weighs on it like on the others).
     let mut reader = client
         .subscribe::<logs_subscribe>(LogsSubscribeParams {
             target: "mailpit/default".into(),
@@ -293,32 +314,58 @@ async fn a_log_subscriber_that_never_reads_slows_down_nothing() {
             }
         })
     };
+    let (services_before, daemon_before) = sample_status(&client, window).await;
 
+    // A subscriber that never reads joins.
+    let mut silent = silent_log_subscriber(&root, "mailpit/default").await;
+    let received_before = received.load(Ordering::Relaxed);
     let p1 = read_progress(&dir);
     let started = Instant::now();
-    let (mut worst_services, mut worst_daemon) = (Duration::ZERO, Duration::ZERO);
-    while started.elapsed() < window {
-        let (services, daemon_lat) = status_latencies(&client).await;
-        worst_services = worst_services.max(services);
-        worst_daemon = worst_daemon.max(daemon_lat);
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
+    let (services_took, daemon_took) = sample_status(&client, window).await;
     let p2 = read_progress(&dir);
     let loaded = (p2 - p1) as f64 / started.elapsed().as_secs_f64();
     tokio::time::sleep(Duration::from_millis(300)).await;
-    done.store(true, Ordering::Relaxed);
-    reading.await.unwrap();
-    let got = received.load(Ordering::Relaxed);
+    let got = received.load(Ordering::Relaxed) - received_before;
     let last_line = newest.lock().unwrap().clone();
     let last_n: u64 = last_line
         .split_whitespace()
         .nth(1)
         .and_then(|n| n.parse().ok())
         .unwrap_or(0);
+
+    // The silent client was not waited for: when it reads again, it is told it lagged.
+    let mut lagged = false;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !lagged && Instant::now() < deadline {
+        let Ok(Some(Ok(text))) =
+            tokio::time::timeout(Duration::from_secs(5), silent.stream.next()).await
+        else {
+            break;
+        };
+        lagged = text.contains("\"logs.lagged\"");
+    }
+    drop(silent);
+
+    // The "free" window after: the reader alone again.
+    let (services_after, daemon_after) = sample_status(&client, window).await;
+    done.store(true, Ordering::Relaxed);
+    reading.await.unwrap();
+
+    let services_verdict = LatencyVerdict::new(
+        STATUS_BUDGET,
+        &services_took,
+        &[&services_before, &services_after],
+    );
+    let daemon_verdict = LatencyVerdict::new(
+        STATUS_BUDGET,
+        &daemon_took,
+        &[&daemon_before, &daemon_after],
+    );
     println!(
         "fake service: {baseline:.0} lines/s alone, {loaded:.0} lines/s with a silent \
-         subscriber; the reading client got {got} lines (last {last_n}, service at {p2}); \
-         status max: services {worst_services:?}, daemon {worst_daemon:?}"
+         subscriber; the reading client got {got} lines meanwhile (last {last_n}, service at \
+         {p2}); with the silent subscriber, services.status {services_verdict}; daemon.status \
+         {daemon_verdict}"
     );
     assert!(
         baseline > 5_000.0,
@@ -334,23 +381,14 @@ async fn a_log_subscriber_that_never_reads_slows_down_nothing() {
         "the other client receives the newest lines (last {last_n}, service at {p2})"
     );
     assert!(
-        worst_services < STATUS_BUDGET && worst_daemon < STATUS_BUDGET,
-        "status latency with a silent subscriber: services {worst_services:?}, daemon {worst_daemon:?}"
+        services_verdict.ok(),
+        "services.status with a silent subscriber: {services_verdict}"
     );
-
-    // The silent client was not waited for: when it reads again, it is told it lagged.
-    let mut lagged = false;
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while !lagged && Instant::now() < deadline {
-        let Ok(Some(Ok(text))) =
-            tokio::time::timeout(Duration::from_secs(5), silent.stream.next()).await
-        else {
-            break;
-        };
-        lagged = text.contains("\"logs.lagged\"");
-    }
+    assert!(
+        daemon_verdict.ok(),
+        "daemon.status with a silent subscriber: {daemon_verdict}"
+    );
     assert!(lagged, "the silent subscriber must get logs.lagged");
-    drop(silent);
 
     let (status, _) = common::stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
@@ -412,12 +450,6 @@ async fn produced(client: &Client) -> u64 {
         .terminals
         .first()
         .map_or(0, |t| t.last_seq)
-}
-
-fn p99(mut samples: Vec<Duration>) -> Duration {
-    samples.sort();
-    let i = (samples.len() * 99).div_ceil(100).saturating_sub(1);
-    samples[i]
 }
 
 /// A session prints a big file (docs/03 §7.6 style, M2-E3-T4): the API keeps answering
@@ -565,7 +597,7 @@ async fn a_terminal_flood_neither_slows_the_api_nor_waits_for_a_silent_subscribe
     sampling.store(false, Ordering::Relaxed);
     let samples = sampler.await.unwrap();
     let worst = samples.iter().max().copied().unwrap_or_default();
-    let p99 = p99(samples.clone());
+    let p99 = p99(&samples);
     // The silent subscriber fell behind by more than the ring: reading again, it lags.
     let mut silent_lagged = false;
     let deadline = Instant::now() + Duration::from_secs(20);
