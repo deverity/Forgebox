@@ -243,6 +243,15 @@ No v1, "Erros recentes" vêm dos 5xx/4xx do access log (§6).
 ## Notas de implementação
 - **M2-E5-T7.** A migration é a `0005_metrics.sql`. Os pontos de 10 s do tier 1 não são persistidos: a reidratação devolve o tier 2 (minutos e horas) e `series` passa a responder em 1 min/1 h até o tráfego novo preencher o tier 1. `metrics_tail` ganhou `closed_edge` (posição segura + borda dos minutos já gravados) para que a retomada depois de uma queda conte cada registro uma vez; detalhes em docs/14 §3.5.
 
+- **M2-E5-T8** (serviço e integração ao daemon, [docs/14](../14-observability-metrics.md) §3.7). Decisões de implementação e trade-offs:
+  - *Laço próprio com `select!` priorizado, não o `forge_core::actor::Actor`.* O ator precisa de três fontes com prioridade (mailbox > tick > lotes) para que uma consulta não espere atrás de um backlog de lotes; o `Actor` do `forge-core` só lê a mailbox (os lotes entrariam na mesma fila FIFO). Custo: sem reinício automático por pânico; o agregador não entra em pânico (fuzz do T3/T5), e um serviço parado responde `internal` em vez de travar.
+  - *Lotes em pedaços de 1.024 registros.* Limita a espera de uma consulta a um pedaço (backlog de 50 MiB em debug: `stats.get` p99 entre 0,9 e 11,6 ms). A posição do lote só é anotada para a persistência quando o lote inteiro entrou.
+  - *Partes antigas de um intervalo lidas fora do ator.* O ator devolve a parte em memória com os histogramas e o `MetricsHandle` lê o SQLite e mescla: o ator nunca espera o leitor do store. Alternativa rejeitada: só SQLite para `from` antigo (perderia o minuto aberto) ou só memória (7 d não cabem).
+  - *A lista de sites de uma consulta vem do chamador* (`Sites::These`): o daemon é a fonte de verdade dos sites; as rotas do serviço chegam com debounce e servem ao roteamento das linhas.
+  - *Partida de um arquivo sem posição guardada do byte 0 (até 64 MiB) com o checkpoint "início do arquivo" semeado.* Sem isso, linhas de um minuto ainda aberto numa parada antes do primeiro flush seriam perdidas (partida do fim) ou contadas duas vezes (partida do início sem borda). Custo: na primeira execução o histórico de até 64 MiB do arquivo é importado (o que passa de 24 h é descartado pelo agregador).
+  - *`[metrics] enabled` virou opcional* (`Option<bool>`, `MetricsConfig::effective(portable)`): é o único jeito de distinguir "o usuário não definiu" de "ligado" depois que a GUI ou a CLI regravam o `forgebox.toml` inteiro. `system.config_get` devolve `null` para uma chave opcional ainda ausente e `system.config_set` passou a aceitá-la (a chave precisa existir no JSON Schema das preferências: um nome errado continua `not_found`).
+  - *Fila da assinatura = a do servidor IPC (drop-oldest, 1.024).* O teste de cliente parado usa 400 sites para encher a fila em segundos; não há fila menor só para métricas.
+
 ## Checklist de revisão (PRs do E5)
 - [ ] Nenhum DTO novo ou estendido carrega caminho absoluto do servidor (ADR-0009).
 - [ ] Campos novos com `#[serde(default)]`; JSON 1.0 lê (teste de round trip).
