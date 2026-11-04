@@ -194,15 +194,76 @@ describe("sidebar", () => {
   });
 });
 
-describe("status bar", () => {
-  it("shows the connection, CPU · RAM, DNS and CA", async () => {
+describe("glass chrome layout (M2-E1-T23)", () => {
+  it("runs the sidebar full height with the brand; the toolbar sits on the content only", async () => {
     await renderApp();
-    const bar = screen.getByRole("contentinfo", { name: "Status bar" });
-    expect(within(bar).getByText("Daemon connected")).toBeInTheDocument();
-    expect(screen.getByTestId("status-resources")).toHaveTextContent("CPU");
-    expect(screen.getByTestId("status-dns")).toHaveTextContent("DNS off");
-    expect(screen.getByTestId("status-ca")).toHaveTextContent("CA ok");
-    expect(screen.getByTestId("status-ca")).toHaveAttribute("href", "/diagnostics");
+    const shell = screen.getByTestId("app-shell");
+    const sidebar = screen.getByTestId("sidebar");
+    const pane = screen.getByTestId("content-pane");
+    // Side by side from the top edge: no full-width titlebar above them.
+    expect([...shell.children].slice(0, 2)).toEqual([sidebar, pane]);
+    expect(shell).not.toHaveClass("flex-col");
+    expect(sidebar).toHaveClass("h-full");
+    const toolbar = screen.getByTestId("titlebar");
+    expect(pane.firstElementChild).toBe(toolbar);
+    expect(sidebar).not.toContainElement(toolbar);
+    expect(toolbar).toHaveAttribute("data-tauri-drag-region", "deep");
+    // The brand sits where the titlebar was and also drags the window.
+    const brand = screen.getByTestId("sidebar-brand");
+    expect(sidebar.firstElementChild).toBe(brand);
+    expect(brand).toHaveAttribute("data-tauri-drag-region");
+    expect(brand).toHaveTextContent("Forgebox");
+    // The material shows through the sidebar only: the content pane is opaque.
+    expect(sidebar).toHaveClass("bg-sidebar");
+    expect(pane).toHaveClass("bg-(--bg-canvas-solid)");
+  });
+
+  it("titles the toolbar with the section and puts Start all there", async () => {
+    await renderApp({ path: "/sites/01JSITE00000000000000000LJA" });
+    expect(screen.getByTestId("toolbar-title")).toHaveTextContent("Sites");
+    const action = screen.getByTestId("toolbar-action");
+    expect(within(action).getByRole("button", { name: "Start all" })).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("sidebar")).queryByRole("button", { name: "Start all" }),
+    ).toBeNull();
+  });
+
+  it("groups the sidebar like Finder: small headings for Data and Tools, accent icons", async () => {
+    await renderApp();
+    expect(screen.getByRole("list", { name: "Data" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Tools" })).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("nav-group-data"))
+        .getAllByRole("link")
+        .map((a) => a.getAttribute("href")),
+    ).toEqual(["/databases", "/mail", "/logs"]);
+    const dashboard = screen.getByRole("link", { name: "Dashboard" });
+    expect(dashboard.className).toContain("aria-[current=page]:bg-fill-selected");
+    expect(dashboard.className).toContain("rounded-item");
+    expect(dashboard.querySelector("svg")?.parentElement).toHaveClass("text-accent");
+  });
+
+  it("has no bottom status bar; its functions live in the sidebar footer", async () => {
+    await renderApp();
+    expect(screen.queryByTestId("status-bar")).toBeNull();
+    expect(screen.queryByRole("contentinfo")).toBeNull();
+    const footer = screen.getByRole("region", { name: "Status" });
+    expect(screen.getByTestId("sidebar")).toContainElement(footer);
+    expect(within(footer).getByText("Daemon connected")).toBeInTheDocument();
+    expect(within(footer).getByTestId("status-resources")).toHaveTextContent(/CPU .* · RAM /);
+    expect(within(footer).getByTestId("status-dns")).toHaveTextContent("DNS off");
+    expect(within(footer).getByTestId("status-ca")).toHaveTextContent("CA ok");
+    expect(within(footer).getByTestId("status-ca")).toHaveAttribute("href", "/diagnostics");
+    expect(within(footer).getByTestId("status-dns")).toHaveAttribute("href", "/diagnostics");
+  });
+
+  it("collapsed, the footer is one link to Diagnostics that speaks the whole status", async () => {
+    await renderApp({ width: 1000 });
+    const link = screen.getByRole("link", {
+      name: /^Daemon connected · CPU .* · DNS off · CA ok$/,
+    });
+    expect(link).toHaveAttribute("href", "/diagnostics");
+    expect(link).toHaveAttribute("title", link.getAttribute("aria-label"));
   });
 });
 

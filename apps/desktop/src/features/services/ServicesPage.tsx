@@ -17,8 +17,8 @@ import { InstanceRow, PoolRow } from "./ServiceRow";
 import { ServiceSheet } from "./ServiceSheet";
 import { useNow } from "./useNow";
 
-/** Pixels taken by the titlebar, the page header and the status bar around the list. */
-const CHROME_HEIGHT = 190;
+/** Pixels taken by the 44 px content toolbar and the page header around the list (no status bar). */
+const CHROME_HEIGHT = 178;
 const MIN_LIST_HEIGHT = 320;
 const AWAY: ReadonlySet<string> = new Set(["stopped", "closed", "uninitialized"]);
 const STATUS_CONTEXT = { method: "services.status", params: {} };

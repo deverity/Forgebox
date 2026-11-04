@@ -1,13 +1,36 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { BUTTON_VARIANTS, Button } from "./Button";
+import { BUTTON_VARIANT_CLASS, BUTTON_VARIANTS, Button } from "./Button";
 import { IconButton } from "./IconButton";
+import { conflictingColorClasses } from "./shared";
 
 describe("Button", () => {
   it.each(BUTTON_VARIANTS)("renders the %s variant as a button", (variant) => {
     render(<Button variant={variant}>Go</Button>);
     expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("data-variant", variant);
+  });
+
+  // M2-E1-T23: soft variants (approved glass mockup), changed in the primitive, not per screen.
+  it("secondary is the default: a soft low-alpha fill without an outline", () => {
+    render(<Button>Go</Button>);
+    const button = screen.getByRole("button", { name: "Go" });
+    expect(button).toHaveAttribute("data-variant", "secondary");
+    expect(button).toHaveClass("bg-fill", "hover:bg-fill-hover", "border-stroke-control");
+    expect(button.className).not.toContain("border-stroke-strong");
+  });
+
+  it("primary is the solid accent, destructive keeps red text without a red outline", () => {
+    expect(BUTTON_VARIANT_CLASS.primary).toContain("bg-accent");
+    expect(BUTTON_VARIANT_CLASS.primary).toContain("text-fg-on-accent");
+    expect(BUTTON_VARIANT_CLASS.destructive).toContain("text-state-failed");
+    expect(BUTTON_VARIANT_CLASS.destructive).not.toContain("border-state-failed");
+    expect(BUTTON_VARIANT_CLASS.ghost).toContain("bg-transparent");
+    for (const variant of BUTTON_VARIANTS) {
+      expect(conflictingColorClasses(BUTTON_VARIANT_CLASS[variant]), variant).toEqual([]);
+      // No heavy outline on any variant: soft controls only get an edge in high contrast.
+      expect(BUTTON_VARIANT_CLASS[variant], variant).not.toMatch(/border-(?:stroke-strong|state-)/);
+    }
   });
 
   it("activates with click, Enter and Space", async () => {

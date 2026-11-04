@@ -75,7 +75,12 @@ describe("CatalogIcon", () => {
     });
     expect(h.count("tools.icon")).toBe(0);
     expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toBe("m");
+    // A coloured monogram tile (M2-E1-T23), never a neutral or black placeholder.
+    expect(container.textContent).toBe("My");
+    expect(container.querySelector("[data-tool-tile]")).toHaveAttribute(
+      "data-tool-tile",
+      "monogram",
+    );
   });
 
   it("fetches an icon once per hash, whatever the tool", async () => {

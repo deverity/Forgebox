@@ -144,7 +144,7 @@ describe("colour contrast (WCAG AA)", () => {
       const set = colors[theme];
       for (const n of [1, 2, 3, 4, 5, 6, 7, 8] as const) {
         expect(
-          contrast(set["fg-on-tool"], set[`tool-${n}`]),
+          contrast(set["fg-on-tool"], set[`tool-${String(n)}` as `tool-${typeof n}`]),
           `${theme} tool-${String(n)}`,
         ).toBeGreaterThanOrEqual(4.5);
       }
