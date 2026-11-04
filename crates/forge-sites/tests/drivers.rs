@@ -354,3 +354,65 @@ fn rendered_nginx_root_follows_the_driver_override() {
     insta::assert_snapshot!("render__nginx__auto_laravel_root", root_line(&auto_conf));
     assert_ne!(forced_conf, auto_conf);
 }
+
+#[test]
+fn a_dedicated_site_renders_its_own_upstream_and_a_shared_one_keeps_the_series() {
+    // `sites.pool_mode` (M2-E5-T11, docs/06 §2.1): loja.test has a pool of its own on
+    // 8.4, blog.test stays on the shared pool of the series.
+    let mut loja = site_for("loja", "laravel", "public");
+    loja.php.series = Some("8.4".to_owned());
+    loja.pool_mode = forge_core::store::SitePoolMode::Dedicated;
+    let mut blog = site_for("blog", "generic-php", "");
+    blog.php.series = Some("8.4".to_owned());
+    let mut pinned = site_for("pinned", "generic-php", "");
+    pinned.php.exact = Some("8.4.27".to_owned());
+    pinned.pool_mode = forge_core::store::SitePoolMode::Dedicated;
+    assert_eq!(
+        vhost::site_upstream_name(&pinned, "8.4"),
+        "php_8_4_27__pinned-test",
+        "an exact pin keeps its version in the dedicated name"
+    );
+    let server = |port| {
+        vec![UpstreamServer {
+            host: "127.0.0.1".to_owned(),
+            port,
+        }]
+    };
+    let mut rc = RenderContext::new(&fake_root(), "nginx", "1.30.6");
+    rc.sites = vec![
+        vhost::build(&loja, &ctx()).unwrap(),
+        vhost::build(&blog, &ctx()).unwrap(),
+    ];
+    rc.pools = vec![
+        UpstreamModel::new("php_8_4", server(19084)),
+        UpstreamModel::new("php_8_4__loja-test", server(19090)),
+    ];
+    let files = targets::by_id("nginx")
+        .unwrap()
+        .render(&Engine::embedded_only(), &rc)
+        .unwrap();
+    let text = |suffix: &str| {
+        files
+            .iter()
+            .find(|f| f.path.ends_with(suffix))
+            .unwrap_or_else(|| panic!("{suffix} not rendered"))
+            .new_file_content()
+            .unwrap()
+    };
+    let pass = |config: &str| {
+        config
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("fastcgi_pass "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let loja_conf = text("sites/loja.test.conf");
+    assert_eq!(pass(&loja_conf), "fastcgi_pass php_8_4__loja-test;");
+    assert_eq!(pass(&text("sites/blog.test.conf")), "fastcgi_pass php_8_4;");
+    insta::assert_snapshot!("render__nginx__dedicated_pool", loja_conf);
+    insta::assert_snapshot!(
+        "render__nginx__dedicated_upstream",
+        text("upstreams/php_8_4__loja-test.conf")
+    );
+}

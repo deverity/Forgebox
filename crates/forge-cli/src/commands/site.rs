@@ -209,7 +209,16 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                 })
                 .await?;
             ctx.out.emit(&site, |out| {
-                out.success(out.tf(Msg::SiteUpdated, &[&site.host]))
+                let upstream = site
+                    .php
+                    .as_ref()
+                    .and_then(|php| php.upstream.clone())
+                    .unwrap_or_else(|| out.t(Msg::SitePoolNoPhp).to_owned());
+                let msg = match site.pool_mode {
+                    SitePoolMode::Shared => Msg::SitePoolShared,
+                    SitePoolMode::Dedicated => Msg::SitePoolDedicated,
+                };
+                out.success(out.tf(msg, &[&site.host, &upstream]));
             });
             Ok(())
         }
@@ -221,7 +230,12 @@ pub async fn run(ctx: &Context, command: SiteCmd) -> CliResult<()> {
                 })
                 .await?;
             ctx.out.emit(&site, |out| {
-                out.success(out.tf(Msg::SiteUpdated, &[&site.host]))
+                let msg = if site.metrics_enabled {
+                    Msg::SiteMetricsOn
+                } else {
+                    Msg::SiteMetricsOff
+                };
+                out.success(out.tf(msg, &[&site.host]));
             });
             Ok(())
         }

@@ -183,15 +183,21 @@ impl PoolTiming {
 /// (`service.pool`, docs/04): absolute paths, rendered arguments (except the port).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PoolSpec {
-    /// The installed version this pool runs; owner id of its port reservations.
+    /// The installed version this pool runs.
     pub version_id: VersionId,
+    /// Owner id of the pool's port reservations ([`PoolSpec::owner_id`]): empty for the
+    /// shared pool of a version (the owner is its version id), set for any other pool of
+    /// the same version (a site's dedicated pool) so the two never release each other's
+    /// ports.
+    pub key: String,
     /// `php`.
     pub tool: ToolId,
     /// Exact version (`8.3.36`), for names and events.
     pub version: String,
     /// `8.3`: names the ini dir and, by default, the upstream.
     pub series: String,
-    /// Upstream name (`php_8_3`; [`upstream_name`] of the series by default).
+    /// Upstream name (`php_8_3`; [`upstream_name`] of the series by default; a site's
+    /// dedicated pool: `php_8_3__loja-test`).
     pub upstream: String,
     /// Absolute path of `php-cgi.exe` (inside `bin/php/<version>/`).
     pub exe: PathBuf,
@@ -239,6 +245,7 @@ impl PoolSpec {
         let dir = exe.parent().map(PathBuf::from).unwrap_or_default();
         Ok(Self {
             version_id,
+            key: String::new(),
             tool: ToolId::new("php")?,
             version: version.into(),
             upstream: upstream_name(&series)?,
@@ -264,9 +271,22 @@ impl PoolSpec {
         })
     }
 
+    /// Owner id of the port reservations of this pool's workers
+    /// (`pool/<owner id>#worker-<slot>`): the version id, or [`PoolSpec::key`] when set.
+    pub fn owner_id(&self) -> String {
+        if self.key.is_empty() {
+            self.version_id.to_string()
+        } else {
+            self.key.clone()
+        }
+    }
+
     /// Checks the values (`InvalidInput`).
     pub fn validate(&self) -> Result<()> {
         let invalid = |m: String| Err(ForgeError::InvalidInput(m));
+        if self.key.len() > 128 || self.key.chars().any(|c| c.is_control() || c == '#') {
+            return invalid(format!("invalid pool key {:?}", self.key));
+        }
         if !self.exe.is_absolute() {
             return invalid(format!("pool exe {} is not absolute", self.exe.display()));
         }
@@ -296,7 +316,7 @@ impl PoolSpec {
             || !self
                 .upstream
                 .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         {
             return invalid(format!("invalid upstream name {:?}", self.upstream));
         }
@@ -724,7 +744,8 @@ impl PhpPool {
     }
 
     /// Validates `spec`, creates the pool's job (nested in the daemon's root) and private
-    /// bus, and starts the actor (state `Stopped`). Actor name: `pool/<tool>/<version>`.
+    /// bus, and starts the actor (state `Stopped`). Actor name: `pool/<tool>/<version>`
+    /// (`pool/<tool>/<version>/<upstream>` for a keyed pool, [`PoolSpec::key`]).
     pub fn spawn(spec: PoolSpec, deps: PoolDeps) -> Result<PoolHandle> {
         spec.validate()?;
         let bind: IpAddr = worker::bind_address(&spec.args)?;
@@ -760,7 +781,11 @@ impl PhpPool {
             metrics_tx,
             jobs,
         });
-        let name = format!("pool/{}/{}", spec.tool, spec.version);
+        let name = if spec.key.is_empty() {
+            format!("pool/{}/{}", spec.tool, spec.version)
+        } else {
+            format!("pool/{}/{}/{}", spec.tool, spec.version, spec.upstream)
+        };
         let factory_shared = Arc::clone(&shared);
         let handle = deps
             .supervisor
@@ -853,7 +878,7 @@ impl PhpPool {
                 )
                 .await?;
                 // Reservations left by a previous run (daemon crash) of this pool.
-                let id = spec.version_id.to_string();
+                let id = spec.owner_id();
                 tokio::time::timeout(
                     spec.timing.start_timeout,
                     ports.release_owner(OwnerKind::Pool, &id),
@@ -1536,7 +1561,7 @@ impl PhpPool {
         }
         self.released = true;
         let ports = Arc::clone(&self.shared.ports);
-        let id = self.shared.spec.version_id.to_string();
+        let id = self.shared.spec.owner_id();
         let me = self.weak();
         tokio::spawn(async move {
             match tokio::time::timeout(
@@ -1833,7 +1858,7 @@ impl Actor for PhpPool {
             Duration::from_secs(2),
             self.shared
                 .ports
-                .release_owner(OwnerKind::Pool, &self.shared.spec.version_id.to_string()),
+                .release_owner(OwnerKind::Pool, &self.shared.spec.owner_id()),
         )
         .await;
     }
@@ -2224,6 +2249,27 @@ mod tests {
         let mut s = spec();
         s.upstream = "php 8.3".into();
         assert!(s.validate().is_err());
+        let mut s = spec();
+        s.key = "a#b".into();
+        assert!(
+            s.validate().is_err(),
+            "`#` separates the owner from the port name"
+        );
+    }
+
+    #[test]
+    fn a_keyed_pool_owns_its_ports_apart_from_the_shared_one() {
+        let shared = spec();
+        assert_eq!(shared.owner_id(), shared.version_id.to_string());
+        let mut dedicated = shared.clone();
+        dedicated.key = format!("{}~site", shared.version_id);
+        dedicated.upstream = "php_8_3__loja-test".into();
+        dedicated.validate().unwrap();
+        assert_ne!(dedicated.owner_id(), shared.owner_id());
+        assert_eq!(
+            crate::worker::reservation_owner(&dedicated, 1).to_string(),
+            format!("pool/{}~site#worker-1", shared.version_id)
+        );
     }
 
     #[test]

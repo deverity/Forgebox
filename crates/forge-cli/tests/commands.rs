@@ -228,9 +228,16 @@ fn table() -> Vec<Case> {
         case(&["site", "alias", "demo.test", "add", "www.demo.test"], OK),
         // Plain `site open` would launch a real browser; the editor target stays not_implemented.
         case(&["site", "open", "demo.test", "--editor"], NI),
-        // The metrics contract (ADR-0044): pool mode and the metrics switch are M2-E5-T11.
-        case(&["site", "pool", "demo.test", "dedicated"], NI),
-        case(&["site", "metrics", "demo.test", "off"], NI),
+        // The per-site switches (ADR-0044 §7, M2-E5-T11); demo.test is a static site, so
+        // it has no PHP pool to choose (the PHP path: `site_pool_and_metrics_commands`).
+        case(
+            &["site", "pool", "demo.test", "dedicated"],
+            E("invalid_input"),
+        ),
+        case(&["site", "pool", "nosuch.test", "shared"], E("not_found")),
+        case(&["site", "metrics", "demo.test", "off"], OK),
+        case(&["site", "metrics", "demo.test", "on"], OK),
+        case(&["site", "metrics", "nosuch.test", "on"], E("not_found")),
         case(
             &["site", "pool", "demo.test", "private"],
             E("invalid_input"),
@@ -1093,4 +1100,116 @@ fn mail_commands_drive_the_fake_mailpit() {
     );
     let empty = root.forge().env("FORGE_LANG", "en").run(&["mail", "list"]);
     empty.assert_success();
+}
+
+// ---------------------------------------------------------------- site pool / metrics
+
+/// `forge site pool` and `forge site metrics` (M2-E5-T11) on a PHP site served by the
+/// daemon tests' fake PHP (`bin/php/8.4.27/`, found by the manifest's `discover`), with
+/// the PHP port range cut to four free ports: the shared pool and one dedicated pool fit
+/// (two workers each), a second dedicated pool does not and answers `conflict` naming
+/// the range. JSON and human output.
+#[cfg(windows)]
+#[test]
+fn site_pool_and_metrics_commands() {
+    let root = TestRoot::new(true);
+    let php = root.path.join("bin").join("php").join("8.4.27");
+    std::fs::create_dir_all(&php).unwrap();
+    let fake = compile_daemon_fixture("fake_php", "fake_php.rs");
+    std::fs::copy(&fake, php.join("php.exe")).unwrap();
+    std::fs::copy(&fake, php.join("php-cgi.exe")).unwrap();
+    let toml = root.path.join("etc").join("forgebox.toml");
+    let text = std::fs::read_to_string(&toml).unwrap();
+    // The file ends inside `[ports.ranges]`.
+    std::fs::write(&toml, format!("{text}php-pools = [{}]\n", free_ports(4))).unwrap();
+    for name in ["shop", "blog"] {
+        std::fs::write(root.www(name).join("index.php"), "<?php echo 1;").unwrap();
+    }
+    let _daemon = start_daemon(&root);
+    struct StopOnDrop<'a>(&'a TestRoot);
+    impl Drop for StopOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.stop_daemon();
+        }
+    }
+    let _stop = StopOnDrop(&root);
+    for name in ["shop", "blog"] {
+        let dir = root.www(name).to_string_lossy().into_owned();
+        let host = format!("{name}.test");
+        let site = root.json(&["site", "add", &dir, "--host", &host, "--php", "8.4"]);
+        assert_eq!(site["pool_mode"], "shared", "{site}");
+    }
+
+    let dedicated = root.json(&["site", "pool", "shop.test", "dedicated"]);
+    assert_eq!(dedicated["pool_mode"], "dedicated", "{dedicated}");
+    assert_eq!(dedicated["php"]["upstream"], "php_8_4__shop-test");
+    let blog = root.json(&["site", "info", "blog.test"]);
+    assert_eq!(
+        blog["site"]["php"]["upstream"], "php_8_4",
+        "the other site keeps the shared pool: {blog}"
+    );
+    // No room for a second dedicated pool: conflict (exit 4), the range named, the site
+    // unchanged.
+    let full = root.run(&["--json", "site", "pool", "blog.test", "dedicated"]);
+    assert_eq!(full.error_code(), "conflict", "{full:#?}");
+    assert_eq!(
+        full.code,
+        forge_ipc::base::error::exit_code_for("conflict"),
+        "{full:#?}"
+    );
+    let message = full.json()["error"]["message"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        message.contains("blog.test") && message.contains("php-pools"),
+        "{message}"
+    );
+    let blog = root.json(&["site", "info", "blog.test"]);
+    assert_eq!(blog["site"]["pool_mode"], "shared", "{blog}");
+    let human =
+        root.forge()
+            .env("FORGE_LANG", "en")
+            .run(&["site", "pool", "blog.test", "dedicated"]);
+    assert_eq!(human.code, 4, "{human:#?}");
+    assert!(human.stderr.contains("php-pools"), "{human:#?}");
+
+    // Back to the shared pool, in human mode (pt-BR and en-US).
+    let back = root
+        .forge()
+        .env("FORGE_LANG", "en")
+        .run(&["site", "pool", "shop.test", "shared"]);
+    back.assert_success();
+    assert!(
+        back.stdout.contains("shop.test: shared PHP pool (php_8_4)"),
+        "{back:#?}"
+    );
+    let again =
+        root.forge()
+            .env("FORGE_LANG", "pt-BR")
+            .run(&["site", "pool", "shop.test", "shared"]);
+    again.assert_success();
+    assert!(
+        again.stdout.contains("pool PHP compartilhado (php_8_4)"),
+        "{again:#?}"
+    );
+
+    // The metrics switch: JSON, then human.
+    let off = root.json(&["site", "metrics", "shop.test", "off"]);
+    assert_eq!(off["metrics_enabled"], false, "{off}");
+    let listed = root.json(&["site", "list"]);
+    let shop = listed["sites"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["host"] == "shop.test")
+        .cloned()
+        .unwrap();
+    assert_eq!(shop["metrics_enabled"], false, "persisted: {shop}");
+    let on = root
+        .forge()
+        .env("FORGE_LANG", "en")
+        .run(&["site", "metrics", "shop.test", "on"]);
+    on.assert_success();
+    assert!(on.stdout.contains("Metrics of shop.test: on"), "{on:#?}");
 }

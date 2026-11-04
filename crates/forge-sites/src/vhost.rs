@@ -7,7 +7,7 @@
 
 use forge_core::error::{ForgeError, Result};
 use forge_core::paths::posix_string;
-use forge_core::store::sites::{Site, SiteKind as StoredKind, SitePhp};
+use forge_core::store::sites::{Site, SiteKind as StoredKind, SitePhp, SitePoolMode};
 use forge_manifest::schema::project::{ProcessAutostart, ProcessPort};
 use forge_render::{SiteKind, SslModel, VhostModel};
 
@@ -34,6 +34,23 @@ pub fn php_upstream_name(php: &SitePhp, default_series: &str) -> String {
     format!("php_{}", version.replace('.', "_"))
 }
 
+/// Upstream of a site's dedicated pool (`pool_mode: dedicated`, docs/06 §2.1, ADR-0044
+/// §7): the shared name followed by `__<slug>` (`php_8_4__loja-test`). The slug is the
+/// host with dots as dashes, so the name stays a valid upstream identifier.
+pub fn dedicated_upstream_name(shared: &str, slug: &str) -> String {
+    format!("{shared}__{slug}")
+}
+
+/// Upstream the vhost of `site` points at: [`php_upstream_name`], or
+/// [`dedicated_upstream_name`] of it when the site has a pool of its own.
+pub fn site_upstream_name(site: &Site, default_series: &str) -> String {
+    let shared = php_upstream_name(&site.php, default_series);
+    match site.pool_mode {
+        SitePoolMode::Shared => shared,
+        SitePoolMode::Dedicated => dedicated_upstream_name(&shared, &site.slug),
+    }
+}
+
 fn render_kind(kind: StoredKind) -> SiteKind {
     match kind {
         StoredKind::Php => SiteKind::Php,
@@ -58,7 +75,7 @@ pub fn base_model(site: &Site, ctx: &VhostContext, kind: StoredKind) -> VhostMod
         hosts,
         root: site.root.clone().unwrap_or_default(),
         php_upstream: (kind == StoredKind::Php)
-            .then(|| php_upstream_name(&site.php, &ctx.default_php_series)),
+            .then(|| site_upstream_name(site, &ctx.default_php_series)),
         deny: default_deny(),
         ssl,
         http_redirect: secure && site.http_redirect,

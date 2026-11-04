@@ -45,16 +45,6 @@
     "what": "editor launcher"
   },
   {
-    "method": "sites.pool_mode",
-    "task": "M2-E5-T11",
-    "what": "dedicated PHP pool per site"
-  },
-  {
-    "method": "sites.metrics",
-    "task": "M2-E5-T11",
-    "what": "per-site metrics switch"
-  },
-  {
     "method": "remote.pair",
     "task": "M6-E3",
     "what": "remote mode pairing"
