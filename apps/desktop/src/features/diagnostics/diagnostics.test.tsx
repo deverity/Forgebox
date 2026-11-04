@@ -36,14 +36,23 @@ afterEach(async () => {
   harness = null;
 });
 
+/**
+ * `holdJobs`: methods whose jobs run until the test ends them (`FakeBridge.completeJob`), so a
+ * test that checks the running state does not race the script's step timers on a loaded machine.
+ */
 async function open(
   qa: DiagnosticsQa = createDiagnosticsQa(),
-  options: { scenario?: string } = {},
+  options: { scenario?: string; holdJobs?: readonly string[] } = {},
 ): Promise<{ h: AppHarness; qa: DiagnosticsQa }> {
   harness = await renderApp({
     path: "/diagnostics",
     ...(options.scenario === undefined ? {} : { scenario: options.scenario }),
-    extra: { notImplemented: [], latencyMs: 0, handlers: qa.handlers },
+    extra: {
+      notImplemented: [],
+      latencyMs: 0,
+      handlers: qa.handlers,
+      holdJobs: options.holdJobs ?? [],
+    },
   });
   return { h: harness, qa };
 }
@@ -74,11 +83,17 @@ describe("states", () => {
 
   it("shows the progress step while running and the grouped results when done", async () => {
     const user = userEvent.setup();
-    await open();
+    const { h } = await open(undefined, { holdJobs: ["daemon.doctor"] });
     await user.click(await screen.findByRole("button", { name: "Run diagnostics" }));
     expect(screen.getByTestId("page-diagnostics")).toHaveAttribute("data-phase", "running");
     expect(await screen.findByText(/^Checking: /)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Running…" })).toBeDisabled();
+    const job = h.fake.jobList().find((j) => j.name === "daemon.doctor" && j.state === "running");
+    if (job === undefined) throw new Error("no running daemon.doctor job");
+    act(() => {
+      expect(h.fake.completeJob(job.id)).toBe(true);
+      h.fake.flush();
+    });
     await screen.findByTestId("doctor-summary");
     expect(screen.getByTestId("doctor-summary")).toHaveTextContent(
       "4 ok · 4 warnings · 1 failures · 1 skipped",
