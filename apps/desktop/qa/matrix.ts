@@ -67,6 +67,8 @@ export const SCREENS: readonly ScreenDef[] = [
 export const EXCLUDED_ROUTES: Readonly<Record<string, string>> = {
   "/": "redirects to /dashboard",
   "/__gallery": "component gallery, covered by its own e2e (dev and qa builds only)",
+  "/__charts":
+    "metrics chart harness, covered by qa/checks/charts.spec.ts (dev and qa builds only)",
   "/qa/selftest": "negative cases of qa:check, not a screen",
 };
 

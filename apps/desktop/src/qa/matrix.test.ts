@@ -28,7 +28,7 @@ describe("screenshot matrix", () => {
     for (const screen of SCREENS) expect(known.has(screen.route), screen.route).toBe(true);
     for (const route of Object.keys(EXCLUDED_ROUTES)) {
       // The gallery and self-test routes exist only in some build modes (not in vitest's).
-      if (route !== "/__gallery" && route !== "/qa/selftest") {
+      if (route !== "/__gallery" && route !== "/__charts" && route !== "/qa/selftest") {
         expect(known.has(route), route).toBe(true);
       }
     }

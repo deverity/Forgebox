@@ -136,6 +136,25 @@ Movimento: `Sheet`, `Popover`, `Menu`, `Tooltip` e `Toast` usam `surfaceMotion(k
 ### Skeleton
 - `Skeleton` tem altura fixa obrigatória; `SkeletonSlot` reserva a altura nos dois estados (`aria-busy`), então carregar → conteúdo não muda o layout. Pulso CSS só com `motion-safe`.
 
+## Gráficos de métricas (M2-E5-T15)
+
+`apps/desktop/src/features/metrics/charts/` ([docs/14 §4.1](../14-observability-metrics.md)). **Escolha: uPlot 1.6 (MIT, canvas)**, ~23 kB gz medidos no chunk lazy (todo o conjunto de gráficos: ~27 kB gz, orçamento 60 kB), em vez de SVG/React: 1.800 pontos por série atualizados a cada 2 s custam ~2 ms (mediana) com canvas, e o DOM não cresce com os pontos. uPlot só é alcançável pelos wrappers `React.lazy` de `index.ts` (`LatencyBandChart`, `ThroughputErrorsChart`, `ResourceChart`, `ChartSparkline`); o consumidor os envolve em `Suspense` com um `Skeleton` da mesma altura.
+
+| Componente | Dados (colunares, `t` em segundos Unix, `null` = lacuna) | Desenho |
+|---|---|---|
+| LatencyBandChart | `p50`, `p90`, `p99` (ms), `php?` | três linhas com bandas p50-p90 e p90-p99 (`warn`/`danger` a 16 %), linha PHP tracejada opcional |
+| ThroughputErrorsChart | `rps`, `e4xx`, `e5xx` | áreas acumuladas 5xx (por trás) e 4xx, linha `rps` por cima (uPlot não empilha: a série 5xx recebe `4xx + 5xx`) |
+| ResourceChart | `cpu` (%), `ram` (bytes) | CPU no eixo esquerdo (0-100), RAM em escala própria no eixo direito; selo `≈` (`Badge`) no título: valores atribuídos |
+| MarkersOverlay | `ChartMarker {id, t, kind, detail?}` | `php-version`, `restart`, `config`, `update`: linha fina + alça; cada alça é um `<button>` (Tab), com `Tooltip` que abre no foco; fora da janela visível não é desenhado |
+| ChartSparkline | `t`, `values` | variante compacta (120x32), sem eixos, `role="img"` com resumo |
+
+- **Estados:** `loading` (Skeleton), vazio (`EmptyState`) e dados ocupam o mesmo `SkeletonSlot` de altura fixa (200 px padrão), sem salto de layout. Resumo acessível: `<table class="sr-only">` com último e pico de cada série (os três percentis no gráfico de latência); o canvas é `aria-hidden`.
+- **Cores:** só de tokens. `palette.ts` lê as propriedades CSS (`--accent`, `--stroke`, `--fg-tertiary`, `--state-*`) do próprio elemento com `getComputedStyle` ao criar o gráfico; `useThemeKey` observa `data-theme`/`data-vibrancy`/`data-effect`/`data-contrast`, o accent do sistema e `prefers-color-scheme`, e o gráfico é recriado quando algo muda. Preenchimentos translúcidos usam `color-mix(in srgb, <token> N%, transparent)`. Nenhum literal de cor (lint `no-restricted-syntax` + teste que varre os fontes).
+- **Atualização:** dados novos entram por `setData` (no commit, sem recriar); a instância só é recriada com troca de tema/opções. Largura segue o contêiner por `ResizeObserver` (`setSize`). Formatadores de eixo são memoizados (`memoFormat`): criar `Intl.NumberFormat` por tick era o maior custo do redesenho.
+- **DPI:** o canvas usa o `devicePixelRatio` atual; na troca de DPR (zoom, outro monitor) o uPlot redesenha sozinho por uma media query de resolução (`dppxchange`). O `deviceScaleFactor` emulado por CDP não dispara essa query, então o QA abre uma página por DPR (1, 1.25, 1.5) e confere `canvas.width = largura CSS x DPR`.
+- **Movimento:** o uPlot não anima; as alças dos marcadores só usam transição sob `motion-safe`.
+- **QA:** rota `/__charts` (dev/qa, `ChartsHarness`: dados determinísticos, `?state=loading|empty`, `?only=`, `?points=`, `?markers=off`); `qa/checks/charts.spec.ts` (shots em `qa/out/charts/` em claro, escuro e vibrancy-off x DPR 1/1.25/1.5, re-tematização em runtime, Tab nos marcadores, altura dos estados) e `qa/perf/charts-update.spec.ts` (`pnpm qa:perf`: 60 anexos de 1 ponto a 1.800 pontos, cada atualização < 4 ms).
+
 ## Cobertura da galeria (M2-E4-T6)
 
 Toda primitive da lista de [docs/07 §6](../07-ui-ux.md) aparece em `/__gallery`, marcada com `data-gallery` (helper `shows(P.Nome)` em `src/design/gallery/marker.ts`); `Gallery.test.tsx` lê a lista do doc e falha se faltar ou sobrar um nome. `PathField`, `PortField` e `CommandPalette` ganharam seções na M2-E4-T6. Seleção e foco não dependem só do accent: a linha selecionada da paleta usa também `font-medium` e o campo de busca tem anel interno `--accent`; texto sobre fundo `--accent` usa sempre `--fg-on-accent` (token runtime, preto ou branco pelo contraste WCAG).

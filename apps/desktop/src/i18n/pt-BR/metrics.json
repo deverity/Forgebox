@@ -55,5 +55,39 @@
   },
   "cli": {
     "label": "O mesmo no terminal"
+  },
+  "charts": {
+    "loading": "Carregando gráfico",
+    "empty": {
+      "title": "Ainda sem dados",
+      "description": "O tráfego aparece aqui assim que o site receber requisições."
+    },
+    "latency": {
+      "title": "Latência"
+    },
+    "throughput": {
+      "title": "Requisições e erros"
+    },
+    "resource": {
+      "title": "CPU e memória"
+    },
+    "series": {
+      "rps": "Requisições/s"
+    },
+    "summary": {
+      "caption": "{title}: resumo",
+      "series": "Série",
+      "latest": "Último",
+      "peak": "Pico"
+    },
+    "markers": {
+      "php-version": "Versão do PHP alterada",
+      "restart": "Reinício",
+      "config": "Configuração alterada",
+      "update": "Atualização"
+    },
+    "sparkline": {
+      "label": "Últimas {count} amostras, atual {latest}, pico {peak}"
+    }
   }
 }
