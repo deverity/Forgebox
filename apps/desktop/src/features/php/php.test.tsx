@@ -20,7 +20,8 @@ function phpData(): ScenarioData {
   return data;
 }
 
-async function mountPhp(data: ScenarioData = phpData()) {
+/** `holdJobs`: methods whose jobs run until the test ends them (`FakeBridge.completeJob`). */
+async function mountPhp(data: ScenarioData = phpData(), holdJobs: readonly string[] = []) {
   const qa = {
     instances: [],
     sites: data.sites.map((s) => ({ ...s })),
@@ -30,7 +31,7 @@ async function mountPhp(data: ScenarioData = phpData()) {
   const h = await renderApp({
     path: "/php",
     data,
-    extra: { notImplemented: [], handlers: phpHandlers(qa, {}) },
+    extra: { notImplemented: [], handlers: phpHandlers(qa, {}), holdJobs },
   });
   await screen.findByTestId("php-columns");
   return h;
@@ -159,27 +160,44 @@ describe("extensions", () => {
 describe("Xdebug", () => {
   it("installs a missing extension with progress, then shows trigger mode", async () => {
     const user = userEvent.setup();
-    const h = await mountPhp();
+    // The install runs until the test ends it: its step timers coalesce on a loaded machine
+    // (full vitest run) and the row could come and go between two assertions.
+    const h = await mountPhp(phpData(), ["php.xdebug"]);
     const xdebug = within(await within(column("8.4")).findByTestId("xdebug"));
     expect(xdebug.getByRole("radio", { name: "Off" })).toBeChecked();
     await user.click(xdebug.getByRole("radio", { name: "Trigger" }));
 
     // The mode already reads trigger and the install job reports its progress.
-    await waitFor(() => {
-      expect(document.querySelector("[data-install-job]")).not.toBeNull();
+    const row = await waitFor(() => {
+      const found = column("8.4").querySelector<HTMLElement>("[data-install-job]");
+      if (found === null) throw new Error("no install row in the 8.4 column");
+      return found;
     });
-    expect(within(column("8.4")).getByText("Installing Xdebug for PHP 8.4")).toBeInTheDocument();
+    expect(within(row).getByText("Installing Xdebug for PHP 8.4")).toBeInTheDocument();
+    expect(within(column("8.4")).getByTestId("xdebug")).toHaveAttribute("data-mode", "trigger");
+    // A step of the install reached the row (which one depends on how fast the timers ran).
+    await waitFor(
+      () => {
+        expect(row.querySelector('[data-part="step"]')?.textContent).toMatch(
+          /downloading|installing/,
+        );
+      },
+      { timeout: 5000 },
+    );
     expect(h.fake.calls.find((c) => c.method === "php.xdebug")?.params).toEqual({
       version: "8.4",
       mode: "trigger",
     });
-    await waitFor(
-      () => {
-        expect(document.querySelector("[data-install-job]")).toBeNull();
-        expect(within(column("8.4")).getByTestId("xdebug")).toHaveAttribute("data-mode", "trigger");
-      },
-      { timeout: 4000 },
-    );
+    const job = h.fake.jobList().find((j) => j.name === "php.xdebug" && j.state === "running");
+    if (job === undefined) throw new Error("no running php.xdebug job");
+    act(() => {
+      expect(h.fake.completeJob(job.id)).toBe(true);
+      h.fake.flush();
+    });
+    await waitFor(() => {
+      expect(document.querySelector("[data-install-job]")).toBeNull();
+      expect(within(column("8.4")).getByTestId("xdebug")).toHaveAttribute("data-mode", "trigger");
+    });
     expect(within(column("8.4")).getByRole("radio", { name: "Trigger" })).toBeChecked();
     expect(
       column("8.4").querySelector('[data-forge-cli="forge php xdebug 8.4 trigger"]'),
