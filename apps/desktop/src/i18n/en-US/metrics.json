@@ -89,5 +89,82 @@
     "sparkline": {
       "label": "Last {count} samples, latest {latest}, peak {peak}"
     }
+  },
+  "site": {
+    "loading": "Loading…",
+    "range": {
+      "label": "Range",
+      "1m": "60 s",
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 days"
+    },
+    "kpi": {
+      "group": "Site indicators",
+      "rps": "Requests/s now",
+      "p50": "p50 (5 min)",
+      "p90": "p90 (5 min)",
+      "p99": "p99 (5 min)",
+      "errors": "Errors (5 min)",
+      "cpu": "CPU ≈",
+      "ram": "RAM ≈",
+      "workers": "Active workers"
+    },
+    "badge": {
+      "live": "Live",
+      "reconnecting": "Reconnecting…",
+      "remote": "Remote daemon"
+    },
+    "remoteNote": "These metrics come from a daemon on another machine; CPU and RAM are its own.",
+    "reconnectingNote": "Reconnecting to the daemon. The numbers below may be out of date.",
+    "noTraffic": "No traffic in this range. Charts show up as soon as the site gets requests.",
+    "noResource": "{kind} site: there is no PHP pool, so no per-site CPU, RAM or workers.",
+    "kind": {
+      "php": "PHP",
+      "static": "Static",
+      "proxy": "Proxy",
+      "app": "App"
+    },
+    "routes": {
+      "route": "Route",
+      "requests": "Reqs",
+      "time": "Time",
+      "status": "Status",
+      "duration": "Time taken",
+      "noErrors": "No 4xx or 5xx errors in the last 24 h.",
+      "failed": "Could not load the routes.",
+      "p50": "p50",
+      "p99": "p99"
+    },
+    "states": {
+      "unavailable": {
+        "title": "Metrics unavailable",
+        "description": "This daemon does not offer per-site metrics. Update Forgebox to see performance."
+      },
+      "globalOff": {
+        "title": "Metrics are off",
+        "description": "Forgebox is not collecting metrics for any site. Turn them on to see requests, latency and errors.",
+        "action": "Turn metrics on"
+      },
+      "siteOff": {
+        "title": "Metrics are off for this site",
+        "description": "The stored history stays on disk, but nothing new is collected until you turn it back on.",
+        "action": "Collect metrics for this site"
+      }
+    },
+    "controls": {
+      "title": "Controls",
+      "applying": "Applying…",
+      "done": "Done",
+      "pool": {
+        "label": "Dedicated pool",
+        "hint": "Gives this site a PHP pool of its own: exact CPU and RAM, at the cost of more memory.",
+        "nonPhp": "Only PHP sites have a pool. This site is {kind}."
+      },
+      "collect": {
+        "label": "Collect metrics for this site",
+        "hint": "When off, this site's requests no longer feed the metrics; the history stays."
+      }
+    }
   }
 }

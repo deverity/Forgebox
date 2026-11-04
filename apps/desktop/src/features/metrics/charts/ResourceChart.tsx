@@ -79,8 +79,13 @@ export default function ResourceChart({
     [series],
   );
   const summary = useMemo(
-    () => (series ? [summarize("CPU", series.cpu, pct, SWATCH.accent),
-          summarize("RAM", series.ram, bytes, SWATCH.info),] : []),
+    () =>
+      series
+        ? [
+            summarize("CPU", series.cpu, pct, SWATCH.accent),
+            summarize("RAM", series.ram, bytes, SWATCH.info),
+          ]
+        : [],
     [series, pct, bytes],
   );
 

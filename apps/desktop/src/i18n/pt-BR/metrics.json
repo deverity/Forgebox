@@ -89,5 +89,82 @@
     "sparkline": {
       "label": "Últimas {count} amostras, atual {latest}, pico {peak}"
     }
+  },
+  "site": {
+    "loading": "Carregando…",
+    "range": {
+      "label": "Intervalo",
+      "1m": "60 s",
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 dias"
+    },
+    "kpi": {
+      "group": "Indicadores do site",
+      "rps": "Requisições/s agora",
+      "p50": "p50 (5 min)",
+      "p90": "p90 (5 min)",
+      "p99": "p99 (5 min)",
+      "errors": "Erros (5 min)",
+      "cpu": "CPU ≈",
+      "ram": "RAM ≈",
+      "workers": "Workers ativos"
+    },
+    "badge": {
+      "live": "Ao vivo",
+      "reconnecting": "Reconectando…",
+      "remote": "Daemon remoto"
+    },
+    "remoteNote": "Estas métricas vêm de um daemon em outra máquina; CPU e RAM são as dele.",
+    "reconnectingNote": "Reconectando ao daemon. Os números abaixo podem estar desatualizados.",
+    "noTraffic": "Sem tráfego neste intervalo. Os gráficos aparecem assim que o site receber requisições.",
+    "noResource": "Site {kind}: não há pool de PHP, então não há CPU, RAM nem workers por site.",
+    "kind": {
+      "php": "PHP",
+      "static": "estático",
+      "proxy": "proxy",
+      "app": "de aplicativo"
+    },
+    "routes": {
+      "route": "Rota",
+      "requests": "Reqs",
+      "time": "Hora",
+      "status": "Status",
+      "duration": "Tempo",
+      "noErrors": "Nenhum erro 4xx ou 5xx nas últimas 24 h.",
+      "failed": "Não foi possível carregar as rotas.",
+      "p50": "p50",
+      "p99": "p99"
+    },
+    "states": {
+      "unavailable": {
+        "title": "Métricas indisponíveis",
+        "description": "Este daemon não oferece métricas por site. Atualize o Forgebox para ver o desempenho."
+      },
+      "globalOff": {
+        "title": "As métricas estão desligadas",
+        "description": "O Forgebox não está coletando métricas de nenhum site. Ligue para ver requisições, latência e erros.",
+        "action": "Ligar métricas"
+      },
+      "siteOff": {
+        "title": "Métricas desligadas para este site",
+        "description": "O histórico guardado continua no disco, mas nada novo é coletado até você ligar de novo.",
+        "action": "Coletar métricas deste site"
+      }
+    },
+    "controls": {
+      "title": "Controles",
+      "applying": "Aplicando…",
+      "done": "Pronto",
+      "pool": {
+        "label": "Pool dedicado",
+        "hint": "Dá a este site um pool de PHP só dele: CPU e RAM exatas, ao custo de mais memória.",
+        "nonPhp": "Só sites PHP têm pool. Este site é {kind}."
+      },
+      "collect": {
+        "label": "Coletar métricas deste site",
+        "hint": "Desligado, as requisições deste site deixam de entrar nas métricas; o histórico fica."
+      }
+    }
   }
 }

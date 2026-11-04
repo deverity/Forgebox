@@ -66,12 +66,16 @@ export function useSiteMetrics(
 export function useSiteStats(
   site: string | null,
   window: T.StatsWindow = DEFAULT_WINDOW,
+  options: { refetchMs?: number } = {},
 ): UseQueryResult<ResultOf<"stats.get">, ForgeApiError> {
   const api = useForgeApi();
   const capability = useCapability("stats.get");
+  const visible = usePageVisible();
   return useQuery({
     ...forgeQuery(api, "stats.get", { site, window }),
     enabled: site !== null && capability.available,
+    refetchInterval: visible && options.refetchMs !== undefined ? options.refetchMs : false,
+    refetchIntervalInBackground: false,
   });
 }
 
