@@ -20,7 +20,7 @@ export default defineConfig(({ mode }) => ({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["src/**/*.test.{ts,tsx}", "qa/parity/*.test.ts"],
     // Above Testing Library's asyncUtilTimeout (5 s, src/test/setup.ts): a findBy that waits its
     // full window must fail with its own message, not end the test by timeout (ADR-0036).
     testTimeout: 20_000,

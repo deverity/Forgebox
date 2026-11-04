@@ -10,3 +10,4 @@ dist-qa
 qa/out
 test-results
 playwright-report
+qa/parity/gui-commands.json

@@ -1,0 +1,122 @@
+# Mutating API methods with a `forge` command that no GUI action reaches (M2-E4-T5).
+# `cli_only`: the method stays CLI-only on purpose; every entry needs a `reason`.
+# `pending`: a screen of the named task will add the action; the entry is deleted then
+#   (the Rust gate fails on a listed method that an action already reaches).
+# The M2 gate (M2-E4-T11) runs with FORGE_PARITY_STRICT=1, where `pending` must be empty.
+# Queries and streams (non-mutating methods) are exempt: they are not actions.
+cli_only:
+  - method: daemon.restart
+    reason: "Daemon lifecycle: the GUI supervises the daemon itself (tray, shell); restarting it from a screen would cut its own connection."
+  - method: daemon.stop
+    reason: "Daemon lifecycle: the GUI quits through the shell (Sair), not through an action button."
+  - method: remote.listen
+    reason: "Remote access is a CLI-first feature in 1.x (docs/09 remote); no screen in M2."
+  - method: remote.pair
+    reason: "Remote pairing is a CLI-first feature in 1.x (docs/09 remote); no screen in M2."
+  - method: remote.revoke
+    reason: "Remote pairing is a CLI-first feature in 1.x (docs/09 remote); no screen in M2."
+  - method: system.bundle_export
+    reason: "Bundle export is an M3 feature (no GUI in M2)."
+  - method: system.bundle_import
+    reason: "Bundle import is an M3 feature (no GUI in M2)."
+  - method: system.backup_now
+    reason: "Backups are an M3 feature (no GUI in M2)."
+  - method: system.backup_schedule
+    reason: "Backups are an M3 feature (no GUI in M2)."
+  - method: system.import_laragon
+    reason: "Laragon import is an M3 feature (no GUI in M2)."
+  - method: system.self_update
+    reason: "Updating Forgebox itself is an M4 feature; the app updater ships inactive in 0.2.0."
+  - method: sites.share
+    reason: "Public tunnels (share) are an M6 feature."
+  - method: net.lan_expose
+    reason: "LAN exposure is an M3 feature (no GUI in M2)."
+  - method: net.lan_unexpose
+    reason: "LAN exposure is an M3 feature (no GUI in M2)."
+  - method: sites.new
+    reason: "Project scaffolding (forge new) is an M3 feature."
+  - method: sites.park
+    reason: "Parked folders are managed from the CLI in M2."
+  - method: sites.unpark
+    reason: "Parked folders are managed from the CLI in M2."
+  - method: sites.alias
+    reason: "Host aliases are edited in the site manifest in M2; no screen."
+pending:
+  - method: db.create
+    task: M2-E3-T14
+  - method: db.drop
+    task: M2-E3-T14
+  - method: db.export
+    task: M2-E3-T14
+  - method: db.import
+    task: M2-E3-T14
+  - method: fs_parity.case_convert
+    task: M2-E3-T18
+  - method: fs_parity.case_disable
+    task: M2-E3-T18
+  - method: fs_parity.case_enable
+    task: M2-E3-T18
+  - method: fs_parity.lint_case
+    task: M2-E3-T18
+  - method: fs_parity.site_case
+    task: M2-E3-T18
+  - method: jobs.cancel
+    task: M2-E4-T11
+  - method: mail.clear
+    task: M2-E3-T13
+  - method: mail.delete
+    task: M2-E3-T13
+  - method: mail.mark_read
+    task: M2-E3-T13
+  - method: net.dns_disable
+    task: M2-E3-T17
+  - method: net.dns_enable
+    task: M2-E3-T17
+  - method: php.ext_disable
+    task: M2-E2-T17
+  - method: php.ext_enable
+    task: M2-E2-T17
+  - method: php.xdebug
+    task: M2-E2-T17
+  - method: registry.add
+    task: M2-E3-T18
+  - method: registry.remove
+    task: M2-E3-T18
+  - method: registry.update
+    task: M2-E3-T18
+  - method: services.reload
+    task: M2-E2-T17
+  - method: shell.path_add
+    task: M2-E3-T16
+  - method: shell.path_remove
+    task: M2-E3-T16
+  - method: sites.down
+    task: M2-E2-T16
+  - method: sites.up
+    task: M2-E2-T16
+  - method: sites.pool_mode
+    task: M2-E5-T11
+  - method: sites.metrics
+    task: M2-E5-T16
+  - method: sites.secure
+    task: M2-E2-T16
+  - method: sites.server
+    task: M2-E2-T16
+  - method: system.config_set
+    task: M2-E3-T16
+  - method: tls.ca_install
+    task: M2-E3-T17
+  - method: tls.ca_rotate
+    task: M2-E3-T17
+  - method: tls.ca_uninstall
+    task: M2-E3-T17
+  - method: tls.issue
+    task: M2-E3-T17
+  - method: tls.renew
+    task: M2-E3-T17
+  - method: tools.add_local
+    task: M2-E3-T18
+  - method: tools.discover
+    task: M2-E3-T18
+  - method: tools.update
+    task: M2-E2-T17
