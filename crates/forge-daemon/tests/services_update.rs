@@ -94,8 +94,9 @@ async fn wait_running(client: &Client, name: &str, timeout: Duration) -> Instanc
             }
             assert!(
                 Instant::now() < deadline,
-                "mysql/{name} is {:?}: {:?}",
+                "mysql/{name} is {:?} on {:?}: {:?}",
                 found.state,
+                found.ports,
                 found.last_error
             );
         }
@@ -172,7 +173,6 @@ async fn advanced(client: &Client) -> forge_ipc::api::InstanceAdvancedDto {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn update_restarts_a_running_instance_with_the_new_launch_and_persists_it() {
     let root = root_with_mysql_versions();
-    let before_pids = pids_of("mysqld.exe");
     let mut daemon = spawn_daemon(&root, &[]);
     let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
     let first = wait_running(&client, "default", Duration::from_secs(60)).await;
@@ -353,17 +353,13 @@ async fn update_restarts_a_running_instance_with_the_new_launch_and_persists_it(
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
-    let left: Vec<u32> = pids_of("mysqld.exe")
-        .into_iter()
-        .filter(|p| !before_pids.contains(p))
-        .collect();
+    let left: Vec<u32> = pids_under("mysqld.exe", root.path());
     assert!(left.is_empty(), "fake mysqld left running: {left:?}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn create_with_a_data_dir_uses_it_and_the_size_comes_from_the_scan() {
     let root = root_with_mysql_versions();
-    let before_pids = pids_of("mysqld.exe");
     let mut daemon = spawn_daemon(&root, &[]);
     let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
     wait_running(&client, "default", Duration::from_secs(60)).await;
@@ -522,9 +518,6 @@ async fn create_with_a_data_dir_uses_it_and_the_size_comes_from_the_scan() {
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
-    let left: Vec<u32> = pids_of("mysqld.exe")
-        .into_iter()
-        .filter(|p| !before_pids.contains(p))
-        .collect();
+    let left: Vec<u32> = pids_under("mysqld.exe", root.path());
     assert!(left.is_empty(), "fake mysqld left running: {left:?}");
 }

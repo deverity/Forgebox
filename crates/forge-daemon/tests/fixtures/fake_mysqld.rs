@@ -102,7 +102,7 @@ fn main() {
             .open(Path::new(&dir).join("launch.log"))
             .and_then(|mut f| f.write_all(line.as_bytes()));
     }
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("binding the port");
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap_or_else(|e| panic!("binding port {port}: {e}"));
     listener.set_nonblocking(true).expect("non-blocking");
     let stop = marker(&exe, &port);
     let _ = std::fs::remove_file(&stop);
