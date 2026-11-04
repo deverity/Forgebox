@@ -1,0 +1,82 @@
+[
+  {
+    "method": "tools.add_local",
+    "task": "M3-E1",
+    "what": "installing a local zip or folder as a tool version"
+  },
+  {
+    "method": "sites.share",
+    "task": "M3-E3",
+    "what": "public tunnels (cloudflared, ngrok, expose)"
+  },
+  {
+    "method": "sites.new",
+    "task": "M3-E2",
+    "what": "project scaffolding from a stack"
+  },
+  {
+    "method": "db.open",
+    "task": "M3-E1",
+    "what": "database GUI launch"
+  },
+  {
+    "method": "net.lan_expose",
+    "task": "M3-E3",
+    "what": "LAN exposure with firewall rules"
+  },
+  {
+    "method": "net.lan_unexpose",
+    "task": "M3-E3",
+    "what": "LAN exposure with firewall rules"
+  },
+  {
+    "method": "net.lan_qr",
+    "task": "M3-E3",
+    "what": "LAN QR codes"
+  },
+  {
+    "method": "remote.pair",
+    "task": "M6-E3",
+    "what": "remote mode pairing"
+  },
+  {
+    "method": "remote.listen",
+    "task": "M6-E3",
+    "what": "remote mode listener"
+  },
+  {
+    "method": "remote.clients",
+    "task": "M6-E3",
+    "what": "remote mode clients"
+  },
+  {
+    "method": "remote.revoke",
+    "task": "M6-E3",
+    "what": "remote mode clients"
+  },
+  {
+    "method": "system.bundle_export",
+    "task": "M3-E3",
+    "what": "offline bundles"
+  },
+  {
+    "method": "system.bundle_import",
+    "task": "M3-E3",
+    "what": "offline bundles"
+  },
+  {
+    "method": "system.backup_now",
+    "task": "M3-E3",
+    "what": "database backups"
+  },
+  {
+    "method": "system.backup_schedule",
+    "task": "M3-E3",
+    "what": "scheduled backups"
+  },
+  {
+    "method": "system.self_update",
+    "task": "M4-E1",
+    "what": "signed self-update of the app"
+  }
+]

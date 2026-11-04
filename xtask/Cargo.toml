@@ -25,6 +25,7 @@ forge-manifest = { path = "../crates/forge-manifest" }
 forge-ipc = { path = "../crates/forge-ipc" }
 forge-registry = { path = "../crates/forge-registry" }
 minisign = { workspace = true }
-
-[dev-dependencies]
+forge-daemon = { path = "../crates/forge-daemon" }
+tokio = { workspace = true }
+regex = { workspace = true }
 tempfile = { workspace = true }

@@ -1,0 +1,10 @@
+{
+  "exists": false,
+  "name_constraints": [],
+  "not_after": null,
+  "subject": null,
+  "thumbprint_sha1": null,
+  "thumbprint_sha256": null,
+  "trusted_current_user": false,
+  "trusted_local_machine": false
+}

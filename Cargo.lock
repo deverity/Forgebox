@@ -8994,12 +8994,15 @@ dependencies = [
  "anyhow",
  "clap",
  "forge-core",
+ "forge-daemon",
  "forge-ipc",
  "forge-manifest",
  "forge-registry",
  "minisign",
+ "regex",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
