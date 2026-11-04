@@ -411,8 +411,23 @@ describe("Processos", () => {
         "running",
       );
     });
-    // Logs stay disabled until the Logs screen (E3-T12).
-    expect(within(queue).getByRole("button", { name: /Logs/ })).toBeDisabled();
+  });
+
+  it("opens the process log in the shared LogViewer (app:<host>/<process>)", async () => {
+    const list = await openProcesses();
+    const queue = must(list.querySelector<HTMLElement>('[data-process-row="queue"]'));
+    const user = userEvent.setup();
+    const button = within(queue).getByRole("button", { name: "Logs: queue" });
+    expect(button).toBeEnabled();
+    await user.click(button);
+    const viewer = await within(queue).findByTestId("log-viewer");
+    expect(within(viewer).getByRole("log", { name: "Log lines of loja.test/queue" })).toBeVisible();
+    expect(viewer.querySelector("[data-forge-cli]")).toHaveAttribute(
+      "data-forge-cli",
+      "forge logs app:loja.test/queue -f",
+    );
+    await user.click(within(queue).getByRole("button", { name: "Logs: queue" }));
+    expect(within(queue).queryByTestId("log-viewer")).toBeNull();
   });
 });
 

@@ -9,6 +9,7 @@ import { Skeleton } from "../../../design/primitives/Skeleton";
 import { StatusDot, type ServiceState } from "../../../design/primitives/StatusDot";
 import type * as T from "../../../ipc/generated";
 import { useForgeQuery, useSite } from "../../../state";
+import { LogViewer } from "../../logs/LogViewer";
 import { isServicePayload, processOfEvent } from "./model";
 import { useSiteEvents } from "./useSiteEvents";
 
@@ -36,6 +37,7 @@ export function ProcessesTab({ siteId }: { siteId: string }) {
   const { t } = useTranslation("sites");
   const site = useSite(siteId);
   const query = useForgeQuery("sites.ps", { site: siteId });
+  const [openLogs, setOpenLogs] = useState<string | null>(null);
   const [patched, setPatched] = useState<{
     base: readonly T.SiteProcessDto[] | undefined;
     rows: Record<string, Live>;
@@ -151,17 +153,28 @@ export function ProcessesTab({ siteId }: { siteId: string }) {
               >
                 {t("detail.processes.restart")}
               </ActionButton>
-              {/* Per-process logs wait for the Logs screen (M2-E3-T12): disabled with the reason. */}
-              <span title={t("detail.processes.logsSoon")} className="inline-flex">
-                <Button
-                  variant="ghost"
-                  disabled
-                  aria-label={`${t("detail.processes.logs")}: ${base.name}`}
-                >
-                  {t("detail.processes.logs")}
-                </Button>
-              </span>
+              <Button
+                variant="ghost"
+                aria-pressed={openLogs === base.name}
+                aria-label={`${t("detail.processes.logs")}: ${base.name}`}
+                onClick={() => {
+                  setOpenLogs(openLogs === base.name ? null : base.name);
+                }}
+              >
+                {openLogs === base.name
+                  ? t("detail.processes.hideLogs")
+                  : t("detail.processes.logs")}
+              </Button>
             </div>
+            {openLogs === base.name ? (
+              <div className="basis-full" data-testid="process-logs">
+                <LogViewer
+                  targets={[`app:${host}/${base.name}`]}
+                  name={`${host}/${base.name}`}
+                  height={288}
+                />
+              </div>
+            ) : null}
           </li>
         );
       })}

@@ -1088,6 +1088,10 @@ export class FakeBridge implements Bridge {
     const head = (topic?.next ?? 1) - 1;
     // `terminal.subscribe` without `resume_from` sends the whole ring first (ADR-0040).
     if (from === null && sub.method === "terminal.subscribe") from = 0;
+    // `logs.subscribe {tail}` without a cursor sends the last N lines first (ADR-0040).
+    if (from === null && sub.method === "logs.subscribe" && typeof sub.params.tail === "number") {
+      from = Math.max(0, head - sub.params.tail);
+    }
     if (from === null) {
       sub.cursor = head;
       return;

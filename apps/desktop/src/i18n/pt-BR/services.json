@@ -92,19 +92,6 @@
     "killing": "Encerrando…",
     "killed": "Processo encerrado"
   },
-  "logs": {
-    "filter": "Filtro",
-    "pause": "Pausar",
-    "resume": "Retomar",
-    "copy": "Copiar",
-    "copied": "Copiado",
-    "copyFailed": "Não foi possível copiar",
-    "lost": "{count} linhas se perderam durante o acompanhamento.",
-    "region": "Log de {name}",
-    "loading": "Carregando o log…",
-    "empty": "Nenhuma linha para mostrar.",
-    "paused": "Pausado: as novas linhas ficam guardadas e aparecem ao retomar."
-  },
   "instances": {
     "title": "Instâncias",
     "remove": "Remover {name}",

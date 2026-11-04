@@ -193,7 +193,7 @@
       "restart": "Restart",
       "restarting": "Restarting…",
       "logs": "Logs",
-      "logsSoon": "Logs per process arrive with the Logs screen.",
+      "hideLogs": "Hide logs",
       "autostart": "Starts with the site",
       "refresh": "Refresh"
     },

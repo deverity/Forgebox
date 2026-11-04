@@ -92,19 +92,6 @@
     "killing": "Ending…",
     "killed": "Process ended"
   },
-  "logs": {
-    "filter": "Filter",
-    "pause": "Pause",
-    "resume": "Resume",
-    "copy": "Copy",
-    "copied": "Copied",
-    "copyFailed": "Could not copy",
-    "lost": "{count} lines were lost while following.",
-    "region": "Log of {name}",
-    "loading": "Loading log…",
-    "empty": "No lines to show.",
-    "paused": "Paused: new lines are kept and appear when you resume."
-  },
   "instances": {
     "title": "Instances",
     "remove": "Remove {name}",
