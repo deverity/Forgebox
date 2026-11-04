@@ -33,6 +33,54 @@ use crate::download::ProxySetting;
 /// Largest metadata body accepted (the biggest real one is a few MB).
 const MAX_BODY: u64 = 64 * 1024 * 1024;
 
+tokio::task_local! {
+    /// Collects what [`Fetcher::get`] served while a [`traced`] future runs.
+    static TRACE: Arc<TraceCell>;
+}
+
+#[derive(Default)]
+struct TraceCell {
+    stale: AtomicBool,
+    /// Unix seconds of the oldest stale entry served (`u64::MAX` = none).
+    oldest_stale: std::sync::atomic::AtomicU64,
+}
+
+/// What a [`traced`] future read from the metadata cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FetchTrace {
+    /// Some document came from an expired cache entry because the network failed or
+    /// `prefs.offline` is on.
+    pub stale: bool,
+    /// When the data was fetched: the oldest stale entry served, else now.
+    pub fetched_at: jiff::Timestamp,
+}
+
+/// Runs `fut` and reports whether any [`Fetcher::get`] inside it (same task) had to serve
+/// stale metadata. Concurrent traced futures do not see each other.
+pub async fn traced<F: std::future::Future>(fut: F) -> (F::Output, FetchTrace) {
+    let cell = Arc::new(TraceCell {
+        stale: AtomicBool::new(false),
+        oldest_stale: std::sync::atomic::AtomicU64::new(u64::MAX),
+    });
+    let out = TRACE.scope(Arc::clone(&cell), fut).await;
+    let stale = cell.stale.load(Ordering::SeqCst);
+    let oldest = cell.oldest_stale.load(Ordering::SeqCst);
+    let fetched_at = if stale && oldest != u64::MAX {
+        jiff::Timestamp::from_second(i64::try_from(oldest).unwrap_or(i64::MAX))
+            .unwrap_or_else(|_| jiff::Timestamp::now())
+    } else {
+        jiff::Timestamp::now()
+    };
+    (out, FetchTrace { stale, fetched_at })
+}
+
+fn note_stale(fetched_at: u64) {
+    let _ = TRACE.try_with(|cell| {
+        cell.stale.store(true, Ordering::SeqCst);
+        cell.oldest_stale.fetch_min(fetched_at, Ordering::SeqCst);
+    });
+}
+
 /// Where the bytes of a [`Fetched`] came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FetchSource {
@@ -133,10 +181,13 @@ impl Fetcher {
 
         if self.is_offline() {
             return match cached {
-                Some((_, body)) => Ok(Fetched {
-                    body,
-                    source: FetchSource::Stale,
-                }),
+                Some((meta, body)) => {
+                    note_stale(meta.fetched_at);
+                    Ok(Fetched {
+                        body,
+                        source: FetchSource::Stale,
+                    })
+                }
                 None => Err(ForgeError::Conflict(messages::offline_no_cache(req.url))),
             };
         }
@@ -152,8 +203,9 @@ impl Fetcher {
         match self.fetch(&req, &dir, &key, cached.as_ref()).await {
             Ok(fetched) => Ok(fetched),
             Err(err) => match cached {
-                Some((_, body)) if !matches!(err, ForgeError::NotFound(_)) => {
+                Some((meta, body)) if !matches!(err, ForgeError::NotFound(_)) => {
                     tracing::warn!(url = req.url, error = %err, "{}", messages::stale_cache(req.url));
+                    note_stale(meta.fetched_at);
                     Ok(Fetched {
                         body,
                         source: FetchSource::Stale,

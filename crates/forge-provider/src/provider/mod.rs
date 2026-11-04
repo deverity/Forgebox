@@ -47,7 +47,7 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 
 pub use self::checksum::{Digests, parse_checksums, resolve_checksum};
-pub use self::fetch::{FetchRequest, FetchSource, Fetched, Fetcher};
+pub use self::fetch::{FetchRequest, FetchSource, FetchTrace, Fetched, Fetcher, traced};
 use crate::download::ProxySetting;
 
 /// What to resolve.
@@ -272,6 +272,25 @@ impl ProviderRegistry {
     /// returns releases wins (docs/04 `source.providers`). If none does, the error of the
     /// last failing provider is returned (or an empty list when all were just empty).
     pub async fn resolve(&self, req: ResolveRequest<'_>) -> Result<Vec<Release>> {
+        self.resolve_within(req, None).await
+    }
+
+    /// [`Self::resolve`] with a time limit per provider (`ForgeError::Timeout`, which
+    /// counts as that provider failing, so the next one is tried) and a report of whether
+    /// the answer came from stale cached metadata (offline, network failure).
+    pub async fn resolve_traced(
+        &self,
+        req: ResolveRequest<'_>,
+        per_provider: Duration,
+    ) -> (Result<Vec<Release>>, FetchTrace) {
+        traced(self.resolve_within(req, Some(per_provider))).await
+    }
+
+    async fn resolve_within(
+        &self,
+        req: ResolveRequest<'_>,
+        per_provider: Option<Duration>,
+    ) -> Result<Vec<Release>> {
         let mut last_err = None;
         for spec in &req.tool.spec.source.providers {
             let provider = match self.for_spec(spec) {
@@ -282,7 +301,18 @@ impl ProviderRegistry {
                     continue;
                 }
             };
-            match provider.resolve(req).await {
+            let answer = match per_provider {
+                Some(limit) => tokio::time::timeout(limit, provider.resolve(req))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(ForgeError::Timeout {
+                            operation: format!("listing the releases ({})", provider.name()),
+                            after: limit,
+                        })
+                    }),
+                None => provider.resolve(req).await,
+            };
+            match answer {
                 Ok(releases) if !releases.is_empty() => return Ok(releases),
                 Ok(_) => {}
                 Err(err) => {
