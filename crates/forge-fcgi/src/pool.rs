@@ -1910,7 +1910,15 @@ impl Actor for PhpPool {
                 if self.state == PoolState::Running {
                     let mut count = 0;
                     for w in self.workers.values_mut() {
-                        if w.phase == WorkerPhase::Active && w.replaced_by.is_none() {
+                        // A worker still starting (a replacement of an earlier reload,
+                        // a scale-up) may have read the old php.ini: it is replaced
+                        // too once warm, so back-to-back changes all reach the pool.
+                        let current = match w.phase {
+                            WorkerPhase::Active => w.replaced_by.is_none(),
+                            WorkerPhase::Starting => true,
+                            _ => false,
+                        };
+                        if current {
                             w.recycle = Some(RecycleReason::Reload);
                             count += 1;
                         }

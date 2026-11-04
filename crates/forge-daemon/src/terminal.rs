@@ -584,6 +584,9 @@ impl SessionInfo {
 struct SessionHandle {
     info: Arc<SessionInfo>,
     mailbox: mpsc::Sender<Msg>,
+    /// Position in the open order (`list` is oldest first; two ULIDs of the same
+    /// millisecond do not tell which session came first).
+    order: u64,
 }
 
 struct Session {
@@ -811,6 +814,8 @@ async fn ask<R>(
 #[derive(Default)]
 struct Table {
     sessions: BTreeMap<TerminalId, SessionHandle>,
+    /// `SessionHandle::order` of the next session.
+    next_order: u64,
     /// Opens in flight (counted against the limit).
     reserved: u32,
     /// The daemon is going down: no new session.
@@ -957,11 +962,14 @@ impl TerminalManager {
                 // Shut down meanwhile: dropping the mailbox winds the session down.
                 return Err(ForgeError::Conflict("the daemon is shutting down".into()));
             }
+            let order = table.next_order;
+            table.next_order += 1;
             table.sessions.insert(
                 id,
                 SessionHandle {
                     info,
                     mailbox: mailbox_tx,
+                    order,
                 },
             );
         }
@@ -981,17 +989,18 @@ impl TerminalManager {
             .ok_or_else(|| ForgeError::NotFound(format!("terminal {id}")))
     }
 
-    /// Every session, oldest first.
+    /// Every session, oldest first (in the order they were opened).
     pub fn list(&self) -> Vec<TerminalDto> {
-        let infos: Vec<Arc<SessionInfo>> = self
+        let mut infos: Vec<(u64, Arc<SessionInfo>)> = self
             .inner
             .table
             .lock()
             .sessions
             .values()
-            .map(|h| Arc::clone(&h.info))
+            .map(|h| (h.order, Arc::clone(&h.info)))
             .collect();
-        infos.iter().map(|i| i.dto()).collect()
+        infos.sort_unstable_by_key(|(order, _)| *order);
+        infos.iter().map(|(_, i)| i.dto()).collect()
     }
 
     /// Sessions in the table.
