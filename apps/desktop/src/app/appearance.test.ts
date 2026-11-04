@@ -92,6 +92,36 @@ describe("accent hover and pressed fills", () => {
     applyAppearance({ accent: "#0078D4", contrast: "high" });
     expect(root.style.getPropertyValue("--accent-hover")).toBe("");
   });
+
+  it("leaves the accent tokens to the Highlight colours under forced colours (F-10)", () => {
+    const root = document.documentElement;
+    const queries: string[] = [];
+    vi.stubGlobal("matchMedia", (query: string) => {
+      queries.push(query);
+      return { matches: query === "(forced-colors: active)", media: query } as MediaQueryList;
+    });
+    try {
+      applyAppearance({ accent: "#0078D4" });
+      expect(queries).toContain("(forced-colors: active)");
+      expect(root.style.getPropertyValue("--system-accent")).toBe("#0078D4");
+      expect(root.style.getPropertyValue("--accent")).toBe("");
+      expect(root.style.getPropertyValue("--fg-on-accent")).toBe("");
+      expect(root.style.getPropertyValue("--accent-hover")).toBe("");
+      expect(root.style.getPropertyValue("--accent-pressed")).toBe("");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("applies the accent when matchMedia is unavailable (jsdom, old webviews)", () => {
+    vi.stubGlobal("matchMedia", undefined);
+    try {
+      applyAppearance({ accent: "#0078D4" });
+      expect(document.documentElement.style.getPropertyValue("--accent")).toBe("#0078D4");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("applyAppearance", () => {
