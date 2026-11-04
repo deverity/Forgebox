@@ -133,6 +133,32 @@ export async function saveTextFile(defaultName: string, contents: string): Promi
   return { saved: defaultName };
 }
 
+/**
+ * Saves the local CA certificate (PEM, public part) through the native "Save as" dialog and the
+ * `save_ca_certificate` command (Rust opens the dialog, accepts only `.crt|.cer|.pem` paths and
+ * a PEM certificate body). Outside Tauri it downloads the file. Rejects when the write fails.
+ */
+export async function saveCaCertificate(defaultName: string, pem: string): Promise<SaveOutcome> {
+  if (inTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const path = await invoke<string | null>("save_ca_certificate", {
+      defaultName,
+      contents: pem,
+    });
+    if (path === null) return { cancelled: true };
+    return { saved: path };
+  }
+  const url = URL.createObjectURL(new Blob([pem], { type: "application/x-x509-ca-cert" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = defaultName;
+  link.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
+  return { saved: defaultName };
+}
+
 export type SaveResult = { status: "saved"; path: string | null } | { status: "cancelled" };
 
 /**
