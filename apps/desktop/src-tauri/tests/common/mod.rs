@@ -3,7 +3,7 @@
 //! and sinks that record what the bridge emits.
 #![allow(dead_code)]
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -191,6 +191,9 @@ pub struct FakeLocal {
     pub spawned: AtomicU32,
     /// Every start, including those that found the daemon running.
     pub starts: AtomicU32,
+    /// How long a start that spawned a daemon takes to report after the daemon answers
+    /// (the real connector waits for its own ping; the bridge's client can win the race).
+    pub start_report_delay_ms: AtomicU64,
     client: OnceLock<Client>,
 }
 
@@ -208,6 +211,7 @@ impl FakeLocal {
             opens: AtomicU32::new(0),
             spawned: AtomicU32::new(0),
             starts: AtomicU32::new(0),
+            start_report_delay_ms: AtomicU64::new(0),
             client: OnceLock::new(),
         })
     }
@@ -319,6 +323,10 @@ impl Endpoint for FakeEndpoint {
             local.switch.plug(&local.daemon);
             local.initialized.store(true, Ordering::SeqCst);
             local.spawned.fetch_add(1, Ordering::SeqCst);
+            let delay = local.start_report_delay_ms.load(Ordering::SeqCst);
+            if delay > 0 {
+                tokio::time::sleep(Duration::from_millis(delay)).await;
+            }
             Ok(StartOutcome::Started)
         }
         .boxed()

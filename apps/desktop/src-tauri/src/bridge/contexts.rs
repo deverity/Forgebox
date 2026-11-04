@@ -975,23 +975,29 @@ impl Contexts {
                 if run.kind == StartKind::Restart {
                     live.policy.on_restart_succeeded(*outcome);
                 }
-                // Connect the context's client now instead of at its next backoff tick.
-                live.just_started = true;
-                let client = live.client.clone();
-                let weak = weak.clone();
-                let context = context.to_owned();
-                tokio::spawn(async move {
-                    if let Err(error) = client.ping().await {
-                        tell(
-                            &weak,
-                            Msg::PokeFailed {
-                                context,
-                                open,
-                                error,
-                            },
-                        );
-                    }
-                });
+                // Connect the context's client now instead of at its next backoff tick. The
+                // client may already have reconnected by itself while the start waited for the
+                // daemon to answer: then there is nothing to poke, and a `just_started` set
+                // after the connection would survive it and show `starting` (instead of
+                // `reconnecting`) after the next loss (M2-E1-T21, e2e-desktop).
+                if !live.client_state.is_connected() {
+                    live.just_started = true;
+                    let client = live.client.clone();
+                    let weak = weak.clone();
+                    let context = context.to_owned();
+                    tokio::spawn(async move {
+                        if let Err(error) = client.ping().await {
+                            tell(
+                                &weak,
+                                Msg::PokeFailed {
+                                    context,
+                                    open,
+                                    error,
+                                },
+                            );
+                        }
+                    });
+                }
             }
             Err(error) => {
                 tracing::warn!(context, %error, kind = ?run.kind, "daemon start failed");

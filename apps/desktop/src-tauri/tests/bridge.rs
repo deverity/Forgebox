@@ -449,6 +449,71 @@ async fn one_restart_after_an_unexpected_loss_and_not_a_second_within_a_minute()
     bridge.shutdown().await;
 }
 
+/// M2-E1-T21 (found by `scripts/e2e-desktop.ps1`): the real connector reports a start only
+/// after its own ping, so the bridge's client can reconnect first. The start report must not
+/// mark the context as "just started" then, or the next loss shows `starting` forever instead
+/// of `reconnecting` while the policy waits out the 60 s spacing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_start_reported_after_the_client_reconnected_does_not_leave_starting_behind() {
+    let daemon = plain_daemon().await;
+    let local = FakeLocal::new(Arc::clone(&daemon), true, false);
+    // Longer than the client's reconnect backoff (20..200 ms): the client wins the race.
+    let delay = Duration::from_millis(600);
+    local
+        .start_report_delay_ms
+        .store(delay.as_millis() as u64, Ordering::SeqCst);
+    let recorder = Arc::new(Recorder::default());
+    let bridge = bridge_over(&local, &recorder, test_options(Duration::from_millis(100)));
+    bridge.state(LOCAL_CONTEXT).await.unwrap();
+    recorder.wait_status(ConnectionStatus::Connected).await;
+    // Let the initial start report land (after the connection).
+    tokio::time::sleep(delay + Duration::from_millis(200)).await;
+
+    // Crash: one automatic restart, whose report again arrives after the client is back.
+    local.kill();
+    recorder.wait_status(ConnectionStatus::Reconnecting).await;
+    assert!(
+        eventually(WAIT, || local.spawned() == 2).await,
+        "restarted once"
+    );
+    recorder.wait_status(ConnectionStatus::Connected).await;
+    assert!(
+        eventually(WAIT, || recorder
+            .last()
+            .is_some_and(|s| s.autostart.restarts == 1))
+        .await,
+        "the restart was counted: {:?}",
+        recorder.last()
+    );
+    tokio::time::sleep(delay + Duration::from_millis(200)).await;
+    assert_eq!(
+        bridge.state(LOCAL_CONTEXT).await.unwrap().status,
+        ConnectionStatus::Connected
+    );
+
+    // Crash again inside the 60 s spacing: no restart, so the status is `reconnecting`.
+    let mark = recorder.statuses().len();
+    local.kill();
+    assert!(
+        eventually(WAIT, || recorder
+            .last()
+            .is_some_and(|s| s.autostart.next_restart_ms.is_some()))
+        .await,
+        "{:?}",
+        recorder.last()
+    );
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let after: Vec<_> = recorder.statuses()[mark..].to_vec();
+    assert!(
+        !after.contains(&ConnectionStatus::Starting),
+        "no start runs, so nothing may say starting: {after:?}"
+    );
+    let state = bridge.state(LOCAL_CONTEXT).await.unwrap();
+    assert_eq!(state.status, ConnectionStatus::Reconnecting);
+    assert_eq!(local.spawned(), 2, "no second restart within 60 s");
+    bridge.shutdown().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn no_restart_after_a_user_shutdown_until_the_user_starts_it() {
     let daemon = plain_daemon().await;
