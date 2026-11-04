@@ -95,6 +95,14 @@ const SAMPLES: Record<string, unknown[]> = {
     { site: "loja.test", driver: "laravel" },
     { site: "loja.test", driver: null },
   ],
+  "sites.set_pool_mode": [
+    { site: "loja.test", mode: "dedicated" },
+    { site: "loja.test", mode: "shared" },
+  ],
+  "sites.set_metrics": [
+    { site: "loja.test", enabled: true },
+    { site: "loja.test", enabled: false },
+  ],
   "onboarding.case_disable": [{ dir: String.raw`C:/Forgebox/www` }],
   "onboarding.park": [{ dir: String.raw`C:/Forgebox/www`, tld: ".test" }],
   "tools.install_spec": ["php@8.4"],

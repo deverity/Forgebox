@@ -830,6 +830,48 @@
     ]
   },
   {
+    "action": "sites.set_metrics",
+    "method": "sites.metrics",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "enabled": true
+        },
+        "command": "forge site metrics loja.test on"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "enabled": false
+        },
+        "command": "forge site metrics loja.test off"
+      }
+    ]
+  },
+  {
+    "action": "sites.set_pool_mode",
+    "method": "sites.pool_mode",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "mode": "dedicated"
+        },
+        "command": "forge site pool loja.test dedicated"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "mode": "shared"
+        },
+        "command": "forge site pool loja.test shared"
+      }
+    ]
+  },
+  {
     "action": "sites.switch_php",
     "method": "sites.php",
     "kind": "job",
