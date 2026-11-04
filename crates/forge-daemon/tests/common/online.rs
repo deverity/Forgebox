@@ -42,6 +42,22 @@ pub const NGINX_1_30: Archive = Archive {
     inner: "nginx-1.30.6",
 };
 
+/// Apache httpd 2.4.69 VS18 from Apache Lounge (curated sha256 of `registry/tools/apache.yaml`).
+pub const APACHE_2_4: Archive = Archive {
+    file: "httpd-2.4.69-261002-Win64-VS18.zip",
+    url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip",
+    sha256: "77d715d0d9cee731e2251e7ddc2090a7a8e6d41fedef2e9827cd918593c5a652",
+    inner: "Apache24",
+};
+
+/// Caddy 2.11.7 (curated sha256 of `registry/tools/caddy.yaml`).
+pub const CADDY_2_11: Archive = Archive {
+    file: "caddy_2.11.7_windows_amd64.zip",
+    url: "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_windows_amd64.zip",
+    sha256: "0a1edc0b799512051c57071ce0e798d3f2cf67dc98171366f1d2b326072e3b06",
+    inner: "",
+};
+
 /// MySQL 8.4.13 (curated sha256 of `registry/tools/mysql.yaml`).
 pub const MYSQL_8_4: Archive = Archive {
     file: "mysql-8.4.13-winx64.zip",

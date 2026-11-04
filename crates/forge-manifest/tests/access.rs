@@ -56,7 +56,7 @@ fn nginx_maps_seconds_sums_upstreams_and_reopens_with_the_service_args() {
     assert!(!a.lenient_escapes);
     let rotate = a.rotate.unwrap();
     assert_eq!(rotate.strategy, RotateStrategy::RenameReopen);
-    assert_eq!((rotate.max_size.as_deref(), rotate.keep), (Some("50MB"), 5));
+    assert_eq!((rotate.max_size.as_deref(), rotate.keep), (Some("64MB"), 1));
     let tool = registry_tool("nginx");
     let daemon = tool.spec.service.daemon.unwrap();
     let reopen = rotate.reopen.unwrap().command.unwrap();
@@ -80,8 +80,15 @@ fn apache_maps_ms_start_and_us_duration_with_lenient_escapes() {
     );
     assert!(a.upstream_duration.is_none());
     assert!(a.lenient_escapes);
-    // Provisional until M2-E5-T12.
-    assert_eq!(a.rotate.unwrap().strategy, RotateStrategy::None);
+    // Measured in M2-E5-T12 (docs/14 section 3.8): httpd's log is renamed while it writes and
+    // a graceful restart (Ctrl+Break, the same as `reload`) reopens it.
+    let rotate = a.rotate.unwrap();
+    assert_eq!(rotate.strategy, RotateStrategy::RenameReopen);
+    assert_eq!((rotate.max_size.as_deref(), rotate.keep), (Some("64MB"), 1));
+    assert_eq!(
+        rotate.reopen.unwrap().signal,
+        Some(forge_manifest::schema::tool::ConsoleSignal::CtrlBreak)
+    );
 }
 
 #[test]

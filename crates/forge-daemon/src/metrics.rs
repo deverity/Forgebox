@@ -701,6 +701,160 @@ mod tests {
         );
     }
 
+    fn registry_access(tool: &str) -> AccessSpec {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../registry/tools")
+            .join(format!("{tool}.yaml"));
+        let forge_manifest::schema::Manifest::Tool(manifest) =
+            forge_manifest::parse::load_file(&path).unwrap()
+        else {
+            panic!("{tool}.yaml is a tool manifest");
+        };
+        manifest
+            .spec
+            .service
+            .daemon
+            .as_ref()
+            .unwrap()
+            .logs
+            .iter()
+            .find_map(|l| l.access.clone())
+            .unwrap()
+    }
+
+    #[test]
+    fn the_registry_declares_how_each_web_server_rotates() {
+        // nginx and Apache are renamed by the daemon (64 MiB, one rotated file) and told to
+        // reopen; Caddy rolls by itself (docs/14 section 3.8).
+        let nginx = registry_access("nginx");
+        let policy = rotation_policy(nginx.rotate.as_ref());
+        assert_eq!(
+            (policy.strategy, policy.max_size, policy.keep),
+            (Strategy::RenameReopen, 64 << 20, 1)
+        );
+        let reopen = nginx.rotate.unwrap().reopen.unwrap();
+        assert!(reopen.command.unwrap().contains("-s reopen"));
+
+        let apache = registry_access("apache");
+        let policy = rotation_policy(apache.rotate.as_ref());
+        assert_eq!(
+            (policy.strategy, policy.max_size, policy.keep),
+            (Strategy::RenameReopen, 64 << 20, 1)
+        );
+        assert_eq!(
+            apache.rotate.unwrap().reopen.unwrap().signal,
+            Some(forge_manifest::schema::tool::ConsoleSignal::CtrlBreak)
+        );
+
+        let caddy = registry_access("caddy");
+        let policy = rotation_policy(caddy.rotate.as_ref());
+        assert_eq!(
+            (policy.strategy, policy.max_size, policy.keep),
+            (Strategy::SelfRotating, 50 << 20, 5)
+        );
+        // No `rotate` at all means none, with the default size for the warning.
+        let policy = rotation_policy(None);
+        assert_eq!(
+            (policy.strategy, policy.max_size),
+            (Strategy::None, 64 << 20)
+        );
+    }
+
+    fn target(path: &Path, max_size: u64, keep: u32) -> RotationTarget {
+        RotationTarget {
+            key: "logs/web/access.json".into(),
+            path: path.to_path_buf(),
+            policy: RotatePolicy::new(Strategy::RenameReopen, Some(max_size), Some(keep)),
+            instance: InstanceId::new(),
+            reopen: Some(Reload {
+                command: Some("web -s reopen".into()),
+                signal: None,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_pass_renames_at_max_size_and_reopens_once() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("access.json");
+        let targets = [target(&log, 100, 2)];
+        let rotator = Arc::new(Mutex::new(Rotator::new(Duration::ZERO)));
+        let calls = Arc::new(AtomicU32::new(0));
+        let reopen = {
+            let calls = Arc::clone(&calls);
+            move |_: RotationTarget| -> ReopenFuture {
+                let calls = Arc::clone(&calls);
+                Box::pin(async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(true)
+                })
+            }
+        };
+        std::fs::write(&log, vec![b'x'; 99]).unwrap();
+        run_rotation(&rotator, &targets, &reopen).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 0, "under max_size");
+        std::fs::write(&log, vec![b'x'; 100]).unwrap();
+        run_rotation(&rotator, &targets, &reopen).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(!log.exists(), "renamed; the server creates the new one");
+        assert_eq!(
+            std::fs::read(rotate::rotated_name(&log, 1)).unwrap().len(),
+            100
+        );
+        // Nothing left to do on the next pass (no file yet, reopen recorded).
+        run_rotation(&rotator, &targets, &reopen).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_reopen_is_not_forgotten_and_backs_off() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("access.json");
+        let targets = [target(&log, 10, 1)];
+        let rotator = Arc::new(Mutex::new(Rotator::new(Duration::ZERO)));
+        let calls = Arc::new(AtomicU32::new(0));
+        let reopen = {
+            let calls = Arc::clone(&calls);
+            move |_: RotationTarget| -> ReopenFuture {
+                let calls = Arc::clone(&calls);
+                Box::pin(async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Err(forge_core::error::ForgeError::ConfigInvalid(
+                        "refused".into(),
+                    ))
+                })
+            }
+        };
+        std::fs::write(&log, vec![b'x'; 50]).unwrap();
+        run_rotation(&rotator, &targets, &reopen).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        // Within the back-off (5 s) the reopen is not tried again, and the file is not
+        // renamed a second time either.
+        std::fs::write(&log, vec![b'y'; 50]).unwrap();
+        run_rotation(&rotator, &targets, &reopen).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(log.exists());
+    }
+
+    #[tokio::test]
+    async fn a_pass_leaves_self_rotating_and_none_logs_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("access.json");
+        std::fs::write(&log, vec![b'x'; 1000]).unwrap();
+        let mut caddy = target(&log, 100, 1);
+        caddy.policy.strategy = Strategy::SelfRotating;
+        let mut none = target(&log, 100, 1);
+        none.policy.strategy = Strategy::None;
+        let rotator = Arc::new(Mutex::new(Rotator::new(Duration::ZERO)));
+        let never = |_: RotationTarget| -> ReopenFuture {
+            Box::pin(async { panic!("no reopen for self or none") })
+        };
+        run_rotation(&rotator, &[caddy, none], &never).await;
+        assert_eq!(std::fs::read(&log).unwrap().len(), 1000);
+    }
+
     #[test]
     fn source_keys_are_relative_to_the_root() {
         let dir = tempfile::tempdir().unwrap();
