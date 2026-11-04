@@ -338,11 +338,34 @@ describe("PHP switch", () => {
   });
 
   it("never sends a second switch while one is in flight", async () => {
-    await open();
+    const fakeData = detailData();
+    const next = {
+      ...must(fakeData.sites[0]),
+      php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
+    };
+    // The job runs until the test ends it: the scenario's ~180 ms job could end before the
+    // second click on a loaded machine, which then opened the list (M2-GATE-B16).
+    const h = await open(fakeData, {
+      "sites.php": () => fakeJob({ hold: true, outcome: { done: next } }),
+    });
     await pickPhp("8.2");
     const combo = screen.getByRole("combobox", { name: "PHP version" });
+    expect(combo).toBeDisabled();
     await userEvent.setup().click(combo);
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(phpCalls()).toHaveLength(1);
+    const job = must(h.fake.jobList().find((j) => j.name === "sites.php" && j.state === "running"));
+    act(() => {
+      h.fake.publish("site.php_changed", {
+        v: 1,
+        site_id: SITE_ID,
+        host: "loja.test",
+        from: "8.3.36",
+        to: "8.2.30",
+      });
+      expect(h.fake.completeJob(job.id)).toBe(true);
+      h.fake.flush();
+    });
     await waitFor(() => {
       expect(screen.getByText("PHP 8.2 is active")).toBeInTheDocument();
     });
