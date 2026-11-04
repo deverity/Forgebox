@@ -121,7 +121,17 @@ async fn start_returns_immediately_and_cancel_is_cooperative() {
     });
     assert!(before.elapsed() < Duration::from_millis(50));
     assert_eq!(jobs.active().len(), 1);
-    tokio::time::sleep(Duration::from_millis(30)).await;
+    // Wait until the job really reported progress instead of sleeping a fixed time: on a
+    // loaded machine (Windows timer granularity is ~15 ms) a 30 ms sleep could elapse
+    // before the job's first 5 ms tick fired. `progress()` publishes the event before it
+    // returns, so once the snapshot shows the message the event is already on the bus.
+    tokio::time::timeout(SECOND * 5, async {
+        while handle.info().progress.message.is_none() {
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("the job reports progress in time");
 
     assert!(jobs.cancel(handle.id()).unwrap());
     let info = handle.wait(SECOND).await.unwrap();
