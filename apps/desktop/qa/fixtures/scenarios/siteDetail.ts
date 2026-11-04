@@ -56,6 +56,30 @@ function findSite(data: QaData, ref: string): T.SiteDto {
   return found;
 }
 
+/** Secret values of the QA `.env` (only sent with `reveal: true`). */
+export const QA_ENV_SECRET = "s3cr3t-qa-value";
+
+function qaEnvFiles(reveal: boolean): T.DotenvFileDto[] {
+  const secret = (key: string, line: number, value: string): T.DotenvVarDto => ({
+    key,
+    value: reveal ? value : null,
+    secret: true,
+    line,
+  });
+  return [
+    {
+      name: ".env",
+      path: "C:/Forgebox/www/loja.test/.env",
+      vars: [
+        { key: "APP_ENV", value: "local", secret: false, line: 1 },
+        { key: "APP_URL", value: "https://loja.test", secret: false, line: 2 },
+        secret("DB_PASSWORD", 3, QA_ENV_SECRET),
+        secret("APP_KEY", 4, "base64:qa-app-key"),
+      ],
+    },
+  ];
+}
+
 export function siteDetailHandlers(data: QaData): FakeHandlers {
   seedPhp(data);
   return {
@@ -215,6 +239,18 @@ export function siteDetailHandlers(data: QaData): FakeHandlers {
       ];
       return { site, checks };
     },
+    "sites.env": (params) => {
+      const site = findSite(data, params.site);
+      // Only the first QA site has a `.env`; the others show the empty state.
+      const has = data.sites[0]?.id === site.id;
+      return {
+        site_id: site.id,
+        host: site.host,
+        files: has ? qaEnvFiles(params.reveal === true) : [],
+        revealed: has && params.reveal === true,
+      };
+    },
+    "shell.open_editor": () => ({ ok: true, message: null }),
     "sites.open": () => ({ ok: true, message: null }),
     "sites.driver": (params, ctx) => {
       const site = findSite(data, params.site);
