@@ -52,6 +52,7 @@ const IDS = {
   pool: "perf-pool-toggle",
   collect: "perf-collect-toggle",
 } as const;
+const SERIES_METHOD = "stats.series";
 const GLOBAL_KEY = "metrics.enabled";
 
 function ChartBox({ children }: { children: React.ReactNode }) {
@@ -241,7 +242,7 @@ export function SitePerformanceTab({ siteId }: { siteId: string }) {
       {series.isError && series.data === undefined ? (
         <ErrorNotice
           error={series.error}
-          context={{ method: "stats.series", params: { site: siteId, range } }}
+          context={{ method: SERIES_METHOD, params: { site: siteId, range } }}
           onRetry={() => {
             void series.refetch();
           }}

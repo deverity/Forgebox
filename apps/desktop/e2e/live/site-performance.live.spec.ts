@@ -96,9 +96,11 @@ test("site-performance 1 a site, metrics on and synthetic traffic reach the daem
       { timeout: 60_000 },
     )
     .toBeTruthy();
-  site = (await call<{ sites: SiteRow[] }>(page, "sites.list")).sites.find(
+  const found = (await call<{ sites: SiteRow[] }>(page, "sites.list")).sites.find(
     (s) => s.host === HOST,
-  ) as SiteRow;
+  );
+  if (found === undefined) throw new Error("the site was not added");
+  site = found;
   await call(page, "system.config_set", { key: "metrics.enabled", value: true });
   // The web server must be up for the daemon to follow its access log.
   const nginx = async () =>
@@ -115,7 +117,8 @@ test("site-performance 1 a site, metrics on and synthetic traffic reach the daem
     // ~16 requests per second, the same mix every time (no randomness: stable screenshots).
     let text = "";
     for (let i = 0; i < 8; i += 1) {
-      const row = TRAFFIC[(n + i * 3) % TRAFFIC.length] as [number, number, string, string];
+      const row = TRAFFIC[(n + i * 3) % TRAFFIC.length] ?? TRAFFIC[0];
+      if (row === undefined) continue;
       text += line(row[0], row[1] + ((n + i) % 7) * 3, row[2], row[3]);
     }
     n += 1;
