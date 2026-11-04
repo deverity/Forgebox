@@ -1202,12 +1202,9 @@ fn p99(mut samples: Vec<Duration>) -> Duration {
 /// no process, no `.partial`) and a failing restore (`job.failed` with the stderr tail).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn daemon_export_and_import_jobs() {
+    // `TestRoot` already gives this daemon a private `databases` port range, so the other
+    // daemon test of this binary running at the same time never picks the same port.
     let (root, bin) = mysql_root();
-    // A private port for this daemon's mysql: the other daemon test of this binary may run
-    // at the same time and would pick the same free port of the default range.
-    let mut toml = std::fs::read_to_string(root.root.forgebox_toml()).unwrap();
-    toml.push_str(&format!("databases = [{}]\n", free_port()));
-    std::fs::write(root.root.forgebox_toml(), toml).unwrap();
     std::fs::copy(fake("fake_db_client"), bin.join("mysqldump.exe")).unwrap();
     // ~40 ms per MiB: the export takes a few seconds, long enough to sample the API.
     std::fs::write(bin.join("dump.txt"), format!("{DUMP_64_MIB} 40")).unwrap();
