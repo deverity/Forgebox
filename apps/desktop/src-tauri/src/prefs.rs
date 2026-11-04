@@ -156,6 +156,16 @@ impl PrefsStore {
             .clone()
     }
 
+    /// A copy of the current preferences, or `None` while a save holds the lock (the save
+    /// writes a file under it; async callers must not wait behind that).
+    pub fn try_get(&self) -> Option<GuiPrefs> {
+        match self.current.try_lock() {
+            Ok(guard) => Some(guard.clone()),
+            Err(std::sync::TryLockError::Poisoned(p)) => Some(p.into_inner().clone()),
+            Err(std::sync::TryLockError::WouldBlock) => None,
+        }
+    }
+
     /// Merges `patch`, saves the file and returns `(before, after)`. Blocking (call from
     /// `spawn_blocking`); concurrent updates are serialized.
     pub fn update(&self, patch: &Map<String, Value>) -> Result<(GuiPrefs, GuiPrefs), PrefsError> {

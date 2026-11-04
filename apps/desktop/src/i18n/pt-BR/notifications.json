@@ -1,5 +1,31 @@
 {
   "service_crashed": "{service} parou inesperadamente",
   "service_restarted": "{service} foi reiniciado",
-  "update_available": "{tool} {version} está disponível"
+  "update_available": "{tool} {version} está disponível",
+  "toast": {
+    "service_restarted": {
+      "title": "Serviço reiniciado",
+      "body": "{service} parou inesperadamente e foi reiniciado."
+    },
+    "update_installed": {
+      "title": "Atualização instalada",
+      "body": "{tool} foi atualizado para {version}."
+    },
+    "install_completed": {
+      "title": "Instalação concluída",
+      "body": "{tool} {version} foi instalado.",
+      "body_job": "A instalação terminou."
+    },
+    "performance_alert": {
+      "title": "Alerta de desempenho",
+      "body": "{subject}: {detail}"
+    }
+  },
+  "types": {
+    "service_restarted": "Serviço reiniciado após uma queda",
+    "update_installed": "Atualização instalada",
+    "install_completed": "Instalação ou download concluído",
+    "performance_alert": "Alerta de desempenho (desligado)"
+  },
+  "dont_show_again": "Não mostrar de novo"
 }

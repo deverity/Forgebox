@@ -39,10 +39,11 @@ use forge_ipc::base::event::EventBus;
 use forge_ipc::base::ids::RequestId;
 
 use crate::bridge::{
-    Bridge, CallArgs, ContextStateDto, FrameSink, SinkClosed, StreamEntry, StreamFrame,
-    SubscribeAnswer,
+    Bridge, CallArgs, ConnectionStatus, ContextStateDto, FrameSink, SinkClosed, StreamEntry,
+    StreamFrame, SubscribeAnswer,
 };
 use crate::i18n;
+use crate::notifications::{NoticeEngine, NoticeKind, Notices, Toast};
 
 use self::icons::{IconKey, STARTING_FRAMES, icon_size_for_scale};
 use self::model::{Effect, Link, MenuSpec, Scope, Snapshot, TrayAction, TrayModel, TrayState};
@@ -272,6 +273,19 @@ impl Tray {
         options: TrayOptions,
         appearance: TrayAppearance,
     ) -> Self {
+        Self::spawn_with_notices(backend, view, context, options, appearance, None)
+    }
+
+    /// [`Tray::spawn`] plus native toasts (M2-E1-T16, [`crate::notifications`]): the actor
+    /// feeds its events to a [`NoticeEngine`] and shows what it returns through `notices`.
+    pub fn spawn_with_notices(
+        backend: Arc<dyn TrayBackend>,
+        view: Arc<dyn TrayView>,
+        context: &str,
+        options: TrayOptions,
+        appearance: TrayAppearance,
+        notices: Option<Notices>,
+    ) -> Self {
         let supervisor = ActorSupervisor::new(EventBus::new());
         let context = context.to_owned();
         let handle = supervisor.spawn(ActorSpec::new("desktop.tray").mailbox(1024), move || {
@@ -281,6 +295,7 @@ impl Tray {
                 &context,
                 options,
                 appearance,
+                notices.clone(),
             )
         });
         Self {
@@ -330,6 +345,11 @@ impl Tray {
     }
 
     /// The app updater announced (or cleared) an update.
+    /// The user clicked a toast: focus the window and open the related screen.
+    pub fn notification_clicked(&self, kind: NoticeKind) {
+        self.tell(Msg::NoticeClicked(kind));
+    }
+
     pub fn set_app_update(&self, available: bool) {
         self.tell(Msg::AppUpdate(available));
     }
@@ -388,6 +408,7 @@ pub enum Msg {
     ReducedMotion(bool),
     Language,
     AppUpdate(bool),
+    NoticeClicked(NoticeKind),
     QuitDone(QuitOutcome),
     Model(Reply<TrayModel>),
     Shutdown(Reply<()>),
@@ -466,6 +487,10 @@ struct TrayActor {
     /// The actor's own address, for its timers (set in `on_start`).
     weak: Option<WeakActorRef<Msg>>,
     last_render_at: Option<tokio::time::Instant>,
+    /// Native toasts (None: the tray runs without them).
+    notices: Option<(NoticeEngine, Notices)>,
+    /// Connection number the toast cursor was taken for.
+    notice_generation: Option<u64>,
 }
 
 impl TrayActor {
@@ -475,6 +500,7 @@ impl TrayActor {
         context: &str,
         options: TrayOptions,
         appearance: TrayAppearance,
+        notices: Option<Notices>,
     ) -> Self {
         Self {
             backend,
@@ -505,6 +531,8 @@ impl TrayActor {
             states_task: None,
             weak: None,
             last_render_at: None,
+            notices: notices.map(|n| (NoticeEngine::new(Arc::clone(&n.mutes)), n)),
+            notice_generation: None,
         }
     }
 }
@@ -595,6 +623,7 @@ impl Actor for TrayActor {
                     self.changed(&weak);
                 }
             }
+            Msg::NoticeClicked(kind) => self.view.navigate(kind.route()),
             Msg::QuitDone(outcome) => {
                 self.quitting = false;
                 tracing::info!(?outcome, "tray: quit flow finished");
@@ -721,6 +750,7 @@ impl TrayActor {
     }
 
     fn on_connection(&mut self, state: &ContextStateDto, weak: &WeakActorRef<Msg>) {
+        self.take_notice_cursor(state);
         match self.model.set_connection(state) {
             Effect::None => {}
             Effect::Changed => self.changed(weak),
@@ -731,6 +761,36 @@ impl TrayActor {
         }
         if self.model.link == Link::Up {
             self.subscribe(weak);
+        }
+    }
+
+    /// A new connection's `hello` fixes the toast cursor: events up to its `last_event_seq`
+    /// are history, and the resume replay after a reconnection must stay silent.
+    fn take_notice_cursor(&mut self, state: &ContextStateDto) {
+        let Some((engine, _)) = self.notices.as_mut() else {
+            return;
+        };
+        if state.context != self.model.context
+            || state.status != ConnectionStatus::Connected
+            || state.generation == self.notice_generation
+        {
+            return;
+        }
+        if let Some(hello) = &state.hello {
+            engine.set_cursor(hello.last_event_seq);
+            self.notice_generation = state.generation;
+        }
+    }
+
+    /// Shows the toast an event calls for, if any.
+    fn notice(&mut self, seq: Option<u64>, kind: &str, payload: &Value) {
+        let Some((engine, notices)) = self.notices.as_mut() else {
+            return;
+        };
+        if let Some(notice) = engine.observe(std::time::Instant::now(), seq, kind, payload) {
+            notices
+                .notifier
+                .notify(&Toast::from_notice(&notice, i18n::current_language()));
         }
     }
 
@@ -745,6 +805,7 @@ impl TrayActor {
                         continue;
                     };
                     let payload = event.get("payload").cloned().unwrap_or(Value::Null);
+                    self.notice(item["seq"].as_u64(), kind, &payload);
                     if self.snapshot_inflight {
                         self.queued.push((kind.to_owned(), payload));
                         continue;
