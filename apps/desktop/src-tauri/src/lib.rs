@@ -11,6 +11,7 @@ pub mod bridge;
 pub mod commands;
 pub mod data_dir;
 pub mod i18n;
+pub mod notifications;
 pub mod perf;
 pub mod prefs;
 pub mod shortcuts;
@@ -66,7 +67,10 @@ pub fn run() {
         // M2-E1-T14: "open site in the browser" and the global terminal shortcuts (registered
         // only when the webview asks, see shortcuts.rs).
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // M2-E1-T16: native toasts, called from Rust by the tray (notifications.rs); the webview
+        // is granted no `notification:*` permission.
+        .plugin(tauri_plugin_notification::init());
     if let updater::Activation::Active { pubkey, .. } = &activation {
         builder = builder.plugin(
             tauri_plugin_updater::Builder::new()

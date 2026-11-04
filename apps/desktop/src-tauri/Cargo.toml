@@ -55,6 +55,8 @@ tauri-plugin-clipboard-manager = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }
+# Native toasts (src/notifications.rs, M2-E1-T16).
+tauri-plugin-notification = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

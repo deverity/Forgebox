@@ -31,6 +31,7 @@ use super::model::{Glyph, MenuNode, MenuSpec, TrayModel};
 use super::{Click, QuitChoice, Tray, TrayAppearance, TrayOptions, TrayRender, TrayView};
 use crate::bridge::{Bridge, LOCAL_CONTEXT};
 use crate::i18n::{self, Namespace};
+use crate::notifications::{Notices, PluginNotifier, PrefsMutes};
 use crate::window::{MAIN_LABEL, WindowShell};
 
 /// Id of the app's tray icon.
@@ -358,12 +359,19 @@ pub fn install(app: &AppHandle<Wry>, shell: &WindowShell, bridge: &Bridge) -> ta
     if let Ok(mut state) = view.state.lock() {
         state.menus.push_back(menu);
     }
-    let tray = Tray::spawn(
+    // Native toasts (M2-E1-T16): shown from here, so they work with the window hidden.
+    let notices = Notices {
+        window: crate::notifications::GROUP_WINDOW,
+        notifier: Arc::new(PluginNotifier::new(app.clone())),
+        mutes: Arc::new(PrefsMutes::new(Arc::clone(shell.prefs()))),
+    };
+    let tray = Tray::spawn_with_notices(
         Arc::new(bridge.clone()),
         view,
         LOCAL_CONTEXT,
         TrayOptions::default(),
         appearance,
+        Some(notices),
     );
     app.manage(tray);
     shell.set_tray_available(true);
