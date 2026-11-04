@@ -50,12 +50,22 @@ function isRemote(value: string): boolean {
 export function prepareHtml(html: string, allowRemoteImages: boolean): PreparedHtml {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const links: string[] = [];
-  for (const anchor of doc.querySelectorAll("a[href], area[href]")) {
-    const href = anchor.getAttribute("href") ?? "";
-    if (HTTP_URL.test(href.trim()) && !links.includes(href.trim())) links.push(href.trim());
-    anchor.removeAttribute("href");
-    anchor.removeAttribute("target");
-    anchor.removeAttribute("ping");
+  const XLINK = "http://www.w3.org/1999/xlink";
+  // Every element (HTML and SVG, namespaced `xlink:href` included) loses its navigation
+  // attributes; http(s) targets of anchors are kept aside for the confirm list.
+  for (const element of doc.querySelectorAll("*")) {
+    const isAnchor = /^(a|area)$/i.test(element.localName);
+    for (const value of [element.getAttribute("href"), element.getAttributeNS(XLINK, "href")]) {
+      const v = value?.trim() ?? "";
+      if (isAnchor && HTTP_URL.test(v) && !links.includes(v)) links.push(v);
+    }
+    for (const attr of [...element.attributes]) {
+      const name = attr.name.toLowerCase();
+      const local = attr.localName.toLowerCase();
+      if (local === "href" || name === "xlink:href" || name === "target" || name === "ping") {
+        element.removeAttributeNode(attr);
+      }
+    }
   }
   for (const element of doc.querySelectorAll(REMOVED_ELEMENTS)) element.remove();
   let remoteImages = 0;

@@ -44,8 +44,9 @@ function AttachmentRow({ messageId, part }: { messageId: string; part: T.MailAtt
 
   const download = () => {
     setBusy(true);
-    api.call("mail.attachment", { id: messageId, part_id: part.part_id }).then(
-      (content) =>
+    api
+      .call("mail.attachment", { id: messageId, part_id: part.part_id })
+      .then((content) =>
         saveAttachment(content.file_name, content.content_base64, content.content_type).then(
           (result) => {
             if (result.status === "saved") {
@@ -54,14 +55,15 @@ function AttachmentRow({ messageId, part }: { messageId: string; part: T.MailAtt
                 message: t("attachments.saved", { name: content.file_name }),
               });
             }
-            setBusy(false);
           },
         ),
-      (error: unknown) => {
+      )
+      .catch((error: unknown) => {
         toast.show({ kind: "error", message: errorMessage(error) });
+      })
+      .finally(() => {
         setBusy(false);
-      },
-    );
+      });
   };
 
   return (

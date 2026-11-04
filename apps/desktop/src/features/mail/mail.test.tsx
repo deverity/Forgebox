@@ -223,6 +223,21 @@ describe("Mail screen actions", () => {
     });
   });
 
+  it("shows an error and re-enables the button when saving the attachment fails", async () => {
+    native.saveAttachment.mockImplementationOnce(() => Promise.reject(new Error("disk full")));
+    await ready();
+    const user = userEvent.setup();
+    await user.click(screen.getByText("Invoice 2026-11"));
+    await user.click(await screen.findByRole("tab", { name: "Attachments (1)" }));
+    const button = await screen.findByRole("button", { name: "Download invoice.txt" });
+    await user.click(button);
+    await waitFor(() => {
+      expect(native.saveAttachment).toHaveBeenCalledTimes(1);
+      expect(button).toBeEnabled();
+    });
+    expect(await screen.findByText(/disk full|erro|error/i)).toBeInTheDocument();
+  });
+
   it("copies the .env variables", async () => {
     await open([]);
     const user = userEvent.setup();

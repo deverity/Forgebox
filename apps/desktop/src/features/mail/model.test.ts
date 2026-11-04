@@ -52,6 +52,17 @@ describe("prepareHtml", () => {
     expect(links).toEqual(["https://a.test/x"]);
   });
 
+  it("strips svg anchors (href and xlink:href) and lists their links", () => {
+    const html =
+      "<svg><a xlink:href='https://attacker.test/x' target='_blank'><text>Go</text></a>" +
+      "<a href='https://svg.test/y'><text>Go2</text></a></svg>";
+    const { srcdoc, links } = prepareHtml(html, false);
+    expect(srcdoc).not.toMatch(/href=/i);
+    expect(srcdoc).not.toMatch(/xlink:href/i);
+    expect(srcdoc).not.toMatch(/target=/i);
+    expect(links).toEqual(["https://attacker.test/x", "https://svg.test/y"]);
+  });
+
   it("counts remote images and widens only img-src when allowed", () => {
     expect(prepareHtml(HOSTILE, false).remoteImages).toBe(1);
     const allowed = prepareHtml(HOSTILE, true).srcdoc ?? "";
