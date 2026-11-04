@@ -282,15 +282,15 @@ logs:
       upstream: /up
       lenient_escapes: false                         # true: o servidor escreve \xhh/\v (Apache) e o parser reescreve antes de decodificar
       rotate:
-        max_size: 50MB                               # B | KB | MB | GB (binários); obrigatório em rename-reopen
-        keep: 5                                      # arquivos rotacionados mantidos (padrão 5)
+        max_size: 64MB                               # B | KB | MB | GB (binários); obrigatório em rename-reopen
+        keep: 1                                      # arquivos rotacionados mantidos (padrão do schema 5; nginx e Apache usam 1)
         strategy: rename-reopen                      # rename-reopen | self | none (padrão)
         reopen: { command: "nginx.exe -s reopen ..." }   # ou { signal: ctrl-c | ctrl-break }; obrigatório (e só válido) em rename-reopen
 ```
 
 - Cada `pointer` é um JSON Pointer (RFC 6901) para um membro de objeto: começa com `/`, sem token vazio, `~` só como `~0`/`~1`. Um ponteiro não pode ser igual nem prefixo de outro (o parser usa uma trie): `/request` e `/request/host` juntos são erro.
-- `strategy`: `rename-reopen` = o daemon renomeia (`access.json.1`...) e pede ao servidor que reabra o arquivo (`reopen`, com os mesmos `-p`/`-c` do `reload`); `self` = o próprio servidor rotaciona, configurado no template (Caddy: `roll_size`/`roll_keep` em `Caddyfile.j2`, em sincronia com `max_size`/`keep`); `none` = sem rotação (Apache, **provisório** até M2-E5-T12).
-- Manifestos oficiais: nginx (`/t` s, `/rt` s, `/ut` s somado, `rename-reopen` com `nginx.exe -s reopen`), Apache (`/t` ms com `start: true`, `/rt_us` µs, host com porta, `lenient_escapes`, rotação `none`) e Caddy (`/ts`, `/duration`, `/request/host`, `/request/uri` com `strip_query`, `self`).
+- `strategy`: `rename-reopen` = o daemon renomeia (`access.json.1`...) e pede ao servidor que reabra o arquivo (`reopen`, com os mesmos `-p`/`-c` do `reload`); `self` = o próprio servidor rotaciona, configurado no template (Caddy: `roll_size`/`roll_keep` em `Caddyfile.j2`, em sincronia com `max_size`/`keep`); `none` = sem rotação (o daemon só avisa quando o arquivo passa de 4× `max_size`). Qual estratégia cada servidor aceita foi medido no M2-E5-T12 ([14 §3.8](14-observability-metrics.md#38-rotação-dos-access-logs-forge_metricsrotate-m2-e5-t12)). `reopen.signal` só entrega `ctrl-break` ao grupo de console da instância; `reopen.command` roda pelo mesmo executor do `reload.command`.
+- Manifestos oficiais: nginx (`/t` s, `/rt` s, `/ut` s somado, `rename-reopen` com `nginx.exe -s reopen`), Apache (`/t` ms com `start: true`, `/rt_us` µs, host com porta, `lenient_escapes`, `rename-reopen` com `reopen: { signal: ctrl-break }`) e Caddy (`/ts`, `/duration`, `/request/host`, `/request/uri` com `strip_query`, `self`).
 - Erros de schema (ponteiro ausente, unidade desconhecida) e de validação (`rename-reopen` sem `reopen`, ponteiro inválido) saem como `arquivo:linha:coluna` no `lint-registry`.
 
 ### 1.3 `config.quick_settings[]`

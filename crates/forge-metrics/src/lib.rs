@@ -29,6 +29,9 @@
 //! hours, prunes, rehydrates the aggregator at boot and answers ranges over 24 h
 //! (docs/14 section 3.5).
 //!
+//! [`rotate`] decides the rotation of the access logs from the manifest's `access.rotate`
+//! (rename + reopen by size, self-rotating, or none with a warning; docs/14 section 3.8).
+//!
 //! [`service`] is the actor that puts it all together for the daemon: tailers, aggregator,
 //! attribution and persistence behind a mailbox, with queries and snapshot subscriptions
 //! (docs/14 section 3.6, M2-E5-T8).
@@ -39,6 +42,7 @@ pub mod hist;
 mod parse;
 pub mod persist;
 mod record;
+pub mod rotate;
 mod route;
 mod router;
 pub mod service;

@@ -150,8 +150,16 @@ spec:
             uri: { pointer: /u }                         # %U has no query string
             upstream: /up
             lenient_escapes: true                        # \xhh and \v are not JSON
+            # Measured with httpd 2.4.69 (docs/14 section 3.8): APR opens the log with
+            # FILE_SHARE_DELETE, so the daemon renames it while httpd writes; a graceful
+            # restart (the same Ctrl+Break as `reload`) reopens it, with no failed request
+            # and no lost line. `rotatelogs.exe` is not an option: it names the files by time
+            # or alternates between two names, neither of which the tailer can follow.
             rotate:
-              strategy: none                             # provisional until M2-E5-T12
+              max_size: 64MB
+              keep: 1
+              strategy: rename-reopen
+              reopen: { signal: ctrl-break }
       autostart: true
 
   discover:

@@ -1475,7 +1475,7 @@ pub enum RotateStrategy {
     /// The server rotates by itself (Caddy `roll_*`, configured in the template).
     #[serde(rename = "self")]
     SelfRotating,
-    /// Not rotated (provisional for Apache until M2-E5-T12).
+    /// Not rotated; the daemon only warns when the file passes 4x `max_size`.
     #[default]
     #[serde(rename = "none")]
     None,

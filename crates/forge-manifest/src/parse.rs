@@ -558,8 +558,9 @@ fn json_pointer_problem(pointer: &str) -> Option<&'static str> {
     None
 }
 
-/// `50MB`, `512 KB`, `1GB` (binary multiples) to bytes.
-fn parse_size(text: &str) -> Option<u64> {
+/// `50MB`, `512 KB`, `1GB` (binary multiples) to bytes (the daemon reads `access.rotate.max_size`
+/// with it too).
+pub fn parse_size(text: &str) -> Option<u64> {
     let text = text.trim();
     let digits = text.chars().take_while(char::is_ascii_digit).count();
     let (number, unit) = text.split_at(digits);

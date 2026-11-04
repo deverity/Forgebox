@@ -954,40 +954,96 @@ impl ServiceManager {
             .and_then(|m| m.spec.service.daemon.as_ref())
             .and_then(|d| d.reload.as_ref())
             .and_then(|r| r.command.clone());
-        match (command, &entry.vars, &entry.version) {
-            (Some(command), Some(vars), Some(version)) => {
-                let line = vars.substitute(&command)?;
-                let mut parts = split_command(&line).into_iter();
-                let program = parts
-                    .next()
-                    .ok_or_else(|| ForgeError::ConfigInvalid("empty reload command".into()))?;
-                let version_dir = PathBuf::from(&version.path);
-                let probe = ProbeCommand {
-                    exe: resolve_exe(&version_dir, &program),
-                    args: parts.map(Into::into).collect(),
-                    cwd: version_dir,
-                };
-                let output = forge_core::runtime::spawn_blocking_timeout(
-                    "reload command",
-                    RELOAD_TIMEOUT + Duration::from_secs(5),
-                    move || forge_core::platform::run_probe(&probe, RELOAD_TIMEOUT),
-                )
-                .await?;
-                if output.exit_code == Some(0) {
-                    Ok(true)
-                } else {
-                    Err(ForgeError::ConfigInvalid(format!(
-                        "{}: reload failed (exit {:?}): {}",
-                        entry.label(),
-                        output.exit_code,
-                        tail(&output.combined(), 2_000)
-                    )))
-                }
+        match command {
+            Some(command) if entry.vars.is_some() && entry.version.is_some() => {
+                Self::run_instance_command(&entry, &command, "reload").await?;
+                Ok(true)
             }
             _ => handle
                 .restart(entry.stop_worst_case + entry.start_timeout + START_SLACK)
                 .await
                 .map(|_| true),
+        }
+    }
+
+    /// Runs `command` (a manifest command line, variables substituted) in the instance's
+    /// version folder and requires exit 0. `what` names the action in the error.
+    async fn run_instance_command(entry: &Entry, command: &str, what: &str) -> Result<()> {
+        let (Some(vars), Some(version)) = (&entry.vars, &entry.version) else {
+            return Err(ForgeError::ConfigInvalid(format!(
+                "{}: no version to run the {what} command in",
+                entry.label()
+            )));
+        };
+        let line = vars.substitute(command)?;
+        let mut parts = split_command(&line).into_iter();
+        let program = parts
+            .next()
+            .ok_or_else(|| ForgeError::ConfigInvalid(format!("empty {what} command")))?;
+        let version_dir = PathBuf::from(&version.path);
+        let probe = ProbeCommand {
+            exe: resolve_exe(&version_dir, &program),
+            args: parts.map(Into::into).collect(),
+            cwd: version_dir,
+        };
+        let output = forge_core::runtime::spawn_blocking_timeout(
+            "instance command",
+            RELOAD_TIMEOUT + Duration::from_secs(5),
+            move || forge_core::platform::run_probe(&probe, RELOAD_TIMEOUT),
+        )
+        .await?;
+        if output.exit_code == Some(0) {
+            Ok(())
+        } else {
+            Err(ForgeError::ConfigInvalid(format!(
+                "{}: {what} failed (exit {:?}): {}",
+                entry.label(),
+                output.exit_code,
+                tail(&output.combined(), 2_000)
+            )))
+        }
+    }
+
+    /// Makes a running instance reopen its files (access log rotation, docs/14 section
+    /// 3.8) with the manifest's `reopen` (`access.rotate.reopen`), through the same
+    /// command runner as the reload: `command` runs in the version folder; `signal`
+    /// delivers `CTRL_BREAK` to the console group of the instance (`processes`). Returns
+    /// whether the instance was running (and therefore told).
+    pub async fn apply_reopen(
+        &self,
+        id: InstanceId,
+        reopen: &forge_manifest::schema::tool::Reload,
+        processes: &Arc<dyn forge_core::platform::ProcessControl>,
+    ) -> Result<bool> {
+        use forge_manifest::schema::tool::ConsoleSignal;
+        let (entry, handle) = self.handle_of(id)?;
+        let status = handle.status(QUICK_ASK_TIMEOUT).await?;
+        if status.state != InstanceState::Running {
+            return Ok(false);
+        }
+        if let Some(command) = &reopen.command {
+            Self::run_instance_command(&entry, command, "reopen").await?;
+            return Ok(true);
+        }
+        match (reopen.signal, status.pid) {
+            (Some(ConsoleSignal::CtrlBreak), Some(pid)) => {
+                let processes = Arc::clone(processes);
+                forge_core::runtime::spawn_blocking_timeout(
+                    "reopen signal",
+                    RELOAD_TIMEOUT,
+                    move || processes.send_ctrl_break(pid, Duration::from_secs(5)),
+                )
+                .await?;
+                Ok(true)
+            }
+            (Some(signal), _) => Err(ForgeError::ConfigInvalid(format!(
+                "{}: the reopen signal {signal:?} cannot be delivered (only ctrl-break, to a running instance)",
+                entry.label()
+            ))),
+            (None, _) => Err(ForgeError::ConfigInvalid(format!(
+                "{}: the reopen has neither command nor signal",
+                entry.label()
+            ))),
         }
     }
 
