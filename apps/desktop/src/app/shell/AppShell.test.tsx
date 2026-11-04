@@ -282,12 +282,18 @@ describe("connection banners", () => {
   });
 });
 
-const REAL_SCREENS: ReadonlySet<string> = new Set(["services", "sites", "catalog", "terminal"]);
+const REAL_SCREENS: ReadonlySet<string> = new Set([
+  "dashboard",
+  "services",
+  "sites",
+  "catalog",
+  "terminal",
+]);
 
 describe("routes", () => {
   it("redirects / to the Dashboard and each placeholder names its task", async () => {
     const h = await renderApp({ path: "/" });
-    expect(await screen.findByTestId("page-dashboard")).toHaveTextContent("M2-E2-T14");
+    expect(await screen.findByTestId("page-dashboard")).toHaveTextContent("Dashboard");
     expect(h.router.state.location.pathname).toBe("/dashboard");
     const nav = screen.getByRole("navigation", { name: "Main navigation" });
     const links = within(nav).getAllByRole("link");

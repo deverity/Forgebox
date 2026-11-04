@@ -1,0 +1,140 @@
+{
+  "title": "Dashboard",
+  "summary": "{running} of {total} running",
+  "tiles": {
+    "label": "Services",
+    "empty": {
+      "title": "No services yet",
+      "description": "Install a tool from the catalog to see its tile here.",
+      "action": "Open the catalog"
+    },
+    "noPort": "No port",
+    "noMetrics": "No data",
+    "pool": "PHP {series} pool",
+    "workers": "{busy}/{total} workers",
+    "cpu": "CPU {value}",
+    "ram": "RAM {value}",
+    "reqs": "{value} req/s",
+    "start": "Start",
+    "stop": "Stop",
+    "starting": "Starting",
+    "stopping": "Stopping",
+    "started": "Started",
+    "stopped": "Stopped",
+    "menu": "More actions for {name}",
+    "restart": "Restart",
+    "restarting": "Restarting",
+    "restarted": "Restarted",
+    "logs": "Logs",
+    "detail": "Details"
+  },
+  "attention": {
+    "title": "Attention",
+    "severity": {
+      "info": "Info",
+      "warning": "Warning",
+      "critical": "Critical"
+    },
+    "ports": {
+      "title": "Port {port} is in use by {holder}",
+      "titleUnknown": "Port {port} is in use by another program",
+      "cause": "Another program holds a port Forgebox needs.",
+      "causeOwner": "Another program holds a port Forgebox needs, so {owner} cannot start.",
+      "action": "See services"
+    },
+    "updates": {
+      "title_one": "{count} tool update available",
+      "title_other": "{count} tool updates available",
+      "cause": "A newer version was found for tools you have installed.",
+      "action": "Open the catalog"
+    },
+    "drift": {
+      "title": "Config file changed outside Forgebox: {path}",
+      "cause": "The file differs from what Forgebox rendered in the last 24 hours. Edits outside the managed blocks are kept; edits inside them are overwritten.",
+      "action": "Run diagnostics"
+    },
+    "caUntrusted": {
+      "title": "The local CA is not trusted",
+      "cause": "Browsers warn about every HTTPS site until the Forgebox CA is trusted.",
+      "action": "Open settings"
+    },
+    "caExpiring": {
+      "title": "The local CA expires in {days} days",
+      "cause": "Certificates issued by it stop working after that date; rotate the CA before then.",
+      "action": "Open settings"
+    },
+    "certs": {
+      "title_one": "{count} certificate expires in less than 30 days",
+      "title_other": "{count} certificates expire in less than 30 days",
+      "cause": "The first one is {host} ({days} days left). Renewing issues a new certificate with the same names.",
+      "causeExpired": "The first one is {host} and has already expired. Renewing issues a new certificate with the same names.",
+      "action": "Open settings"
+    },
+    "dns": {
+      "title": "DNS for your local names is not routed by Windows",
+      "titleHosts": "DNS is using the hosts file fallback",
+      "cause": {
+        "group_policy_table_present": "A Group Policy NRPT table exists, so Windows ignores local rules.",
+        "resolver_probe_failed": "Windows did not answer a test name with loopback; a VPN or security agent may be intercepting DNS.",
+        "resolver_not_on_port53": "The Forgebox resolver is not on port 53 and NRPT cannot name a port.",
+        "nrpt_unsupported": "This Windows has no NRPT.",
+        "none": "Nothing routes the local TLD to the Forgebox resolver.",
+        "hosts": "Names are written to the hosts file instead of being resolved by Forgebox."
+      },
+      "action": "Open diagnostics"
+    },
+    "failed": {
+      "title": "{name} failed",
+      "cause": "The service stopped with an error. Open its details to see the cause.",
+      "action": "Open details"
+    }
+  },
+  "projects": {
+    "title": "Projects",
+    "empty": {
+      "title": "Project ranking is not available yet",
+      "description": "Per-site CPU, RAM, p99 and error ranking appears here once performance metrics are turned on."
+    }
+  },
+  "recent": {
+    "title": "Recent sites",
+    "empty": {
+      "title": "No sites yet",
+      "description": "Create a site and it shows up here.",
+      "action": "Open sites"
+    },
+    "open": "Open {host}",
+    "php": "PHP {version}",
+    "editor": "Editor",
+    "terminal": "Terminal",
+    "all": "All sites"
+  },
+  "activity": {
+    "title": "Activity",
+    "empty": "Nothing has happened yet.",
+    "loading": "Loading activity",
+    "event": {
+      "tool_install_completed": "{tool} {version} installed",
+      "tool_install_failed": "{tool} {version} failed to install",
+      "tool_updated": "{tool} updated to {to}",
+      "tool_rollback": "{tool} rolled back to {to}",
+      "service_running": "{name} started",
+      "service_stopped": "{name} stopped",
+      "service_failed": "{name} failed",
+      "service_crashed": "{name} crashed",
+      "site_created": "Site {host} created",
+      "site_removed": "Site {host} removed",
+      "site_php_changed": "{host} now uses PHP {to}",
+      "tls_leaf_issued": "Certificate issued for {host}",
+      "tls_renewed": "Certificate renewed for {host}",
+      "tls_ca_created": "Local CA created",
+      "tls_ca_untrusted": "Local CA is no longer trusted",
+      "dns_policy_applied": "DNS for .{tld}: {policy}",
+      "config_drift_detected": "Config changed outside Forgebox: {path}",
+      "port_conflict": "Conflict on port {port}",
+      "tool_updates_available_one": "{count} update available",
+      "tool_updates_available_other": "{count} updates available",
+      "daemon_ready": "Daemon ready"
+    }
+  }
+}

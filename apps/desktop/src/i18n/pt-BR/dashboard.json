@@ -1,0 +1,140 @@
+{
+  "title": "Painel",
+  "summary": "{running} de {total} em execução",
+  "tiles": {
+    "label": "Serviços",
+    "empty": {
+      "title": "Nenhum serviço ainda",
+      "description": "Instale uma ferramenta pelo catálogo para ver o cartão dela aqui.",
+      "action": "Abrir o catálogo"
+    },
+    "noPort": "Sem porta",
+    "noMetrics": "Sem dados",
+    "pool": "Pool PHP {series}",
+    "workers": "{busy}/{total} workers",
+    "cpu": "CPU {value}",
+    "ram": "RAM {value}",
+    "reqs": "{value} req/s",
+    "start": "Iniciar",
+    "stop": "Parar",
+    "starting": "Iniciando",
+    "stopping": "Parando",
+    "started": "Iniciado",
+    "stopped": "Parado",
+    "menu": "Mais ações para {name}",
+    "restart": "Reiniciar",
+    "restarting": "Reiniciando",
+    "restarted": "Reiniciado",
+    "logs": "Logs",
+    "detail": "Detalhes"
+  },
+  "attention": {
+    "title": "Atenção",
+    "severity": {
+      "info": "Informação",
+      "warning": "Aviso",
+      "critical": "Crítico"
+    },
+    "ports": {
+      "title": "A porta {port} está em uso por {holder}",
+      "titleUnknown": "A porta {port} está em uso por outro programa",
+      "cause": "Outro programa ocupa uma porta de que o Forgebox precisa.",
+      "causeOwner": "Outro programa ocupa uma porta de que o Forgebox precisa, então {owner} não consegue iniciar.",
+      "action": "Ver serviços"
+    },
+    "updates": {
+      "title_one": "{count} atualização de ferramenta disponível",
+      "title_other": "{count} atualizações de ferramentas disponíveis",
+      "cause": "Há uma versão mais nova de ferramentas que você instalou.",
+      "action": "Abrir o catálogo"
+    },
+    "drift": {
+      "title": "Arquivo de configuração alterado fora do Forgebox: {path}",
+      "cause": "O arquivo difere do que o Forgebox gerou nas últimas 24 horas. Edições fora dos blocos gerenciados são mantidas; as de dentro são sobrescritas.",
+      "action": "Rodar diagnóstico"
+    },
+    "caUntrusted": {
+      "title": "A CA local não é confiável",
+      "cause": "Os navegadores avisam em todo site HTTPS até que a CA do Forgebox seja confiável.",
+      "action": "Abrir configurações"
+    },
+    "caExpiring": {
+      "title": "A CA local expira em {days} dias",
+      "cause": "Os certificados emitidos por ela deixam de valer depois dessa data; faça a rotação da CA antes.",
+      "action": "Abrir configurações"
+    },
+    "certs": {
+      "title_one": "{count} certificado vence em menos de 30 dias",
+      "title_other": "{count} certificados vencem em menos de 30 dias",
+      "cause": "O primeiro é {host} (faltam {days} dias). Renovar emite um novo certificado com os mesmos nomes.",
+      "causeExpired": "O primeiro é {host} e já venceu. Renovar emite um novo certificado com os mesmos nomes.",
+      "action": "Abrir configurações"
+    },
+    "dns": {
+      "title": "O DNS dos nomes locais não está roteado pelo Windows",
+      "titleHosts": "O DNS está usando o arquivo hosts como alternativa",
+      "cause": {
+        "group_policy_table_present": "Existe uma tabela NRPT de Política de Grupo, então o Windows ignora as regras locais.",
+        "resolver_probe_failed": "O Windows não respondeu um nome de teste com loopback; uma VPN ou agente de segurança pode estar interceptando o DNS.",
+        "resolver_not_on_port53": "O resolvedor do Forgebox não está na porta 53 e o NRPT não consegue indicar porta.",
+        "nrpt_unsupported": "Este Windows não tem NRPT.",
+        "none": "Nada roteia o TLD local para o resolvedor do Forgebox.",
+        "hosts": "Os nomes são gravados no arquivo hosts em vez de resolvidos pelo Forgebox."
+      },
+      "action": "Abrir diagnóstico"
+    },
+    "failed": {
+      "title": "{name} falhou",
+      "cause": "O serviço parou com erro. Abra os detalhes para ver a causa.",
+      "action": "Abrir detalhes"
+    }
+  },
+  "projects": {
+    "title": "Projetos",
+    "empty": {
+      "title": "O ranking de projetos ainda não está disponível",
+      "description": "O ranking de CPU, RAM, p99 e erros por site aparece aqui quando as métricas de desempenho estiverem ligadas."
+    }
+  },
+  "recent": {
+    "title": "Sites recentes",
+    "empty": {
+      "title": "Nenhum site ainda",
+      "description": "Crie um site e ele aparece aqui.",
+      "action": "Abrir sites"
+    },
+    "open": "Abrir {host}",
+    "php": "PHP {version}",
+    "editor": "Editor",
+    "terminal": "Terminal",
+    "all": "Todos os sites"
+  },
+  "activity": {
+    "title": "Atividade",
+    "empty": "Nada aconteceu ainda.",
+    "loading": "Carregando atividade",
+    "event": {
+      "tool_install_completed": "{tool} {version} instalado",
+      "tool_install_failed": "{tool} {version} não foi instalado",
+      "tool_updated": "{tool} atualizado para {to}",
+      "tool_rollback": "{tool} revertido para {to}",
+      "service_running": "{name} iniciado",
+      "service_stopped": "{name} parado",
+      "service_failed": "{name} falhou",
+      "service_crashed": "{name} travou",
+      "site_created": "Site {host} criado",
+      "site_removed": "Site {host} removido",
+      "site_php_changed": "{host} agora usa PHP {to}",
+      "tls_leaf_issued": "Certificado emitido para {host}",
+      "tls_renewed": "Certificado renovado para {host}",
+      "tls_ca_created": "CA local criada",
+      "tls_ca_untrusted": "A CA local deixou de ser confiável",
+      "dns_policy_applied": "DNS de .{tld}: {policy}",
+      "config_drift_detected": "Configuração alterada fora do Forgebox: {path}",
+      "port_conflict": "Conflito na porta {port}",
+      "tool_updates_available_one": "{count} atualização disponível",
+      "tool_updates_available_other": "{count} atualizações disponíveis",
+      "daemon_ready": "Daemon pronto"
+    }
+  }
+}
