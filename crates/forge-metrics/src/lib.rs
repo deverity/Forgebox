@@ -28,6 +28,10 @@
 //! [`persist`] stores the closed minutes and the tail checkpoints in SQLite, rolls them up to
 //! hours, prunes, rehydrates the aggregator at boot and answers ranges over 24 h
 //! (docs/14 section 3.5).
+//!
+//! [`service`] is the actor that puts it all together for the daemon: tailers, aggregator,
+//! attribution and persistence behind a mailbox, with queries and snapshot subscriptions
+//! (docs/14 section 3.6, M2-E5-T8).
 
 pub mod agg;
 pub mod attribution;
@@ -37,6 +41,7 @@ pub mod persist;
 mod record;
 mod route;
 mod router;
+pub mod service;
 pub mod tail;
 
 pub use agg::{
@@ -52,6 +57,10 @@ pub use parse::{AccessParser, MAX_LINE_BYTES, ParseError};
 pub use record::{AccessFormat, AccessRecord, FieldMap, FormatError, Multi, Unit, UpstreamMap};
 pub use route::UriNormalizer;
 pub use router::{HostRouter, Routed, SiteHosts, normalize_host};
+pub use service::{
+    LogSource, MetricsHandle, PoolFeed, ServiceConfig, ServiceStatus, SiteRoute, SiteSample, Sites,
+    Snapshot, SourceStatus, Span, StopReport,
+};
 pub use tail::{
     Checkpoint, LineDecoder, StartAt, StartOutcome, TailBatch, TailConfig, TailControl, TailSpec,
     TailStatus, Tailer, TailerHandle,

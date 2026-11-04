@@ -799,6 +799,18 @@ pub async fn query_range(
     to: Timestamp,
     now: Timestamp,
 ) -> Result<Summary> {
+    Ok(query_range_hists(reader, site, from, to, now).await?.0)
+}
+
+/// [`query_range`] plus the merged rt and ut histograms, to merge the stored part of a range
+/// with the part still in memory (the metrics service, M2-E5-T8).
+pub async fn query_range_hists(
+    reader: &StoreReader,
+    site: SiteId,
+    from: Timestamp,
+    to: Timestamp,
+    now: Timestamp,
+) -> Result<(Summary, LatencyHist, LatencyHist)> {
     let now_s = secs(now);
     let to_s = secs(to).min(now_s);
     let from_s = secs(from).min(to_s);
@@ -853,14 +865,15 @@ pub async fn query_range(
             rt = rt.merge(&row_rt);
             ut = ut.merge(&row_ut);
         }
-        Summary {
+        let summary = Summary {
             from: at(covered_from),
             to: at(covered_to),
             counters,
             rt: rt.percentiles(),
             ut: ut.percentiles(),
             sampled,
-        }
+        };
+        (summary, rt, ut)
     })
     .await
 }
