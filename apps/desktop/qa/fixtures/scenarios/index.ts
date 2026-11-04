@@ -171,13 +171,11 @@ function define(name: string, data: QaData, base: FakeScenario, live?: LiveBehav
 export function registerQaScenarios(): void {
   const builtin = (name: string): FakeScenario => SCENARIOS.get(name)?.() ?? {};
   define("empty", emptyData(), builtin("empty"));
-  // The catalog (M2-E2-T18) needs the provider jobs, which the daemon answers `not_implemented`
-  // until M2-E2-T5: the populated scenario offers them, like a daemon that has them.
+  // The catalog (M2-E2-T18) uses the provider jobs (`tools.releases`, `tools.plan`, answered
+  // since M2-E2-T5, so they are no longer in the not-implemented table).
   define("populated", populatedData(), {
     latencyMs: 0,
-    notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
-      (method) => method !== "tools.releases" && method !== "tools.plan",
-    ),
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
   });
   // The Dashboard (M2-E2-T14): healthy, and every Atenção source at once.
   const healthy = healthyDashboard();
