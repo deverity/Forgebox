@@ -1,5 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
-import type { CSSProperties } from "react";
+import { Suspense, type CSSProperties } from "react";
 import { useRuntime } from "../../state";
 import { PaletteHost } from "../palette/PaletteHost";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -37,7 +37,12 @@ export function AppShell() {
         </main>
       </div>
       <StatusBar />
-      <PaletteHost />
+      {/* The shortcuts' labels live in the `palette` namespace, which is not loaded with the
+          shell: while it loads only this boundary waits. Without it the suspension reaches the
+          shell route and the pending fallback replaces the whole window on first paint. */}
+      <Suspense fallback={null}>
+        <PaletteHost />
+      </Suspense>
       <LazyToasts />
     </div>
   );
