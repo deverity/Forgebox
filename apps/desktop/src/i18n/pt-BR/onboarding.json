@@ -1,0 +1,166 @@
+{
+  "title": "Configurar o Forgebox",
+  "subtitle": "Quatro passos curtos. Você pode mudar tudo depois em Configurações.",
+  "progress": {
+    "label": "Passos da configuração",
+    "stepOf": "Passo {current} de {total}"
+  },
+  "steps": {
+    "root": "Pastas",
+    "stack": "Stack",
+    "options": "Permissões",
+    "run": "Instalação"
+  },
+  "nav": {
+    "back": "Voltar",
+    "next": "Continuar",
+    "applying": "Aplicando…",
+    "install": "Instalar e configurar",
+    "finish": "Concluir",
+    "finishing": "Concluindo…"
+  },
+  "loading": "Carregando o estado da primeira execução…",
+  "loadFailed": "Não foi possível ler o estado da primeira execução.",
+  "hidden": {
+    "remote": "Este daemon roda em outra máquina, então as pastas dele, o seu PATH e a inicialização com o Windows não são alterados daqui.",
+    "portable": "Modo portátil: a raiz fica ao lado do app, e o seu PATH e a inicialização com o Windows não são tocados.",
+    "forced": "A raiz é definida por FORGEBOX_ROOT e não pode ser mudada aqui."
+  },
+  "root": {
+    "title": "Onde o Forgebox vai morar?",
+    "description": "Escolha a pasta raiz, a pasta cujas subpastas viram sites e o domínio local.",
+    "rootLabel": "Pasta raiz",
+    "rootHint": "Ferramentas, configurações, dados e logs ficam aqui. Padrão: C:/Forgebox.",
+    "parkedLabel": "Pasta dos seus sites",
+    "parkedHint": "Cada subpasta vira um site: loja vira loja{tld}.",
+    "tldLabel": "Domínio local (TLD)",
+    "tldHint": "Só nomes reservados para uso local: .test, .localhost, .internal, .lan…",
+    "tld": {
+      "empty": "Digite um domínio, como .test.",
+      "syntax": "Use letras, números e hifens, com pontos entre os rótulos.",
+      "reserved": "Esse sufixo não é reservado para uso local; escolha .test, .localhost, .internal ou .lan."
+    },
+    "pathEmpty": "Digite uma pasta.",
+    "applying": "Criando as pastas e iniciando o daemon…"
+  },
+  "stack": {
+    "title": "O que você vai construir?",
+    "description": "Uma stack instala as ferramentas de que precisa. Você pode adicionar ou remover ferramentas depois, no Catálogo.",
+    "groupLabel": "Stack inicial",
+    "emptyName": "Vazio",
+    "emptyDescription": "Não instala nada agora. Escolha as ferramentas depois, no Catálogo.",
+    "loadingCards": "Carregando as stacks…",
+    "searchFailed": "Não foi possível carregar as stacks.",
+    "noStacks": "O catálogo ainda não tem stacks de onboarding; escolha Vazio e adicione ferramentas pelo Catálogo.",
+    "planTitle": "O que será baixado",
+    "planFailed": "Não foi possível planejar o download.",
+    "planEmpty": "Nada para baixar: tudo já está instalado.",
+    "adjust": "Ajustar versões",
+    "adjustHide": "Ocultar versões",
+    "versionLabel": "Versão de {tool}",
+    "versionsLoading": "Buscando versões…",
+    "versionsFailed": "Não foi possível listar as versões de {tool}.",
+    "versionsStale": "Mostrando a lista em cache: os provedores não responderam.",
+    "offline": "Não foi possível planejar a stack. Verifique a conexão e tente de novo."
+  },
+  "options": {
+    "title": "Permissões e paridade",
+    "description": "Cada chave pode ser mudada depois. Nada daqui roda até você apertar Instalar.",
+    "path": {
+      "label": "Adicionar o Forgebox ao PATH",
+      "description": "Para php, composer e node funcionarem em qualquer terminal novo. Só o PATH do seu usuário muda."
+    },
+    "dns": {
+      "label": "DNS automático para *{tld}",
+      "description": "Todo nome de site resolve para esta máquina sem editar o arquivo hosts. Precisa de uma confirmação de administrador (UAC), uma única vez."
+    },
+    "ca": {
+      "label": "Confiar na CA local",
+      "description": "O Windows vai mostrar um diálogo pedindo para confiar na autoridade certificadora do Forgebox. Aceite e https://*{tld} abre sem aviso no navegador. Vale só para o seu usuário."
+    },
+    "autostart": {
+      "label": "Iniciar com o Windows",
+      "description": "Abre o Forgebox na bandeja quando você entra no Windows.",
+      "unavailable": "Indisponível neste modo."
+    },
+    "parity": {
+      "label": "Modo paridade Linux (case-sensitive)",
+      "description": "Seus projetos vão se comportar como no servidor. Erros de maiúsculas/minúsculas aparecem aqui, não em produção."
+    }
+  },
+  "run": {
+    "title": "Configurando tudo",
+    "description": "Os downloads são verificados antes do uso. Você pode pular qualquer item e rodar o comando dele depois.",
+    "waiting": "Aguardando o daemon…",
+    "stepsLabel": "Andamento da configuração",
+    "installLabel": "Downloads",
+    "nothingToInstall": "Nada para baixar.",
+    "retry": "Tentar de novo",
+    "skip": "Pular",
+    "runLater": "Rode depois com:",
+    "step": {
+      "parity": "Paridade Linux",
+      "install": "Baixar ferramentas",
+      "path": "Adicionar ao PATH",
+      "dns": "DNS automático",
+      "ca": "Confiar na CA local",
+      "autostart": "Iniciar com o Windows"
+    },
+    "status": {
+      "pending": "Aguardando",
+      "running": "Em andamento…",
+      "done": "Pronto",
+      "failed": "Falhou",
+      "skipped": "Pulado"
+    },
+    "skipped": {
+      "user": "Pulado por você.",
+      "elevation": "A confirmação de administrador foi recusada, então este item foi pulado.",
+      "nothing": "Nada a fazer."
+    },
+    "result": {
+      "path": "As entradas do Forgebox estão no PATH do seu usuário. Abra um terminal novo para usá-las.",
+      "dnsNrpt": "O Windows envia {tlds} ao Forgebox por uma regra NRPT. Curingas como *{tld} resolvem.",
+      "dnsHosts": "O Windows não está seguindo a regra NRPT ({reason}), então o Forgebox lista cada site no arquivo hosts. No modo hosts os curingas (*{tld}) não resolvem: só os sites que você adicionar.",
+      "dnsHostsNoReason": "O Forgebox lista cada site no arquivo hosts em vez de usar NRPT. No modo hosts os curingas (*{tld}) não resolvem: só os sites que você adicionar.",
+      "dnsNone": "O DNS está ligado, mas nada roteia {tlds} ainda. Rode o diagnóstico.",
+      "caTrusted": "A CA local é confiável para o seu usuário.",
+      "caNotTrusted": "A CA foi instalada, mas o Windows ainda não confia nela."
+    },
+    "dnsReason": {
+      "group_policy_table_present": "existe uma tabela NRPT de Política de Grupo e o Windows ignora regras locais",
+      "resolver_probe_failed": "o resolvedor do Windows não respondeu à sonda, talvez por VPN ou agente de segurança",
+      "resolver_not_on_port53": "o resolvedor do Forgebox não está na porta 53",
+      "nrpt_unsupported": "este Windows não tem NRPT",
+      "nrpt_points_elsewhere": "outra regra envia o domínio para um servidor diferente"
+    },
+    "tips": {
+      "label": "Dica",
+      "t1": "Cada site tem a sua versão de PHP. Troque quando quiser na página do site.",
+      "t2": "Solte uma pasta de projeto nesta janela e o Forgebox cria o site para você.",
+      "t3": "Tudo o que o app faz tem um comando forge. Abra os comandos equivalentes abaixo para ver.",
+      "t4": "A paridade Linux pega nomes de arquivo com maiúsculas erradas antes da produção."
+    },
+    "first": {
+      "title": "Seu primeiro site",
+      "description": "Arraste uma pasta aqui ou digite o caminho dela.",
+      "drop": "Arraste uma pasta de projeto aqui",
+      "dropActive": "Solte a pasta para criar o site",
+      "pathLabel": "Pasta do projeto",
+      "add": "Criar site",
+      "adding": "Criando…",
+      "created": "{host} está pronto.",
+      "remoteHint": "O daemon está em outra máquina: digite o caminho da pasta como aquela máquina o vê.",
+      "open": "Abrir"
+    },
+    "commands": {
+      "title": "Comandos equivalentes",
+      "description": "A mesma configuração, a partir de um terminal."
+    }
+  },
+  "settings": {
+    "title": "Primeiros passos",
+    "description": "Rode a configuração de novo para mudar a stack, o DNS, a CA ou o PATH.",
+    "action": "Rodar a configuração de novo"
+  }
+}

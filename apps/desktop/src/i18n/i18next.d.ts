@@ -8,6 +8,7 @@ import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
 import type mail from "./en-US/mail.json";
 import type notifications from "./en-US/notifications.json";
+import type onboarding from "./en-US/onboarding.json";
 import type palette from "./en-US/palette.json";
 import type php from "./en-US/php.json";
 import type settings from "./en-US/settings.json";
@@ -41,6 +42,7 @@ export interface Resources {
   php: typeof php;
   databases: typeof databases;
   diagnostics: typeof diagnostics;
+  onboarding: typeof onboarding;
 }
 
 declare module "i18next" {

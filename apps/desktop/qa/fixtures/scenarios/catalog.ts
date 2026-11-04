@@ -38,6 +38,7 @@ interface Seed {
   native?: boolean;
   update?: string;
   icon?: string;
+  tags?: string[];
 }
 
 const SEEDS: Seed[] = [
@@ -114,6 +115,27 @@ const SEEDS: Seed[] = [
     versions: ["1.0.0"],
     kind: "stack",
     size_mb: 233,
+    tags: ["php", "laravel", "onboarding"],
+  },
+  {
+    id: "wordpress",
+    name: "WordPress",
+    category: "stack",
+    summary: "PHP and MySQL ready for WordPress.",
+    versions: ["1.0.0"],
+    kind: "stack",
+    size_mb: 221,
+    tags: ["php", "wordpress", "onboarding"],
+  },
+  {
+    id: "nextjs",
+    name: "Next.js",
+    category: "stack",
+    summary: "Node.js ready for a Next.js app behind a proxy.",
+    versions: ["1.0.0"],
+    kind: "stack",
+    size_mb: 30,
+    tags: ["node", "nextjs", "onboarding"],
   },
 ];
 
@@ -126,7 +148,7 @@ function entryOf(seed: Seed, installed: ReadonlySet<string>): T.CatalogEntryDto 
     category: seed.category,
     description: seed.summary,
     summary: seed.summary,
-    tags: [],
+    tags: seed.tags ?? [],
     registry: seed.registry ?? "official",
     official: seed.official ?? true,
     native: seed.native ?? true,
@@ -181,6 +203,19 @@ const DESCRIPTION = [
   '<img src=x onerror="window.__pwned=4"> <script>window.__pwned=5</script>',
 ].join("\n");
 
+/** What each fixture stack installs; a `tool@series` spec of a plan replaces the stack's entry. */
+const STACK_SPECS: Record<string, string[]> = {
+  laravel: ["php@8.4.27", "mysql@8.4.3", "redis@7.4.1"],
+  wordpress: ["php@8.4.27", "mysql@8.4.3"],
+  nextjs: ["nodejs@22.11.0"],
+};
+
+function stackSpecs(stack: string, overrides: readonly string[]): string[] {
+  const wanted = STACK_SPECS[stack] ?? [];
+  const replaced = new Set(overrides.map((spec) => spec.split("@")[0]));
+  return [...wanted.filter((spec) => !replaced.has(spec.split("@")[0])), ...overrides];
+}
+
 /**
  * The catalog handlers over `data`. `base` is the scenario's existing handlers: `tools.info`
  * extends their answer (installed versions, policy) with the catalog metadata.
@@ -200,11 +235,16 @@ export function catalogHandlers(_data: QaData, base: FakeHandlers = {}): FakeHan
     const wanted =
       stack === undefined || stack === null
         ? specs
-        : stack === "laravel"
-          ? ["php@8.4.27", "mysql@8.4.3", "redis@7.4.1"]
+        : stack in STACK_SPECS
+          ? stackSpecs(stack, specs)
           : fakeError("not_found", `stack ${stack} not found`);
     const items: T.ToolPlanItemDto[] = wanted.map((spec) => {
-      const [tool = "", version = ""] = spec.split("@");
+      const [tool = "", wantedVersion = ""] = spec.split("@");
+      // A series (`8.3`) resolves to the newest version of that series, like the daemon.
+      const version =
+        SEEDS.find((seed) => seed.id === tool)?.versions.find(
+          (candidate) => candidate === wantedVersion || candidate.startsWith(`${wantedVersion}.`),
+        ) ?? wantedVersion;
       const estimated = tool === "mysql";
       return {
         tool,

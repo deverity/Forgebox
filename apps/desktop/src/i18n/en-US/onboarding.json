@@ -1,0 +1,166 @@
+{
+  "title": "Set up Forgebox",
+  "subtitle": "Four short steps. You can change everything later in Settings.",
+  "progress": {
+    "label": "Setup steps",
+    "stepOf": "Step {current} of {total}"
+  },
+  "steps": {
+    "root": "Folders",
+    "stack": "Stack",
+    "options": "Permissions",
+    "run": "Install"
+  },
+  "nav": {
+    "back": "Back",
+    "next": "Continue",
+    "applying": "Applying…",
+    "install": "Install and set up",
+    "finish": "Finish",
+    "finishing": "Finishing…"
+  },
+  "loading": "Loading the first-run state…",
+  "loadFailed": "Could not read the first-run state.",
+  "hidden": {
+    "remote": "This daemon runs on another machine, so its folders, your PATH and the Windows startup entry are not changed from here.",
+    "portable": "Portable mode: the root sits next to the app, and your PATH and the Windows startup entry are left alone.",
+    "forced": "The root is set by FORGEBOX_ROOT and cannot be changed here."
+  },
+  "root": {
+    "title": "Where should Forgebox live?",
+    "description": "Pick the root folder, the folder whose subfolders become sites, and the local domain.",
+    "rootLabel": "Root folder",
+    "rootHint": "Tools, configs, data and logs live here. Default: C:/Forgebox.",
+    "parkedLabel": "Folder for your sites",
+    "parkedHint": "Every subfolder becomes a site: loja turns into loja{tld}.",
+    "tldLabel": "Local domain (TLD)",
+    "tldHint": "Only names reserved for local use: .test, .localhost, .internal, .lan…",
+    "tld": {
+      "empty": "Type a domain such as .test.",
+      "syntax": "Use letters, digits and hyphens, with dots between labels.",
+      "reserved": "That suffix is not reserved for local use; pick .test, .localhost, .internal or .lan."
+    },
+    "pathEmpty": "Type a folder.",
+    "applying": "Creating the folders and starting the daemon…"
+  },
+  "stack": {
+    "title": "What will you build?",
+    "description": "A stack installs the tools it needs. You can add or remove tools later in the Catalog.",
+    "groupLabel": "Initial stack",
+    "emptyName": "Empty",
+    "emptyDescription": "Install nothing now. Pick tools later in the Catalog.",
+    "loadingCards": "Loading stacks…",
+    "searchFailed": "Could not load the stacks.",
+    "noStacks": "The catalog has no onboarding stacks yet; choose Empty and add tools from the Catalog.",
+    "planTitle": "What will be downloaded",
+    "planFailed": "Could not plan the download.",
+    "planEmpty": "Nothing to download: everything is installed.",
+    "adjust": "Adjust versions",
+    "adjustHide": "Hide versions",
+    "versionLabel": "{tool} version",
+    "versionsLoading": "Looking up versions…",
+    "versionsFailed": "Could not list the versions of {tool}.",
+    "versionsStale": "Showing the cached list: the providers did not answer.",
+    "offline": "The stack could not be planned. Check your connection and try again."
+  },
+  "options": {
+    "title": "Permissions and parity",
+    "description": "Each switch can be changed later. Nothing here runs until you press Install.",
+    "path": {
+      "label": "Add Forgebox to PATH",
+      "description": "So php, composer and node work in any new terminal. Only your user PATH changes."
+    },
+    "dns": {
+      "label": "Automatic DNS for *{tld}",
+      "description": "Every site name resolves to this machine without editing the hosts file. It needs one administrator confirmation (UAC), once."
+    },
+    "ca": {
+      "label": "Trust the local CA",
+      "description": "Windows will show a dialog asking to trust the Forgebox certificate authority. Accept it and https://*{tld} opens without a browser warning. It applies to your user only."
+    },
+    "autostart": {
+      "label": "Start with Windows",
+      "description": "Opens Forgebox in the tray when you sign in.",
+      "unavailable": "Not available in this mode."
+    },
+    "parity": {
+      "label": "Linux parity mode (case-sensitive)",
+      "description": "Your projects will behave like on the server. Upper/lower-case mistakes show up here, not in production."
+    }
+  },
+  "run": {
+    "title": "Setting everything up",
+    "description": "Downloads are verified before they are used. You can skip any item and run its command later.",
+    "waiting": "Waiting for the daemon…",
+    "stepsLabel": "Setup progress",
+    "installLabel": "Downloads",
+    "nothingToInstall": "Nothing to download.",
+    "retry": "Try again",
+    "skip": "Skip",
+    "runLater": "Run it later with:",
+    "step": {
+      "parity": "Linux parity",
+      "install": "Download tools",
+      "path": "Add to PATH",
+      "dns": "Automatic DNS",
+      "ca": "Trust the local CA",
+      "autostart": "Start with Windows"
+    },
+    "status": {
+      "pending": "Waiting",
+      "running": "Working…",
+      "done": "Done",
+      "failed": "Failed",
+      "skipped": "Skipped"
+    },
+    "skipped": {
+      "user": "Skipped by you.",
+      "elevation": "The administrator confirmation was refused, so this was skipped.",
+      "nothing": "Nothing to do."
+    },
+    "result": {
+      "path": "Forgebox entries are on your user PATH. Open a new terminal to use them.",
+      "dnsNrpt": "Windows sends {tlds} to Forgebox through an NRPT rule. Wildcards such as *{tld} resolve.",
+      "dnsHosts": "Windows is not following the NRPT rule ({reason}), so Forgebox lists each site in the hosts file instead. In hosts mode wildcards (*{tld}) do not resolve: only the sites you add do.",
+      "dnsHostsNoReason": "Forgebox lists each site in the hosts file instead of using NRPT. In hosts mode wildcards (*{tld}) do not resolve: only the sites you add do.",
+      "dnsNone": "DNS is on, but nothing routes {tlds} yet. Run the diagnostics.",
+      "caTrusted": "The local CA is trusted for your user.",
+      "caNotTrusted": "The CA was installed, but Windows does not trust it yet."
+    },
+    "dnsReason": {
+      "group_policy_table_present": "a Group Policy NRPT table exists and Windows ignores local rules",
+      "resolver_probe_failed": "the Windows resolver did not answer the probe, maybe a VPN or security agent",
+      "resolver_not_on_port53": "the Forgebox resolver is not on port 53",
+      "nrpt_unsupported": "this Windows has no NRPT",
+      "nrpt_points_elsewhere": "another rule sends the domain to a different server"
+    },
+    "tips": {
+      "label": "Tip",
+      "t1": "Each site gets its own PHP version. Change it any time from the site page.",
+      "t2": "Drop a project folder on this window and Forgebox creates the site for you.",
+      "t3": "Everything the app does has a forge command. Open the equivalent commands below to see them.",
+      "t4": "Linux parity catches wrong upper/lower-case file names before production does."
+    },
+    "first": {
+      "title": "Your first site",
+      "description": "Drag a folder here, or type its path.",
+      "drop": "Drag a project folder here",
+      "dropActive": "Drop the folder to create the site",
+      "pathLabel": "Project folder",
+      "add": "Create site",
+      "adding": "Creating…",
+      "created": "{host} is ready.",
+      "remoteHint": "The daemon is on another machine: type the folder path as that machine sees it.",
+      "open": "Open"
+    },
+    "commands": {
+      "title": "Equivalent commands",
+      "description": "The same setup, from a terminal."
+    }
+  },
+  "settings": {
+    "title": "First steps",
+    "description": "Run the setup again to change the stack, the DNS, the CA or the PATH.",
+    "action": "Run the setup again"
+  }
+}

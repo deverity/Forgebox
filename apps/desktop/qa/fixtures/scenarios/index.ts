@@ -29,6 +29,7 @@ import {
   type QaData,
 } from "./data";
 import { mailHandlers } from "./mail";
+import { createOnboardingQa } from "./onboarding";
 import { phpHandlers } from "./php";
 import { settingsHandlers } from "./settings";
 import { siteDetailHandlers } from "./siteDetail";
@@ -47,6 +48,12 @@ export const QA_SCENARIO_NAMES = [
 export type QaScenarioName = (typeof QA_SCENARIO_NAMES)[number];
 
 const QA_TLD = ".test";
+
+/** `<folder>.<tld>`, like the daemon when `host` is absent. */
+function defaultHost(dir: string): string {
+  const folder = dir.replaceAll("\\", "/").replace(/\/+$/, "").split("/").pop() ?? "site";
+  return `${folder.toLowerCase().replaceAll(/[^a-z0-9-]+/g, "-")}${QA_TLD}`;
+}
 
 /**
  * `sites.add` / `sites.proxy_add` / `sites.remove` over `data.sites`, publishing the `site.*`
@@ -74,10 +81,10 @@ export function siteHandlers(data: QaData): FakeHandlers {
   };
   return {
     "sites.add": (params, ctx) =>
-      create(ctx, (params.host ?? "").toLowerCase(), {
+      create(ctx, (params.host ?? defaultHost(params.dir)).toLowerCase(), {
         root: params.dir.replaceAll("\\", "/"),
         secure: params.secure ?? true,
-        url: `${params.secure === false ? "http" : "https"}://${(params.host ?? "").toLowerCase()}`,
+        url: `${params.secure === false ? "http" : "https"}://${(params.host ?? defaultHost(params.dir)).toLowerCase()}`,
         driver: params.driver ?? "generic-php",
         server: params.server ?? "nginx",
       }),
@@ -213,6 +220,19 @@ export function registerQaScenarios(): void {
   define("dashboard", healthy.data, healthy.extra);
   const attention = attentionDashboard();
   define("dashboard-attention", attention.data, attention.extra);
+  // The onboarding wizard (M2-E2-T19): all green, a refused UAC, and one failed download.
+  const onboarding = (name: string, options: Parameters<typeof createOnboardingQa>[1]) => {
+    const data = populatedData();
+    define(name, data, {
+      latencyMs: 0,
+      notImplemented: [],
+      handlers: createOnboardingQa(data, options).handlers,
+    });
+  };
+  onboarding("onboarding", {});
+  onboarding("onboarding-uac", { uac: true });
+  onboarding("onboarding-fail", { fail: true });
+  onboarding("onboarding-hosts", { hosts: true });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
   define("slow", populatedData(), builtin("slow"));
   define("remote", populatedData(), builtin("remote"));
