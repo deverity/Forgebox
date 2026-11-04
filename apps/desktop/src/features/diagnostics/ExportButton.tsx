@@ -63,16 +63,20 @@ export function ExportButton({ checks, disabled, onError }: ExportButtonProps) {
     }
   };
   return (
-    <Button
-      variant="secondary"
-      loading={busy}
-      loadingLabel={t("export.exporting")}
-      disabled={disabled || hello === null}
-      onClick={() => {
-        void run();
-      }}
-    >
-      {t("export.action")}
-    </Button>
+    // R-31: the reason a disabled button is disabled is a tooltip on its wrapper (a disabled
+    // button gets no pointer events) and a sentence on the idle screen.
+    <span title={disabled ? t("export.needsRun") : undefined} className="inline-flex">
+      <Button
+        variant="secondary"
+        loading={busy}
+        loadingLabel={t("export.exporting")}
+        disabled={disabled || hello === null}
+        onClick={() => {
+          void run();
+        }}
+      >
+        {t("export.action")}
+      </Button>
+    </span>
   );
 }

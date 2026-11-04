@@ -92,8 +92,13 @@ describe("Terminal screen", () => {
     const subscribe = vi.spyOn(harness.fake, "subscribe");
     await screen.findByTestId("page-terminal");
     await waitFor(() => {
-      expect(screen.getAllByRole("tab")).toHaveLength(2);
+      expect(document.querySelectorAll("[data-terminal-tab]")).toHaveLength(2);
     });
+    // axe aria-required-children: a tablist may only own tabs, and every tab sits beside its own
+    // close button, so the strip is a labelled group and the open one is aria-current.
+    const strip = screen.getByRole("group", { name: "Terminal tabs" });
+    expect(strip.querySelector('[role="tab"]')).toBeNull();
+    expect(strip.querySelectorAll('[aria-current="true"]')).toHaveLength(1);
     // The fake daemon has no output history, so it answers a cursor ahead of it with `lagged`
     // and the session replays the ring (`resume_from: null`): only the resumed ones are checked.
     const resumed = () =>
@@ -110,7 +115,7 @@ describe("Terminal screen", () => {
         { id: "01BBB", resume_from: 4096 },
       ]),
     );
-    expect(screen.getByRole("tab", { name: "Terminal 01AAA" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Terminal 01AAA" })).toBeInTheDocument();
   });
 
   it("opens a new tab with the cols/rows of the fit and streams its output", async () => {
@@ -121,7 +126,7 @@ describe("Terminal screen", () => {
       expect(call?.params).toMatchObject({ cols: 90, rows: 28 });
     });
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Terminal" })).toBeInTheDocument();
     });
   });
 
@@ -130,7 +135,7 @@ describe("Terminal screen", () => {
     act(() => {
       openTerminal({ command: ["mysql", "-u", "root"], title: "MySQL" });
     });
-    await screen.findByRole("tab", { name: "MySQL" });
+    await screen.findByRole("button", { name: "MySQL" });
     await waitFor(() => {
       const call = harness?.fake.calls.find((c) => c.method === "terminal.open");
       expect(call?.params).toMatchObject({ command: ["mysql", "-u", "root"], title: "MySQL" });
@@ -157,7 +162,7 @@ describe("Terminal screen", () => {
     const { fake } = await open({ extra: { handlers: terminalHandlers() } });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "New terminal" }));
-    await screen.findByRole("tab", { name: "Terminal" });
+    await screen.findByRole("button", { name: "Terminal" });
     await waitFor(() => {
       expect(terminalsStore.getState().tabs[0]?.terminalId).not.toBeNull();
     });
@@ -165,7 +170,7 @@ describe("Terminal screen", () => {
     await waitFor(() => {
       expect(fake.calls.some((c) => c.method === "terminal.close")).toBe(true);
     });
-    expect(screen.queryByRole("tab")).toBeNull();
+    expect(document.querySelector("[data-terminal-tab]")).toBeNull();
   });
 
   it("titles the screen with the context name on a remote daemon", async () => {

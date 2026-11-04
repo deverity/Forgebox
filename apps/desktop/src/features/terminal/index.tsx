@@ -3,7 +3,7 @@
 // this chunk loads); the emulators live in `registry.ts` and survive navigation.
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CliCommand, EmptyState, IconButton } from "../../design/primitives";
+import { CliCommand, EmptyState, IconButton, Select } from "../../design/primitives";
 import { FOCUS_RING, cx } from "../../design/primitives/shared";
 import { LOCAL_CONTEXT } from "../../ipc/bridge";
 import { useCapability, useConnectionStatus, useHello, useRuntime, useSites } from "../../state";
@@ -70,7 +70,10 @@ export function TerminalPage() {
         </h1>
       </div>
       <div className="flex items-center gap-2 px-4 py-2">
-        <div role="tablist" aria-label={t("tabs.label")} className="flex min-w-0 flex-1 gap-1">
+        {/* A group of buttons, not role=tablist: a tablist may only own tabs, and each tab here sits
+            next to its own close button (axe aria-required-children). The current tab is
+            marked with aria-current. */}
+        <div role="group" aria-label={t("tabs.label")} className="flex min-w-0 flex-1 gap-1">
           {tabs.map((tab) => {
             const label = tabLabel(tab, t("tabs.global"), contextName, remote, withContext);
             const selected = tab.key === active?.key;
@@ -85,9 +88,12 @@ export function TerminalPage() {
               >
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  className="max-w-48 truncate px-3 py-1 text-callout text-fg-primary"
+                  aria-current={selected ? "true" : undefined}
+                  data-terminal-tab={tab.key}
+                  className={cx(
+                    "max-w-48 truncate rounded-control px-3 py-1 text-callout text-fg-primary",
+                    FOCUS_RING,
+                  )}
                   onClick={() => {
                     activateTab(tab.key);
                   }}
@@ -113,16 +119,19 @@ export function TerminalPage() {
             openTerminal({}, runtime.context);
           }}
         />
-        <select
-          aria-label={t("tabs.newSite")}
+        <Select
+          label={t("tabs.newSite")}
+          width="sm"
           value={siteChoice}
+          placeholder={t("tabs.chooseSite")}
           disabled={!capability.available || siteList.length === 0}
-          className={cx(
-            "max-w-48 rounded-control border border-stroke bg-surface px-2 py-1 text-callout text-fg-secondary",
-            FOCUS_RING,
-          )}
-          onChange={(event) => {
-            const site = siteList.find((s) => s.id === event.target.value);
+          options={siteList.map((site) => ({
+            value: site.id,
+            label: t("tabs.site", { host: site.host }),
+          }))}
+          onValueChange={(id) => {
+            const site = siteList.find((s) => s.id === id);
+            // Back to the placeholder: the picker is an action, not a stored choice.
             setSiteChoice("");
             if (site)
               openTerminal(
@@ -130,14 +139,7 @@ export function TerminalPage() {
                 runtime.context,
               );
           }}
-        >
-          <option value="">{t("tabs.chooseSite")}</option>
-          {siteList.map((site) => (
-            <option key={site.id} value={site.id}>
-              {t("tabs.site", { host: site.host })}
-            </option>
-          ))}
-        </select>
+        />
       </div>
       <div className="relative min-h-0 flex-1 border-t border-stroke">
         {tabs.length === 0 ? (

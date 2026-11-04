@@ -6,6 +6,7 @@ import {
   buildMatrix,
   cellFile,
   cellName,
+  cellUrl,
   missingRoutes,
   pngSize,
 } from "../../qa/matrix";
@@ -68,5 +69,10 @@ describe("screenshot matrix", () => {
     expect(buildMatrix("ci").length).toBeLessThan(buildMatrix("full").length / 5);
     const cell = buildMatrix("full").find((c) => c.dpr === 1.25);
     expect(cell && pngSize(cell)).toEqual({ w: 1600, h: 1000 });
+  });
+
+  it("R-29: has a Logs cell that follows a source, so log lines are captured", () => {
+    const cell = buildMatrix("full").find((c) => c.screen.id === "logs-lines");
+    expect(cell && cellUrl(cell)).toMatch(/^\/logs\?.*&target=nginx\.error&seedlogs=1$/);
   });
 });

@@ -1,7 +1,7 @@
 // Handlers of the Logs screen (M2-E3-T12): `logs.targets` and `logs.read` (with `before_seq`)
 // over a deterministic history. Live lines come from `FakeBridge.emitLog`; Playwright floods a
 // target at 1,000 lines/s from the page (`QaHandle.bridge`) to measure long tasks and DOM rows.
-import type { FakeHandlers } from "../../../src/ipc/fakeBridge";
+import type { FakeBridge, FakeHandlers } from "../../../src/ipc/fakeBridge";
 import type * as T from "../../../src/ipc/generated";
 
 export const QA_LOG_TARGETS: readonly T.LogTargetDto[] = [
@@ -81,4 +81,31 @@ export function logsHandlers(): FakeHandlers {
       return { target: params.target, lines, last_seq: QA_LOG_HISTORY };
     },
   };
+}
+
+/** Lines seeded per target for the QA captures (the viewer's `tail` is 200). */
+export const QA_LOG_SEED = 180;
+const PHP_FILE = "C:/Forgebox/www/loja/app/Http/Controllers/CartController.php";
+
+/**
+ * Fills the `logs.subscribe` ring of every target once, before anyone subscribes, so a Logs
+ * cell that follows a source shows lines (R-29, M2-E4-T10): levels, a PHP `file:line`, the access
+ * columns of the site targets and enough lines for the virtualized list to scroll.
+ */
+export function seedLogLines(fake: FakeBridge): void {
+  for (const { target } of QA_LOG_TARGETS) {
+    for (let seq = 1; seq <= QA_LOG_SEED; seq += 1) {
+      const line: Partial<T.LogLineDto> = historyLine(target, seq);
+      delete line.seq;
+      const withFile =
+        seq % 13 === 0 && !target.startsWith("site:")
+          ? {
+              ...line,
+              level: "error" as const,
+              text: `PHP Fatal error: Uncaught TypeError in ${PHP_FILE}:${String(40 + (seq % 9))}`,
+            }
+          : line;
+      fake.emitLog(target, withFile as Omit<T.LogLineDto, "seq">);
+    }
+  }
 }

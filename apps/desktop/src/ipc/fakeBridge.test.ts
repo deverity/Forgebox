@@ -432,6 +432,12 @@ describe("scenarios", () => {
     await expect(call(fake, "system.ping")).resolves.toBeDefined();
   });
 
+  it("R-27: errors fails mail.status with internal, not the not_found install prompt", async () => {
+    const fake = createFakeBridge(SCENARIOS.get("errors")?.());
+    const error = await rejection(call(fake, "mail.status"));
+    expect([error.code, error.reason]).toEqual(["internal", "fake_error"]);
+  });
+
   it("not-implemented: domain methods answer not_implemented", async () => {
     const fake = createFakeBridge(SCENARIOS.get("not-implemented")?.());
     expect((await rejection(call(fake, "sites.list"))).code).toBe("not_implemented");

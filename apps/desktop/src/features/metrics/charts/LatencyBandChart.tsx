@@ -4,7 +4,7 @@ import type uPlot from "uplot";
 import { ChartShell, DEFAULT_CHART_HEIGHT } from "./ChartFrame";
 import { baseOptions, memoFormat } from "./options";
 import { useMetricsFormatters } from "../state";
-import { SWATCH, withAlpha } from "./palette";
+import { BAND_ALPHA, SWATCH, withAlpha } from "./palette";
 import { aligned, summarize } from "./summary";
 import type { BuildOptions } from "./UPlotCanvas";
 import type { ChartMarker, LatencySeries } from "./types";
@@ -59,8 +59,8 @@ export default function LatencyBandChart({
           ...(hasPhp ? [line(phpLabel, p.info, { dash: [4, 4], width: 1 })] : []),
         ],
         bands: [
-          { series: [3, 2], fill: withAlpha(p.danger, 16) },
-          { series: [2, 1], fill: withAlpha(p.warn, 16) },
+          { series: [3, 2], fill: withAlpha(p.danger, BAND_ALPHA) },
+          { series: [2, 1], fill: withAlpha(p.warn, BAND_ALPHA) },
         ],
       };
     },

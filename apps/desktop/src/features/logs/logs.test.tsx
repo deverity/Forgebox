@@ -316,6 +316,9 @@ describe("access lines and file links", () => {
     const link = await screen.findByRole("button", {
       name: "C:\\Forgebox\\www\\loja\\app\\Cart.php(87)",
     });
+    // Underlined primary text: --accent as text measured 3.82:1 on the dark surface (axe).
+    expect(link).toHaveClass("text-fg-primary", "underline");
+    expect(link).not.toHaveClass("text-accent");
     await user.click(link);
     await waitFor(() => {
       expect(h.fake.calls.find((c) => c.method === "shell.open_editor")?.params).toEqual({

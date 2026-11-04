@@ -30,6 +30,8 @@ export interface ScreenDef {
   route: string;
   /** Concrete URL path (`$id` replaced). */
   path: string;
+  /** Extra query (no leading `?`) the screen needs to show its data, e.g. a chosen log source. */
+  query?: string;
   scenario: Scenario;
 }
 
@@ -51,6 +53,14 @@ export const SCREENS: readonly ScreenDef[] = [
   { id: "databases", route: "/databases", path: "/databases", scenario: "populated" },
   { id: "mail", route: "/mail", path: "/mail", scenario: "populated" },
   { id: "logs", route: "/logs", path: "/logs", scenario: "populated" },
+  // R-29: the plain /logs cell never shows a line; this one follows a source (rows, levels, links).
+  {
+    id: "logs-lines",
+    route: "/logs",
+    path: "/logs",
+    query: "target=nginx.error&seedlogs=1",
+    scenario: "populated",
+  },
   { id: "catalog", route: "/catalog", path: "/catalog", scenario: "populated" },
   {
     id: "catalog-detail",
@@ -182,5 +192,6 @@ export function cellUrl(cell: Cell): string {
     motion: cell.motion,
     locale: cell.locale,
   });
-  return `${cell.screen.path}?${params.toString()}`;
+  const extra = cell.screen.query === undefined ? "" : `&${cell.screen.query}`;
+  return `${cell.screen.path}?${params.toString()}${extra}`;
 }

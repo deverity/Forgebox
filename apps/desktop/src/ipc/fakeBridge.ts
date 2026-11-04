@@ -1155,6 +1155,14 @@ export const SCENARIOS = new Map<string, ScenarioFactory>([
     "errors",
     () => ({
       name: "errors",
+      // R-27: `mail.status` has a built-in answer (`not_found`: no Mailpit), which would show
+      // the install prompt here; the scenario wants the mailbox's own failure state.
+      handlers: {
+        "mail.status": () =>
+          fakeError("internal", "mail.status failed (scenario errors)", "fake_error", {
+            method: "mail.status",
+          }),
+      },
       fallback: (method) =>
         fakeError("internal", `${method} failed (scenario errors)`, "fake_error", { method }),
     }),

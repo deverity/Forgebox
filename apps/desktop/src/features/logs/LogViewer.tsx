@@ -88,7 +88,9 @@ function Highlighted({
               type="button"
               title={openTitle(link)}
               data-file-link=""
-              className={cx("cursor-pointer text-accent underline", FOCUS_RING)}
+              // Underlined primary text, not --accent: the accent as text measured 3.82:1 on the dark
+              // surface (axe color-contrast), and the system accent can be any colour.
+              className={cx("cursor-pointer text-fg-primary underline", FOCUS_RING)}
               onClick={() => {
                 onOpen(link);
               }}
@@ -320,7 +322,9 @@ export const LogViewer = forwardRef<HTMLDivElement, LogViewerProps>(function Log
             disabled={!stream.hasEarlier || rows.length === 0}
             loading={stream.loadingEarlier}
             loadingLabel={t("loadingEarlier")}
-            title={stream.hasEarlier ? undefined : t("noEarlier")}
+            title={
+              targets.length === 0 ? t("noTarget") : stream.hasEarlier ? undefined : t("noEarlier")
+            }
             onClick={() => {
               void stream.loadEarlier();
             }}
@@ -328,6 +332,9 @@ export const LogViewer = forwardRef<HTMLDivElement, LogViewerProps>(function Log
             {t("earlier")}
           </Button>
           <Button
+            // R-28: with no source there is nothing to pause; the reason is the list's own text.
+            disabled={targets.length === 0}
+            title={targets.length === 0 ? t("noTarget") : undefined}
             onClick={() => {
               if (!paused) setSeenAt(arrived);
               setPaused(!paused);
@@ -338,6 +345,7 @@ export const LogViewer = forwardRef<HTMLDivElement, LogViewerProps>(function Log
           </Button>
           <Button
             disabled={lines.length === 0}
+            title={targets.length === 0 ? t("noTarget") : undefined}
             onClick={() => {
               void copy();
             }}
@@ -352,7 +360,13 @@ export const LogViewer = forwardRef<HTMLDivElement, LogViewerProps>(function Log
           </Button>
           {local ? (
             <span
-              title={openable === undefined ? t("openFileNone") : undefined}
+              title={
+                openable === undefined
+                  ? targets.length === 0
+                    ? t("noTarget")
+                    : t("openFileNone")
+                  : undefined
+              }
               className="inline-flex"
             >
               <Button

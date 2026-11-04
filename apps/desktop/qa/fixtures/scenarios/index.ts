@@ -29,7 +29,7 @@ import {
   site,
   type QaData,
 } from "./data";
-import { logsHandlers } from "./logs";
+import { logsHandlers, seedLogLines } from "./logs";
 import { metricsHandlers } from "./metrics";
 import { mailHandlers } from "./mail";
 import { createOnboardingQa } from "./onboarding";
@@ -280,10 +280,20 @@ export function registerQaScenarios(): void {
   define("empty", emptyData(), builtin("empty"));
   // The catalog (M2-E2-T18) uses the provider jobs (`tools.releases`, `tools.plan`, answered
   // since M2-E2-T5, so they are no longer in the not-implemented table).
-  define("populated", populatedData(), {
-    latencyMs: 0,
-    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
-  });
+  define(
+    "populated",
+    populatedData(),
+    {
+      latencyMs: 0,
+      notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
+    },
+    // R-29: `?seedlogs=1` fills the log rings, so a Logs cell that follows a source has lines
+    // to show. Off by default: the e2e specs page the history themselves.
+    (fake) => {
+      if (new URLSearchParams(window.location.search).get("seedlogs") === "1") seedLogLines(fake);
+      return () => undefined;
+    },
+  );
   // The Dashboard (M2-E2-T14): healthy, and every Atenção source at once.
   const healthy = healthyDashboard();
   define("dashboard", healthy.data, healthy.extra);

@@ -213,6 +213,27 @@ describe("Machine monitor", () => {
     ).not.toBeNull();
   });
 
+  it("R-15: shows the cause and a retry when stats.get fails, never an endless skeleton", async () => {
+    const { data: qa, extra } = projectsDashboard();
+    const data = populatedData();
+    data.sites = qa.sites;
+    const handlers = {
+      ...extra.handlers,
+      "stats.get": () => fakeError("internal", "stats.get failed", "fake_error"),
+    };
+    app = await renderApp({ path: "/dashboard", data, extra: { handlers } });
+    const projects = await screen.findByTestId("dashboard-projects");
+    await waitFor(
+      () => {
+        expect(projects.querySelector('[data-async-view="error"]')).not.toBeNull();
+      },
+      { timeout: 4000 },
+    );
+    expect(projects.querySelector("[data-skeleton]")).toBeNull();
+    expect(within(projects).getByRole("alert")).toBeInTheDocument();
+    expect(within(projects).getByRole("button", { name: /try again|retry/i })).toBeInTheDocument();
+  });
+
   it("shows the cause and a retry when stats.top fails, never an endless loading", async () => {
     const { data: qa, extra } = projectsDashboard();
     const data = populatedData();

@@ -20,15 +20,13 @@ const SCENARIOS_UNDER_TEST = ["errors", "not-implemented", "daemon-down"] as con
  */
 const SITE = "/sites/01QAS1TE000000000000000001";
 const KNOWN_OPEN: Record<string, string> = {
-  "/dashboard|errors": "R-15 (E4-T10): Projetos stays a skeleton",
+  "/dashboard|errors":
+    "R-09 family (E4-T9): Sites recentes stays a skeleton (Projetos is fixed, R-15)",
   "/dashboard|not-implemented": "R-16 (E4-T9): tiles stay skeletons",
   "/services|not-implemented": "R-16 (E4-T9)",
   "/sites|errors": "R-09 (E4-T9)",
   "/sites|not-implemented": "R-09 (E4-T9)",
   "/php|not-implemented": "R-16 (E4-T9)",
-  "/databases|not-implemented": "R-16 (E4-T10)",
-  "/logs|not-implemented": "R-16 (E4-T10)",
-  "/logs|daemon-down": "R-16 (E4-T10)",
   [`${SITE}|errors`]: "R-10 (E4-T9)",
   [`${SITE}|not-implemented`]: "R-10 (E4-T9)",
   [`${SITE}|daemon-down`]: "R-10 (E4-T9)",

@@ -150,6 +150,16 @@ describe("autostart toggle", () => {
     });
   });
 
+  it("R-30: showLabel={false} keeps the accessible name without repeating the text", async () => {
+    const { api } = fakeApi(INACTIVE_SNAPSHOT);
+    setUpdaterStoreForTests(createUpdaterStore(api));
+    render(<AutostartToggle showLabel={false} />);
+    expect(
+      await screen.findByRole("switch", { name: "Start with Windows (minimized)" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Start with Windows (minimized)")).toBeNull();
+  });
+
   it("is disabled with the reason in portable mode", async () => {
     const reason = "Autostart is disabled in portable mode.";
     const { api } = fakeApi(INACTIVE_SNAPSHOT, { available: false, enabled: false, reason });

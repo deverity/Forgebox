@@ -97,6 +97,28 @@ describe("instances", () => {
     expect(screen.getByRole("button", { name: "Open the catalog" })).toBeInTheDocument();
   });
 
+  it("R-16: a daemon without db.list explains it instead of an endless skeleton", async () => {
+    harness = await renderApp({
+      path: "/databases",
+      extra: { notImplemented: ["db.list"], latencyMs: 0, handlers: createDatabasesQa().handlers },
+    });
+    expect(await screen.findByText("Not available yet in this version of Forgebox.")).toBeVisible();
+    expect(document.querySelector("[data-skeleton]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open the catalog" })).toBeNull();
+  });
+
+  it("R-26: the row actions are one non-wrapping line of quiet buttons", async () => {
+    await open();
+    const first = document.querySelector<HTMLElement>("[data-database]");
+    const actions = first?.querySelector("td:last-child > div");
+    expect(actions?.className).toContain("flex-nowrap");
+    const variants = [...(actions?.querySelectorAll("button") ?? [])].map((b) =>
+      b.getAttribute("data-variant"),
+    );
+    expect(variants.length).toBeGreaterThan(2);
+    expect(new Set(variants)).toEqual(new Set(["ghost", "destructive"]));
+  });
+
   it("shows a stopped instance with a start call to action that calls services.start", async () => {
     const user = userEvent.setup();
     await open(createDatabasesQa({ running: false }));

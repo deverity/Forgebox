@@ -100,10 +100,7 @@ export function DatabaseTable({
             <thead className="text-callout text-fg-secondary">
               <tr className="border-b border-stroke">
                 <th scope="col" className="px-3 py-2 font-medium">
-                  {t("table.name")}
-                </th>
-                <th scope="col" className="px-3 py-2 font-medium">
-                  {t("table.charset")}
+                  {t("table.name")} / {t("table.charset")}
                 </th>
                 <th scope="col" className="px-3 py-2 text-right font-medium">
                   {t("table.size")}
@@ -123,20 +120,23 @@ export function DatabaseTable({
                   data-database={db.name}
                   className="border-b border-stroke last:border-b-0"
                 >
-                  <th scope="row" className="px-3 py-2 font-mono text-mono font-normal">
-                    {db.name}
+                  {/* R-26: the charset sits under the name, so the five row actions fit on one
+                      line at 960 px instead of the table scrolling or the last button wrapping. */}
+                  <th scope="row" className="px-3 py-2 text-left font-normal">
+                    <span className="block font-mono text-mono">{db.name}</span>
+                    <span className="block text-caption text-fg-secondary">
+                      {charsetText(db) ?? unknown}
+                    </span>
                   </th>
-                  <td className="px-3 py-2 text-callout text-fg-secondary">
-                    {charsetText(db) ?? unknown}
-                  </td>
                   <td className={`px-3 py-2 text-right ${TNUM_CLASS}`}>
                     {db.size_bytes === null ? unknown : format.bytes(db.size_bytes)}
                   </td>
                   <td className={`px-3 py-2 text-right ${TNUM_CLASS}`}>
                     {db.tables === null ? unknown : format.number(db.tables)}
                   </td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap justify-end gap-1">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {/* R-26: one row of quiet buttons (ghost, destructive in red text), never wrapped */}
+                    <div className="flex flex-nowrap justify-end gap-1">
                       {caps.url === false ? null : (
                         <ConnectionPopover
                           target={{

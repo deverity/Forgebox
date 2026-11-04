@@ -160,7 +160,7 @@ export function GeneralSection({ query }: SectionProps) {
       ) : null}
       {show("autostart") ? (
         <RowFrame id="autostart" label={t("general.autostart.label")}>
-          <AutostartToggle />
+          <AutostartToggle showLabel={false} />
         </RowFrame>
       ) : null}
       {show("onboarding") ? (

@@ -148,7 +148,12 @@ export function TerminalPane({ tab, active, deps }: TerminalPaneProps) {
           : "pointer-events-none invisible absolute inset-0 flex flex-col"
       }
     >
-      <div ref={host} className="min-h-0 flex-1 bg-surface p-2" />
+      {/* The focus lives in xterm's hidden textarea: the ring is on the host while it is inside
+          (docs/07 section 9, no focus without a visible ring). */}
+      <div
+        ref={host}
+        className="min-h-0 flex-1 bg-surface p-2 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-accent focus-within:outline-solid"
+      />
       {searching && entry !== null ? <SearchBar entry={entry} onClose={closeSearch} /> : null}
       {tab.status === "opening" && tab.terminalId === null && tab.error === null ? (
         <p role="status" className="absolute top-3 left-4 text-callout text-fg-secondary">

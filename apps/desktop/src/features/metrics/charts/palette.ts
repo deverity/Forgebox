@@ -52,6 +52,12 @@ export const SWATCH = {
   ok: "bg-state-running",
 } as const;
 
+/**
+ * Opacity of the latency bands (percent). 16 % left the dark theme's p99 band at 1.27:1 against
+ * the surface; 20 % keeps every band at 1.3:1 or more in light and dark (palette.test.ts).
+ */
+export const BAND_ALPHA = 20;
+
 /** Translucent version of a resolved colour, for band and area fills. */
 export function withAlpha(color: string, percent: number): string {
   return `color-mix(in srgb, ${color} ${String(percent)}%, transparent)`;

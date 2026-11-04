@@ -5,7 +5,7 @@
   "running": "Running…",
   "idle": {
     "title": "Nothing checked yet",
-    "description": "Diagnostics look at PATH, DNS, the local CA, ports, Visual C++ runtime, Defender and versions. It only reads; nothing changes until you press Fix."
+    "description": "Diagnostics look at PATH, DNS, the local CA, ports, Visual C++ runtime, Defender and versions. It only reads; nothing changes until you press Fix. Export report becomes available after the first run."
   },
   "progress": {
     "label": "Diagnostics progress",
@@ -63,6 +63,7 @@
   },
   "export": {
     "action": "Export report",
+    "needsRun": "Run the diagnostics to export the report.",
     "exporting": "Exporting…",
     "saved": "Report saved to {path}",
     "failed": "Could not export the report: {cause}"
