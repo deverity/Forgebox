@@ -7,14 +7,23 @@
 //! * a service crashed **and** came back (`service.crashed` then `service.running` of the same
 //!   instance) → [`NoticeKind::ServiceRestarted`];
 //! * an update was installed (`tool.updated`) → [`NoticeKind::UpdateInstalled`];
-//! * an install finished (`tool.install.completed`, or a `tools.install` job that is done) →
-//!   [`NoticeKind::InstallCompleted`]. Installs run by an update/rollback job are covered by
-//!   the update toast and stay silent.
+//! * an install finished (`tool.install.completed`) → [`NoticeKind::InstallCompleted`]. The
+//!   install that runs inside a `tool.update`/`tool.rollback` job (the daemon names those jobs
+//!   `tool.update <tool> <from> -> <to>` / `tool.rollback <tool> <series>`, also for scheduled
+//!   updates) is covered by the update toast and stays silent. The install event carries the
+//!   inner `tool.install <tool>@<version>` job's id, so the match is by tool, not by job.
+//!   There is no rule on a done `tools.install` job: its inner jobs already emit the event.
 //!
 //! Rules, in order: events replayed on resume (`seq` ≤ the cursor taken from `hello` when the
 //! connection came up) never notify; a type the user muted never notifies; a burst of one
-//! type is **grouped**: the first toast shows at once and the rest of the 5 s window is folded
-//! into it (leading edge, so a crash is never announced 5 s late and no timer is needed).
+//! type is **grouped** and closed at its trailing edge: the first event opens a 5 s window,
+//! and when it ends ONE toast stands for every distinct item in it ("3 services were
+//! restarted: nginx, mysql, redis"). A lone event is therefore announced after the window.
+//!
+//! The replay and the connection state reach the tray through different paths and in no fixed
+//! order, so the engine does not trust a stale cursor: when the connection leaves Connected it
+//! holds events ([`NoticeEngine::await_cursor`]) and judges them when the new `hello` arrives
+//! ([`NoticeEngine::set_cursor`]).
 //!
 //! Muting ("não mostrar de novo") is the `muted_notifications` array of type ids in the GUI
 //! prefs (`prefs.json`); the settings screen writes it with `gui_prefs_set`. Strings come from
@@ -22,13 +31,13 @@
 //! ([`NoticeEngine::performance_alert`]) but it is off until M5 (ADR-0044); tunnel-ready
 //! toasts are M3.
 //!
-//! Click: [`Tray::notification_clicked`](crate::tray::Tray::notification_clicked) focuses the
-//! window and routes to [`NoticeKind::route`]. `tauri-plugin-notification` 2.4 reports no
-//! activation callback on desktop, so on Windows the click that reaches the app is the one
-//! Windows itself delivers (it launches/activates the app); a native callback would need a
-//! plugin that exposes `on_activated`. That is recorded in docs/07 §7.
+//! Click: NOT wired to the toast. [`Tray::notification_clicked`](crate::tray::Tray::notification_clicked)
+//! focuses the window and routes to [`NoticeKind::route`], but `tauri-plugin-notification` 2.4
+//! has no activation callback or launch argument on desktop, so nothing calls it from a real
+//! toast yet. Wiring it needs a notifier with an in-process activation callback behind a
+//! forge-core trait; deferred (docs/07 §7).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -37,7 +46,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_notification::NotificationExt;
 
-use forge_ipc::api::{JobDonePayload, ToolVersionChangePayload};
+use forge_ipc::api::ToolVersionChangePayload;
 use forge_ipc::api::{JobStartedPayload, ServicePayload, ToolInstallPayload};
 
 use crate::i18n::{Language, Namespace, translate};
@@ -49,11 +58,14 @@ pub const MUTED_KEY: &str = "muted_notifications";
 /// Events of one type closer than this to the last shown toast are folded into it.
 pub const GROUP_WINDOW: Duration = Duration::from_secs(5);
 
-/// Jobs remembered for de-duplication; the sets are cleared when they reach it.
+/// In-flight update jobs remembered; the map is cleared when it reaches this.
 const REMEMBERED_JOBS: usize = 256;
 
-/// Jobs whose installs are reported by the update toast instead.
-const UPDATE_JOBS: &[&str] = &["tools.update", "tools.rollback"];
+/// Events held while the cursor is unknown; the oldest is dropped beyond it.
+const HELD_EVENTS: usize = 512;
+
+/// Items named in a group's list; the rest is "...".
+const LISTED_ITEMS: usize = 5;
 
 /// A type of toast (what "não mostrar de novo" mutes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -99,14 +111,15 @@ impl NoticeKind {
     }
 }
 
-/// What the engine decided to show (language-free).
+/// What the engine decided to show (language-free). One notice stands for a whole group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
     pub kind: NoticeKind,
-    /// `{placeholder}` values of the body.
+    /// `{placeholder}` values of the body: the event's own for one item; `count` and `list`
+    /// for a group of several distinct items.
     pub vars: Vec<(&'static str, String)>,
-    /// Use the body without tool/version (a done install job that named nothing).
-    pub generic: bool,
+    /// How many distinct items the notice stands for (1: the plain body is used).
+    pub count: usize,
 }
 
 /// A toast ready to show.
@@ -122,8 +135,8 @@ impl Toast {
     pub fn from_notice(notice: &Notice, lang: Language) -> Toast {
         let id = notice.kind.id();
         let vars: Vec<(&str, &str)> = notice.vars.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        let body_key = if notice.generic {
-            format!("toast.{id}.body_job")
+        let body_key = if notice.count > 1 {
+            format!("toast.{id}.body_many")
         } else {
             format!("toast.{id}.body")
         };
@@ -216,65 +229,135 @@ impl<R: Runtime> Notifier for PluginNotifier<R> {
     }
 }
 
-/// What the tray needs to notify: the sink and the mute source.
+/// What the tray needs to notify: the sink, the mute source and the grouping window.
 #[derive(Clone)]
 pub struct Notices {
     pub notifier: Arc<dyn Notifier>,
     pub mutes: Arc<dyn Mutes>,
+    /// Length of the grouping window ([`GROUP_WINDOW`] in the app).
+    pub window: Duration,
 }
 
-/// The decision logic. Pure apart from [`Mutes`]; the caller gives the clock.
+/// Events held while the connection's cursor is unknown (see [`NoticeEngine::await_cursor`]).
+struct Buffered {
+    at: Instant,
+    seq: Option<u64>,
+    kind: String,
+    payload: Value,
+}
+
+/// One toast-worthy event, before grouping.
+struct Candidate {
+    kind: NoticeKind,
+    vars: Vec<(&'static str, String)>,
+    /// What the item is called in a group's list.
+    label: String,
+}
+
+/// The open grouping window of one type.
+struct Group {
+    started: Instant,
+    items: Vec<Candidate>,
+}
+
+/// The decision logic. Pure apart from [`Mutes`]; the caller gives the clock and calls
+/// [`NoticeEngine::flush_due`] when [`NoticeEngine::next_deadline`] passes.
 pub struct NoticeEngine {
     mutes: Arc<dyn Mutes>,
+    window: Duration,
     /// Events with `seq` ≤ this were replayed on resume.
     cursor: u64,
+    /// True from "the connection left Connected" until the next `hello` fixes the cursor.
+    /// The resume replay and the state change race through different paths, so while the
+    /// cursor is unknown events are held, not judged.
+    awaiting: bool,
+    buffer: VecDeque<Buffered>,
     /// Instances that crashed and have not run again (`instance_id` → name).
     crashed: HashMap<String, String>,
-    /// Jobs whose installs the update toast covers.
-    update_jobs: HashSet<String>,
-    /// Jobs that already produced an install toast.
-    announced_jobs: HashSet<String>,
-    /// Start of the open grouping window of each type.
-    shown: HashMap<NoticeKind, Instant>,
+    /// In-flight update/rollback jobs (`job_id` → tool). The install they run inside is
+    /// covered by the update toast.
+    updating: HashMap<String, String>,
+    /// Open grouping windows, closed at their trailing edge.
+    groups: HashMap<NoticeKind, Group>,
     performance_alerts: bool,
 }
 
 impl NoticeEngine {
     pub fn new(mutes: Arc<dyn Mutes>) -> Self {
+        Self::with_window(mutes, GROUP_WINDOW)
+    }
+
+    pub fn with_window(mutes: Arc<dyn Mutes>, window: Duration) -> Self {
         Self {
             mutes,
+            window,
             cursor: 0,
+            awaiting: false,
+            buffer: VecDeque::new(),
             crashed: HashMap::new(),
-            update_jobs: HashSet::new(),
-            announced_jobs: HashSet::new(),
-            shown: HashMap::new(),
+            updating: HashMap::new(),
+            groups: HashMap::new(),
             performance_alerts: false,
         }
     }
 
-    /// A (new) connection came up: everything up to `seq` is history.
+    /// The connection is gone or not confirmed: hold events until [`Self::set_cursor`].
+    pub fn await_cursor(&mut self) {
+        if !self.awaiting {
+            self.awaiting = true;
+            self.buffer.clear();
+        }
+    }
+
+    pub fn is_awaiting_cursor(&self) -> bool {
+        self.awaiting
+    }
+
+    /// A (new) connection came up: everything up to `seq` is history. The events held while
+    /// the cursor was unknown are judged now, those after `seq` only.
     pub fn set_cursor(&mut self, seq: u64) {
         self.cursor = seq;
+        self.awaiting = false;
         // What happened before the connection says nothing about the new one.
         self.crashed.clear();
+        self.updating.clear();
+        for held in std::mem::take(&mut self.buffer) {
+            self.process(held.at, held.seq, &held.kind, &held.payload);
+        }
     }
 
     pub fn cursor(&self) -> u64 {
         self.cursor
     }
 
-    /// Reduces one event; `Some` when it must be shown now. `seq` is the envelope's.
-    pub fn observe(
-        &mut self,
-        now: Instant,
-        seq: Option<u64>,
-        kind: &str,
-        payload: &Value,
-    ) -> Option<Notice> {
-        if seq.is_some_and(|seq| seq <= self.cursor) {
-            return None;
+    /// Takes one event; `seq` is the envelope's. Toasts come out of [`Self::flush_due`].
+    pub fn observe(&mut self, now: Instant, seq: Option<u64>, kind: &str, payload: &Value) {
+        if self.awaiting {
+            if self.buffer.len() >= HELD_EVENTS {
+                self.buffer.pop_front();
+            }
+            self.buffer.push_back(Buffered {
+                at: now,
+                seq,
+                kind: kind.to_owned(),
+                payload: payload.clone(),
+            });
+            return;
         }
-        let notice = match kind {
+        self.process(now, seq, kind, payload);
+    }
+
+    fn process(&mut self, now: Instant, seq: Option<u64>, kind: &str, payload: &Value) {
+        if seq.is_some_and(|seq| seq <= self.cursor) {
+            return;
+        }
+        if let Some(candidate) = self.reduce(kind, payload) {
+            self.admit(now, candidate);
+        }
+    }
+
+    fn reduce(&mut self, kind: &str, payload: &Value) -> Option<Candidate> {
+        match kind {
             "service.crashed" => {
                 if let Some(p) = parse::<ServicePayload>(payload) {
                     self.crashed.insert(p.instance_id.to_string(), p.name);
@@ -284,10 +367,10 @@ impl NoticeEngine {
             "service.running" => {
                 let p = parse::<ServicePayload>(payload)?;
                 let name = self.crashed.remove(&p.instance_id.to_string())?;
-                Some(Notice {
+                Some(Candidate {
                     kind: NoticeKind::ServiceRestarted,
+                    label: name.clone(),
                     vars: vec![("service", name)],
-                    generic: false,
                 })
             }
             // The instance gave up or was stopped on purpose: no restart to announce.
@@ -297,103 +380,147 @@ impl NoticeEngine {
                 }
                 None
             }
+            // The daemon names the job that updates one tool "tool.update <tool> <from> ->
+            // <to>" and "tool.rollback <tool> <series>" (scheduled updates run it too, with
+            // no "tools.update" around it). The install inside it emits its own
+            // `tool.install.completed`; the update toast covers it.
             "job.started" => {
-                if let Some(p) = parse::<JobStartedPayload>(payload) {
-                    if UPDATE_JOBS.contains(&p.name.as_str()) {
-                        remember(&mut self.update_jobs, p.job_id.to_string());
+                let p = parse::<JobStartedPayload>(payload)?;
+                let mut words = p.name.split_whitespace();
+                if matches!(words.next(), Some("tool.update" | "tool.rollback")) {
+                    if let Some(tool) = words.next() {
+                        if self.updating.len() >= REMEMBERED_JOBS {
+                            self.updating.clear();
+                        }
+                        self.updating.insert(p.job_id.to_string(), tool.to_owned());
                     }
+                }
+                None
+            }
+            "job.done" | "job.failed" | "job.cancelled" => {
+                if let Some(job) = payload.get("job_id").and_then(Value::as_str) {
+                    self.updating.remove(job);
                 }
                 None
             }
             "tool.updated" => {
                 let p = parse::<ToolVersionChangePayload>(payload)?;
                 let version = p.to.split('-').next().unwrap_or(&p.to).to_owned();
-                Some(Notice {
+                Some(Candidate {
                     kind: NoticeKind::UpdateInstalled,
+                    label: format!("{} {version}", p.tool),
                     vars: vec![("tool", p.tool.to_string()), ("version", version)],
-                    generic: false,
                 })
             }
             "tool.install.completed" => {
                 let p = parse::<ToolInstallPayload>(payload)?;
-                if let Some(job) = p.job_id {
-                    let job = job.to_string();
-                    if self.update_jobs.contains(&job) || self.announced_jobs.contains(&job) {
-                        return None;
-                    }
-                    remember(&mut self.announced_jobs, job);
-                }
-                Some(Notice {
-                    kind: NoticeKind::InstallCompleted,
-                    vars: vec![("tool", p.tool.to_string()), ("version", p.version)],
-                    generic: false,
-                })
-            }
-            "job.done" => {
-                let p = parse::<JobDonePayload>(payload)?;
-                if p.name != "tools.install" {
+                let tool = p.tool.to_string();
+                if self.updating.values().any(|updating| *updating == tool) {
                     return None;
                 }
-                let job = p.job_id.to_string();
-                if self.update_jobs.contains(&job) || self.announced_jobs.contains(&job) {
-                    return None;
-                }
-                remember(&mut self.announced_jobs, job);
-                Some(Notice {
+                Some(Candidate {
                     kind: NoticeKind::InstallCompleted,
-                    vars: Vec::new(),
-                    generic: true,
+                    label: format!("{tool} {}", p.version),
+                    vars: vec![("tool", tool), ("version", p.version)],
                 })
             }
             _ => None,
-        }?;
-        self.admit(now, notice)
+        }
     }
 
-    /// Hook for performance alerts. Off: always `None` until the feature is switched on
+    /// Hook for performance alerts. Off: does nothing until the feature is switched on
     /// (deferred to M5, ADR-0044).
-    pub fn performance_alert(
-        &mut self,
-        now: Instant,
-        subject: &str,
-        detail: &str,
-    ) -> Option<Notice> {
+    pub fn performance_alert(&mut self, now: Instant, subject: &str, detail: &str) {
         if !self.performance_alerts {
-            return None;
+            return;
         }
         self.admit(
             now,
-            Notice {
+            Candidate {
                 kind: NoticeKind::PerformanceAlert,
+                label: subject.to_owned(),
                 vars: vec![
                     ("subject", subject.to_owned()),
                     ("detail", detail.to_owned()),
                 ],
-                generic: false,
             },
-        )
+        );
     }
 
-    /// Mute and grouping, the last gate before a toast.
-    fn admit(&mut self, now: Instant, notice: Notice) -> Option<Notice> {
-        if self.mutes.is_muted(notice.kind) {
-            return None;
+    /// Mute and grouping: a muted type is dropped; the rest joins (or opens) its window.
+    fn admit(&mut self, now: Instant, candidate: Candidate) {
+        if self.mutes.is_muted(candidate.kind) {
+            return;
         }
-        if let Some(started) = self.shown.get(&notice.kind) {
-            if now.saturating_duration_since(*started) < GROUP_WINDOW {
-                return None;
-            }
-        }
-        self.shown.insert(notice.kind, now);
-        Some(notice)
+        self.groups
+            .entry(candidate.kind)
+            .or_insert_with(|| Group {
+                started: now,
+                items: Vec::new(),
+            })
+            .items
+            .push(candidate);
     }
-}
 
-fn remember(set: &mut HashSet<String>, job: String) {
-    if set.len() >= REMEMBERED_JOBS {
-        set.clear();
+    /// When the earliest open window closes.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        self.groups
+            .values()
+            .map(|group| group.started + self.window)
+            .min()
     }
-    set.insert(job);
+
+    /// Closes the windows that ended by `now`: one notice per type, standing for every
+    /// distinct item of the window (trailing edge, so nothing is dropped from the group).
+    pub fn flush_due(&mut self, now: Instant) -> Vec<Notice> {
+        let mut due: Vec<NoticeKind> = self
+            .groups
+            .iter()
+            .filter(|(_, group)| now.saturating_duration_since(group.started) >= self.window)
+            .map(|(kind, _)| *kind)
+            .collect();
+        due.sort();
+        due.into_iter()
+            .filter_map(|kind| {
+                let group = self.groups.remove(&kind)?;
+                // A mute set while the window was open still applies.
+                if self.mutes.is_muted(kind) {
+                    return None;
+                }
+                Some(Self::summarize(kind, group.items))
+            })
+            .collect()
+    }
+
+    fn summarize(kind: NoticeKind, items: Vec<Candidate>) -> Notice {
+        let mut seen = HashSet::new();
+        let mut distinct: Vec<Candidate> = items
+            .into_iter()
+            .filter(|item| seen.insert(item.label.clone()))
+            .collect();
+        let count = distinct.len();
+        if count == 1 {
+            let only = distinct.remove(0);
+            return Notice {
+                kind,
+                vars: only.vars,
+                count,
+            };
+        }
+        let mut list: Vec<&str> = distinct
+            .iter()
+            .take(LISTED_ITEMS)
+            .map(|item| item.label.as_str())
+            .collect();
+        if count > LISTED_ITEMS {
+            list.push("…");
+        }
+        Notice {
+            kind,
+            vars: vec![("count", count.to_string()), ("list", list.join(", "))],
+            count,
+        }
+    }
 }
 
 fn parse<T: DeserializeOwned>(payload: &Value) -> Option<T> {

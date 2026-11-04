@@ -5,20 +5,23 @@
   "toast": {
     "service_restarted": {
       "title": "Service restarted",
-      "body": "{service} stopped unexpectedly and was restarted."
+      "body": "{service} stopped unexpectedly and was restarted.",
+      "body_many": "{count} services were restarted: {list}."
     },
     "update_installed": {
       "title": "Update installed",
-      "body": "{tool} was updated to {version}."
+      "body": "{tool} was updated to {version}.",
+      "body_many": "{count} updates were installed: {list}."
     },
     "install_completed": {
       "title": "Installation complete",
       "body": "{tool} {version} was installed.",
-      "body_job": "The installation finished."
+      "body_many": "{count} installations finished: {list}."
     },
     "performance_alert": {
       "title": "Performance alert",
-      "body": "{subject}: {detail}"
+      "body": "{subject}: {detail}",
+      "body_many": "{count} alerts: {list}"
     }
   },
   "types": {

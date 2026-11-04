@@ -221,7 +221,19 @@ mod tests {
         (Namespace::Notifications, "toast.update_installed.body"),
         (Namespace::Notifications, "toast.install_completed.title"),
         (Namespace::Notifications, "toast.install_completed.body"),
-        (Namespace::Notifications, "toast.install_completed.body_job"),
+        (
+            Namespace::Notifications,
+            "toast.service_restarted.body_many",
+        ),
+        (Namespace::Notifications, "toast.update_installed.body_many"),
+        (
+            Namespace::Notifications,
+            "toast.install_completed.body_many",
+        ),
+        (
+            Namespace::Notifications,
+            "toast.performance_alert.body_many",
+        ),
         (Namespace::Notifications, "toast.performance_alert.title"),
         (Namespace::Notifications, "toast.performance_alert.body"),
         (Namespace::Updater, "autostart.portable"),

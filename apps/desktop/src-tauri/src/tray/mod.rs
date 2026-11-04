@@ -409,6 +409,8 @@ pub enum Msg {
     Language,
     AppUpdate(bool),
     NoticeClicked(NoticeKind),
+    /// The grouping window of some toast type may have ended.
+    NoticeFlush,
     QuitDone(QuitOutcome),
     Model(Reply<TrayModel>),
     Shutdown(Reply<()>),
@@ -491,6 +493,8 @@ struct TrayActor {
     notices: Option<(NoticeEngine, Notices)>,
     /// Connection number the toast cursor was taken for.
     notice_generation: Option<u64>,
+    /// A timer for the engine's next window end is pending.
+    notice_timer: bool,
 }
 
 impl TrayActor {
@@ -531,8 +535,14 @@ impl TrayActor {
             states_task: None,
             weak: None,
             last_render_at: None,
-            notices: notices.map(|n| (NoticeEngine::new(Arc::clone(&n.mutes)), n)),
+            notices: notices.map(|n| {
+                let mut engine = NoticeEngine::with_window(Arc::clone(&n.mutes), n.window);
+                // No toast before the first `hello` fixes the cursor.
+                engine.await_cursor();
+                (engine, n)
+            }),
             notice_generation: None,
+            notice_timer: false,
         }
     }
 }
@@ -624,6 +634,10 @@ impl Actor for TrayActor {
                 }
             }
             Msg::NoticeClicked(kind) => self.view.navigate(kind.route()),
+            Msg::NoticeFlush => {
+                self.notice_timer = false;
+                self.flush_notices(&weak);
+            }
             Msg::QuitDone(outcome) => {
                 self.quitting = false;
                 tracing::info!(?outcome, "tray: quit flow finished");
@@ -750,7 +764,7 @@ impl TrayActor {
     }
 
     fn on_connection(&mut self, state: &ContextStateDto, weak: &WeakActorRef<Msg>) {
-        self.take_notice_cursor(state);
+        self.track_notice_cursor(state, weak);
         match self.model.set_connection(state) {
             Effect::None => {}
             Effect::Changed => self.changed(weak),
@@ -765,33 +779,70 @@ impl TrayActor {
     }
 
     /// A new connection's `hello` fixes the toast cursor: events up to its `last_event_seq`
-    /// are history, and the resume replay after a reconnection must stay silent.
-    fn take_notice_cursor(&mut self, state: &ContextStateDto) {
+    /// are history, and the resume replay after a reconnection must stay silent. The replay
+    /// can reach the actor before the new connection's state does (the client resubscribes
+    /// before it publishes the state, and the state takes more hops), so the moment the
+    /// connection leaves Connected the engine starts holding events until the new `hello`.
+    fn track_notice_cursor(&mut self, state: &ContextStateDto, weak: &WeakActorRef<Msg>) {
         let Some((engine, _)) = self.notices.as_mut() else {
             return;
         };
-        if state.context != self.model.context
-            || state.status != ConnectionStatus::Connected
-            || state.generation == self.notice_generation
-        {
+        if state.context != self.model.context {
+            return;
+        }
+        if state.status != ConnectionStatus::Connected {
+            engine.await_cursor();
+            self.notice_generation = None;
+            return;
+        }
+        if state.generation == self.notice_generation {
             return;
         }
         if let Some(hello) = &state.hello {
             engine.set_cursor(hello.last_event_seq);
             self.notice_generation = state.generation;
+            self.arm_notice_timer(weak);
         }
     }
 
-    /// Shows the toast an event calls for, if any.
-    fn notice(&mut self, seq: Option<u64>, kind: &str, payload: &Value) {
-        let Some((engine, notices)) = self.notices.as_mut() else {
+    /// Hands the engine an event; the toast comes when its window ends.
+    fn notice(&mut self, seq: Option<u64>, kind: &str, payload: &Value, weak: &WeakActorRef<Msg>) {
+        let Some((engine, _)) = self.notices.as_mut() else {
             return;
         };
-        if let Some(notice) = engine.observe(std::time::Instant::now(), seq, kind, payload) {
-            notices
-                .notifier
-                .notify(&Toast::from_notice(&notice, i18n::current_language()));
+        engine.observe(std::time::Instant::now(), seq, kind, payload);
+        self.arm_notice_timer(weak);
+    }
+
+    /// Wakes the actor when the earliest grouping window ends.
+    fn arm_notice_timer(&mut self, weak: &WeakActorRef<Msg>) {
+        if self.notice_timer {
+            return;
         }
+        let Some(deadline) = self
+            .notices
+            .as_ref()
+            .and_then(|(engine, _)| engine.next_deadline())
+        else {
+            return;
+        };
+        self.notice_timer = true;
+        let weak = weak.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
+            tell(&weak, Msg::NoticeFlush);
+        });
+    }
+
+    /// Shows the toasts of the windows that ended and re-arms for the rest.
+    fn flush_notices(&mut self, weak: &WeakActorRef<Msg>) {
+        if let Some((engine, notices)) = self.notices.as_mut() {
+            let lang = i18n::current_language();
+            for notice in engine.flush_due(std::time::Instant::now()) {
+                notices.notifier.notify(&Toast::from_notice(&notice, lang));
+            }
+        }
+        self.arm_notice_timer(weak);
     }
 
     fn on_frame(&mut self, frame: StreamFrame, weak: &WeakActorRef<Msg>) {
@@ -805,7 +856,7 @@ impl TrayActor {
                         continue;
                     };
                     let payload = event.get("payload").cloned().unwrap_or(Value::Null);
-                    self.notice(item["seq"].as_u64(), kind, &payload);
+                    self.notice(item["seq"].as_u64(), kind, &payload, weak);
                     if self.snapshot_inflight {
                         self.queued.push((kind.to_owned(), payload));
                         continue;

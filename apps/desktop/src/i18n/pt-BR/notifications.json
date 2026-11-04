@@ -5,20 +5,23 @@
   "toast": {
     "service_restarted": {
       "title": "Serviço reiniciado",
-      "body": "{service} parou inesperadamente e foi reiniciado."
+      "body": "{service} parou inesperadamente e foi reiniciado.",
+      "body_many": "{count} serviços foram reiniciados: {list}."
     },
     "update_installed": {
       "title": "Atualização instalada",
-      "body": "{tool} foi atualizado para {version}."
+      "body": "{tool} foi atualizado para {version}.",
+      "body_many": "{count} atualizações foram instaladas: {list}."
     },
     "install_completed": {
       "title": "Instalação concluída",
       "body": "{tool} {version} foi instalado.",
-      "body_job": "A instalação terminou."
+      "body_many": "{count} instalações terminaram: {list}."
     },
     "performance_alert": {
       "title": "Alerta de desempenho",
-      "body": "{subject}: {detail}"
+      "body": "{subject}: {detail}",
+      "body_many": "{count} alertas: {list}"
     }
   },
   "types": {

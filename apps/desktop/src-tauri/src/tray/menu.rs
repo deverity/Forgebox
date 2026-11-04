@@ -361,6 +361,7 @@ pub fn install(app: &AppHandle<Wry>, shell: &WindowShell, bridge: &Bridge) -> ta
     }
     // Native toasts (M2-E1-T16): shown from here, so they work with the window hidden.
     let notices = Notices {
+        window: crate::notifications::GROUP_WINDOW,
         notifier: Arc::new(PluginNotifier::new(app.clone())),
         mutes: Arc::new(PrefsMutes::new(Arc::clone(shell.prefs()))),
     };
