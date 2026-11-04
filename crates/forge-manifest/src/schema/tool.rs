@@ -1544,6 +1544,10 @@ pub struct PoolService {
     pub env: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<PoolHealth>,
+    /// Logs of the pool the log viewer reads as `<tool>@<series>` (the first one), with
+    /// the parser of their `format`. Paths use the version variables (`{{ series }}`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logs: Vec<LogSpec>,
 }
 
 fn default_pool_range() -> String {

@@ -147,6 +147,9 @@ spec:
       recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
       env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }
       health: { fastcgi: "/_forgebox/health.php" }
+      logs:
+        # The error_log of php.ini.j2; `php@<series>` in the log viewer reads this file.
+        - { label: Error log, path: "{{ paths.logs }}/php/{{ series }}/error.log", format: php }
 
   discover:
     match_files: [php.exe, php-cgi.exe]

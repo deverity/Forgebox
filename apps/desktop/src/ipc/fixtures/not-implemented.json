@@ -50,11 +50,6 @@
     "what": "LAN QR codes"
   },
   {
-    "method": "logs.targets",
-    "task": "M2-E3-T8",
-    "what": "listing log targets"
-  },
-  {
     "method": "shell.open",
     "task": "M2-E3-T9",
     "what": "external terminal launcher"

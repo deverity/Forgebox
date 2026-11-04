@@ -1,5 +1,6 @@
 ---
 source: crates/forge-manifest/tests/schema.rs
+assertion_line: 10
 expression: text
 ---
 {
@@ -1315,6 +1316,13 @@ expression: text
               "type": "null"
             }
           ]
+        },
+        "logs": {
+          "description": "Logs of the pool the log viewer reads as `<tool>@<series>` (the first one), with\nthe parser of their `format`. Paths use the version variables (`{{ series }}`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LogSpec"
+          }
         },
         "port_range": {
           "description": "Named range of `forgebox.toml`; must exist (rule 3). Default `php-pools`.",

@@ -30,6 +30,7 @@ pub mod install;
 pub mod instance_case;
 pub mod instance_lock;
 pub mod internal;
+pub mod log_format;
 pub mod logging;
 pub mod mail;
 pub mod messages;
