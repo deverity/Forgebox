@@ -153,5 +153,10 @@ describe("commands", () => {
         (row) => row.command,
       ),
     ).toEqual(["forge dns enable"]);
+    expect(
+      equivalentCommands(choices, { showRoot: false, steps: ["parity"], specs: [] }).map(
+        (row) => row.id,
+      ),
+    ).toEqual(["parity"]);
   });
 });

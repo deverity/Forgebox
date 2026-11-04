@@ -48,7 +48,8 @@ export function equivalentCommands(
   for (const id of options.steps) {
     const command = stepCommand(id, options.specs);
     if (command !== null) rows.push({ id, command });
-    if (id === "parity") {
+    // Same rule as useSetupRun: the folder is only known (and cleared) when step 1 ran.
+    if (id === "parity" && options.showRoot) {
       const disable = disableCaseSensitivity.cli({ dir: choices.parkedDir });
       if (disable !== null) rows.push({ id: "parity-dir", command: disable });
     }

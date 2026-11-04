@@ -302,6 +302,12 @@ describe("Onboarding wizard", () => {
       h.fake.calls.filter((call) => call.method === "system.config_set").map((c) => c.params),
     ).toEqual([{ key: "case_sensitive", value: false }]);
     expect(methods(h)).not.toContain("fs_parity.case_disable");
+    const listed = Array.from(
+      screen.getByTestId("commands").querySelectorAll("[data-forge-cli]"),
+      (node) => node.getAttribute("data-forge-cli") ?? "",
+    );
+    expect(listed).toContain("forge config set case_sensitive false");
+    expect(listed.some((c) => c.startsWith("forge fs case-sensitive disable"))).toBe(false);
   });
 
   it("hides step 1 and the PATH and startup toggles in portable mode", async () => {
