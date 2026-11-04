@@ -36,7 +36,7 @@ describe("buildRows", () => {
   it("turns a oneOf of string consts behind a $ref into a select", () => {
     expect(row("updates.metered")).toMatchObject({
       control: "select",
-      options: ["notify", "skip"],
+      options: ["pause", "allow"],
       description: "What to do on a metered connection.",
     });
   });

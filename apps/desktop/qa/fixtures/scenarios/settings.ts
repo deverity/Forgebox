@@ -41,13 +41,23 @@ export const QA_CONFIG_SCHEMA = {
     MeteredPolicy: {
       description: "What to do on a metered connection.",
       oneOf: [
-        { type: "string", const: "notify" },
-        { type: "string", const: "skip" },
+        { type: "string", const: "pause" },
+        { type: "string", const: "allow" },
       ],
+    },
+    QuietHours: {
+      type: "object",
+      properties: { start: { type: "string" }, end: { type: "string" } },
     },
     UpdatesConfig: {
       type: "object",
-      properties: { metered: { $ref: "#/$defs/MeteredPolicy" } },
+      properties: {
+        metered: { $ref: "#/$defs/MeteredPolicy" },
+        quiet_hours: {
+          description: "Window in which background updates do not run.",
+          anyOf: [{ $ref: "#/$defs/QuietHours" }, { type: "null" }],
+        },
+      },
     },
     EditorConfig: {
       type: "object",
@@ -77,7 +87,10 @@ const DEFAULT_VALUES = {
     } as Record<string, (number | string)[]>,
   },
   dns: { enabled: true, extra_tlds: [] as string[] },
-  updates: { metered: "notify" },
+  updates: {
+    metered: "pause",
+    quiet_hours: null as { start: string; end: string } | null,
+  },
   editor: { command: null as string | null },
   terminal: {
     command: null as string | null,
@@ -137,6 +150,7 @@ export function settingsHandlers(initial: Partial<Values> = {}): SettingsFake {
     "dns.enabled",
     "dns.extra_tlds",
     "updates.metered",
+    "updates.quiet_hours",
     "editor.command",
     "terminal.command",
     "terminal.integrated_shell",

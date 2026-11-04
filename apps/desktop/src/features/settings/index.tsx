@@ -1,7 +1,6 @@
 // Settings (docs/07 section 5.11, M2-E3-T16/T17): sub-navigation by section, a label search and
-// rows generated from the schema of `system.config_list`. Delivered: Geral, Rede, Seguranca,
-// Editor/Terminal, Atalhos and Avancado; the other sections (Updates, Registries, File system)
-// are added to `SECTION_IDS` and `SECTION_VIEWS` by M2-E3-T18.
+// rows generated from the schema of `system.config_list`. Sections: Geral, Sistema de arquivos,
+// Rede, Seguranca, Atualizacoes, Editor/Terminal, Registries, Atalhos and Avancado.
 import { useState } from "react";
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,18 +14,24 @@ import { SECTION_IDS, type SectionId, type SectionProps } from "./registry";
 import { editorRows, rowLabel } from "./schemaRows";
 import { ADVANCED_ROWS, AdvancedSection } from "./sections/advanced";
 import { EditorSection } from "./sections/editor";
+import { FILESYSTEM_ROWS, FilesystemSection } from "./sections/filesystem";
 import { GENERAL_ROWS, GeneralSection } from "./sections/general";
 import { NETWORK_ROWS, NetworkSection } from "./sections/network";
+import { REGISTRIES_ROWS, RegistriesSection } from "./sections/registries";
 import { SECURITY_ROWS, SecuritySection } from "./sections/security";
 import { ShortcutsSection } from "./sections/shortcuts";
+import { UPDATES_ROWS, UpdatesSection } from "./sections/updates";
 
 const LIST_METHOD = "system.config_list";
 
 const SECTION_VIEWS: Readonly<Record<SectionId, ComponentType<SectionProps>>> = {
   general: GeneralSection,
+  filesystem: FilesystemSection,
   network: NetworkSection,
   security: SecuritySection,
+  updates: UpdatesSection,
   editor: EditorSection,
+  registries: RegistriesSection,
   shortcuts: ShortcutsSection,
   advanced: AdvancedSection,
 };
@@ -47,6 +52,12 @@ export function SettingsPage() {
     switch (id) {
       case "general":
         return GENERAL_ROWS.map((row) => loose(t)(`general.${row}.label`));
+      case "filesystem":
+        return FILESYSTEM_ROWS.map((row) => loose(t)(`filesystem.${row}.label`));
+      case "updates":
+        return UPDATES_ROWS.map((row) => loose(t)(`updates.${row}.label`));
+      case "registries":
+        return REGISTRIES_ROWS.map((row) => loose(t)(`registries.${row}.label`));
       case "network":
         return NETWORK_ROWS.map((row) => loose(t)(`network.${row}.label`));
       case "security":

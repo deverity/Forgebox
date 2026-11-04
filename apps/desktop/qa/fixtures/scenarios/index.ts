@@ -17,6 +17,7 @@ import { catalogHandlers } from "./catalog";
 import { attentionDashboard, healthyDashboard } from "./dashboard";
 import { configHandlers } from "./config";
 import { databasesHandlers } from "./databases";
+import { createFilesystemQa } from "./filesystem";
 import { diagnosticsHandlers, QA_HOLDER_PORT } from "./diagnostics";
 import {
   CA_STATUS,
@@ -221,6 +222,12 @@ export function registerQaScenarios(): void {
     latencyMs: 0,
     notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
     handlers: createNetworkSecurityQa().handlers,
+  });
+  // Settings > Sistema de arquivos, Registries and Atualizacoes (M2-E3-T18).
+  define("filesystem", populatedData(), {
+    latencyMs: 0,
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
+    handlers: createFilesystemQa().handlers,
   });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
   define("slow", populatedData(), builtin("slow"));
