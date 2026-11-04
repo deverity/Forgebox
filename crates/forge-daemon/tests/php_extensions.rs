@@ -118,15 +118,22 @@ async fn reloads(client: &Client) -> usize {
         .count()
 }
 
-/// Waits until more than `before` workers were recycled for a reload.
+/// Workers of an idle PHP pool (`service.pool.scaling.min` of `registry/tools/php.yaml`).
+const POOL_WORKERS: usize = 2;
+
+/// Waits until every worker of the pool was replaced by the reload that followed
+/// `before` recycles: a rolling reload is over only once its last replacement is warm.
 async fn wait_reloads(client: &Client, before: usize) -> usize {
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         let now = reloads(client).await;
-        if now > before {
+        if now >= before + POOL_WORKERS {
             return now;
         }
-        assert!(Instant::now() < deadline, "the pool was not recycled");
+        assert!(
+            Instant::now() < deadline,
+            "the pool was not recycled ({now} after {before})"
+        );
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
@@ -200,7 +207,7 @@ async fn extension_toggles_render_the_overlay_and_recycle_the_pool() {
     assert!(enabled(&list, "intl") && !enabled(&list, "xsl"));
     assert!(list.extensions.iter().all(|e| e.bundled && !e.zend));
 
-    // intl (on by default): off, then on again; each change recycles the pool.
+    // intl (on by default): off, then on again; each change recycles the whole pool.
     let before = reloads(&client).await;
     let off = toggle(&client, false, "intl").await;
     assert!(!enabled(&off, "intl"), "{off:?}");
@@ -212,20 +219,22 @@ async fn extension_toggles_render_the_overlay_and_recycle_the_pool() {
     let text = std::fs::read_to_string(&overlay).unwrap();
     assert!(text.contains("\nextension = intl\n"), "{text}");
     assert_eq!(text, initial, "back to the default: the same overlay");
-    wait_reloads(&client, after_off).await;
+    let after_on = wait_reloads(&client, after_off).await;
 
     // xsl (off by default): on and off gives back the overlay byte for byte.
     let on = toggle(&client, true, "xsl").await;
     assert!(enabled(&on, "xsl"));
     let text = std::fs::read_to_string(&overlay).unwrap();
     assert!(text.contains("\nextension = xsl\n"), "{text}");
+    let after_xsl = wait_reloads(&client, after_on).await;
     let off = toggle(&client, false, "XSL").await;
     assert!(!enabled(&off, "xsl"));
     assert_eq!(std::fs::read_to_string(&overlay).unwrap(), initial);
 
-    // Idempotent: the same call again writes nothing and recycles nothing.
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    let settled = reloads(&client).await;
+    // Idempotent: the same call again writes nothing and recycles nothing. Every
+    // reload above is over first: a fixed 2 s pause raced the rolling reload of a
+    // loaded machine and counted its late recycles against this call.
+    let settled = wait_reloads(&client, after_xsl).await;
     let again = toggle(&client, false, "xsl").await;
     assert_eq!(again, off);
     tokio::time::sleep(Duration::from_secs(2)).await;
