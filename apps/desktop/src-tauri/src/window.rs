@@ -43,18 +43,22 @@ use crate::window_state::{MonitorId, MonitorInfo, Placement, Rect, WindowStateFi
 pub const MAIN_LABEL: &str = "main";
 /// Event carrying every [`AppearanceState`] change.
 pub const APPEARANCE_EVENT: &str = "forge://appearance";
-/// Diagnostic override of the material (`mica`, `acrylic`, `none`): skips the policy, not
+/// Diagnostic override of the material (`mica`, `acrylic`, `blur`, `none`): skips the policy, not
 /// `window-vibrancy`'s answer. For QA and the frame-pacing measurement of ADR-0035.
 pub const EFFECT_OVERRIDE_ENV: &str = "FORGE_GUI_EFFECT";
 /// The window is shown after this long even if `ready` never arrives.
 pub const READY_WATCHDOG: Duration = Duration::from_secs(5);
 /// Default inner size (logical), capped by the work area.
 pub const DEFAULT_SIZE: (f64, f64) = (1200.0, 800.0);
-/// First Windows 10 build with Acrylic (1809).
+/// First Windows 10 build with Acrylic and the DWM blur (1809).
 pub const ACRYLIC_FIRST_BUILD: u32 = 17763;
-/// What Windows 10 gets without the opt-in, decided by the frame-pacing measurement of
-/// M2-E1-T7 (ADR-0035): Acrylic makes drags and resizes lag there.
-pub const WIN10_DEFAULT: Effect = Effect::None;
+/// First Windows 11 build whose Acrylic is the system backdrop (`DWMSBT_TRANSIENTWINDOW`,
+/// 22H2): no drag/resize lag there, so it replaces Mica (ADR-0035 addendum, M2-E1-T23).
+pub const WIN11_ACRYLIC_FIRST_BUILD: u32 = 22621;
+/// What Windows 10 gets without the Acrylic opt-in: the DWM blur, tinted by the page
+/// (`--bg-sidebar-glass`). Windows 10's Acrylic lags behind drags and resizes; the blur does
+/// not (frame-pacing measurement of M2-E1-T23 on the physical console, ADR-0035 addendum).
+pub const WIN10_DEFAULT: Effect = Effect::Blur;
 /// Bound of one appearance snapshot (registry + DWM reads, normally < 5 ms).
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -107,6 +111,8 @@ impl LaunchArgs {
 pub enum Effect {
     Mica,
     Acrylic,
+    /// The DWM blur behind the window (Windows 10): untinted, the page paints the tint.
+    Blur,
     /// Opaque: the page paints `--bg-*-solid`.
     None,
 }
@@ -116,6 +122,7 @@ impl Effect {
         match self {
             Effect::Mica => "mica",
             Effect::Acrylic => "acrylic",
+            Effect::Blur => "blur",
             Effect::None => "none",
         }
     }
@@ -125,6 +132,7 @@ impl Effect {
         match value.trim().to_ascii_lowercase().as_str() {
             "mica" => Some(Effect::Mica),
             "acrylic" => Some(Effect::Acrylic),
+            "blur" => Some(Effect::Blur),
             "none" | "off" | "opaque" => Some(Effect::None),
             _ => None,
         }
@@ -135,11 +143,13 @@ impl Effect {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectReason {
-    /// Windows 11: Mica.
+    /// Windows 11 before 22H2: Mica.
     Win11,
+    /// Windows 11 22H2 or later ([`WIN11_ACRYLIC_FIRST_BUILD`]): Acrylic.
+    Win11Acrylic,
     /// Windows 10 with the Acrylic opt-in.
     Win10OptIn,
-    /// Windows 10 without the opt-in: [`WIN10_DEFAULT`].
+    /// Windows 10 without the opt-in: [`WIN10_DEFAULT`] (the blur).
     Win10Default,
     /// The user switched materials off.
     UserOff,
@@ -189,11 +199,12 @@ impl EffectChoice {
     }
 }
 
-/// The material for `snapshot` and `prefs` (docs/07 §2.3, ADR-0035), in order:
-/// the user's switch, high contrast, Remote Desktop and "Transparency effects" off mean
-/// opaque; then Windows 11 → Mica; Windows 10 1809+ → Acrylic with the opt-in, otherwise
-/// [`WIN10_DEFAULT`]; anything older or unknown → opaque. Pure: the caller applies it and
-/// falls back to opaque if `window-vibrancy` refuses.
+/// The material for `snapshot` and `prefs` (docs/07 §2.3, ADR-0035 and its M2-E1-T23
+/// addendum), in order: the user's switch, high contrast, Remote Desktop and "Transparency
+/// effects" off mean opaque; then Windows 11 22H2+ → Acrylic, earlier Windows 11 → Mica;
+/// Windows 10 1809+ → Acrylic with the opt-in, otherwise [`WIN10_DEFAULT`] (the blur);
+/// anything older or unknown → opaque. Pure: the caller applies it and falls back to opaque
+/// if `window-vibrancy` refuses.
 pub fn choose_effect(snapshot: &AppearanceSnapshot, prefs: &MaterialPrefs) -> EffectChoice {
     use EffectReason as R;
     if prefs.vibrancy == VibrancyPref::Off {
@@ -209,7 +220,11 @@ pub fn choose_effect(snapshot: &AppearanceSnapshot, prefs: &MaterialPrefs) -> Ef
         return EffectChoice::new(Effect::None, R::TransparencyOff);
     }
     if snapshot.is_win11 {
-        return EffectChoice::new(Effect::Mica, R::Win11);
+        return if snapshot.os_build >= WIN11_ACRYLIC_FIRST_BUILD {
+            EffectChoice::new(Effect::Acrylic, R::Win11Acrylic)
+        } else {
+            EffectChoice::new(Effect::Mica, R::Win11)
+        };
     }
     if snapshot.os_build >= ACRYLIC_FIRST_BUILD {
         return if prefs.win10_acrylic {
@@ -728,12 +743,16 @@ fn apply_native<R: Runtime>(
         let _ = match previous {
             Effect::Mica => window_vibrancy::clear_mica(window),
             Effect::Acrylic => window_vibrancy::clear_acrylic(window),
+            Effect::Blur => window_vibrancy::clear_blur(window),
             Effect::None => Ok(()),
         };
     }
     match next {
         Effect::Mica => window_vibrancy::apply_mica(window, Some(theme.is_dark())),
         Effect::Acrylic => window_vibrancy::apply_acrylic(window, Some(acrylic_tint(theme))),
+        // Untinted: the sidebar paints `--bg-sidebar-glass` over it and the content pane is
+        // opaque, so one tint per theme lives in the design tokens, not here.
+        Effect::Blur => window_vibrancy::apply_blur(window, None),
         Effect::None => Ok(()),
     }
     .map_err(|e| e.to_string())
@@ -1122,9 +1141,19 @@ mod tests {
         }
     }
 
+    /// Windows 11 23H2: Acrylic.
     fn win11() -> AppearanceSnapshot {
         AppearanceSnapshot {
             os_build: 22631,
+            is_win11: true,
+            ..snap()
+        }
+    }
+
+    /// Windows 11 21H2 (the first release): Mica.
+    fn win11_21h2() -> AppearanceSnapshot {
+        AppearanceSnapshot {
+            os_build: 22000,
             is_win11: true,
             ..snap()
         }
@@ -1144,42 +1173,66 @@ mod tests {
     };
 
     #[test]
-    fn windows_11_gets_mica() {
-        let choice = choose_effect(&win11(), &AUTO);
-        assert_eq!(choice, EffectChoice::new(Effect::Mica, EffectReason::Win11));
-        // The Windows 10 opt-in does not turn Windows 11 into Acrylic.
-        assert_eq!(choose_effect(&win11(), &OPT_IN).effect, Effect::Mica);
+    fn windows_11_gets_acrylic_from_22h2_and_mica_before() {
+        // M2-E1-T23 policy (ADR-0035 addendum): 22621+ -> Acrylic, 22000..22620 -> Mica.
+        assert_eq!(
+            choose_effect(&win11(), &AUTO),
+            EffectChoice::new(Effect::Acrylic, EffectReason::Win11Acrylic)
+        );
+        let s22h2 = AppearanceSnapshot {
+            os_build: WIN11_ACRYLIC_FIRST_BUILD,
+            ..win11()
+        };
+        assert_eq!(choose_effect(&s22h2, &AUTO).effect, Effect::Acrylic);
+        assert_eq!(
+            choose_effect(&win11_21h2(), &AUTO),
+            EffectChoice::new(Effect::Mica, EffectReason::Win11)
+        );
+        let s22h1 = AppearanceSnapshot {
+            os_build: WIN11_ACRYLIC_FIRST_BUILD - 1,
+            ..win11()
+        };
+        assert_eq!(choose_effect(&s22h1, &AUTO).effect, Effect::Mica);
+        // The Windows 10 opt-in changes nothing on Windows 11.
+        assert_eq!(choose_effect(&win11_21h2(), &OPT_IN).effect, Effect::Mica);
+        assert_eq!(
+            choose_effect(&win11(), &OPT_IN).reason,
+            EffectReason::Win11Acrylic
+        );
     }
 
     #[test]
-    fn windows_10_follows_the_policy_and_the_opt_in() {
+    fn windows_10_gets_the_blur_by_default_and_acrylic_with_the_opt_in() {
         assert_eq!(
             choose_effect(&snap(), &AUTO),
-            EffectChoice::new(WIN10_DEFAULT, EffectReason::Win10Default)
+            EffectChoice::new(Effect::Blur, EffectReason::Win10Default)
         );
         assert_eq!(
             WIN10_DEFAULT,
-            Effect::None,
-            "ADR-0035: Windows 10 is opaque by default"
+            Effect::Blur,
+            "ADR-0035 addendum (M2-E1-T23): Windows 10 gets the DWM blur by default"
         );
-        assert_eq!(
-            choose_effect(&snap(), &OPT_IN),
-            EffectChoice::new(Effect::Acrylic, EffectReason::Win10OptIn)
-        );
-        // 1809 is the first build with Acrylic; before it nothing.
         let s1809 = AppearanceSnapshot {
             os_build: ACRYLIC_FIRST_BUILD,
             ..snap()
         };
+        assert_eq!(choose_effect(&s1809, &AUTO).effect, Effect::Blur);
+        assert_eq!(
+            choose_effect(&snap(), &OPT_IN),
+            EffectChoice::new(Effect::Acrylic, EffectReason::Win10OptIn)
+        );
+        // 1809 is the first build with Acrylic and the blur; before it nothing.
         assert_eq!(choose_effect(&s1809, &OPT_IN).effect, Effect::Acrylic);
         let s1803 = AppearanceSnapshot {
             os_build: 17134,
             ..snap()
         };
-        assert_eq!(
-            choose_effect(&s1803, &OPT_IN),
-            EffectChoice::new(Effect::None, EffectReason::Unsupported)
-        );
+        for prefs in [AUTO, OPT_IN] {
+            assert_eq!(
+                choose_effect(&s1803, &prefs),
+                EffectChoice::new(Effect::None, EffectReason::Unsupported)
+            );
+        }
         let unknown = AppearanceSnapshot {
             os_build: 0,
             ..snap()
@@ -1192,7 +1245,7 @@ mod tests {
 
     #[test]
     fn remote_transparency_off_high_contrast_and_user_off_are_opaque() {
-        for base in [snap(), win11()] {
+        for base in [snap(), win11_21h2(), win11()] {
             let cases = [
                 (
                     AppearanceSnapshot {
@@ -1280,10 +1333,20 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
-                "theme": "dark", "vibrancy": "on", "effect": "mica", "reason": "win11",
+                "theme": "dark", "vibrancy": "on", "effect": "acrylic", "reason": "win11_acrylic",
                 "contrast": "normal", "accent": "#0078D7", "remote_session": false,
                 "os_build": 22631
             })
+        );
+        // Windows 10: the blur is a material too (`data-vibrancy="on"`, `data-effect="blur"`).
+        let state = appearance_state(&snap(), &prefs, choose_effect(&snap(), &AUTO));
+        assert_eq!(
+            (state.vibrancy, state.effect, state.reason),
+            ("on", Effect::Blur, EffectReason::Win10Default)
+        );
+        assert_eq!(
+            serde_json::to_value(&state).unwrap()["effect"],
+            serde_json::json!("blur")
         );
 
         let hc = AppearanceSnapshot {
@@ -1328,7 +1391,8 @@ mod tests {
         assert_eq!(Effect::parse("Acrylic"), Some(Effect::Acrylic));
         assert_eq!(Effect::parse(" mica "), Some(Effect::Mica));
         assert_eq!(Effect::parse("off"), Some(Effect::None));
-        assert_eq!(Effect::parse("blur"), None);
+        assert_eq!(Effect::parse("Blur"), Some(Effect::Blur));
+        assert_eq!(Effect::parse("frosted"), None);
         let remote = AppearanceSnapshot {
             remote_session: true,
             ..snap()
@@ -1393,6 +1457,7 @@ mod tests {
         assert!(!transparent_at_start(Effect::None));
         assert!(transparent_at_start(Effect::Mica));
         assert!(transparent_at_start(Effect::Acrylic));
+        assert!(transparent_at_start(Effect::Blur));
         let mica = EffectChoice::new(Effect::Mica, EffectReason::Win11);
         assert_eq!(effective_choice(mica, true), mica);
         assert_eq!(

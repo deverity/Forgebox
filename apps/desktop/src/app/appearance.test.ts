@@ -168,7 +168,12 @@ describe("boot appearance", () => {
       theme: "light",
       vibrancy: "on",
     });
-    expect(readBootAppearance(fakeWindow("?theme=sepia&vibrancy=maybe"))).toBeNull();
+    // M2-E1-T23: the Windows 10 blur can be previewed too (the sidebar paints the glass tint).
+    expect(readBootAppearance(fakeWindow("?vibrancy=on&effect=blur"))).toEqual({
+      vibrancy: "on",
+      effect: "blur",
+    });
+    expect(readBootAppearance(fakeWindow("?theme=sepia&vibrancy=maybe&effect=frosted"))).toBeNull();
     expect(readBootAppearance(fakeWindow(""))).toBeNull();
     expect(startedMinimized(fakeWindow(""))).toBe(false);
   });

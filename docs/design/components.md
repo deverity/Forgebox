@@ -29,6 +29,7 @@ Regras comuns: só tokens (`bg-surface`, `text-fg-primary`, `rounded-control`, `
 | Sparkline | `accent`, `fg-secondary`, `tnum` | — | com dados, vazio | pronto (M2-E1-T12) |
 | EmptyState | `fg-tertiary`, `text-headline` | — | default | pronto (M2-E1-T12) |
 | Skeleton | `stroke`, `radius-control` | pulso CSS (só `motion-safe`) | carregando | pronto (M2-E1-T12) |
+| ToolTile | `tool-1..8`, `fg-on-tool`, `radius-item`/`radius-card` | — | ícone colorido, ícone monocromático (branco no ladrilho), monograma | pronto (M2-E1-T23) |
 
 ## Controles (M2-E1-T11)
 
@@ -36,7 +37,7 @@ Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyT
 
 ### Button / IconButton
 - **Anatomia:** `<button>` 32 px de altura, borda 1 px, `radius-control`; conteúdo em grade de uma célula (`grid` + `col-start-1 row-start-1`) com dois blocos empilhados: o normal e o de loading (spinner inline de 16 px à esquerda + texto). IconButton é 32x32, ícone 16 px e `label` obrigatório (`aria-label` + `title`).
-- **Variantes:** `primary` (fundo `accent`, texto `fg-on-accent`), `secondary` (surface + `stroke-strong`), `ghost`, `destructive` (borda e texto `state-failed`).
+- **Variantes** (visual mais leve do mockup aprovado, M2-E1-T23): `primary` (fundo sólido `accent`, texto `fg-on-accent`), `secondary` — o padrão — (preenchimento suave `fill`/`fill-hover`/`fill-pressed`, sem contorno), `ghost` (transparente até o hover), `destructive` (texto `state-failed`, sem a borda vermelha). Todas usam `border-stroke-control`, transparente fora do alto contraste. Mudou na primitiva, não por tela.
 - **Estados:** `loading` desabilita cliques, define `aria-busy` e mostra spinner + texto (nunca spinner sozinho, docs/07 §1.2): `loadingLabel` (já localizado pelo chamador) troca o texto, senão o rótulo normal continua visível. O bloco inativo fica `opacity-0` + `aria-hidden`, então o nome acessível é igual ao texto visível e a largura é o máximo dos dois (sem layout shift). Em `loading` o cursor é `progress` e a opacidade 100 %; `disabled` (sem loading) usa opacidade 50 % e `not-allowed`.
 - **Teclado:** Enter e Espaço (nativo).
 

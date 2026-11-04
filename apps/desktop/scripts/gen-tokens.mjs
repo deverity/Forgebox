@@ -113,6 +113,9 @@ export function buildCss(t) {
     for (const [k, v] of Object.entries(t.motion.duration)) L.push(`  --duration-${k}: ${v}ms;`);
     L.push("  --bg-canvas: var(--bg-canvas-solid);");
     L.push("  --bg-sidebar: var(--bg-sidebar-solid);");
+    // What the sidebar paints over a material: nothing over Mica/Acrylic (already tinted),
+    // the glass tint over the untinted Windows 10 DWM blur (M2-E1-T23, ADR-0035 addendum).
+    L.push("  --bg-sidebar-material: transparent;");
     L.push("}", "");
 
     L.push("/* Theme: light by default; dark follows the system unless data-theme is set. */");
@@ -125,9 +128,15 @@ export function buildCss(t) {
 
     L.push("/* Vibrancy: the OS material shows through only when data-vibrancy=on. */");
     L.push(
+        ':root[data-effect="blur"] {',
+        "  --bg-sidebar-material: var(--bg-sidebar-glass);",
+        "}",
+        "",
+    );
+    L.push(
         ':root[data-vibrancy="on"] {',
         "  --bg-canvas: transparent;",
-        "  --bg-sidebar: transparent;",
+        "  --bg-sidebar: var(--bg-sidebar-material);",
         "}",
         "",
     );

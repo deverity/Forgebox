@@ -17,6 +17,7 @@
   --duration-reduced: 100ms;
   --bg-canvas: var(--bg-canvas-solid);
   --bg-sidebar: var(--bg-sidebar-solid);
+  --bg-sidebar-material: transparent;
 }
 
 /* Theme: light by default; dark follows the system unless data-theme is set. */
@@ -39,6 +40,27 @@
   --state-stopped: #6E6E73;
   --state-failed: #D70015;
   --state-updating: #0071A4;
+  --bg-sidebar-glass: #F6F4FA9E;
+  --fill: #0000000D;
+  --fill-hover: #00000017;
+  --fill-pressed: #00000024;
+  --fill-selected: #00000014;
+  --stroke-control: #00000000;
+  --window-minimize: #FEBC2E;
+  --window-maximize: #28C840;
+  --window-close: #FF5F57;
+  --window-inactive: #D6D5DB;
+  --window-dot-stroke: #0000002E;
+  --window-glyph: #0000008C;
+  --fg-on-tool: #FFFFFF;
+  --tool-1: #1F6FD1;
+  --tool-2: #00758F;
+  --tool-3: #C42B1C;
+  --tool-4: #6B4FBB;
+  --tool-5: #2E7D32;
+  --tool-6: #B3541E;
+  --tool-7: #AD1457;
+  --tool-8: #546E7A;
   --elevation-popover: 0px 8px 24px 0px #00000014;
   color-scheme: light;
 }
@@ -63,6 +85,27 @@
     --state-stopped: #8E8E93;
     --state-failed: #FF6259;
     --state-updating: #64D2FF;
+    --bg-sidebar-glass: #26242E94;
+    --fill: #FFFFFF12;
+    --fill-hover: #FFFFFF1F;
+    --fill-pressed: #FFFFFF2E;
+    --fill-selected: #FFFFFF1A;
+    --stroke-control: #00000000;
+    --window-minimize: #FEBC2E;
+    --window-maximize: #28C840;
+    --window-close: #FF5F57;
+    --window-inactive: #4A4953;
+    --window-dot-stroke: #0000002E;
+    --window-glyph: #0000008C;
+    --fg-on-tool: #FFFFFF;
+    --tool-1: #1F6FD1;
+    --tool-2: #00758F;
+    --tool-3: #C42B1C;
+    --tool-4: #6B4FBB;
+    --tool-5: #2E7D32;
+    --tool-6: #B3541E;
+    --tool-7: #AD1457;
+    --tool-8: #546E7A;
     --elevation-popover: 0px 8px 24px 0px #0000002E;
     color-scheme: dark;
   }
@@ -87,6 +130,27 @@
   --state-stopped: #6E6E73;
   --state-failed: #D70015;
   --state-updating: #0071A4;
+  --bg-sidebar-glass: #F6F4FA9E;
+  --fill: #0000000D;
+  --fill-hover: #00000017;
+  --fill-pressed: #00000024;
+  --fill-selected: #00000014;
+  --stroke-control: #00000000;
+  --window-minimize: #FEBC2E;
+  --window-maximize: #28C840;
+  --window-close: #FF5F57;
+  --window-inactive: #D6D5DB;
+  --window-dot-stroke: #0000002E;
+  --window-glyph: #0000008C;
+  --fg-on-tool: #FFFFFF;
+  --tool-1: #1F6FD1;
+  --tool-2: #00758F;
+  --tool-3: #C42B1C;
+  --tool-4: #6B4FBB;
+  --tool-5: #2E7D32;
+  --tool-6: #B3541E;
+  --tool-7: #AD1457;
+  --tool-8: #546E7A;
   --elevation-popover: 0px 8px 24px 0px #00000014;
   color-scheme: light;
 }
@@ -110,14 +174,39 @@
   --state-stopped: #8E8E93;
   --state-failed: #FF6259;
   --state-updating: #64D2FF;
+  --bg-sidebar-glass: #26242E94;
+  --fill: #FFFFFF12;
+  --fill-hover: #FFFFFF1F;
+  --fill-pressed: #FFFFFF2E;
+  --fill-selected: #FFFFFF1A;
+  --stroke-control: #00000000;
+  --window-minimize: #FEBC2E;
+  --window-maximize: #28C840;
+  --window-close: #FF5F57;
+  --window-inactive: #4A4953;
+  --window-dot-stroke: #0000002E;
+  --window-glyph: #0000008C;
+  --fg-on-tool: #FFFFFF;
+  --tool-1: #1F6FD1;
+  --tool-2: #00758F;
+  --tool-3: #C42B1C;
+  --tool-4: #6B4FBB;
+  --tool-5: #2E7D32;
+  --tool-6: #B3541E;
+  --tool-7: #AD1457;
+  --tool-8: #546E7A;
   --elevation-popover: 0px 8px 24px 0px #0000002E;
   color-scheme: dark;
 }
 
 /* Vibrancy: the OS material shows through only when data-vibrancy=on. */
+:root[data-effect="blur"] {
+  --bg-sidebar-material: var(--bg-sidebar-glass);
+}
+
 :root[data-vibrancy="on"] {
   --bg-canvas: transparent;
-  --bg-sidebar: transparent;
+  --bg-sidebar: var(--bg-sidebar-material);
 }
 
 :root[data-vibrancy="off"] {
@@ -145,6 +234,27 @@
   --state-stopped: #CCCCCC;
   --state-failed: #FF8A80;
   --state-updating: #1AEBFF;
+  --bg-sidebar-glass: #000000;
+  --fill: #000000;
+  --fill-hover: #333333;
+  --fill-pressed: #4D4D4D;
+  --fill-selected: #333333;
+  --stroke-control: #FFFFFF;
+  --window-minimize: #FEBC2E;
+  --window-maximize: #28C840;
+  --window-close: #FF5F57;
+  --window-inactive: #CCCCCC;
+  --window-dot-stroke: #FFFFFF;
+  --window-glyph: #000000;
+  --fg-on-tool: #FFFFFF;
+  --tool-1: #000000;
+  --tool-2: #000000;
+  --tool-3: #000000;
+  --tool-4: #000000;
+  --tool-5: #000000;
+  --tool-6: #000000;
+  --tool-7: #000000;
+  --tool-8: #000000;
   --bg-canvas: var(--bg-canvas-solid);
   --bg-sidebar: var(--bg-sidebar-solid);
 }
@@ -169,6 +279,27 @@
     --state-stopped: GrayText;
     --state-failed: Mark;
     --state-updating: LinkText;
+    --bg-sidebar-glass: Canvas;
+    --fill: ButtonFace;
+    --fill-hover: ButtonFace;
+    --fill-pressed: ButtonFace;
+    --fill-selected: Canvas;
+    --stroke-control: ButtonBorder;
+    --window-minimize: ButtonText;
+    --window-maximize: ButtonText;
+    --window-close: ButtonText;
+    --window-inactive: GrayText;
+    --window-dot-stroke: ButtonText;
+    --window-glyph: ButtonFace;
+    --fg-on-tool: CanvasText;
+    --tool-1: Canvas;
+    --tool-2: Canvas;
+    --tool-3: Canvas;
+    --tool-4: Canvas;
+    --tool-5: Canvas;
+    --tool-6: Canvas;
+    --tool-7: Canvas;
+    --tool-8: Canvas;
     --bg-canvas: var(--bg-canvas-solid);
     --bg-sidebar: var(--bg-sidebar-solid);
   }
@@ -226,6 +357,7 @@
   --radius-card: 10px;
   --radius-sheet: 12px;
   --radius-window: 8px;
+  --radius-item: 7px;
   --radius-full: 9999px;
 }
 
@@ -253,5 +385,26 @@
   --color-state-stopped: var(--state-stopped);
   --color-state-failed: var(--state-failed);
   --color-state-updating: var(--state-updating);
+  --color-sidebar-glass: var(--bg-sidebar-glass);
+  --color-fill: var(--fill);
+  --color-fill-hover: var(--fill-hover);
+  --color-fill-pressed: var(--fill-pressed);
+  --color-fill-selected: var(--fill-selected);
+  --color-stroke-control: var(--stroke-control);
+  --color-window-minimize: var(--window-minimize);
+  --color-window-maximize: var(--window-maximize);
+  --color-window-close: var(--window-close);
+  --color-window-inactive: var(--window-inactive);
+  --color-window-dot-stroke: var(--window-dot-stroke);
+  --color-window-glyph: var(--window-glyph);
+  --color-fg-on-tool: var(--fg-on-tool);
+  --color-tool-1: var(--tool-1);
+  --color-tool-2: var(--tool-2);
+  --color-tool-3: var(--tool-3);
+  --color-tool-4: var(--tool-4);
+  --color-tool-5: var(--tool-5);
+  --color-tool-6: var(--tool-6);
+  --color-tool-7: var(--tool-7);
+  --color-tool-8: var(--tool-8);
   --shadow-popover: var(--elevation-popover);
 }

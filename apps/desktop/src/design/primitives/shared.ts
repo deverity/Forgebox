@@ -29,8 +29,14 @@ export const FIELD_WIDTH: Record<FieldWidth, string> = {
 };
 
 const COLOR_FAMILIES: readonly (readonly [string, RegExp])[] = [
-  ["border-color", /^border-(?:stroke|stroke-strong|accent|transparent|state-[a-z]+)$/],
-  ["bg-color", /^bg-(?:canvas|surface|surface-2|accent|transparent|state-[a-z]+)$/],
+  [
+    "border-color",
+    /^border-(?:stroke|stroke-strong|stroke-control|accent|transparent|state-[a-z]+)$/,
+  ],
+  [
+    "bg-color",
+    /^bg-(?:canvas|surface|surface-2|accent|transparent|fill(?:-[a-z]+)?|state-[a-z]+)$/,
+  ],
   ["text-color", /^text-(?:fg-[a-z-]+|accent|state-[a-z]+)$/],
 ];
 

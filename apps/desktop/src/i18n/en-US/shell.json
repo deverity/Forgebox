@@ -45,7 +45,11 @@
     "version": "v{version}",
     "versionUnknown": "Forgebox",
     "updater": "App updates arrive in 1.0",
-    "updateAvailable": "Update {version} available"
+    "updateAvailable": "Update {version} available",
+    "groups": {
+      "data": "Data",
+      "tools": "Tools"
+    }
   },
   "context": {
     "label": "Context",
@@ -54,7 +58,7 @@
     "current": "Context: {name}"
   },
   "status": {
-    "label": "Status bar",
+    "label": "Status",
     "connection": {
       "connected": "Daemon connected",
       "connecting": "Connecting to the daemon…",

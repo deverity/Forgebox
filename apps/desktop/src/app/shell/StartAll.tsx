@@ -17,7 +17,8 @@ function PlayGlyph() {
 }
 
 /**
- * "Start all" (`services.start` with no targets, i.e. all). Sent through the reconnect queue,
+ * "Start all" (`services.start` with no targets, i.e. all), the primary action of the content
+ * toolbar (M2-E1-T23; icon only while the window is narrow). Sent through the reconnect queue,
  * so it also survives a daemon that is coming back; disabled with its reason when the
  * connection cannot do it.
  */
@@ -56,7 +57,7 @@ export function StartAll({ collapsed }: { collapsed: boolean }) {
   if (collapsed) {
     return (
       <>
-        <span className="mx-auto inline-flex" title={hint(t("sidebar.startAll"))}>
+        <span className="inline-flex" title={hint(t("sidebar.startAll"))}>
           <IconButton
             label={t("sidebar.startAll")}
             icon={<PlayGlyph />}
@@ -73,7 +74,7 @@ export function StartAll({ collapsed }: { collapsed: boolean }) {
   }
   return (
     <>
-      <span className="block [&_button]:w-full" title={hint(t("sidebar.startAllHint"))}>
+      <span className="inline-flex" title={hint(t("sidebar.startAllHint"))}>
         <Button
           variant="primary"
           disabled={disabled}
