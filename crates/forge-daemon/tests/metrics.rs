@@ -658,11 +658,15 @@ async fn disabled_metrics_run_no_tailer_and_portable_roots_start_off() {
     t.down().await;
 }
 
-/// A line of `log_format forgebox` that ended at `at`, for `uri`.
+/// A line of `log_format forgebox` that ended at `at`, for `uri`, with `$msec` precision:
+/// callers space requests a few hundred ms apart, and whole seconds would tie them, so the
+/// newest-first order of `stats.routes` would depend on where the second boundary falls.
 fn line_at(host: &str, status: u16, rt_ms: u64, uri: &str, at: jiff::Timestamp) -> String {
+    let ms = at.as_millisecond();
     format!(
-        "{{\"t\":\"{}.000\",\"host\":\"{host}\",\"s\":{status},\"rt\":{}.{:03},\"ut\":\"0.001\",\"b\":100,\"m\":\"GET\",\"u\":\"{uri}\",\"up\":\"127.0.0.1:19000\"}}\n",
-        at.as_second(),
+        "{{\"t\":\"{}.{:03}\",\"host\":\"{host}\",\"s\":{status},\"rt\":{}.{:03},\"ut\":\"0.001\",\"b\":100,\"m\":\"GET\",\"u\":\"{uri}\",\"up\":\"127.0.0.1:19000\"}}\n",
+        ms.div_euclid(1000),
+        ms.rem_euclid(1000),
         rt_ms / 1000,
         rt_ms % 1000,
     )

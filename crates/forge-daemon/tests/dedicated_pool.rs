@@ -95,11 +95,14 @@ fn route(root: &Path, host: &str) -> Option<(String, Vec<u16>)> {
     (!ports.is_empty()).then_some((name, ports))
 }
 
-/// Pause between two requests of a load task (at most 200 requests/s each). Without it the
+/// Pause between two requests of a load task (at most 50 requests/s each). Without it the
 /// fake answers ~600 requests/s per worker and outruns the pool's request estimate (a TCP
 /// table sample per second), so a worker reaches php-cgi's own hard limit before the
-/// recycle replaces it: a fake-only artefact unrelated to the pool mode.
-const PACE: Duration = Duration::from_millis(5);
+/// recycle replaces it: a fake-only artefact unrelated to the pool mode. Kept light so the
+/// latency budgets of the binaries the runner schedules next to this one (metrics.rs,
+/// `services.status` p99 < 50 ms with 400 sites) do not pay for this load: every switch
+/// still sees continuous requests on every route.
+const PACE: Duration = Duration::from_millis(20);
 
 /// What one load task saw.
 #[derive(Debug, Default)]
