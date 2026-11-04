@@ -98,7 +98,7 @@ function Highlighted({
           );
         }
         return part.match === true ? (
-          <mark key={index} className="rounded-sm bg-accent/30 text-fg-primary">
+          <mark key={index} className="bg-accent/30 text-fg-primary">
             {part.text}
           </mark>
         ) : (
