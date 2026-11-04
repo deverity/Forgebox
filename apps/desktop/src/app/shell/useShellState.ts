@@ -1,7 +1,7 @@
 // Derived values the shell chrome reads from the state layer. Selectors return primitives, so a
 // service event re-renders only the badge that changed, and nothing remounts (M2-E1-T10 #1).
 import { useStore } from "zustand";
-import { useCapability, useForgeQuery, useRuntime, useToolUpdates } from "../../state";
+import { useRuntime, useToolUpdates } from "../../state";
 
 export interface ServiceCounts {
   running: number;
@@ -31,14 +31,4 @@ export function useUpdateCount(): number {
   return useToolUpdates().count;
 }
 
-/**
- * Unread mail. `null` hides the badge: `mail.status` is not implemented (or not allowed) on
- * this daemon, or nothing is unread.
- */
-export function useMailUnread(): number | null {
-  const capability = useCapability("mail.status");
-  const status = useForgeQuery("mail.status", {}, { enabled: capability.available });
-  if (!capability.available) return null;
-  const unread = status.data?.unread ?? 0;
-  return unread > 0 ? unread : null;
-}
+export { useMailUnread } from "../../state/mail";

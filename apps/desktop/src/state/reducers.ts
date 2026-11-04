@@ -15,6 +15,7 @@ import {
   type ConnectionSlice,
   type ContextStores,
   type JobsSlice,
+  type MailSlice,
   type ServicesSlice,
   type SitesSlice,
   type SliceName,
@@ -32,6 +33,7 @@ export interface Tx {
   readonly jobs: Draft<JobsSlice>;
   readonly system: Draft<SystemSlice>;
   readonly attention: Draft<AttentionSlice>;
+  readonly mail: Draft<MailSlice>;
   /** Refetch one snapshot (debounced) when the payload cannot build the entity. */
   refresh(slice: SliceName): void;
   /** Invalidate the cached queries of `methods` (debounced; `JOB_EFFECTS`). */
@@ -364,8 +366,17 @@ export const EVENT_REDUCERS: ReducerRegistry = {
     tx.refresh("dns");
     tx.refresh("ca");
   },
-  "mail.changed": {
-    ignore: "the mailbox is mail.* queries (EVENT_INVALIDATIONS); the badge store is M2-E3-T13",
+  // The counts feed the badge at once (no `mail.status` round trip); the messages themselves
+  // are `mail.list` queries that EVENT_INVALIDATIONS refetches once per burst.
+  "mail.changed": (tx, payload) => {
+    tx.mail.patch({
+      counts: {
+        messages: payload.messages,
+        unread: payload.unread,
+        newMessages: payload.new_messages,
+        at: Date.now(),
+      },
+    });
   },
   "terminal.exited": {
     ignore:
@@ -393,6 +404,7 @@ export function openTx(stores: ContextStores, effects: TxEffects): Tx {
     jobs: new Draft(stores.jobs),
     system: new Draft(stores.system),
     attention: new Draft(stores.attention),
+    mail: new Draft(stores.mail),
     refresh: (slice) => {
       effects.refresh(slice);
     },
@@ -459,6 +471,7 @@ export function commitTx(tx: Tx): number {
     tx.jobs,
     tx.system,
     tx.attention,
+    tx.mail,
   ] as Draft<object>[]) {
     if (draft.commit()) commits += 1;
   }

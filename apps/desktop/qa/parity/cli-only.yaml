@@ -159,12 +159,6 @@ pending:
     task: M2-E3-T18
   - method: fs_parity.site_case
     task: M2-E3-T18
-  - method: mail.clear
-    task: M2-E3-T13
-  - method: mail.delete
-    task: M2-E3-T13
-  - method: mail.mark_read
-    task: M2-E3-T13
   - method: net.dns_disable
     task: M2-E3-T17
   - method: net.dns_enable
@@ -233,8 +227,6 @@ pending:
     task: M2-E3-T12
   - method: stats.export
     task: M2-E5-T16
-  - method: mail.open
-    task: M2-E3-T13
   - method: php.ini_open
     task: M2-E2-T17
   - method: shell.open

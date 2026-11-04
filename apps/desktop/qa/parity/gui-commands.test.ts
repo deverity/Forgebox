@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // Importing the modules registers their actions.
+import "../../src/actions/mail";
 import "../../src/actions/services";
 import "../../src/actions/sites";
 import "../../src/actions/terminal";
@@ -78,6 +79,13 @@ const SAMPLES: Record<string, unknown[]> = {
     { site: "loja.test", driver: null },
   ],
   "tools.install_spec": ["php@8.4"],
+  "mail.mark_read": [
+    { ids: ["abc"], read: true },
+    { ids: ["abc", "def"], read: false },
+  ],
+  "mail.delete": [["abc"]],
+  "mail.clear": [undefined],
+  "mail.open": [undefined],
   "terminal.open": [undefined],
   "terminal.close": [{ id: "01J0000000000000000000000" }],
   "tools.use_version": [{ tool: "php", version: "8.4" }],

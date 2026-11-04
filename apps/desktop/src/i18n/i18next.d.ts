@@ -4,6 +4,7 @@ import type common from "./en-US/common.json";
 import type dashboard from "./en-US/dashboard.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
+import type mail from "./en-US/mail.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
 import type services from "./en-US/services.json";
@@ -31,6 +32,7 @@ export interface Resources {
   catalog: typeof catalog;
   dashboard: typeof dashboard;
   terminal: typeof terminal;
+  mail: typeof mail;
 }
 
 declare module "i18next" {

@@ -1,0 +1,130 @@
+{
+  "title": "Mail",
+  "count_one": "{count} mensagem",
+  "count_other": "{count} mensagens",
+  "unreadCount_one": "{count} não lida",
+  "unreadCount_other": "{count} não lidas",
+  "search": {
+    "label": "Buscar e-mails",
+    "placeholder": "Buscar remetente, assunto ou texto"
+  },
+  "filter": {
+    "label": "Mostrar",
+    "all": "Todas",
+    "unread": "Não lidas"
+  },
+  "open": "Abrir no Mailpit",
+  "openedDone": "Aberto",
+  "credentials": {
+    "toggle": "Credenciais SMTP",
+    "title": "Credenciais SMTP",
+    "copy": "Copiar .env",
+    "copied": "Variáveis do .env copiadas",
+    "copyFailed": "Não foi possível copiar para a área de transferência",
+    "loading": "Carregando as configurações…",
+    "failed": "Não foi possível ler as configurações de SMTP."
+  },
+  "clear": {
+    "button": "Limpar caixa",
+    "title": "Limpar a caixa de entrada?",
+    "description_one": "Isso apaga para sempre a {count} mensagem capturada. Não dá para desfazer.",
+    "description_other": "Isso apaga para sempre as {count} mensagens capturadas. Não dá para desfazer.",
+    "cancel": "Cancelar",
+    "confirm": "Limpar caixa",
+    "clearing": "Limpando…",
+    "done": "Caixa limpa"
+  },
+  "empty": {
+    "title": "Nenhum e-mail ainda",
+    "description": "Aponte seu app para as configurações de SMTP abaixo e as mensagens que ele enviar aparecem aqui."
+  },
+  "list": {
+    "label": "Mensagens",
+    "more": "Carregar mais",
+    "noMatchTitle": "Nenhuma mensagem encontrada",
+    "noMatchDescription": "Tente outra busca ou mostre todas as mensagens."
+  },
+  "row": {
+    "read": "Lida",
+    "unread": "Não lida",
+    "noSubject": "(sem assunto)",
+    "attachments_one": "{count} anexo",
+    "attachments_other": "{count} anexos"
+  },
+  "error": {
+    "title": "Mailpit não respondeu",
+    "description": "O serviço de e-mail não está respondendo. Reiniciar mantém as mensagens que ele já capturou.",
+    "restart": "Reiniciar Mailpit",
+    "restarted": "Reiniciado"
+  },
+  "unavailable": {
+    "title": "Mail indisponível",
+    "description": "Este daemon ainda não oferece a API de e-mail."
+  },
+  "offline": {
+    "title": "Aguardando o daemon",
+    "description": "A caixa de entrada aparece assim que a conexão voltar."
+  },
+  "noTool": {
+    "title": "Instale o Mailpit para capturar os e-mails do seu app",
+    "description": "O Mailpit recebe as mensagens que seus projetos enviam durante o desenvolvimento e as mostra aqui.",
+    "action": "Abrir o Mailpit no catálogo"
+  },
+  "stopped": {
+    "title": "O Mailpit está parado",
+    "description": "Inicie-o para receber e ler e-mails.",
+    "start": "Iniciar Mailpit"
+  },
+  "delete": {
+    "toast": "Mensagem apagada",
+    "undo": "Desfazer",
+    "failed": "Não foi possível apagar a mensagem"
+  },
+  "pane": {
+    "none": "Selecione uma mensagem",
+    "noneHint": "O conteúdo aparece aqui.",
+    "markRead": "Marcar como lida",
+    "markUnread": "Marcar como não lida",
+    "delete": "Apagar",
+    "done": "Pronto"
+  },
+  "tabs": {
+    "label": "Visualização da mensagem",
+    "html": "HTML",
+    "text": "Texto",
+    "headers": "Headers",
+    "attachments": "Anexos",
+    "attachmentsCount_one": "Anexos ({count})",
+    "attachmentsCount_other": "Anexos ({count})"
+  },
+  "html": {
+    "frameTitle": "Conteúdo da mensagem",
+    "none": "Esta mensagem não tem parte HTML.",
+    "remoteBlocked_one": "{count} imagem remota bloqueada.",
+    "remoteBlocked_other": "{count} imagens remotas bloqueadas.",
+    "remoteShown_one": "{count} imagem remota exibida.",
+    "remoteShown_other": "{count} imagens remotas exibidas.",
+    "showRemote": "Mostrar imagens",
+    "hideRemote": "Bloquear imagens",
+    "tooLarge": "Esta mensagem é grande demais para exibir como HTML com segurança.",
+    "viewText": "Ver texto",
+    "links_one": "{count} link",
+    "links_other": "{count} links"
+  },
+  "text": {
+    "none": "Esta mensagem não tem parte de texto."
+  },
+  "attachments": {
+    "none": "Esta mensagem não tem anexos.",
+    "download": "Baixar",
+    "downloadNamed": "Baixar {name}",
+    "saved": "{name} salvo",
+    "inline": "embutido"
+  },
+  "link": {
+    "title": "Abrir este link no navegador?",
+    "description": "O link vem da mensagem e não é confiável. Confira o endereço antes de abrir.",
+    "cancel": "Cancelar",
+    "open": "Abrir link"
+  }
+}

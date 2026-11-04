@@ -1,5 +1,66 @@
 [
   {
+    "action": "mail.clear",
+    "method": "mail.clear",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge mail clear"
+      }
+    ]
+  },
+  {
+    "action": "mail.delete",
+    "method": "mail.delete",
+    "kind": "call",
+    "samples": [
+      {
+        "input": [
+          "abc"
+        ],
+        "command": "forge mail delete abc"
+      }
+    ]
+  },
+  {
+    "action": "mail.mark_read",
+    "method": "mail.mark_read",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "ids": [
+            "abc"
+          ],
+          "read": true
+        },
+        "command": "forge mail read abc"
+      },
+      {
+        "input": {
+          "ids": [
+            "abc",
+            "def"
+          ],
+          "read": false
+        },
+        "command": "forge mail read abc def --unread"
+      }
+    ]
+  },
+  {
+    "action": "mail.open",
+    "method": "mail.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge mail open"
+      }
+    ]
+  },
+  {
     "action": "services.create_instance",
     "method": "services.create",
     "kind": "job",
