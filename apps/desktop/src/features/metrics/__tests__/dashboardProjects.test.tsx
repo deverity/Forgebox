@@ -11,6 +11,7 @@ import { renderApp, type AppHarness } from "../../../app/testApp";
 import type * as T from "../../../ipc/generated";
 import { ForgeStateProvider } from "../../../state";
 import { startHarness, populatedData, type Harness } from "../../../state/testFixtures";
+import { mockReducedMotion } from "../../../test/matchMedia";
 import { useAllSiteStats } from "../state/hooks";
 
 // uPlot needs matchMedia at import time and jsdom draws nothing: the sparkline is a stub here.
@@ -68,6 +69,21 @@ const rows = () => [...document.querySelectorAll<HTMLElement>("[data-project-row
 const section = () => screen.getByTestId("dashboard-projects");
 
 describe("Projetos ranking", () => {
+  it("keeps the shared-element transition by default", async () => {
+    await open();
+    expect(rows()[0]?.getAttribute("data-shared-transition")).toBe("true");
+  });
+
+  it("drops the shared-element transition under prefers-reduced-motion", async () => {
+    mockReducedMotion(true);
+    await open();
+    const row = rows()[0];
+    expect(row?.getAttribute("data-shared-transition")).toBe("false");
+    expect(
+      row?.querySelector<HTMLElement>("span")?.style.getPropertyValue("view-transition-name"),
+    ).toBe("");
+  });
+
   it("lists a window of the 200 sites, sorted by CPU, with ≈ on apportioned values", async () => {
     await open();
     expect(rows().length).toBeGreaterThan(3);

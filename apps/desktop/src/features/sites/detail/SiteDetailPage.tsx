@@ -1,6 +1,7 @@
 import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
+import { useReducedMotion } from "../../../design/useMotionPreset";
 import { FOCUS_RING } from "../../../design/primitives/shared";
 import { openSite } from "../../../actions/sites";
 import { SiteTabsHost } from "../../../app/hosts";
@@ -17,6 +18,7 @@ const SITES_ROUTE = "/sites";
 export function SiteDetailPage() {
   const { t } = useTranslation("sites");
   const runtime = useRuntime();
+  const reduced = useReducedMotion();
   const id = useParams({
     strict: false,
     select: (params: Record<string, unknown>) => (typeof params.id === "string" ? params.id : ""),
@@ -61,7 +63,10 @@ export function SiteDetailPage() {
         >
           {t("detail.header.back")}
         </Link>
-        <h1 className="text-title-1" style={{ viewTransitionName: `site-host-${site.id}` }}>
+        <h1
+          className="text-title-1"
+          style={reduced ? undefined : { viewTransitionName: `site-host-${site.id}` }}
+        >
           {site.host}
         </h1>
         <Button

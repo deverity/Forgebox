@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { AsyncView } from "../../design/primitives/AsyncView";
 import { Badge } from "../../design/primitives/Badge";
 import { CliCommand } from "../../design/primitives/CliCommand";
+import { useReducedMotion } from "../../design/useMotionPreset";
 import { FOCUS_RING } from "../../design/primitives/shared";
 import { VirtualList } from "../../design/primitives/VirtualList";
 import { renderCli } from "../../ipc/cli";
@@ -94,9 +95,11 @@ function Sparkline({ siteId, sortKey }: { siteId: string; sortKey: ProjectSortKe
 interface RowProps {
   site: T.SiteStatsDto;
   sortKey: ProjectSortKey;
+  /** prefers-reduced-motion: no shared-element transition (docs/07 section 2). */
+  reduced: boolean;
 }
 
-const ProjectRow = memo(function ProjectRow({ site, sortKey }: RowProps) {
+const ProjectRow = memo(function ProjectRow({ site, sortKey, reduced }: RowProps) {
   if (import.meta.env.MODE === "qa") countRender("project", site.site_id);
   const { t } = useTranslation("metrics");
   const f = useMetricsFormatters();
@@ -106,14 +109,15 @@ const ProjectRow = memo(function ProjectRow({ site, sortKey }: RowProps) {
       params={{ id: site.site_id }}
       search={PERFORMANCE_SEARCH}
       // The host cell and the detail page's heading share this name: a shared-element transition.
-      viewTransition
+      viewTransition={!reduced}
+      data-shared-transition={String(!reduced)}
       data-project-row={site.site_id}
       aria-label={t("projects.open", { host: site.host })}
       className={`grid h-full items-center gap-2 border-b border-stroke px-3 text-body hover:bg-fill-hover ${COLUMNS} ${FOCUS_RING}`}
     >
       <span
         className="min-w-0 truncate text-fg-primary"
-        style={{ viewTransitionName: `site-host-${site.site_id}` }}
+        style={reduced ? undefined : { viewTransitionName: `site-host-${site.site_id}` }}
       >
         {site.host}
       </span>
@@ -181,6 +185,7 @@ function IdleSites({ sites }: { sites: readonly T.SiteStatsDto[] }) {
 export function ProjectsSection() {
   const { t } = useTranslation("metrics");
   const runtime = useRuntime();
+  const reduced = useReducedMotion();
   const status = useConnectionStatus();
   const capability = useCapability("stats.get");
   const stats = useAllSiteStats(WINDOW);
@@ -266,7 +271,7 @@ export function ProjectsSection() {
             initialHeight={LIST_HEIGHT}
             label={t("projects.listLabel")}
             getKey={(site) => site.site_id}
-            renderRow={(site) => <ProjectRow site={site} sortKey={sort.key} />}
+            renderRow={(site) => <ProjectRow site={site} sortKey={sort.key} reduced={reduced} />}
           />
         </AsyncView>
       </div>
