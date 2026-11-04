@@ -130,6 +130,44 @@ pub fn validate_data_dir(root: &ForgeRoot, dir: &str) -> Result<String> {
     Ok(forge_core::paths::posix_string(path))
 }
 
+/// Refuses a `data_dir` that overlaps a folder already in use, in either direction: equal,
+/// inside it, or containing it (compared resolved, case-insensitively). `others` are the
+/// data folders of the other instances; `tools` are the tool ids whose managed
+/// `data/<tool>` parent folder is off limits (as is `data/` itself).
+/// Reads the file system: call it in `spawn_blocking`.
+pub fn check_data_dir_free(
+    root: &ForgeRoot,
+    dir: &str,
+    others: &[String],
+    tools: &[String],
+) -> Result<()> {
+    let lower = |p: &std::path::Path| forge_core::paths::posix_string(&resolved(p)).to_lowercase();
+    let contained = |inner: &str, outer: &str| {
+        inner == outer || inner.starts_with(&format!("{}/", outer.trim_end_matches('/')))
+    };
+    let wanted = lower(std::path::Path::new(dir));
+    for other in others {
+        let used = lower(std::path::Path::new(other));
+        if contained(&wanted, &used) || contained(&used, &wanted) {
+            return Err(ForgeError::Conflict(format!(
+                "{dir} overlaps {other}, the data folder of another instance"
+            )));
+        }
+    }
+    let managed = root.data();
+    let mut parents = vec![managed.clone()];
+    parents.extend(tools.iter().map(|t| managed.join(t)));
+    for parent in parents {
+        if wanted == lower(&parent) {
+            return Err(ForgeError::InvalidInput(format!(
+                "data_dir {dir:?}: {} is a folder managed by Forgebox",
+                forge_core::paths::posix_string(&parent)
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// The folders of the log files a manifest declares (`service.daemon.logs[].path`) for
 /// one instance, keeping only those inside the root (no `..`): a manifest never makes the
 /// daemon create folders elsewhere.
@@ -510,17 +548,28 @@ impl ServiceManager {
                     tool.manifest.metadata.id
                 )));
             }
-            let taken = self
+            let (others, tools): (Vec<String>, Vec<String>) = self
                 .inner
                 .table
                 .lock()
                 .values()
-                .any(|e| e.row.data_dir.as_deref().is_some_and(|d| same_dir(d, dir)));
-            if taken {
-                return Err(ForgeError::Conflict(format!(
-                    "{dir} is already the data folder of another instance"
-                )));
-            }
+                .map(|e| {
+                    (
+                        e.row.data_dir.clone().unwrap_or_default(),
+                        e.row.tool_id.to_string(),
+                    )
+                })
+                .unzip();
+            let others: Vec<String> = others.into_iter().filter(|d| !d.is_empty()).collect();
+            let mut tools = tools;
+            tools.push(tool.manifest.metadata.id.to_string());
+            let (root, wanted) = (self.inner.root.clone(), dir.to_owned());
+            forge_core::runtime::spawn_blocking_timeout(
+                "checking the data folder",
+                Duration::from_secs(5),
+                move || check_data_dir_free(&root, &wanted, &others, &tools),
+            )
+            .await?;
             row.data_dir = Some(dir.to_owned());
             row.settings
                 .insert(EXTERNAL_DATA_DIR_KEY.to_owned(), "true".to_owned());
@@ -590,7 +639,11 @@ impl ServiceManager {
             if let Some(dir) = entry.row.data_dir.clone() {
                 let root = self.inner.root.clone();
                 let path = PathBuf::from(&dir);
-                if path.starts_with(root.data()) && path != root.data() {
+                // A folder the user chose (`--data-dir`) is a reference: never deleted.
+                if entry.row.external_data_dir().is_none()
+                    && path.starts_with(root.data())
+                    && path != root.data()
+                {
                     forge_core::runtime::spawn_blocking_timeout(
                         "deleting the data folder",
                         Duration::from_secs(120),

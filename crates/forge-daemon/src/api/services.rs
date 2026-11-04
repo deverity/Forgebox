@@ -29,7 +29,7 @@ use crate::advanced;
 use crate::catalog;
 use crate::daemon::Daemon;
 use crate::install;
-use crate::services::{AdvancedChange, Entry, same_dir as same_folder, validate_data_dir};
+use crate::services::{AdvancedChange, Entry, check_data_dir_free, validate_data_dir};
 
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, services_start, start);
@@ -300,34 +300,33 @@ async fn reload(daemon: Daemon, params: ServiceTargetParams, ctx: Ctx) -> Result
 
 async fn create(daemon: Daemon, params: ServiceCreateParams, ctx: Ctx) -> Result<JobDto> {
     // Checked before the job: a folder the daemon would refuse never starts one.
+    let (tool_id, version) = install::parse_spec(params.tool.as_str())?;
     let data_dir = match params.data_dir.clone() {
         Some(dir) => {
             let root = daemon.root.clone();
+            let entries = daemon.services.entries();
+            let others: Vec<String> = entries
+                .iter()
+                .filter_map(|e| e.row.data_dir.clone())
+                .collect();
+            let mut tools: Vec<String> =
+                entries.iter().map(|e| e.row.tool_id.to_string()).collect();
+            tools.push(tool_id.to_string());
             Some(
                 forge_core::runtime::spawn_blocking_timeout(
                     "checking the data folder",
                     Duration::from_secs(5),
-                    move || validate_data_dir(&root, &dir),
+                    move || {
+                        let dir = validate_data_dir(&root, &dir)?;
+                        check_data_dir_free(&root, &dir, &others, &tools)?;
+                        Ok(dir)
+                    },
                 )
                 .await?,
             )
         }
         None => None,
     };
-    if let Some(dir) = &data_dir {
-        if let Some(owner) = daemon.services.entries().iter().find(|e| {
-            e.row
-                .data_dir
-                .as_deref()
-                .is_some_and(|d| same_folder(d, dir))
-        }) {
-            return Err(ForgeError::Conflict(format!(
-                "{dir} is already the data folder of {}",
-                owner.label()
-            )));
-        }
-    }
-    let (tool_id, version) = install::parse_spec(params.tool.as_str())?;
     let tool = catalog::require_tool(&daemon.registry, &tool_id)?;
     let rows = catalog::installed(&daemon.reader, &tool_id, Some(&tool.manifest)).await?;
     let row = match version.as_deref() {

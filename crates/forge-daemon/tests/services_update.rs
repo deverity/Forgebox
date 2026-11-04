@@ -404,6 +404,34 @@ async fn create_with_a_data_dir_uses_it_and_the_size_comes_from_the_scan() {
         "refused folders create nothing"
     );
 
+    // Overlaps with the managed folders and with default's folder, both directions.
+    let default_dir = instances(&client)
+        .await
+        .into_iter()
+        .find(|i| i.name == "default")
+        .and_then(|i| i.data_dir)
+        .expect("default has a data folder");
+    let parent = posix(Path::new(&default_dir).parent().unwrap());
+    let inside = format!("{default_dir}/sub");
+    for overlap in [
+        parent.clone(),
+        default_dir.clone(),
+        inside,
+        posix(&root.root.data()),
+    ] {
+        let err = api_error(
+            client
+                .call::<services_create>(create(&overlap))
+                .await
+                .map(|_| ())
+                .expect_err(&overlap),
+        );
+        assert!(
+            matches!(err.code.as_str(), "conflict" | "invalid_input"),
+            "{overlap}: {err:?}"
+        );
+    }
+
     // A valid folder, outside the root, that does not exist yet.
     let job = client
         .call::<services_create>(create(&wanted.to_string_lossy()))
@@ -419,6 +447,29 @@ async fn create_with_a_data_dir_uses_it_and_the_size_comes_from_the_scan() {
     again.name = "other".into();
     let err = api_error(client.call::<services_create>(again).await.unwrap_err());
     assert_eq!(err.code, "conflict", "{err:?}");
+
+    // Removing it with delete_data keeps the chosen folder.
+    std::fs::create_dir_all(&wanted).unwrap();
+    std::fs::write(wanted.join("keep.txt"), b"x").unwrap();
+    let job = client
+        .call::<forge_ipc::api::methods::services_remove>(forge_ipc::api::ServiceRemoveParams {
+            instance: "mysql/legacy".into(),
+            delete_data: true,
+            confirm: true,
+        })
+        .await
+        .unwrap();
+    wait_job(&client, job.id, Duration::from_secs(60)).await;
+    assert!(
+        wanted.join("keep.txt").is_file(),
+        "external folder survives"
+    );
+    std::fs::remove_dir_all(&wanted).unwrap();
+    let job = client
+        .call::<services_create>(create(&wanted.to_string_lossy()))
+        .await
+        .unwrap();
+    wait_job(&client, job.id, Duration::from_secs(60)).await;
 
     // Starting it initializes the folder there, and nothing lands under data/.
     let job = client

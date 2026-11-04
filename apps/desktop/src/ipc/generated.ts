@@ -2405,8 +2405,9 @@ export type ServiceCreateParams = {
 	 *  `--data-dir`. API 1.1 (ADR-0041). Relative paths, `..`, a drive root, the Forgebox
 	 *  root (or a parent of it), anything under `bin/` and a folder another instance
 	 *  already uses are refused (`invalid_input` / `conflict`) before the job starts; the
-	 *  folder is used as is (never moved or migrated) and keeps its files when the
-	 *  instance is removed.
+	 *  folder is used as is (never moved or migrated) and is never deleted: `delete_data` on
+	 *  removal skips it. It cannot overlap another instance's folder (inside, equal or
+	 *  containing) nor be `data/` or `data/<tool>`.
 	 */
 	data_dir?: string | null,
 };
