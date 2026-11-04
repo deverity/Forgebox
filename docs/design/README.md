@@ -10,5 +10,6 @@ Conteúdo esperado (a produzir em M2-E1 / M2-E4):
 - `motion.md` — tabela de springs/durações por interação, com GIFs de referência.
 - `brand/` — ícone do Forgebox (app/EXEs) e ícones de estado da bandeja: arte de referência do usuário, master SVG, grades pixel a pixel de 16–32 px, paleta, folha de contato; ver [brand/README.md](brand/README.md) (M2-E1-T22).
 - `icons/` — ícones de tools em SVG (mono + color), 24 px grid, nomes = `metadata.id` do manifesto.
+- `reference/glass-mockup.html` — mockup aprovado pelo usuário em 2026-11-04 da moldura de vidro (sidebar em altura total, bolinhas da janela à direita na ordem do Windows, visual mais leve); fonte da M2-E1-T23, abra no navegador (claro/escuro/janela sem foco).
 
 Regra: nenhum valor visual novo entra em código sem estar aqui primeiro.

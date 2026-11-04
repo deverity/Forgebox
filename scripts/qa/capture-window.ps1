@@ -4,6 +4,10 @@
 #
 #   powershell -NoProfile -File scripts/qa/capture-window.ps1 -ProcessId <pid> -Png out.png
 #   powershell -NoProfile -File scripts/qa/capture-window.ps1 -Title Forgebox -Png out.png
+#   ... -Screen   copies the composed screen pixels of the window instead (CopyFromScreen): the
+#                 only way to see what DWM puts BEHIND a translucent window (the Windows 10 blur
+#                 of the desktop through the sidebar, M2-E1-T23). Physical console only, with the
+#                 window uncovered; on RDP use PrintWindow (the default).
 #
 # Output: one JSON line {ok, png, width, height, mean_luma, content_ratio} or {ok:false, error}.
 # Exit 0 = a non-black frame was written; 1 = no window / capture failed; 2 = the frame is black
@@ -12,7 +16,8 @@ param(
     [int]$ProcessId = 0,
     [string]$Title = 'Forgebox',
     [Parameter(Mandatory = $true)][string]$Png,
-    [int]$TimeoutMs = 15000
+    [int]$TimeoutMs = 15000,
+    [switch]$Screen
 )
 $ErrorActionPreference = 'Stop'
 
@@ -57,7 +62,9 @@ public static class ForgeboxCapture {
     // GetWindowRect includes the invisible resize borders of Win10 (about 8 px left/right/bottom,
     // painted black by PrintWindow); DWMWA_EXTENDED_FRAME_BOUNDS (9) is the visible frame, so the
     // bitmap is cropped to it.
-    public static string Capture(IntPtr h, string png) {
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    public static string Capture(IntPtr h, string png, bool screen) {
         RECT r; GetWindowRect(h, out r);
         int fw = Math.Max(1, r.Right - r.Left), fh = Math.Max(1, r.Bottom - r.Top);
         int cx = 0, cy = 0, w = fw, ht = fh;
@@ -69,10 +76,17 @@ public static class ForgeboxCapture {
         }
         using (var full = new Bitmap(fw, fh, PixelFormat.Format32bppArgb)) {
             using (var g = Graphics.FromImage(full)) {
-                IntPtr hdc = g.GetHdc();
-                bool ok = PrintWindow(h, hdc, 2);
-                g.ReleaseHdc(hdc);
-                if (!ok) return null;
+                if (screen) {
+                    // What DWM composed on screen (material included): bring the window up first.
+                    SetForegroundWindow(h);
+                    System.Threading.Thread.Sleep(400);
+                    g.CopyFromScreen(r.Left, r.Top, 0, 0, new Size(fw, fh));
+                } else {
+                    IntPtr hdc = g.GetHdc();
+                    bool ok = PrintWindow(h, hdc, 2);
+                    g.ReleaseHdc(hdc);
+                    if (!ok) return null;
+                }
             }
             using (var bmp = full.Clone(new Rectangle(cx, cy, w, ht), PixelFormat.Format32bppArgb)) {
                 var data = bmp.LockBits(new Rectangle(0, 0, w, ht), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
@@ -108,7 +122,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
 }
 if ($hwnd -eq [IntPtr]::Zero) { Fail 1 "no visible window titled '$Title' (pid $ProcessId) within $TimeoutMs ms" }
 
-$stats = [ForgeboxCapture]::Capture($hwnd, $full)
+$stats = [ForgeboxCapture]::Capture($hwnd, $full, [bool]$Screen)
 if ($null -eq $stats) { Fail 1 'PrintWindow failed for the window' }
 $p = $stats.Split(',')
 $result = [ordered]@{
