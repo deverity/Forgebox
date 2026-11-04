@@ -191,7 +191,8 @@ export function SitePerformanceTab({ siteId }: { siteId: string }) {
   const traffic = model?.hasTraffic === true;
   const drawn = model !== null && traffic ? model : null;
   const resource =
-    model !== null && (traffic || model.resource.cpu.some((v) => v !== null))
+    model !== null &&
+    (model.resource.cpu.some((v) => v !== null) || model.resource.ram.some((v) => v !== null))
       ? model.resource
       : null;
   const chartsLoading = series.isPending;

@@ -180,3 +180,42 @@ test("no layout shift between skeleton and data", async ({ page }) => {
   expect(after).toEqual(before);
   expect(await cls()).toBeLessThan(0.01);
 });
+
+test.describe("pt-BR copy of the states", () => {
+  const pt = { locale: "pt-BR" };
+
+  test("metrics off globally", async ({ page }) => {
+    await page.goto(url(PHP_SITE, { ...pt, metrics: "global-off" }));
+    await openTab(page, "Desempenho");
+    const state = page.getByTestId("perf-state-global-off");
+    await expect(state.getByText("As métricas estão desligadas")).toBeVisible();
+    await expect(state.getByRole("button", { name: "Ligar métricas" })).toBeVisible();
+  });
+
+  test("metrics off for the site", async ({ page }) => {
+    await page.goto(url(PHP_SITE, { ...pt, metrics: "site-off" }));
+    await openTab(page, "Desempenho");
+    const state = page.getByTestId("perf-state-site-off");
+    await expect(state.getByText("Métricas desligadas para este site")).toBeVisible();
+  });
+
+  test("no traffic", async ({ page }) => {
+    await page.goto(url(PHP_SITE, { ...pt, metrics: "no-traffic" }));
+    await openTab(page, "Desempenho");
+    await expect(page.getByTestId("perf-no-traffic")).toContainText("Sem tráfego neste intervalo");
+  });
+
+  test("proxy site", async ({ page }) => {
+    await page.goto(url(PROXY_SITE, pt));
+    await openTab(page, "Desempenho");
+    await expect(page.getByTestId("perf-pool-toggle-reason")).toContainText(
+      "Só sites PHP têm pool",
+    );
+  });
+
+  test("remote daemon", async ({ page }) => {
+    await page.goto(url(PHP_SITE, { ...pt, scenario: "remote" }));
+    await openTab(page, "Desempenho");
+    await expect(page.getByTestId("perf-remote")).toContainText("Daemon remoto");
+  });
+});

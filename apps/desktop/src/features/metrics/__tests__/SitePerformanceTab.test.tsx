@@ -167,10 +167,44 @@ interface Options {
   handlers?: FakeHandlers;
   site?: string;
   hello?: Partial<T.HelloDto>;
+  locale?: Locale;
 }
+
+type Locale = "en-US" | "pt-BR";
+
+/** Copy per locale for the states under test (docs/07 section 11). */
+const COPY = {
+  "en-US": {
+    tab: "Performance",
+    globalOff: "Metrics are off",
+    globalOffAction: "Turn metrics on",
+    siteOffAction: "Collect metrics for this site",
+    noTraffic: "No traffic",
+    noResource: "This is a static site",
+    pool: "Only PHP sites have a pool. This site is static.",
+    reconnecting: "Reconnecting",
+    remote: "Remote daemon",
+  },
+  "pt-BR": {
+    tab: "Desempenho",
+    globalOff: "As métricas estão desligadas",
+    globalOffAction: "Ligar métricas",
+    siteOffAction: "Coletar métricas deste site",
+    noTraffic: "Sem tráfego neste intervalo",
+    noResource: "Site estático",
+    pool: "Só sites PHP têm pool. Este site é estático.",
+    reconnecting: "Reconectando…",
+    remote: "Daemon remoto",
+  },
+} as const;
 
 async function open(options: Options = {}): Promise<AppHarness> {
   const d = options.data ?? data();
+  const locale = options.locale ?? "en-US";
+  if (locale !== "en-US") {
+    await i18n.changeLanguage(locale);
+    await i18n.loadNamespaces(["metrics", "errors"]);
+  }
   harness = await renderApp({
     path: `/sites/${options.site ?? SITE_ID}`,
     data: d,
@@ -192,7 +226,7 @@ async function open(options: Options = {}): Promise<AppHarness> {
   });
   await screen.findByRole("heading", { level: 1 });
   streamsBefore = harness.fake.openStreams();
-  await userEvent.setup().click(await screen.findByRole("tab", { name: "Performance" }));
+  await userEvent.setup().click(await screen.findByRole("tab", { name: COPY[locale].tab }));
   return harness;
 }
 
@@ -248,74 +282,97 @@ describe("states", () => {
     expect(screen.getByRole("radio", { name: "7 dias" })).toBeInTheDocument();
   });
 
-  it("globally off: empty state with the action and the forge config command", async () => {
-    await open({
-      handlers: { "system.config_get": (p) => ({ key: p.key, value: false, is_default: false }) },
-    });
-    const state = await screen.findByTestId("perf-state-global-off");
-    expect(within(state).getByText("Metrics are off")).toBeInTheDocument();
-    expect(
-      state.querySelector("[data-forge-cli='forge config set metrics.enabled true']"),
-    ).not.toBeNull();
-    const user = userEvent.setup();
-    await user.click(within(state).getByRole("button", { name: "Turn metrics on" }));
-    await waitFor(() => {
-      expect(calls("system.config_set")[0]?.params).toEqual({
-        key: "metrics.enabled",
-        value: true,
+  describe.each(["en-US", "pt-BR"] as const)("states (%s)", (locale) => {
+    const c = COPY[locale];
+    it("globally off: empty state with the action and the forge config command", async () => {
+      await open({
+        locale,
+        handlers: { "system.config_get": (p) => ({ key: p.key, value: false, is_default: false }) },
+      });
+      const state = await screen.findByTestId("perf-state-global-off");
+      expect(within(state).getByText(c.globalOff)).toBeInTheDocument();
+      expect(
+        state.querySelector("[data-forge-cli='forge config set metrics.enabled true']"),
+      ).not.toBeNull();
+      const user = userEvent.setup();
+      await user.click(within(state).getByRole("button", { name: c.globalOffAction }));
+      await waitFor(() => {
+        expect(calls("system.config_set")[0]?.params).toEqual({
+          key: "metrics.enabled",
+          value: true,
+        });
       });
     });
-  });
 
-  it("site off: empty state that turns collection back on", async () => {
-    const d = data();
-    d.sites = [siteDto(SITE_ID, "loja.test", { kind: "php", metrics_enabled: false })];
-    await open({ data: d });
-    const state = await screen.findByTestId("perf-state-site-off");
-    expect(
-      state.querySelector("[data-forge-cli='forge site metrics loja.test on']"),
-    ).not.toBeNull();
-    await userEvent
-      .setup()
-      .click(within(state).getByRole("button", { name: "Collect metrics for this site" }));
-    await waitFor(() => {
-      expect(calls("sites.metrics")[0]?.params).toEqual({ site: "loja.test", enabled: true });
+    it("site off: empty state that turns collection back on", async () => {
+      const d = data();
+      d.sites = [siteDto(SITE_ID, "loja.test", { kind: "php", metrics_enabled: false })];
+      await open({ data: d, locale });
+      const state = await screen.findByTestId("perf-state-site-off");
+      expect(
+        state.querySelector("[data-forge-cli='forge site metrics loja.test on']"),
+      ).not.toBeNull();
+      await userEvent.setup().click(within(state).getByRole("button", { name: c.siteOffAction }));
+      await waitFor(() => {
+        expect(calls("sites.metrics")[0]?.params).toEqual({ site: "loja.test", enabled: true });
+      });
     });
-  });
 
-  it("no traffic: says so and keeps the charts' empty state", async () => {
-    await open({ handlers: { "stats.series": () => series(0) } });
-    expect(await screen.findByTestId("perf-no-traffic")).toHaveTextContent("No traffic");
-    await waitFor(() => {
-      expect(document.querySelector("[data-chart-state='empty']")).not.toBeNull();
+    it("no traffic: says so and keeps the charts' empty state", async () => {
+      await open({ locale, handlers: { "stats.series": () => series(0) } });
+      expect(await screen.findByTestId("perf-no-traffic")).toHaveTextContent(c.noTraffic);
+      await waitFor(() => {
+        expect(document.querySelector("[data-chart-state='empty']")).not.toBeNull();
+      });
     });
-  });
 
-  it("static site: no resource chart, no workers and the pool toggle explains why", async () => {
-    await open({ site: STATIC_ID });
-    expect(await screen.findByTestId("perf-no-resource")).toHaveTextContent("Static site");
-    const pool = screen.getByTestId("perf-pool-toggle");
-    expect(within(pool).getByRole("switch")).toBeDisabled();
-    expect(within(pool).getByTestId("perf-pool-toggle-reason")).toHaveTextContent(
-      "Only PHP sites have a pool",
-    );
-    expect(within(screen.getByTestId("perf-kpis")).getAllByText("—").length).toBeGreaterThan(0);
-  });
-
-  it("remote daemon: badge", async () => {
-    await open({ hello: { local: false } });
-    expect(await screen.findByTestId("perf-remote")).toHaveTextContent("Remote daemon");
-  });
-
-  it("reconnecting: badge and note while the data stays", async () => {
-    const h = await open();
-    await screen.findByTestId("perf-kpis");
-    act(() => {
-      h.fake.setStatus("reconnecting");
+    it("static site: no resource chart, no workers and the pool toggle explains why", async () => {
+      await open({ site: STATIC_ID, locale });
+      expect(await screen.findByTestId("perf-no-resource")).toHaveTextContent(c.noResource);
+      const pool = screen.getByTestId("perf-pool-toggle");
+      expect(within(pool).getByRole("switch")).toBeDisabled();
+      expect(within(pool).getByTestId("perf-pool-toggle-reason")).toHaveTextContent(c.pool);
+      expect(within(screen.getByTestId("perf-kpis")).getAllByText("—").length).toBeGreaterThan(0);
     });
-    expect(await screen.findByTestId("perf-reconnecting")).toHaveTextContent("Reconnecting");
-    expect(screen.getByTestId("perf-reconnecting-note")).toBeInTheDocument();
-    expect(screen.getByTestId("perf-kpis")).toBeInTheDocument();
+
+    it("remote daemon: badge", async () => {
+      await open({ hello: { local: false }, locale });
+      expect(await screen.findByTestId("perf-remote")).toHaveTextContent(c.remote);
+    });
+
+    it("reconnecting: badge and note while the data stays", async () => {
+      const h = await open({ locale });
+      await screen.findByTestId("perf-kpis");
+      act(() => {
+        h.fake.setStatus("reconnecting");
+      });
+      expect(await screen.findByTestId("perf-reconnecting")).toHaveTextContent(c.reconnecting);
+      expect(screen.getByTestId("perf-reconnecting-note")).toBeInTheDocument();
+      expect(screen.getByTestId("perf-kpis")).toBeInTheDocument();
+    });
+
+    it("traffic but no CPU/RAM samples: the resource chart stays empty", async () => {
+      await open({
+        locale,
+        handlers: {
+          "stats.series": () => {
+            const base = series();
+            return {
+              ...base,
+              points: base.points.map((pt) => ({ ...pt, cpu_pct: null, mem_bytes: null })),
+            };
+          },
+        },
+      });
+      await screen.findByTestId("perf-kpis");
+      await waitFor(() => {
+        expect(document.querySelector("[data-chart-state='ready']")).not.toBeNull();
+      });
+      const charts = [...document.querySelectorAll("[data-chart]")];
+      expect(charts).toHaveLength(3);
+      const resource = charts.at(-1);
+      expect(resource).toHaveAttribute("data-chart-state", "empty");
+    });
   });
 });
 

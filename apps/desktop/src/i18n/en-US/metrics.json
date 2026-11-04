@@ -118,12 +118,12 @@
     "remoteNote": "These metrics come from a daemon on another machine; CPU and RAM are its own.",
     "reconnectingNote": "Reconnecting to the daemon. The numbers below may be out of date.",
     "noTraffic": "No traffic in this range. Charts show up as soon as the site gets requests.",
-    "noResource": "{kind} site: there is no PHP pool, so no per-site CPU, RAM or workers.",
+    "noResource": "This is a {kind} site: there is no PHP pool, so no per-site CPU, RAM or workers.",
     "kind": {
       "php": "PHP",
-      "static": "Static",
-      "proxy": "Proxy",
-      "app": "App"
+      "static": "static",
+      "proxy": "proxy",
+      "app": "application"
     },
     "routes": {
       "route": "Route",
