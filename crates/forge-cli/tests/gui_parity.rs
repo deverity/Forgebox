@@ -3,7 +3,7 @@
 //! `apps/desktop/qa/parity/gui-commands.json` lists, for every action of the GUI registry, the
 //! `forge` commands it renders from sample inputs. Here each command is parsed with the real
 //! clap tree and must map back to the method of its action. Coverage: every `METHODS` row with
-//! a non-empty `cli` must be reached by some action or be listed in `cli-only.yaml` with a
+//! a non-empty `cli` (mutating or not) must be reached by some action or be listed in `cli-only.yaml` with a
 //! reason. `pending` rows are screens that M2-E2/E3/E5 have not added yet; they are tolerated
 //! until the M2 gate runs with `FORGE_PARITY_STRICT=1` (M2-E4-T11), where the list must be empty.
 
@@ -142,6 +142,9 @@ struct PendingEntry {
 #[serde(deny_unknown_fields)]
 struct CliOnly {
     cli_only: Vec<CliOnlyEntry>,
+    /// Pure queries and streams the GUI shows as data; `reason` names the screen.
+    #[serde(default)]
+    query: Vec<CliOnlyEntry>,
     #[serde(default)]
     pending: Vec<PendingEntry>,
 }
@@ -158,7 +161,7 @@ fn load_actions() -> Vec<GuiAction> {
 /// Parses `cli-only.yaml`; every entry needs a non-empty reason (and a task for `pending`).
 fn parse_cli_only(text: &str) -> Result<CliOnly, String> {
     let parsed: CliOnly = serde_yaml_ng::from_str(text).map_err(|e| e.to_string())?;
-    for e in &parsed.cli_only {
+    for e in parsed.cli_only.iter().chain(&parsed.query) {
         if e.reason.trim().is_empty() {
             return Err(format!("cli-only entry {} has no reason", e.method));
         }
@@ -212,13 +215,12 @@ fn check_actions(actions: &[GuiAction]) -> Result<BTreeSet<&'static str>, Vec<St
     }
 }
 
-/// Methods that must be reached by an action or listed: the mutating ones with a CLI command.
-/// Queries and streams (`list`, `status`, `get`, `subscribe`) are not actions: the GUI shows
-/// their data and has no command to copy, so they are exempt (docs/07 §1.7).
+/// Methods that must be reached or listed: every row with a non-empty `cli`, mutating or not
+/// (queries go under `query:` in `cli-only.yaml`, with the screen that shows their data).
 fn with_cli() -> BTreeSet<&'static str> {
     METHODS
         .iter()
-        .filter(|m| m.mutating && !m.cli.trim().is_empty())
+        .filter(|m| !m.cli.trim().is_empty())
         .map(|m| m.name)
         .collect()
 }
@@ -276,6 +278,18 @@ fn every_cli_method_is_reached_by_an_action_or_listed() {
         );
         assert!(
             listed.insert(&e.method, "cli_only").is_none(),
+            "{} twice",
+            e.method
+        );
+    }
+    for e in &config.query {
+        assert!(
+            all.contains(e.method.as_str()),
+            "{} has no CLI row",
+            e.method
+        );
+        assert!(
+            listed.insert(&e.method, "query").is_none(),
             "{} twice",
             e.method
         );
