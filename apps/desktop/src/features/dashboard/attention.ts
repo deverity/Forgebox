@@ -34,6 +34,18 @@ export function daysUntil(date: string, now: number): number | null {
   return Number.isNaN(at) ? null : Math.floor((at - now) / DAY_MS);
 }
 
+/**
+ * The program that holds a port, as a short name: `mysqld.exe` from `mysqld.exe (C:/xampp/...)`
+ * or from a full path. `null` when the daemon could not tell (`?` or empty): the title then says
+ * "another program" instead of "by ?" (R-18).
+ */
+export function holderName(holder: T.PortHolderDto | null): string | null {
+  if (holder === null) return null;
+  const head = holder.exe.trim().split(" (")[0] ?? "";
+  const base = head.split(/[\\/]/).pop()?.trim() ?? "";
+  return base === "" || base === "?" ? null : base;
+}
+
 // --- ports ---------------------------------------------------------------------------------
 
 type Stamped<P> = P & { ts: string };
@@ -58,9 +70,9 @@ export function portItems(
       severity,
       ns: DASHBOARD_NS,
       title:
-        holder === null
+        holderName(holder) === null
           ? text("attention.ports.titleUnknown", { port })
-          : text("attention.ports.title", { port, holder: holder.exe }),
+          : text("attention.ports.title", { port, holder: holderName(holder) ?? "" }),
       cause:
         owner === null
           ? text("attention.ports.cause")

@@ -1,16 +1,17 @@
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { setSiteDriver } from "../../../actions/sites";
+import { setSiteDriver, setSiteSecure, setSiteServer } from "../../../actions/sites";
 import { Badge, type BadgeTone } from "../../../design/primitives/Badge";
 import { Button } from "../../../design/primitives/Button";
 import { ActionButton } from "../../../design/primitives/ActionButton";
 import { CliCommand } from "../../../design/primitives/CliCommand";
+import { Select } from "../../../design/primitives/Select";
 import { TextField } from "../../../design/primitives/TextField";
 import { useFormatters } from "../../../design/primitives/useFormatters";
 import { renderCli } from "../../../ipc/cli";
 import { copyText } from "../../../ipc/native";
 import type * as T from "../../../ipc/generated";
-import { useForgeQuery, useSite } from "../../../state";
+import { useForgeQuery, useSite, useTools } from "../../../state";
 import { daysUntil } from "./model";
 import { PhpSwitchControl } from "./PhpSwitch";
 
@@ -84,6 +85,46 @@ function CopyRoot({ root }: { root: string }) {
           ? t("detail.general.copyFailed")
           : t("detail.general.copyRoot")}
     </Button>
+  );
+}
+
+/** Web server of the site: the installed web servers, applied with `sites.server`. */
+function ServerRow({ site }: { site: T.SiteDto }) {
+  const { t } = useTranslation("sites");
+  const tools = useTools((state) => state.tools);
+  const [draft, setDraft] = useState<string | null>(null);
+  const options = Object.values(tools)
+    .filter((tool) => tool.category === "webserver" && tool.installed.length > 0)
+    .map((tool) => ({ value: tool.id, label: tool.name }));
+  const current = site.server ?? "";
+  if (current !== "" && !options.some((option) => option.value === current)) {
+    options.push({ value: current, label: current });
+  }
+  const chosen = draft ?? current;
+  if (options.length === 0) return <span>{current}</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select
+        label={t("detail.general.serverSelect")}
+        value={chosen}
+        options={options}
+        onValueChange={setDraft}
+        width="sm"
+      />
+      <ActionButton
+        action={setSiteServer}
+        input={{ site: site.id, server: chosen }}
+        loadingLabel={t("detail.general.serverApplying")}
+        {...((chosen === current || chosen === "") && {
+          disabledReason: t("detail.general.serverSame"),
+        })}
+        onDone={() => {
+          setDraft(null);
+        }}
+      >
+        {t("detail.general.serverApply")}
+      </ActionButton>
+    </div>
   );
 }
 
@@ -166,14 +207,32 @@ export function GeneralTab({ siteId }: { siteId: string }) {
             </span>
           )}
         </Row>
+        {site.kind === "proxy" ? null : (
+          <Row label={t("detail.general.case")}>
+            <span data-testid="site-case">
+              {site.case_sensitive
+                ? t("badge.caseSensitiveTitle")
+                : t("badge.caseInsensitiveTitle")}
+            </span>
+          </Row>
+        )}
         <Row label={t("detail.general.driver")}>
           <DriverRow site={site} />
         </Row>
         <Row label={t("detail.general.server")}>
-          <span>{site.server ?? ""}</span>
+          <ServerRow site={site} />
         </Row>
         <Row label={t("detail.general.https")}>
-          <CertificateStatus site={site} />
+          <div className="flex flex-wrap items-center gap-3">
+            <CertificateStatus site={site} />
+            <ActionButton
+              action={setSiteSecure}
+              input={{ site: site.id, secure: !site.secure }}
+              loadingLabel={t("detail.general.httpsApplying")}
+            >
+              {site.secure ? t("detail.general.httpsDisable") : t("detail.general.httpsEnable")}
+            </ActionButton>
+          </div>
         </Row>
         <Row label={t("detail.general.php")}>
           {site.kind === "php" && site.php !== null ? (

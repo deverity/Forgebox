@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { checkToolUpdates, rollbackToolSeries } from "../../actions/tools";
+import { checkToolUpdates, rollbackToolSeries, updateTool } from "../../actions/tools";
 import { ActionButton } from "../../design/primitives/ActionButton";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
 import { useFormatters } from "../../design/primitives/useFormatters";
@@ -53,6 +53,22 @@ export function UpdateSection({ series }: { series: string }) {
                   .map((update) => t("updates.available", { from: update.from, to: update.to }))
                   .join(SEPARATOR)}
           </p>
+        )}
+        {mine.length === 0 ? null : (
+          <div className="flex flex-col gap-1">
+            <div>
+              <ActionButton
+                variant="primary"
+                action={updateTool}
+                input={PHP_TOOL_ID}
+                loadingLabel={t("updates.applying")}
+                successLabel={t("updates.applied")}
+              >
+                {t("updates.apply")}
+              </ActionButton>
+            </div>
+            <p className="text-caption text-fg-tertiary">{t("updates.applyNote")}</p>
+          </div>
         )}
       </div>
       <div className="flex flex-col gap-2">

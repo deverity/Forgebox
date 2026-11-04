@@ -76,7 +76,8 @@ export function useWizard(): Wizard {
         setChoices(loaded);
         const showRoot = state.local && state.show_root_step;
         const first = visibleSteps(showRoot)[0] ?? "stack";
-        const initial = isStepId(entry.step) && visibleSteps(showRoot).includes(entry.step) && !entry.done
+        const initial =
+          isStepId(entry.step) && visibleSteps(showRoot).includes(entry.step) && !entry.done
             ? entry.step
             : first;
         stepRef.current = initial;

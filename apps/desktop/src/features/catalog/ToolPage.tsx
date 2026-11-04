@@ -7,6 +7,7 @@ import { ActionButton } from "../../design/primitives/ActionButton";
 import { Badge } from "../../design/primitives/Badge";
 import { Button } from "../../design/primitives/Button";
 import { CliCommand } from "../../design/primitives/CliCommand";
+import { EmptyState } from "../../design/primitives/EmptyState";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
 import { Select } from "../../design/primitives/Select";
 import { FOCUS_RING } from "../../design/primitives/shared";
@@ -14,8 +15,15 @@ import { Skeleton } from "../../design/primitives/Skeleton";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import { TNUM_CLASS } from "../../i18n/format";
 import type { ToolInfoDto, ToolReleaseDto, ToolVersionDto } from "../../ipc/generated";
+import type { ErrorContext } from "../../ipc/describeError";
 import { openUrl } from "../../ipc/native";
-import { useCapability, useForgeQuery } from "../../state";
+import {
+  NOT_IMPLEMENTED_ERROR,
+  useCapability,
+  useConnectionStatus,
+  useForgeQuery,
+  useRuntime,
+} from "../../state";
 import { PolicyPicker } from "../services/tabs/VersionsTab";
 import { InstallProgressList } from "../shared/install-progress";
 import { CatalogIcon } from "./CatalogIcon";
@@ -472,10 +480,19 @@ function StackSection({ info, runner }: { info: ToolInfoDto; runner: InstallRunn
 
 // --- the page ----------------------------------------------------------------------------
 
+const infoContext = (tool: string): ErrorContext => ({ method: "tools.info", params: { tool } });
+
 /** /catalog/:id (docs/07 section 5.9): a tool or a stack, with versions, install and progress. */
 export function ToolPage({ id }: { id: string }) {
   const { t } = useTranslation("catalog");
+  const { t: tc } = useTranslation("common");
   const info = useForgeQuery("tools.info", { tool: id });
+  const runtime = useRuntime();
+  const status = useConnectionStatus();
+  // A disabled query stays pending: a daemon without `tools.info`, or one that is away, must
+  // explain itself instead of showing a skeleton for ever (R-16).
+  const unavailable = useCapability("tools.info").reason === "not_implemented";
+  const away = status === "stopped" || status === "closed" || status === "uninitialized";
   // The entry carries the icon hash and the registry/native badges `tools.info` does not.
   const everything = useForgeQuery("tools.search", { text: "", category: null });
   const entry = everything.data?.entries.find((candidate) => candidate.id === id);
@@ -491,6 +508,32 @@ export function ToolPage({ id }: { id: string }) {
         onRetry={() => {
           void info.refetch();
         }}
+      />
+    );
+  } else if (unavailable && dto === undefined) {
+    body = (
+      <ErrorNotice
+        error={NOT_IMPLEMENTED_ERROR}
+        context={infoContext(id)}
+        onRetry={() => {
+          void info.refetch();
+        }}
+      />
+    );
+  } else if (away && dto === undefined) {
+    body = (
+      <EmptyState
+        title={t("offline.title")}
+        description={t("offline.description")}
+        action={
+          <Button
+            onClick={() => {
+              void runtime.api.start();
+            }}
+          >
+            {tc("ui.asyncRetry")}
+          </Button>
+        }
       />
     );
   } else if (dto === undefined) {

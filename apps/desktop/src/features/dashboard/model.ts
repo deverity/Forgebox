@@ -9,8 +9,8 @@ export const RECENT_SITES = 6;
 /** Events shown in Atividade. */
 export const ACTIVITY_LIMIT = 50;
 /** Height of a service tile, px: the same for the skeleton and for data. */
-export const TILE_HEIGHT = 128;
-export const TILE_WIDTH = 248;
+export const TILE_HEIGHT = 152;
+export const TILE_WIDTH = 272;
 
 export type Tile =
   | { kind: "instance"; key: string; label: string; instance: InstanceDto }

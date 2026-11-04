@@ -39,7 +39,7 @@
     "http": "HTTP",
     "caseSensitive": "Aa",
     "caseSensitiveTitle": "Pasta com diferença entre maiúsculas e minúsculas",
-    "caseInsensitive": "aA",
+    "caseInsensitive": "Aa = aa",
     "caseInsensitiveTitle": "Pasta sem diferença entre maiúsculas e minúsculas",
     "ws": "WebSocket"
   },
@@ -124,6 +124,7 @@
       "copied": "Copiado",
       "copyFailed": "Não foi possível copiar",
       "noRoot": "Nenhuma (proxy)",
+      "case": "Maiúsculas e minúsculas",
       "driver": "Driver",
       "driverNone": "Não detectado",
       "driverInput": "Nome do driver",
@@ -145,7 +146,14 @@
       },
       "php": "Versão do PHP",
       "phpNone": "Este site não roda PHP.",
-      "kind": "Tipo"
+      "kind": "Tipo",
+      "serverSelect": "Servidor web",
+      "serverApply": "Trocar servidor",
+      "serverApplying": "Trocando…",
+      "serverSame": "Escolha outro servidor para trocar.",
+      "httpsEnable": "Ativar HTTPS",
+      "httpsDisable": "Desativar HTTPS",
+      "httpsApplying": "Aplicando…"
     },
     "php": {
       "label": "Versão do PHP",
@@ -195,7 +203,12 @@
       "logs": "Logs",
       "hideLogs": "Ocultar logs",
       "autostart": "Inicia com o site",
-      "refresh": "Atualizar"
+      "refresh": "Atualizar",
+      "project": "Projeto",
+      "projectUp": "Subir projeto",
+      "projectDown": "Parar projeto",
+      "projectStarting": "Subindo…",
+      "projectStopping": "Parando…"
     },
     "diagnostics": {
       "title": "Diagnóstico",

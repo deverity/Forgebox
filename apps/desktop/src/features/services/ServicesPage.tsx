@@ -9,7 +9,7 @@ import {
   useInstances,
   usePools,
   useRuntime,
-  useSyncState,
+  useSliceError,
   useTools,
 } from "../../state";
 import { groupRows, type ServiceGroup } from "./model";
@@ -118,7 +118,7 @@ export function ServicesPage() {
   const pools = usePools();
   const tools = useTools((state) => state.tools);
   const loaded = useStore(runtime.stores.services, (state) => state.loaded);
-  const syncError = useSyncState((state) => state.errors.services ?? null);
+  const syncError = useSliceError("services");
   const [selected, select] = useSelected();
   const now = useNow();
   const height = useListHeight();

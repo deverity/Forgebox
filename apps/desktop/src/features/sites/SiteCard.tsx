@@ -86,7 +86,15 @@ export const SiteCard = memo(function SiteCard({ site, layout, onRemove }: SiteC
           site.case_sensitive ? t("badge.caseSensitiveTitle") : t("badge.caseInsensitiveTitle")
         }
       >
-        <Badge>{site.case_sensitive ? t("badge.caseSensitive") : t("badge.caseInsensitive")}</Badge>
+        {/* The short mark is decorative; the screen reader reads the full sentence (R-20). */}
+        <Badge tone={site.case_sensitive ? "neutral" : "warning"}>
+          <span aria-hidden="true">
+            {site.case_sensitive ? t("badge.caseSensitive") : t("badge.caseInsensitive")}
+          </span>
+          <span className="sr-only">
+            {site.case_sensitive ? t("badge.caseSensitiveTitle") : t("badge.caseInsensitiveTitle")}
+          </span>
+        </Badge>
       </span>
     </div>
   );

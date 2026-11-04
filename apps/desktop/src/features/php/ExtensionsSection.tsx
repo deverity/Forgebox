@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { disablePhpExtension, enablePhpExtension } from "../../actions/php";
 import { runAction } from "../../actions/registry";
@@ -12,6 +12,10 @@ import { newIntent } from "../../ipc/api";
 import { toForgeApiError, type ForgeApiError } from "../../ipc/errors";
 import { useCapability, useForgeQuery, useRuntime } from "../../state";
 import { filterExtensions, indexExtensions, shownEnabled } from "./model";
+
+/** Rows mounted at once; the rest follow in chunks, one task each (no long task, R-11). */
+const FIRST_ROWS = 12;
+const ROW_CHUNK = 16;
 
 function without<V>(record: Readonly<Record<string, V>>, key: string): Record<string, V> {
   return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));
@@ -32,6 +36,20 @@ export function ExtensionsSection({ series }: { series: string }) {
 
   const index = useMemo(() => indexExtensions(list.data?.extensions ?? []), [list.data]);
   const shown = useMemo(() => filterExtensions(index, query), [index, query]);
+
+  // 3 series x 60 rows of Switch + Badge mounted in one commit made a long task (R-11): the
+  // first rows paint at once and the others are added a chunk per macrotask.
+  const [limit, setLimit] = useState(FIRST_ROWS);
+  useEffect(() => {
+    if (limit >= shown.length) return undefined;
+    const timer = window.setTimeout(() => {
+      setLimit((current) => current + ROW_CHUNK);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [limit, shown.length]);
+  const rows = useMemo(() => shown.slice(0, limit), [shown, limit]);
 
   const release = (name: string) => {
     setPending((current) => without(current, name));
@@ -87,8 +105,10 @@ export function ExtensionsSection({ series }: { series: string }) {
     );
   } else {
     body = (
-      <ul className="flex max-h-72 flex-col overflow-y-auto" aria-label={t("ext.title")}>
-        {shown.map(({ extension }) => {
+      // `relative`: the switches' visually hidden/absolute parts stay inside this scroll
+      // container instead of extending the document (R-22, F-04).
+      <ul className="relative flex max-h-72 flex-col overflow-y-auto" aria-label={t("ext.title")}>
+        {rows.map(({ extension }) => {
           const failure = failures[extension.name];
           const enabled = shownEnabled(extension, pending);
           const cli = (enabled ? disablePhpExtension : enablePhpExtension).cli({

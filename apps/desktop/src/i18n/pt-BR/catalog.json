@@ -118,5 +118,10 @@
     "done": "Instalado",
     "working": "Trabalhando",
     "bytesOf": "{done} de {total}"
+  },
+  "discover": {
+    "label": "Procurar pastas em bin/",
+    "running": "Procurando…",
+    "done": "Pronto"
   }
 }

@@ -39,7 +39,7 @@
     "http": "HTTP",
     "caseSensitive": "Aa",
     "caseSensitiveTitle": "Case-sensitive folder",
-    "caseInsensitive": "aA",
+    "caseInsensitive": "Aa = aa",
     "caseInsensitiveTitle": "Case-insensitive folder",
     "ws": "WebSocket"
   },
@@ -124,6 +124,7 @@
       "copied": "Copied",
       "copyFailed": "Could not copy",
       "noRoot": "None (proxy)",
+      "case": "Letter case",
       "driver": "Driver",
       "driverNone": "Not detected",
       "driverInput": "Driver name",
@@ -145,7 +146,14 @@
       },
       "php": "PHP version",
       "phpNone": "This site does not run PHP.",
-      "kind": "Kind"
+      "kind": "Kind",
+      "serverSelect": "Web server",
+      "serverApply": "Switch server",
+      "serverApplying": "Switching…",
+      "serverSame": "Pick another server to switch.",
+      "httpsEnable": "Turn on HTTPS",
+      "httpsDisable": "Turn off HTTPS",
+      "httpsApplying": "Applying…"
     },
     "php": {
       "label": "PHP version",
@@ -195,7 +203,12 @@
       "logs": "Logs",
       "hideLogs": "Hide logs",
       "autostart": "Starts with the site",
-      "refresh": "Refresh"
+      "refresh": "Refresh",
+      "project": "Project",
+      "projectUp": "Start project",
+      "projectDown": "Stop project",
+      "projectStarting": "Starting…",
+      "projectStopping": "Stopping…"
     },
     "diagnostics": {
       "title": "Diagnostics",

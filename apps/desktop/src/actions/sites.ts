@@ -64,3 +64,31 @@ export const installToolSpec = defineAction<"tools.install", string>({
   method: "tools.install",
   toParams: (spec) => ({ specs: [spec] }),
 });
+
+/** Starts the project's services and processes from its `forgebox.yaml` (`forge up <dir>`). */
+export const projectUp = defineAction<"sites.up", string>({
+  id: "sites.up",
+  method: "sites.up",
+  toParams: (dir) => ({ dir }),
+});
+
+/** Stops what `forge up` started for the project folder (`forge down <dir>`). */
+export const projectDown = defineAction<"sites.down", string>({
+  id: "sites.down",
+  method: "sites.down",
+  toParams: (dir) => ({ dir }),
+});
+
+/** Turns HTTPS on or off for a site (`forge site secure|unsecure loja.test`). */
+export const setSiteSecure = defineAction<"sites.secure", { site: string; secure: boolean }>({
+  id: "sites.secure",
+  method: "sites.secure",
+  toParams: ({ site, secure }) => ({ site, secure }),
+});
+
+/** Moves a site to another web server tool (`forge site server loja.test nginx`). */
+export const setSiteServer = defineAction<"sites.server", { site: string; server: string }>({
+  id: "sites.server",
+  method: "sites.server",
+  toParams: ({ site, server }) => ({ site, server }),
+});

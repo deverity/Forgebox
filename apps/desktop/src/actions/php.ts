@@ -40,3 +40,10 @@ export const setPhpXdebug = defineAction<"php.xdebug", PhpXdebugInput>({
     ...(port === undefined || port === null ? {} : { port }),
   }),
 });
+
+/** Opens the series' php.ini in the editor on the daemon's machine (`forge php ini 8.4 --open`). */
+export const openPhpIni = defineAction<"php.ini_open", string>({
+  id: "php.ini_open",
+  method: "php.ini_open",
+  toParams: (version) => ({ version }),
+});

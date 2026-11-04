@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { discoverTools } from "../../actions/tools";
 import { useCapabilityReason } from "../../app/shell/useErrorText";
+import { ActionButton } from "../../design/primitives/ActionButton";
 import { EmptyState } from "../../design/primitives/EmptyState";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
 import { SegmentedControl } from "../../design/primitives/SegmentedControl";
@@ -128,6 +130,13 @@ export function CatalogPage() {
           {search.data === undefined ? "" : t("count", { count: visible.length })}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          <ActionButton
+            action={discoverTools}
+            loadingLabel={t("discover.running")}
+            successLabel={t("discover.done")}
+          >
+            {t("discover.label")}
+          </ActionButton>
           <input
             type="search"
             aria-label={t("search.label")}

@@ -2,7 +2,8 @@
 # `cli_only`: the method stays CLI-only on purpose; every entry needs a `reason`.
 # `pending`: a screen of the named task will add the action; the entry is deleted then
 #   (the Rust gate fails on a listed method that an action already reaches).
-# The M2 gate (M2-E4-T11) runs with FORGE_PARITY_STRICT=1, where `pending` must be empty.
+# The M2 gate (M2-E4-T11) runs with FORGE_PARITY_STRICT=1, where `pending` must be empty (it is,
+# since M2-E4-T9 gave the last eight methods an action).
 # `query`: pure queries and streams (non-mutating); every entry needs a `reason` that names the
 #   screen showing the data. Same stale rule as the other sections.
 # Every METHODS row with a non-empty `cli` must be reached by an action or appear here.
@@ -158,26 +159,4 @@ query:
     reason: "Query shown by: Site Diagnostico tab, 'Testar DNS' button (M2-E2-T16)."
   - method: tools.plan
     reason: "Query shown by: Catalog tool page install plan and the site PHP switch confirmation (M2-E2-T18, M2-E2-T16)."
-pending:
-  # PHP screen gap left by M2-E2-T17 (pool card 'Recarregar' for php@<series>).
-  - method: services.reload
-    task: M2-E4-T9
-  - method: sites.down
-    task: M2-E4-T9
-  - method: sites.up
-    task: M2-E4-T9
-  - method: sites.secure
-    task: M2-E4-T9
-  - method: sites.server
-    task: M2-E4-T9
-  # Left by M2-E3-T18 (Settings part 3 did not take it): 'Procurar pastas em bin/' on the
-  # Catalog screen (docs/03 §5 discover, docs/09 `forge tool discover`).
-  - method: tools.discover
-    task: M2-E4-T9
-  # PHP screen gap left by M2-E2-T17 (apply the update 'Verificar agora' found; the API is
-  # per tool, not per series, so the button needs a decision).
-  - method: tools.update
-    task: M2-E4-T9
-  # PHP screen gap left by M2-E2-T17 ('Abrir php.ini', local only).
-  - method: php.ini_open
-    task: M2-E4-T9
+pending: []

@@ -54,3 +54,17 @@ export const installTools = defineAction<
     ...(variant === undefined || variant === null || variant === "" ? {} : { variant }),
   }),
 });
+
+/** Registers loose folders found in `bin/` as tool versions (`forge tool discover`). */
+export const discoverTools = defineAction({
+  id: "tools.discover",
+  method: "tools.discover",
+  toParams: () => ({}),
+});
+
+/** Applies the updates found for one tool (`forge tool update php`). */
+export const updateTool = defineAction<"tools.update", string>({
+  id: "tools.update",
+  method: "tools.update",
+  toParams: (tool) => ({ tool }),
+});

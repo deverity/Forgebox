@@ -1,11 +1,13 @@
 import { useTranslation } from "react-i18next";
+import { reloadService } from "../../actions/services";
+import { ActionButton } from "../../design/primitives/ActionButton";
 import { StatusDot } from "../../design/primitives/StatusDot";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import { TNUM_CLASS } from "../../i18n/format";
 import type { PhpVersionDto } from "../../ipc/generated";
 import { usePool, usePoolMetrics } from "../../state";
 import { dotState } from "../services/model";
-import { latestRate, livePool } from "./model";
+import { latestRate, livePool, seriesTarget } from "./model";
 
 const NO_VALUE = "—";
 
@@ -55,6 +57,16 @@ export function PoolCard({ version }: { version: PhpVersionDto }) {
         <span data-testid="pool-rss" className="col-span-2">
           {rss === null ? NO_VALUE : t("pool.rss", { size: format.bytes(rss) })}
         </span>
+      </div>
+      <div className="pt-1">
+        <ActionButton
+          action={reloadService}
+          input={seriesTarget(version.series)}
+          loadingLabel={t("pool.reloading")}
+          successLabel={t("pool.reloaded")}
+        >
+          {t("pool.reload")}
+        </ActionButton>
       </div>
     </div>
   );

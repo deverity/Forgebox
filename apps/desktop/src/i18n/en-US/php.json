@@ -34,7 +34,10 @@
       "failed": "Failed",
       "maintenance": "Updating"
     },
-    "none": "The pool starts with the first site that uses this version."
+    "none": "The pool starts with the first site that uses this version.",
+    "reload": "Reload pool",
+    "reloading": "Reloading…",
+    "reloaded": "Reloaded"
   },
   "sites": {
     "count_one": "{count} site",
@@ -100,6 +103,15 @@
       "completed": "Updated",
       "failed": "Failed",
       "rolled_back": "Rolled back"
-    }
+    },
+    "apply": "Apply update",
+    "applying": "Updating…",
+    "applied": "Updated",
+    "applyNote": "Updates all of PHP (every series with a newer version), not only this column."
+  },
+  "ini": {
+    "open": "Open php.ini",
+    "opening": "Opening…",
+    "opened": "Opened"
   }
 }

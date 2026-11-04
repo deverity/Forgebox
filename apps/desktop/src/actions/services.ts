@@ -123,3 +123,10 @@ export const updateInstance = defineAction<
   method: "services.update",
   toParams: ({ instance, patch }) => ({ instance, ...patch }),
 });
+
+/** Reloads one service's configuration without a restart (`forge reload php@8.4`). */
+export const reloadService = defineAction<"services.reload", string>({
+  id: "services.reload",
+  method: "services.reload",
+  toParams: (target) => ({ target }),
+});

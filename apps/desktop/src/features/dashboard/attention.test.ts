@@ -7,6 +7,7 @@ import {
   driftItems,
   driftedFiles,
   failedItems,
+  holderName,
   pendingUpdates,
   portItems,
   updateItems,
@@ -206,5 +207,21 @@ describe("tiles and recent sites", () => {
       "s4.test",
       "s5.test",
     ]);
+  });
+});
+
+describe("holderName (R-18)", () => {
+  it("keeps the program name and drops the path", () => {
+    expect(holderName({ pid: 1, exe: "mysqld.exe (C:/xampp/mysql/bin)" })).toBe("mysqld.exe");
+    expect(holderName({ pid: 1, exe: "C:\\xampp\\mysql\\bin\\mysqld.exe" })).toBe("mysqld.exe");
+  });
+  it("treats an unknown holder as none", () => {
+    expect(holderName(null)).toBeNull();
+    expect(holderName({ pid: 0, exe: "?" })).toBeNull();
+    expect(holderName({ pid: 0, exe: "  " })).toBeNull();
+  });
+  it("says another program instead of by ? in the title", () => {
+    const [item] = portItems({}, [{ port: 3389, protocol: "tcp", holder: { pid: 4, exe: "?" } }]);
+    expect(item?.title.key).toBe("attention.ports.titleUnknown");
   });
 });

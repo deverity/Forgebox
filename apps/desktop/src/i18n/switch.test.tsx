@@ -48,7 +48,10 @@ describe("runtime language switch", () => {
   it("initI18n resolves and App renders when the bridge rejects", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await expect(
-      initI18n({ override: "pt-BR", setLanguage: () => Promise.reject(new Error("ipc unavailable")) }),
+      initI18n({
+        override: "pt-BR",
+        setLanguage: () => Promise.reject(new Error("ipc unavailable")),
+      }),
     ).resolves.toBeDefined();
     render(<App />);
     expect(screen.getByText("Seu ambiente de desenvolvimento local")).toBeInTheDocument();

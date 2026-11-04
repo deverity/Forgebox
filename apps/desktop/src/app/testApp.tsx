@@ -93,7 +93,11 @@ export async function renderApp(options: RenderAppOptions = {}): Promise<AppHarn
     if (connection.getState().status === "connected") {
       await waitFor(() => {
         expect(fake.openStreams()).toBeGreaterThan(0);
-        expect(layer.runtime("local").stores.services.getState().loaded).toBe(true);
+        // A daemon without `services.status` never loads the slice (the screens say so).
+        const skipped = connection.getState().hello?.not_implemented ?? [];
+        if (!skipped.includes("services.status")) {
+          expect(layer.runtime("local").stores.services.getState().loaded).toBe(true);
+        }
       });
     }
   };
