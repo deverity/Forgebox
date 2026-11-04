@@ -171,10 +171,12 @@ pending:
     task: M2-E4-T9
   - method: sites.server
     task: M2-E4-T9
+  # Settings gap left by M2-E3-T18 (done without 'Adicionar versão local' / 'Descobrir tools';
+  # re-pointed by the M2-E1-T21 gate).
   - method: tools.add_local
-    task: M2-E3-T18
+    task: M2-E4-T10
   - method: tools.discover
-    task: M2-E3-T18
+    task: M2-E4-T10
   # PHP screen gap left by M2-E2-T17 (apply the update 'Verificar agora' found; the API is
   # per tool, not per series, so the button needs a decision).
   - method: tools.update
