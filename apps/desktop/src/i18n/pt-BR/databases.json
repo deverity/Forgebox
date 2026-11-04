@@ -1,0 +1,154 @@
+{
+  "title": "Bancos de dados",
+  "instances": "Instâncias de banco de dados",
+  "instanceCount_one": "{count} instância",
+  "instanceCount_other": "{count} instâncias",
+  "empty": {
+    "title": "Nenhum banco de dados instalado",
+    "description": "Instale MySQL, MariaDB ou PostgreSQL para criar bancos para os seus sites.",
+    "action": "Abrir o catálogo"
+  },
+  "instance": {
+    "version": "Versão {version}",
+    "port": "Porta {port}",
+    "size": "Dados {size}",
+    "sizePending": "≈ calculando…",
+    "select": "Mostrar os bancos de {name}",
+    "start": "Iniciar",
+    "starting": "Iniciando…",
+    "state": {
+      "running": "Rodando",
+      "starting": "Iniciando",
+      "stopped": "Parada",
+      "stopping": "Parando",
+      "failed": "Com falha",
+      "crashed": "Caiu",
+      "maintenance": "Atualizando"
+    }
+  },
+  "stopped": {
+    "title": "{name} está parada",
+    "description": "Inicie a instância para listar, criar e salvar os bancos dela."
+  },
+  "table": {
+    "title": "Bancos de {name}",
+    "name": "Nome",
+    "charset": "Charset / collation",
+    "size": "Tamanho",
+    "tables": "Tabelas",
+    "actions": "Ações",
+    "none": "Nenhum banco ainda. Crie o primeiro acima.",
+    "unknown": "—"
+  },
+  "create": {
+    "title": "Novo banco",
+    "name": "Nome",
+    "hint": "Letras, números e sublinhado, até 64 caracteres.",
+    "charset": "Charset",
+    "submit": "Criar",
+    "creating": "Criando…",
+    "done": "Banco criado",
+    "invalid": "Use só letras, números e sublinhado (A-Z, a-z, 0-9, _), até 64 caracteres.",
+    "required": "Digite um nome para o banco.",
+    "exists": "Já existe um banco com exatamente este nome (os nomes diferenciam maiúsculas)."
+  },
+  "drop": {
+    "action": "Apagar",
+    "title": "Apagar {name}?",
+    "description": "Isto apaga o banco e tudo o que há nele. Exporte antes se você puder precisar dele de novo.",
+    "confirmLabel": "Digite {name} para confirmar",
+    "confirm": "Apagar o banco",
+    "dropping": "Apagando…",
+    "cancel": "Cancelar",
+    "done": "{name} apagado"
+  },
+  "export": {
+    "action": "Exportar",
+    "label": "Exportação de {name}",
+    "starting": "Iniciando…",
+    "bytes": "{size} gravados",
+    "speed": "{speed}/s",
+    "cancel": "Cancelar",
+    "cancelling": "Cancelando…",
+    "cancelled": "Exportação cancelada.",
+    "done": "Exportado em {path} ({size})",
+    "reveal": "Mostrar na pasta",
+    "retry": "Tentar de novo",
+    "dismiss": "Dispensar",
+    "failedTitle": "A exportação falhou",
+    "stderr": "Últimas linhas da saída do cliente"
+  },
+  "import": {
+    "action": "Importar",
+    "title": "Importar em {name}",
+    "description": "Escolha um arquivo .sql, .sql.gz ou .sql.zst. Tabelas existentes com os mesmos nomes podem ser substituídas.",
+    "file": "Arquivo de dump",
+    "remoteNote": "Este daemon roda em outra máquina, então só lê arquivos dentro da pasta www/ dele. Copie o dump para lá antes e digite o caminho como ele existe naquela máquina.",
+    "remoteOutside": "Em um daemon remoto o arquivo precisa estar dentro de www/.",
+    "badExtension": "Use um arquivo .sql, .sql.gz ou .sql.zst.",
+    "required": "Escolha o arquivo de dump.",
+    "submit": "Importar",
+    "label": "Importação em {name}",
+    "cancel": "Cancelar",
+    "cancelling": "Cancelando…",
+    "cancelled": "Importação cancelada.",
+    "done": "Importação concluída.",
+    "retry": "Tentar de novo",
+    "dismiss": "Dispensar",
+    "failedTitle": "A importação falhou",
+    "stderr": "Últimas linhas da saída do cliente",
+    "starting": "Iniciando…"
+  },
+  "jobs": {
+    "title": "Transferências"
+  },
+  "connect": {
+    "action": "Conexão",
+    "label": "Strings de conexão de {name}",
+    "loading": "Carregando…",
+    "dsn": "DSN",
+    "url": "URL",
+    "env": ".env",
+    "masked": "Oculto até revelar",
+    "reveal": "Revelar",
+    "hide": "Ocultar",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copyNeedsReveal": "Revele o valor para copiá-lo.",
+    "failed": "Não foi possível carregar as strings de conexão."
+  },
+  "shell": {
+    "action": "Abrir shell",
+    "loading": "Abrindo…",
+    "title": "Shell de {name}"
+  },
+  "openWith": {
+    "action": "Abrir em",
+    "disabled": "Abrir em · em breve",
+    "reason": "Abrir no HeidiSQL, DBeaver e outros clientes chega no marco M3."
+  },
+  "cli": {
+    "title": "Comandos equivalentes",
+    "create": "Criar",
+    "drop": "Apagar",
+    "export": "Exportar",
+    "import": "Importar",
+    "url": "String de conexão",
+    "shell": "Shell"
+  },
+  "siteTab": {
+    "label": "Banco",
+    "title": "Banco de {host}",
+    "description": "Um banco de dados para este site, na instância abaixo.",
+    "instance": "Instância",
+    "noInstance": "Nenhuma instância de banco de dados está instalada ainda.",
+    "noInstanceAction": "Abrir o catálogo",
+    "stopped": "{name} está parada. Inicie para criar o banco.",
+    "start": "Iniciar",
+    "create": "Criar o banco {name}",
+    "exists": "O banco {name} existe.",
+    "name": "Nome do banco",
+    "open": "Abrir em Bancos de dados",
+    "connection": "Strings de conexão"
+  }
+}

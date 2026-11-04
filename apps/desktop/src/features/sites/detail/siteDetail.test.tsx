@@ -459,11 +459,12 @@ describe("tab slots", () => {
     try {
       await open();
       const tabs = await screen.findAllByRole("tab");
-      // General (10), performance (20), processes (30), ..., diagnostics (90).
+      // General (10), performance (20), processes (30), database (50), diagnostics (90).
       expect(tabs.map((tab) => tab.textContent)).toEqual([
         "General",
         "General",
         "Processes",
+        "Database",
         "Diagnostics",
       ]);
       await userEvent.setup().click(must(tabs[1]));

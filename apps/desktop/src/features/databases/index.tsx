@@ -1,6 +1,2 @@
-import { PlaceholderPage } from "../../app/shell/PlaceholderPage";
-
-/** Placeholder until the task named on screen delivers the real databases screen. */
-export function DatabasesPage() {
-  return <PlaceholderPage id="databases" />;
-}
+// The Databases screen (M2-E3-T14, docs/07 section 5.6). The route imports `DatabasesPage`.
+export { DatabasesPage } from "./DatabasesPage";
