@@ -10,6 +10,7 @@ const GeneralTab = lazy(() =>
 const ProcessesTab = lazy(() =>
   import("./detail/ProcessesTab").then((m) => ({ default: m.ProcessesTab })),
 );
+const EnvTab = lazy(() => import("./detail/tabs/EnvTab").then((m) => ({ default: m.EnvTab })));
 const DiagnosticsTab = lazy(() =>
   import("./detail/DiagnosticsTab").then((m) => ({ default: m.DiagnosticsTab })),
 );
@@ -25,6 +26,12 @@ registerSiteTab({
   order: 30,
   label: { ns: "sites", key: "detail.tabs.processes" },
   component: ProcessesTab,
+});
+registerSiteTab({
+  id: "env",
+  order: 40,
+  label: { ns: "sites", key: "detail.tabs.env" },
+  component: EnvTab,
 });
 registerSiteTab({
   id: "diagnostics",

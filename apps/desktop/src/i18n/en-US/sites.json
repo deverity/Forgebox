@@ -112,6 +112,7 @@
     "tabs": {
       "general": "General",
       "processes": "Processes",
+      "env": "Environment",
       "diagnostics": "Diagnostics"
     },
     "general": {
@@ -218,6 +219,29 @@
         "failed": "{host} does not resolve to this machine (via {via}).",
         "none": "nothing"
       }
+    },
+    "env": {
+      "title": "Environment of {host}",
+      "description": "Variables of the site's .env files. Secrets stay masked until you reveal them.",
+      "loading": "Reading .env",
+      "masked": "Masked value",
+      "key": "Key",
+      "value": "Value",
+      "actions": "Actions",
+      "reveal": "Reveal",
+      "hide": "Hide",
+      "revealKey": "Reveal {key}",
+      "hideKey": "Hide {key}",
+      "copy": "Copy",
+      "copyKey": "Copy value of {key}",
+      "copied": "Copied",
+      "copyFailed": "Could not copy",
+      "adminOnly": "Revealing secrets requires the admin role (this connection is {role}).",
+      "autoHide": "Revealed values hide again after {seconds} s.",
+      "openEditor": "Open .env in editor",
+      "empty": "No .env file",
+      "emptyHint": "This site has no .env or .env.local in its folder.",
+      "fileEmpty": "No variables in this file."
     }
   },
   "phpFilter": {
