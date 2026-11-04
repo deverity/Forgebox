@@ -70,7 +70,8 @@ test("Processes follow the service events", async ({ page }) => {
   await expect(queue).toHaveAttribute("data-state", "stopped");
   await queue.getByRole("button", { name: "Start", exact: true }).click();
   await expect(queue).toHaveAttribute("data-state", "running");
-  await expect(queue.getByRole("button", { name: /Logs/ })).toBeDisabled();
+  // The shared LogViewer (M2-E3-T12) made the per-process Logs button live.
+  await expect(queue.getByRole("button", { name: /Logs/ })).toBeEnabled();
   await page.screenshot({ path: `${SHOT_DIR}/processes.png` });
 });
 

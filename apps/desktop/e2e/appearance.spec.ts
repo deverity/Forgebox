@@ -55,6 +55,8 @@ test("emulated media features: scheme, reduced motion, reduced transparency, sca
 
 test("motion=reduced makes the reduced-motion query match", async ({ page }) => {
   await page.goto(qaUrl({ motion: "reduced" }));
+  // The qa bootstrap is a dynamic import that can run after `goto` resolves (load event).
+  await page.waitForFunction(() => window.__FORGEBOX_QA__ !== undefined);
   expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(
     true,
   );

@@ -263,7 +263,8 @@ export function catalogHandlers(_data: QaData, base: FakeHandlers = {}): FakeHan
       };
       const info: T.ToolInfoDto = {
         tool: { ...tool, name: seed.name, category: seed.category, description: seed.summary },
-        available: [],
+        // Keep what the base scenario offers (the site detail's PHP switch reads it).
+        available: basic?.available ?? [],
         used_by: basic?.used_by ?? [],
         kind: seed.kind ?? "tool",
         description_md: DESCRIPTION,
