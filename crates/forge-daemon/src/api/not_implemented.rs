@@ -39,7 +39,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("logs.targets", "M2-E3-T8", "listing log targets"),
     ("shell.open", "M2-E3-T9", "external terminal launcher"),
     ("shell.open_editor", "M2-E3-T9", "editor launcher"),
-    ("stats.get", "M2-E5-T8", "per-site metrics (forge-metrics)"),
     (
         "stats.top",
         "M2-E5-T9",
@@ -52,11 +51,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "per-site metric series and markers",
     ),
     ("stats.routes", "M2-E5-T9", "top routes and recent errors"),
-    (
-        "metrics.subscribe",
-        "M2-E5-T8",
-        "per-site metrics stream (forge-metrics)",
-    ),
     (
         "sites.pool_mode",
         "M2-E5-T11",
@@ -239,8 +233,6 @@ mod tests {
     fn e5_methods_name_their_task() {
         // The metrics contract (ADR-0044): each backend task owns its methods.
         for (method, task) in [
-            ("stats.get", "M2-E5-T8"),
-            ("metrics.subscribe", "M2-E5-T8"),
             ("stats.top", "M2-E5-T9"),
             ("stats.export", "M2-E5-T9"),
             ("stats.series", "M2-E5-T9"),
@@ -258,6 +250,11 @@ mod tests {
             assert_eq!(details["args"]["task"], task, "{method}");
             assert_eq!(details["args"]["method"], method);
         }
+        // The metrics backend exists (M2-E5-T8); metrics.unsubscribe is a server built-in.
+        for method in ["stats.get", "metrics.subscribe"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        assert!(crate::api::SERVER_BUILTINS.contains(&"metrics.unsubscribe"));
         // Every E5 row names its task, not only the epic.
         for (method, task, _) in NOT_IMPLEMENTED {
             if task.starts_with("M2-E5") {

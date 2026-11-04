@@ -20,6 +20,7 @@ mod services;
 mod settings;
 mod shell;
 mod sites;
+mod stats;
 mod system;
 mod terminal;
 mod tls;
@@ -64,6 +65,7 @@ pub fn router(daemon: &Daemon) -> Router {
     db::register(&mut router, daemon);
     mail::register(&mut router, daemon);
     fs_parity::register(&mut router, daemon);
+    stats::register(&mut router, daemon);
     not_implemented::register(&mut router);
     router
 }

@@ -121,22 +121,77 @@ fn pointer(key: &str) -> Result<String> {
     Ok(format!("/{}", key.replace('.', "/")))
 }
 
+/// Whether `pointer` names a property of the preferences' JSON Schema (`$ref`s followed):
+/// an optional key that is unset (`metrics.enabled`, `editor.command`) is absent from the
+/// serialized preferences but still a key.
+fn schema_has(pointer: &str) -> bool {
+    let schema = ForgeConfig::json_schema();
+    let mut node = &schema;
+    for part in pointer.trim_start_matches('/').split('/') {
+        // Follow `{"$ref": "#/$defs/X"}` (possibly wrapped in `allOf`/`anyOf`).
+        for _ in 0..4 {
+            let reference = node
+                .get("$ref")
+                .or_else(|| {
+                    ["allOf", "anyOf", "oneOf"]
+                        .iter()
+                        .find_map(|k| node.get(*k)?.as_array()?.iter().find_map(|v| v.get("$ref")))
+                })
+                .and_then(Value::as_str);
+            match reference.and_then(|r| r.strip_prefix('#')) {
+                Some(target) => match schema.pointer(target) {
+                    Some(found) => node = found,
+                    None => return false,
+                },
+                None => break,
+            }
+        }
+        match node.get("properties").and_then(|p| p.get(part)) {
+            Some(child) => node = child,
+            None => return false,
+        }
+    }
+    true
+}
+
 fn value_of(config: &ForgeConfig, key: &str) -> Result<Value> {
     let json = serde_json::to_value(config)
         .map_err(|e| ForgeError::Internal(format!("preferences: {e}")))?;
-    json.pointer(&pointer(key)?)
-        .cloned()
-        .ok_or_else(|| ForgeError::NotFound(format!("preference {key}")))
+    let path = pointer(key)?;
+    match json.pointer(&path) {
+        Some(value) => Ok(value.clone()),
+        // An optional key that is unset.
+        None if schema_has(&path) => Ok(Value::Null),
+        None => Err(ForgeError::NotFound(format!("preference {key}"))),
+    }
 }
 
-/// Sets `key` to `value` in `config` (validated as a whole).
+/// Sets `key` to `value` in `config` (validated as a whole). An optional key that is unset
+/// (absent from the serialized preferences, like `metrics.enabled`) can be set too, as long
+/// as the schema has it.
 pub fn with_value(config: &ForgeConfig, key: &str, value: Value) -> Result<ForgeConfig> {
+    let not_found = || ForgeError::NotFound(format!("preference {key}"));
     let mut json = serde_json::to_value(config)
         .map_err(|e| ForgeError::Internal(format!("preferences: {e}")))?;
-    let target = json
-        .pointer_mut(&pointer(key)?)
-        .ok_or_else(|| ForgeError::NotFound(format!("preference {key}")))?;
-    *target = value;
+    let path = pointer(key)?;
+    match json.pointer_mut(&path) {
+        Some(target) => *target = value,
+        None => {
+            if !schema_has(&path) {
+                return Err(not_found());
+            }
+            let (parent, leaf) = path.rsplit_once('/').ok_or_else(not_found)?;
+            let parent = if parent.is_empty() {
+                Some(&mut json)
+            } else {
+                json.pointer_mut(parent)
+            };
+            parent
+                .and_then(Value::as_object_mut)
+                .ok_or_else(not_found)?
+                .insert(leaf.to_owned(), value);
+        }
+    }
     let updated: ForgeConfig = serde_json::from_value(json)
         .map_err(|e| ForgeError::InvalidInput(format!("{key}: {e}")))?;
     updated.validate()?;
@@ -198,6 +253,30 @@ mod tests {
             "config_invalid"
         );
         assert_eq!(value_of(&config, "nope").unwrap_err().code(), "not_found");
+        // Unset optional keys read as null and can be set; unknown ones cannot.
+        assert_eq!(value_of(&config, "metrics.enabled").unwrap(), Value::Null);
+        assert_eq!(value_of(&config, "editor.command").unwrap(), Value::Null);
+        let on = with_value(&config, "metrics.enabled", Value::Bool(false)).unwrap();
+        assert_eq!(on.metrics.enabled, Some(false));
+        assert_eq!(value_of(&on, "metrics.enabled").unwrap(), false);
+        let unset = with_value(&on, "metrics.enabled", Value::Null).unwrap();
+        assert_eq!(unset.metrics.enabled, None);
+        assert_eq!(
+            value_of(&config, "metrics.nope").unwrap_err().code(),
+            "not_found"
+        );
+        assert_eq!(
+            with_value(&config, "metrics.enbled", Value::Bool(true))
+                .unwrap_err()
+                .code(),
+            "not_found"
+        );
+        assert_eq!(
+            with_value(&config, "nope", Value::Bool(true))
+                .unwrap_err()
+                .code(),
+            "not_found"
+        );
         assert_eq!(pointer("a..b").unwrap_err().code(), "invalid_input");
     }
 }

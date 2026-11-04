@@ -331,17 +331,22 @@ pub struct RemoteZoneConfig {
     pub address: IpAddr,
 }
 
-/// `[metrics]` (docs/14).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// `[metrics]` (docs/14 section 3).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct MetricsConfig {
-    pub enabled: bool,
+    /// Per-site metrics collection. Unset (`None`, the default) means on, except in a
+    /// portable root (`portable.flag`), where metrics stay off until the user sets this
+    /// key explicitly (docs/14 section 3, docs/08 section 2.2). See [`Self::effective`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
 }
 
-impl Default for MetricsConfig {
-    fn default() -> Self {
-        Self { enabled: true }
+impl MetricsConfig {
+    /// Whether metrics are collected: the explicit value, else on unless `portable`.
+    pub fn effective(&self, portable: bool) -> bool {
+        self.enabled.unwrap_or(!portable)
     }
 }
 
@@ -616,7 +621,9 @@ mod tests {
         assert_eq!(c.default_server.as_str(), "nginx");
         assert_eq!(c.parked_dirs, vec!["www".to_owned()]);
         assert!(c.case_sensitive);
-        assert!(c.metrics.enabled);
+        assert_eq!(c.metrics.enabled, None);
+        assert!(c.metrics.effective(false));
+        assert!(!c.metrics.effective(true));
         assert_eq!(c.updates.metered, MeteredPolicy::Pause);
         assert_eq!(c.updates.quiet_hours, None);
         assert_eq!(c.editor.command, None);

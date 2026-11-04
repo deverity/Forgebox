@@ -13,7 +13,8 @@
 //!    excepted;
 //! 7. PHP pools for the versions referenced by enabled sites;
 //! 8. web server configuration rendered (managed blocks, drift kept) and web servers
-//!    started or reloaded;
+//!    started or reloaded; then the metrics service gets the sites and the access logs of
+//!    the running web servers (`[metrics] enabled`; off by default in a portable root);
 //! 9. API opened on the local transport and `daemon.ready` published.
 //!
 //! Every step that can wait on the outside world is bounded; a step that fails without
@@ -500,6 +501,20 @@ pub async fn boot_with(
         )
     };
 
+    // Metrics service (rehydrates the last 24 h in its own task; fed after step 8).
+    let metrics_enabled = {
+        let (config, root) = (config.clone(), root.clone());
+        tokio::task::spawn_blocking(move || crate::metrics::enabled_for(&config, &root))
+            .await
+            .map_err(blocking_err)?
+    };
+    let metrics = forge_metrics::service::spawn(
+        forge_metrics::ServiceConfig::default(),
+        store.reader().clone(),
+        store.writer().clone(),
+        metrics_enabled,
+    );
+
     let endpoint = forge_ipc::transport::local_transport(&root).endpoint();
     let daemon = Daemon::new(Inner {
         root: root.clone(),
@@ -541,6 +556,7 @@ pub async fn boot_with(
         settings_turn: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         db_sizes: crate::databases::SizeCache::default(),
         mail: crate::mail::MailHub::default(),
+        metrics,
     });
 
     // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web
@@ -580,6 +596,7 @@ pub async fn boot_with(
             "web servers autostarted"
         );
     }
+    crate::metrics::initial_sync(&daemon).await;
 
     // 9. API.
     let token = {
