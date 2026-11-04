@@ -120,11 +120,14 @@ export function accentStates(accent: string): { hover: string; pressed: string }
   return { hover: mixHex(accent, away, 0.15), pressed: mixHex(accent, away, 0.28) };
 }
 
+const FORCED_COLORS_QUERY = "(forced-colors: active)";
+
 /** The Windows accent drives `--accent`; `--fg-on-accent` and the hover/pressed fills follow it. */
 function applyAccent(root: HTMLElement, accent: string): void {
   if (root.dataset.contrast === "high") return;
   // Forced colours: an inline --accent would beat the Highlight tokens (higher specificity).
-  if ("matchMedia" in globalThis && globalThis.matchMedia("(forced-colors: active)").matches)
+  // jsdom (vitest) has no callable matchMedia, so feature-detect the function, not the key.
+  if (typeof window.matchMedia === "function" && window.matchMedia(FORCED_COLORS_QUERY).matches)
     return;
   root.style.setProperty("--accent", accent);
   root.style.setProperty("--fg-on-accent", onAccentColor(accent));
