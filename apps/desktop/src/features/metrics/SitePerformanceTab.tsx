@@ -13,6 +13,7 @@ import { setSiteMetrics, setSitePoolMode } from "../../actions/metrics";
 import { ActionButton } from "../../design/primitives/ActionButton";
 import { Badge } from "../../design/primitives/Badge";
 import { CliCommand } from "../../design/primitives/CliCommand";
+import { ErrorNotice } from "../../design/primitives/ErrorNotice";
 import { EmptyState } from "../../design/primitives/EmptyState";
 import { Skeleton } from "../../design/primitives/Skeleton";
 import { renderCli } from "../../ipc/cli";
@@ -237,31 +238,41 @@ export function SitePerformanceTab({ siteId }: { siteId: string }) {
         </p>
       ) : null}
 
-      <div className="flex flex-col gap-4" data-testid="perf-charts">
-        <ChartBox>
-          <LatencyBandChart
-            series={drawn?.latency ?? null}
-            markers={markers}
-            loading={chartsLoading}
-          />
-        </ChartBox>
-        <ChartBox>
-          <ThroughputErrorsChart
-            series={drawn?.throughput ?? null}
-            markers={markers}
-            loading={chartsLoading}
-          />
-        </ChartBox>
-        {php ? (
+      {series.isError && series.data === undefined ? (
+        <ErrorNotice
+          error={series.error}
+          context={{ method: "stats.series", params: { site: siteId, range } }}
+          onRetry={() => {
+            void series.refetch();
+          }}
+        />
+      ) : (
+        <div className="flex flex-col gap-4" data-testid="perf-charts">
           <ChartBox>
-            <ResourceChart series={resource} markers={markers} loading={chartsLoading} />
+            <LatencyBandChart
+              series={drawn?.latency ?? null}
+              markers={markers}
+              loading={chartsLoading}
+            />
           </ChartBox>
-        ) : (
-          <p data-testid="perf-no-resource" className="text-callout text-fg-secondary">
-            {t("site.noResource", { kind: t(`site.kind.${site.kind}`) })}
-          </p>
-        )}
-      </div>
+          <ChartBox>
+            <ThroughputErrorsChart
+              series={drawn?.throughput ?? null}
+              markers={markers}
+              loading={chartsLoading}
+            />
+          </ChartBox>
+          {php ? (
+            <ChartBox>
+              <ResourceChart series={resource} markers={markers} loading={chartsLoading} />
+            </ChartBox>
+          ) : (
+            <p data-testid="perf-no-resource" className="text-callout text-fg-secondary">
+              {t("site.noResource", { kind: t(`site.kind.${site.kind}`) })}
+            </p>
+          )}
+        </div>
+      )}
 
       <RoutesTables
         data={routes.data}
