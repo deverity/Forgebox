@@ -31,6 +31,7 @@
     "e2e:real": "playwright test -c playwright.real.config.ts",
     "e2e:live": "playwright test -c playwright.live.config.ts",
     "perf:startup": "node scripts/perf-startup.mjs",
+    "size": "node scripts/bundle-size.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

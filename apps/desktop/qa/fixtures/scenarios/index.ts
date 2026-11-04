@@ -114,6 +114,23 @@ export function siteHandlers(data: QaData): FakeHandlers {
   };
 }
 
+/** `{specs: ["php@8.4"]}`: one bare PHP series, no variant, stack or target. */
+function phpSeriesOnly(params: {
+  specs?: readonly string[];
+  stack?: string | null;
+  variant?: string | null;
+  target?: string | null;
+}): boolean {
+  const specs = params.specs ?? [];
+  return (
+    specs.length === 1 &&
+    /^php@\d+\.\d+$/.test(specs[0] ?? "") &&
+    (params.stack ?? null) === null &&
+    (params.variant ?? null) === null &&
+    (params.target ?? null) === null
+  );
+}
+
 /** A scenario whose snapshot handlers answer from `data`. */
 export function withData(name: string, data: QaData, extra: FakeScenario = {}): FakeScenario {
   const config = configHandlers(data);
@@ -180,6 +197,19 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
         const handler =
           params.port === QA_HOLDER_PORT ? diagnostics["net.port_check"] : config["net.port_check"];
         if (handler === undefined) return { free: true };
+        return handler(params, ctx);
+      },
+      // Both answer `tools.plan`/`tools.install`: a lone PHP series without variant (the Site
+      // detail's "install and switch", `php@7.4`) goes to siteDetail.ts, which also marks it
+      // installed for the switch; exact versions, variants and stacks (the catalog) to catalog.ts.
+      "tools.plan": (params, ctx) => {
+        const handler = phpSeriesOnly(params) ? detail["tools.plan"] : catalog["tools.plan"];
+        if (handler === undefined) fakeError("not_implemented", "tools.plan");
+        return handler(params, ctx);
+      },
+      "tools.install": (params, ctx) => {
+        const handler = phpSeriesOnly(params) ? detail["tools.install"] : catalog["tools.install"];
+        if (handler === undefined) fakeError("not_implemented", "tools.install");
         return handler(params, ctx);
       },
       ...extra.handlers,

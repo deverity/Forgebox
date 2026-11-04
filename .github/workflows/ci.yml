@@ -140,6 +140,10 @@ jobs:
       - name: tauri debug build (no bundle)
         run: pnpm -C apps/desktop tauri build --debug --no-bundle
 
+      # docs/07 section 10: initial JS and the largest lazy chunk (dist/ from the build above).
+      - name: size budgets (initial JS)
+        run: pnpm -C apps/desktop size
+
   desktop-release:
     name: desktop-release (release build, real-app e2e, startup perf)
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
@@ -173,6 +177,9 @@ jobs:
 
       - name: build forgeboxd (release)
         run: cargo build --release -p forge-daemon --bin forgeboxd
+
+      - name: size budgets (initial JS, release Forgebox.exe)
+        run: pnpm -C apps/desktop size --exe ../../target/release/Forgebox.exe
 
       - name: real-app e2e
         shell: pwsh

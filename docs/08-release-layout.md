@@ -19,7 +19,7 @@ Nenhum artefato embute PHP/Nginx/MySQL. O instalador baixa o que o usuário esco
 
 ```
 C:\Forgebox\
-├── Forgebox.exe                  # GUI (Tauri). ~8 MB
+├── Forgebox.exe                  # GUI (Tauri). ~8 MB (alvo; medido no gate M2-E1: 16,2 MiB, redução em follow-up, docs/07 §10)
 ├── forgeboxd.exe                 # daemon (motor). ~7 MB
 ├── forge.exe                     # CLI. ~4 MB
 ├── forgebox-helper.exe           # helper elevado (manifest requireAdministrator; só roda sob demanda)

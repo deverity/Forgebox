@@ -409,6 +409,8 @@ struct Live {
     watcher: bool,
     /// A connection was lost and the next check must ask how the daemon ended.
     evidence_due: bool,
+    /// Automatic starts wait for the first frame ([`FirstFrameGate`]).
+    first_frame: FirstFrameGate,
 }
 
 impl Live {
@@ -472,6 +474,67 @@ impl Emitter {
 #[derive(Debug, Clone, Default)]
 pub struct ContextsOptions {
     pub policy: PolicyConfig,
+    /// Automatic daemon starts wait for it (the app opens it on `ready`).
+    pub first_frame: FirstFrameGate,
+}
+
+/// Longest an automatic start waits for the first frame (a page that never sends `ready`
+/// still gets its daemon; the window watchdog shows it after 5 s).
+pub const FIRST_FRAME_WAIT_CAP: Duration = Duration::from_secs(3);
+
+/// Opens once the window painted its first frame (`ready`, or the watchdog): automatic
+/// daemon starts never compete with the first paint (M2-E1-T21: spawning `forgeboxd`
+/// during startup cost ~250 ms of cold start on a 4-core machine). Connecting to a running
+/// daemon does not wait, and neither does a start the user asks for. The default gate is
+/// open (tests, and any embedding without a window).
+#[derive(Clone)]
+pub struct FirstFrameGate {
+    painted: Arc<tokio::sync::watch::Sender<bool>>,
+    cap: Duration,
+}
+
+impl FirstFrameGate {
+    /// A closed gate: [`FirstFrameGate::open`] (or `cap`) lets automatic starts through.
+    pub fn closed(cap: Duration) -> Self {
+        Self {
+            painted: Arc::new(tokio::sync::watch::Sender::new(false)),
+            cap,
+        }
+    }
+
+    /// The first frame was painted (idempotent).
+    pub fn open(&self) {
+        self.painted.send_replace(true);
+    }
+
+    pub fn is_open(&self) -> bool {
+        *self.painted.borrow()
+    }
+
+    /// Waits until the gate opens, at most `cap`; `true` when it opened in time.
+    pub async fn wait(&self) -> bool {
+        let mut painted = self.painted.subscribe();
+        tokio::time::timeout(self.cap, painted.wait_for(|open| *open))
+            .await
+            .is_ok_and(|r| r.is_ok())
+    }
+}
+
+impl Default for FirstFrameGate {
+    fn default() -> Self {
+        let gate = Self::closed(FIRST_FRAME_WAIT_CAP);
+        gate.open();
+        gate
+    }
+}
+
+impl std::fmt::Debug for FirstFrameGate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FirstFrameGate")
+            .field("open", &self.is_open())
+            .field("cap", &self.cap)
+            .finish()
+    }
 }
 
 static OPEN_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -760,6 +823,7 @@ impl Contexts {
             tasks: vec![forwarder],
             watcher: false,
             evidence_due: false,
+            first_frame: self.options.first_frame.clone(),
         });
         // `keep_connected`: connects now and keeps reconnecting with backoff.
         client.start();
@@ -975,23 +1039,29 @@ impl Contexts {
                 if run.kind == StartKind::Restart {
                     live.policy.on_restart_succeeded(*outcome);
                 }
-                // Connect the context's client now instead of at its next backoff tick.
-                live.just_started = true;
-                let client = live.client.clone();
-                let weak = weak.clone();
-                let context = context.to_owned();
-                tokio::spawn(async move {
-                    if let Err(error) = client.ping().await {
-                        tell(
-                            &weak,
-                            Msg::PokeFailed {
-                                context,
-                                open,
-                                error,
-                            },
-                        );
-                    }
-                });
+                // Connect the context's client now instead of at its next backoff tick. The
+                // client may already have reconnected by itself while the start waited for the
+                // daemon to answer: then there is nothing to poke, and a `just_started` set
+                // after the connection would survive it and show `starting` (instead of
+                // `reconnecting`) after the next loss (M2-E1-T21, e2e-desktop).
+                if !live.client_state.is_connected() {
+                    live.just_started = true;
+                    let client = live.client.clone();
+                    let weak = weak.clone();
+                    let context = context.to_owned();
+                    tokio::spawn(async move {
+                        if let Err(error) = client.ping().await {
+                            tell(
+                                &weak,
+                                Msg::PokeFailed {
+                                    context,
+                                    open,
+                                    error,
+                                },
+                            );
+                        }
+                    });
+                }
             }
             Err(error) => {
                 tracing::warn!(context, %error, kind = ?run.kind, "daemon start failed");
@@ -1236,10 +1306,22 @@ fn begin_start_with(
     live.cancel_check();
     live.start_error = None;
     live.start = Some(StartRun { kind, waiters });
+    // The endpoint's future spawns when polled: an automatic start polls it after the first
+    // frame (or the gate's cap), a user start at once.
     let starting = live.endpoint.start(require_initialized);
+    let gate =
+        (kind != StartKind::User && !live.first_frame.is_open()).then(|| live.first_frame.clone());
     let weak = weak.clone();
     let context = context.to_owned();
     tokio::spawn(async move {
+        if let Some(gate) = gate {
+            if !gate.wait().await {
+                tracing::debug!(
+                    context,
+                    "no first frame in time; starting the daemon anyway"
+                );
+            }
+        }
         let result = starting.await;
         tell(
             &weak,

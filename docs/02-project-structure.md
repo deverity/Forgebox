@@ -294,9 +294,9 @@ Forgebox/
 │   └── forge-mcp/                # bin forge-mcp.exe: expõe tools MCP (list_sites, create_site, logs, ...)
 │
 ├── apps/
-│   └── desktop/                  # Itens marcados (M2-E1-Tn) ainda não existem: chegam na tarefa indicada.
-│       ├── package.json          # pnpm@10.7.1, node >= 24; react 19, vite 8, tailwind 4, vitest, eslint 9, prettier, @tauri-apps/cli
-│       │                         #   (radix, motion e afins entram com as tarefas que os usam; zustand e @tanstack/react-query: M2-E1-T9)
+│   └── desktop/                  # Shell do M2-E1 completo (gate M2-E1-T21: docs/07 §10/§11); telas por épico em src/features/.
+│       ├── package.json          # pnpm@10.7.1, node >= 24; react 19, vite 8, tailwind 4, radix-ui, motion, cmdk, zustand, @tanstack/{react-router,
+│       │                         #   react-query,react-virtual}, i18next, xterm; dev: vitest, Playwright, axe, eslint 9, prettier, @tauri-apps/cli
 │       ├── pnpm-lock.yaml
 │       ├── index.html
 │       ├── vite.config.ts        # porta 1420 (devUrl do Tauri) + config do vitest (jsdom)
@@ -310,18 +310,26 @@ Forgebox/
 │       ├── qa/{playwright.config.ts,matrix.ts,shots.spec.ts,contact-sheet.ts,emulation.ts}  # M2-E4-T2: `pnpm qa:shots [--grep]` (docs/07 §12; porta FORGE_QA_SHOTS_PORT, padrão 4176; saída em qa/out/shots/<run>/); `src/qa/matrix.test.ts` confere a matriz contra o router
 │       ├── e2e/                  # fixtures.ts (emulação, axe, teclado, CLS), *.spec.ts por cenário; real/app.spec.ts (Forgebox.exe via CDP, só por scripts/e2e-desktop.ps1)
 │       ├── qa/                   # fixtures/scenarios/ (biblioteca tipada com `satisfies` contra generated.ts: empty, populated, heavy...); out/ (gitignored)
-│       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree)
+│       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree),
+│       │                         #   bundle-size.mjs (M2-E1-T21: pnpm size, JS inicial gzip + maior chunk lazy + Forgebox.exe contra os orçamentos
+│       │                         #   de docs/07 §10; passo do `ci.ps1 -Desktop` e dos jobs desktop/desktop-release; src/qa/bundleSize.test.ts), qa-perf.mjs (qa:perf),
+│       │                         #   window-qa.mjs, gen-tokens.mjs (tokens:check), gen-icons.mjs (M2-E1-T22: icons / icons:check de docs/design/brand)
 │       ├── dist-qa/              # saída de `vite build --mode qa` (gitignored; nunca sobre dist/)
-│       ├── scripts/              # gen-tokens.mjs (tokens:check), gen-icons.mjs (M2-E1-T22: icons / icons:check a partir de docs/design/brand)
 │       ├── src/
-│       │   ├── main.tsx / App.tsx / index.css   # casca placeholder; Tailwind com `source("./")` (não varre src-tauri/target)
+│       │   ├── main.tsx / App.tsx / index.css   # entrada: StateLayer + router (o shell vive na árvore de rotas); Tailwind com `source("./")` (não varre src-tauri/target)
 │       │   ├── App.test.tsx / test/setup.ts     # vitest + Testing Library
 │       │   ├── qa/               # (M2-E1-T19) bootstrap.ts (modo `qa`: ?scenario, theme, vibrancy, motion, locale, latency), pseudo-locale.ts; fora do build de produção (sentinela)
 │       │   ├── app/              # appearance.ts (M2-E1-T7: data-theme/data-vibrancy/data-effect/data-contrast em <html>,
 │       │   │                     #   boot por window.__FORGEBOX_SHELL__ + evento forge://appearance); shell/ (M2-E1-T7: Titlebar.tsx,
 │       │   │                     #   WindowControls.tsx, windowApi.ts = janela Tauri lazy + `ready` após duplo rAF);
-│       │   │                     #   (M2-E1-T10) roteamento (tanstack-router), sidebar, command palette
-│       │   ├── design/           # (M2-E1-T6, T11) tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
+│       │   │                     #   router.tsx + routes/ (M2-E1-T10: rotas lazy, uma por arquivo), shell/ (AppShell, Sidebar + SidebarStatus,
+│       │   │                     #   ConnectionBanner, StartAll, ContextSelector, trayBridge), features.ts + slots.ts (abas/seções por épico),
+│       │   │                     #   palette/ (M2-E1-T14: CommandPalette em cmdk, PaletteHost, registro de entradas), shortcuts/ (registro de
+│       │   │                     #   atalhos do §8 com sobrescritas), gallery/ (`/__gallery`, só fora de produção; as 25 primitives do §6)
+│       │   ├── actions/          # (M2-E1-T13) defineAction/runAction por tela (cli_template → comando `forge`; gate de paridade M2-E4-T5)
+│       │   ├── design/           # (M2-E1-T6, T11, T12) tokens.css/tokens.ts (gerados de docs/design/tokens.json), motion.ts, fonts.css,
+│       │   │                     #   primitives/ (controles, superfícies, feedback e as ligadas ao daemon: ActionButton, AsyncView, CliCommand,
+│       │   │                     #   PathField, PortField), gallery/ (SurfacesGallery)
 │       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, diagnostics/, mail/, logs/, catalog/, terminal/, settings/
 │       │   │                     #   (M2-E3-T19) diagnostics/: DiagnosticsPage (doctor como job com progresso, grupos por prefixo do id), CheckRow
 │       │   │                     #   (Corrigir só para `fix_method` da allowlist de `actions/diagnostics.ts`; senão Copiar comando), KillDialog (Encerrar),
@@ -356,7 +364,7 @@ Forgebox/
 │       ├── src-tauri/            # crate `forgebox-desktop` (membro do workspace; depende só de forge-ipc, guarda: `cargo xtask arch-guard`)
 │       │   ├── Cargo.toml        # bin `Forgebox` (mainBinaryName), lib `forgebox_desktop`; feature `custom-protocol` embute dist
 │       │   ├── build.rs          # tauri_build::build(); sem a feature, modo dev: compila sem Node e sem apps/desktop/dist
-│       │   ├── tauri.conf.json   # janela `main`, CSP estrita sem origens remotas, identifier dev.forgebox.app (vibrancy/updater/bundle: tarefas seguintes)
+│       │   ├── tauri.conf.json   # sem janelas declaradas (a `main` é criada em window.rs: escondida até o `ready`, sem decorações, transparente só com material), CSP estrita sem origens remotas, identifier dev.forgebox.app, updater sem chave/endpoint (inativo, ADR-0038), bundle desligado
 │       │   ├── capabilities/     # main.json: permissões Tauri 2 só da janela `main`
 │       │   ├── tests/            # bridge.rs (Server forge-ipc em memória: validação, retry com o mesmo request_id, 10 000
 │       │   │                     #   eventos em quadros, lag, política com perdas reais), bridge_daemon.rs (forgeboxd real em
@@ -387,7 +395,12 @@ Forgebox/
 │       │       │                 #   (onboarding.json na pasta de dados da GUI, por raiz ou contexto); comandos first_run_state,
 │       │       │                 #   choose_root, onboarding_get/onboarding_set em bridge/commands.rs
 │       │       ├── perf.rs       # criação do processo → `ready` (perf_startup, `--perf-startup` imprime JSON e sai)
-│       │       └── autostart.rs  # (M2-E1-T18)
+│       │       ├── notifications.rs # (M2-E1-T16) NoticeEngine puro alimentado pela bandeja → toasts nativos (tauri-plugin-notification)
+│       │       ├── shortcuts.rs  # (M2-E1-T14) atalhos globais do terminal (tauri-plugin-global-shortcut), registrados pela webview
+│       │       ├── files.rs      # (M2-E3-T13) salvar anexo pelo diálogo nativo
+│       │       ├── i18n.rs       # textos da bandeja/notificações (pt-BR/en-US)
+│       │       ├── updater.rs    # (M2-E1-T18, ADR-0038) política `decide` do tauri-plugin-updater (inativo na 0.2.0)
+│       │       └── autostart.rs  # (M2-E1-T18) AutostartBackend sobre tauri-plugin-autostart, `--minimized`, recusa no portátil
 │       └── public/               # (quando houver assets estáticos)
 │
 ├── registry/                     # catálogo oficial de manifestos (pode virar repo separado "forgebox-registry")

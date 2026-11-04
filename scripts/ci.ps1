@@ -5,7 +5,7 @@
 # interception); runs the same steps individually with `cargo deny --offline` (cached DB).
 # -Desktop: the desktop steps only (apps/desktop, Node >= 24): install, generated-file drift
 # (design tokens, brand icons), lint, typecheck, vitest, the Playwright fake-bridge suite, qa:check (docs/07 section 11; system
-# Edge, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1) and `tauri build --debug --no-bundle`. FORGEBOX_NODE_DIR, when set, is put
+# Edge, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1), `tauri build --debug --no-bundle` and the size budgets (`pnpm size`). FORGEBOX_NODE_DIR, when set, is put
 # first on the PATH of this process only; NODE_OPTIONS=--use-system-ca is set for this process.
 # Mirrors the `desktop` job of the workflow; the develop-only desktop-release job is not run here.
 param([switch]$OfflineDeny, [switch]$Desktop)
@@ -33,6 +33,7 @@ if ($Desktop) {
     $env:QA_SHOTS_SUBSET = 'ci'; $env:QA_SHOTS_RUN = 'ci'
     Invoke-Step 'qa:shots (CI subset)' { pnpm -C apps/desktop qa:shots }
     Invoke-Step 'tauri debug build' { pnpm -C apps/desktop tauri build --debug --no-bundle }
+    Invoke-Step 'size budgets (initial JS, docs/07 section 10)' { pnpm -C apps/desktop size }
     Write-Host 'CI Desktop OK'
     exit 0
 }

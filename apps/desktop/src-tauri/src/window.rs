@@ -1044,6 +1044,7 @@ pub fn spawn_ready_watchdog<R: Runtime>(app: &AppHandle<R>) {
             after_ms = wait.as_millis() as u64,
             "no ready from the webview; showing the window"
         );
+        open_first_frame_gate(&app);
         crate::tray::menu::activate(&app);
         let focus = shell.lock().focus_requested;
         if show_on_ready(shell.launch, focus) {
@@ -1055,6 +1056,13 @@ pub fn spawn_ready_watchdog<R: Runtime>(app: &AppHandle<R>) {
             });
         }
     });
+}
+
+/// Lets the bridge's automatic daemon starts through ([`crate::bridge::FirstFrameGate`]).
+fn open_first_frame_gate<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(gate) = app.try_state::<crate::bridge::FirstFrameGate>() {
+        gate.open();
+    }
 }
 
 /// Answer of [`ready`].
@@ -1083,6 +1091,10 @@ pub async fn ready(
     }
     let shell = shell.inner().clone();
     let first = shell.clock.mark_ready(SystemTime::now());
+    if first {
+        // The daemon may be started now without competing with the first paint.
+        open_first_frame_gate(&app);
+    }
     if first && !shell.launch.perf_startup {
         // After the first paint the tray connects (never before: ADR-0034).
         crate::tray::menu::activate(&app);
