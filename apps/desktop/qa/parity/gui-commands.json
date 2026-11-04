@@ -1,5 +1,114 @@
 [
   {
+    "action": "db.create",
+    "method": "db.create",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja",
+          "charset": "utf8mb4"
+        },
+        "command": "forge db create loja --on mysql/default --charset utf8mb4"
+      },
+      {
+        "input": {
+          "instance": "postgresql/default",
+          "name": "loja_test",
+          "charset": null
+        },
+        "command": "forge db create loja_test --on postgresql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.drop",
+    "method": "db.drop",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja"
+        },
+        "command": "forge db drop loja --on mysql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.export",
+    "method": "db.export",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja"
+        },
+        "command": "forge db export loja --on mysql/default"
+      },
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja",
+          "output": "D:\\Backups MySQL\\loja.sql.gz"
+        },
+        "command": "forge db export loja --on mysql/default --output \"D:\\Backups MySQL\\loja.sql.gz\""
+      }
+    ]
+  },
+  {
+    "action": "db.import",
+    "method": "db.import",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja",
+          "file": "C:\\Meus Dumps\\loja.sql.zst"
+        },
+        "command": "forge db import loja \"C:\\Meus Dumps\\loja.sql.zst\" --on mysql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.shell",
+    "method": "db.shell",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "database": "loja"
+        },
+        "command": "forge db shell mysql/default loja"
+      },
+      {
+        "input": {
+          "instance": "postgresql/default",
+          "database": null
+        },
+        "command": "forge db shell postgresql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.url",
+    "method": "db.url",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "database": "loja"
+        },
+        "command": "forge db url mysql/default loja"
+      }
+    ]
+  },
+  {
     "action": "mail.clear",
     "method": "mail.clear",
     "kind": "call",

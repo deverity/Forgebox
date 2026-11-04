@@ -141,14 +141,6 @@ query:
   - method: tools.plan
     reason: "Query shown by: Catalog tool page install plan and the site PHP switch confirmation (M2-E2-T18, M2-E2-T16)."
 pending:
-  - method: db.create
-    task: M2-E3-T14
-  - method: db.drop
-    task: M2-E3-T14
-  - method: db.export
-    task: M2-E3-T14
-  - method: db.import
-    task: M2-E3-T14
   - method: fs_parity.case_convert
     task: M2-E3-T18
   - method: fs_parity.case_disable
@@ -229,7 +221,3 @@ pending:
     task: M2-E4-T9
   - method: shell.open
     task: M2-E3-T16
-  - method: db.shell
-    task: M2-E3-T14
-  - method: db.url
-    task: M2-E3-T14

@@ -11,16 +11,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-// Importing the modules registers their actions.
-import "../../src/actions/mail";
-import "../../src/actions/php";
-import "../../src/actions/services";
-import "../../src/actions/sites";
-import "../../src/actions/terminal";
-import "../../src/actions/tools";
 import { listActions } from "../../src/actions/registry";
 import { CliCommand } from "../../src/design/primitives/CliCommand";
 import { renderCli } from "../../src/ipc/cli";
+
+// Loading every module of src/actions registers its actions. A glob, not a list of imports: a
+// screen that adds `src/actions/<name>.ts` is covered here without editing this file (a missed
+// import once left the db.* actions out of gui-commands.json while their screen shipped).
+// Untyped call on purpose (Vitest fsModuleCache, see src/test/globCache.test.ts).
+const actionModules: Record<string, unknown> = import.meta.glob(
+  ["../../src/actions/*.ts", "!../../src/actions/*.test.ts"],
+  { eager: true },
+);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const JSON_PATH = join(here, "gui-commands.json");
@@ -102,6 +104,23 @@ const SAMPLES: Record<string, unknown[]> = {
     { version: "8.4", mode: "off" },
   ],
   "tools.install_specs": [{ specs: ["php@8.4.27", "nginx"], variant: "nts" }, { specs: ["redis"] }],
+  "db.create": [
+    { instance: "mysql/default", name: "loja", charset: "utf8mb4" },
+    { instance: "postgresql/default", name: "loja_test", charset: null },
+  ],
+  "db.drop": [{ instance: "mysql/default", name: "loja" }],
+  "db.export": [
+    { instance: "mysql/default", name: "loja" },
+    { instance: "mysql/default", name: "loja", output: String.raw`D:\Backups MySQL\loja.sql.gz` },
+  ],
+  "db.import": [
+    { instance: "mysql/default", name: "loja", file: String.raw`C:\Meus Dumps\loja.sql.zst` },
+  ],
+  "db.shell": [
+    { instance: "mysql/default", database: "loja" },
+    { instance: "postgresql/default", database: null },
+  ],
+  "db.url": [{ instance: "mysql/default", database: "loja" }],
 };
 
 interface Entry {
@@ -128,6 +147,12 @@ function generate(): Entry[] {
 const serialize = (entries: Entry[]) => JSON.stringify(entries, null, 2) + "\n";
 
 describe("gui-commands.json", () => {
+  it("loads every action module of src/actions", () => {
+    const names = Object.keys(actionModules).map((path) => path.replace(/^.*\//, ""));
+    expect(names).toEqual(expect.arrayContaining(["databases.ts", "mail.ts", "sites.ts"]));
+    expect(names.filter((name) => name.endsWith(".test.ts"))).toEqual([]);
+  });
+
   it("has sample inputs for every registered action", () => {
     const missing = listActions()
       .map((a) => a.id)
