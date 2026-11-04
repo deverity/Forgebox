@@ -96,7 +96,7 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E3-T16 | Configurações parte 1 (layout, linhas por schema, Geral, Editor/Terminal, Atalhos, Avançado) | todo | — | |
 | M2-E3-T17 | Configurações parte 2 (Rede e Segurança) | todo | — | |
 | M2-E3-T18 | Configurações parte 3 (Sistema de arquivos, Registries, Atualizações) | todo | — | |
-| M2-E3-T19 | Tela Diagnóstico (doctor) com correções permitidas, 'Encerrar' e exportação | todo | — | |
+| M2-E3-T19 | Tela Diagnóstico (doctor) com correções permitidas, 'Encerrar' e exportação | doing | feature/M2-E3-T19-diagnostics-screen | |
 | M2-E3-T20 | Aba 'Ambiente' do site (visualizador de `.env` com segredos mascarados) | todo | — | |
 | M2-E3-T21 | Gate do E3 (checklist entre telas, smoke live, STATUS) | todo | — | |
 | M2-E5-T1 | Desenho das métricas v1: ADR-0044, docs e contratos aditivos | done | feature/M2-E5-T1-metrics-design-contracts | [ADR-0044](adr/0044-metrics-v1.md) (13 decisões com contexto/decisão/alternativas/consequências); docs 14 §2-§8 (+§3.5 persistência, §3.6 API/orçamento de CPU), 01 §3, 06 §2.1, 09. Contratos aditivos na 1.1: `SiteStatsDto` (+bytes, classes de status, php p50/p90/p99, workers, processos, `last_request_at`, `metrics_enabled`, `from`), `StatsParams.from/to`, `stats.series`/`stats.routes` (T9), `TopDto.machine`, `SiteDto.pool_mode/metrics_enabled`, `sites.pool_mode` (job)/`sites.metrics` (T11), com template, golden e stub no clap; `NOT_IMPLEMENTED` por tarefa (T8/T9/T11); `arch-guard` regra 3 (`forge-metrics` só `forge-core`); round trips com JSON 1.0 em `forge-ipc/tests/e5_dtos.rs` |
