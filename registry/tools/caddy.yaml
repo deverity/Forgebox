@@ -107,6 +107,10 @@ spec:
             bytes: /size
             method: /request/method
             uri: { pointer: /request/uri, strip_query: true }
+            # Measured with Caddy 2.11.7 (docs/14 section 3.8): the log is opened without
+            # FILE_SHARE_DELETE, so renaming it from outside fails with a sharing violation.
+            # Caddy's own roll (lumberjack: access-<time>-size.json.gz) is followed by the
+            # tailer without losing a line; the daemon never touches the file.
             rotate:
               max_size: 50MB                             # roll_size/roll_keep in Caddyfile.j2
               keep: 5

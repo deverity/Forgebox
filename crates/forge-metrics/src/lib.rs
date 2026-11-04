@@ -42,9 +42,9 @@ pub mod hist;
 mod parse;
 pub mod persist;
 mod record;
+pub mod rotate;
 mod route;
 mod router;
-pub mod rotate;
 pub mod service;
 pub mod tail;
 

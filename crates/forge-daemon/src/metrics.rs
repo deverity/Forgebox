@@ -13,23 +13,29 @@
 //!   site's dedicated pool (`pool_mode: dedicated`) goes as `PoolMode::Dedicated`, so its
 //!   CPU/RAM are exact (`approx = false`);
 //! * **switch**: `[metrics] enabled`, off by default in a portable root unless the user set
-//!   it ([`enabled_for`]).
+//!   it ([`enabled_for`]);
+//! * **rotation** (M2-E5-T12, docs/14 section 3.8): [`rotate_loop`] applies the manifest's
+//!   `logs[].access.rotate` of the running instances ([`rotation_targets`], [`run_rotation`]).
 //!
 //! [`initial_sync`] is a boot step (after the web servers start); [`feed_loop`] is a
 //! scheduler task that reacts to `site.*`, `service.*` and `config.changed` (debounced) and
 //! refreshes the pool samples every 10 s. Every set replaces the whole state, so a message
 //! lost to a full mailbox is repaired by the next one.
 
-use std::path::Path;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use forge_core::config::ForgeConfig;
 use forge_core::event::{EventKind, StreamItem};
-use forge_core::ids::SiteId;
+use forge_core::ids::{InstanceId, SiteId};
 use forge_core::paths::ForgeRoot;
 use forge_fcgi::PoolMetrics;
 use forge_ipc::api::ConfigChangedPayload;
-use forge_manifest::schema::tool::{AccessMulti, AccessSpec, AccessUnit};
+use forge_manifest::schema::tool::{
+    AccessMulti, AccessRotate, AccessSpec, AccessUnit, Reload, RotateStrategy,
+};
+use forge_metrics::rotate::{self, Check, RotatePolicy, Rotator, Strategy};
 use forge_metrics::{
     AccessFormat, FieldMap, LogSource, Multi, PoolFeed, PoolMode, PoolSample, SiteRoute, Unit,
     UpstreamMap,
@@ -46,6 +52,10 @@ pub const FEED_INTERVAL: Duration = Duration::from_secs(10);
 const DEBOUNCE: Duration = Duration::from_millis(300);
 /// Budget of the boot step.
 const BOOT_SYNC: Duration = Duration::from_secs(5);
+/// How often the sizes of the access logs are looked at.
+pub const ROTATE_INTERVAL: Duration = Duration::from_secs(5);
+/// Budget of one rotation step (the renames, or the reopen command with its own timeouts).
+const ROTATE_STEP: Duration = Duration::from_secs(45);
 
 /// Whether metrics are collected with `config` in `root`: the explicit `[metrics] enabled`,
 /// else on, except in a portable root (docs/14 §3, docs/08 §2.2).
@@ -92,9 +102,18 @@ pub fn source_key(root: &ForgeRoot, path: &Path) -> String {
     forge_core::paths::posix_string(rel)
 }
 
-/// The access logs of the instances that run now.
-pub async fn sources(daemon: &Daemon) -> Vec<LogSource> {
-    let mut out: Vec<LogSource> = Vec::new();
+/// An access log of an instance that runs now.
+struct AccessLog {
+    instance: InstanceId,
+    key: String,
+    path: PathBuf,
+    access: AccessSpec,
+}
+
+/// The `logs[].access` blocks of the running instances, the path substituted with the
+/// instance's variables. Two instances writing the same file are one log.
+async fn running_access_logs(daemon: &Daemon) -> Vec<AccessLog> {
+    let mut out: Vec<AccessLog> = Vec::new();
     for (entry, status) in daemon.services.statuses().await {
         let running = status
             .as_ref()
@@ -120,18 +139,222 @@ pub async fn sources(daemon: &Daemon) -> Vec<LogSource> {
                 }
             };
             let key = source_key(&daemon.root, &path);
-            // Two instances writing the same file are one source.
-            if out.iter().any(|s| s.key == key) {
+            if out.iter().any(|l| l.key == key) {
                 continue;
             }
-            out.push(LogSource {
+            out.push(AccessLog {
+                instance: entry.row.id,
                 key,
                 path,
-                format: access_format(access),
+                access: access.clone(),
             });
         }
     }
     out
+}
+
+/// The access logs of the instances that run now.
+pub async fn sources(daemon: &Daemon) -> Vec<LogSource> {
+    running_access_logs(daemon)
+        .await
+        .into_iter()
+        .map(|log| LogSource {
+            key: log.key,
+            path: log.path,
+            format: access_format(&log.access),
+        })
+        .collect()
+}
+
+/// An access log the daemon keeps from growing (docs/14 section 3.8).
+#[derive(Debug, Clone)]
+pub struct RotationTarget {
+    /// Same key as the metrics source (path relative to the root).
+    pub key: String,
+    pub path: PathBuf,
+    pub policy: RotatePolicy,
+    /// The instance that writes the file, told to reopen it after the rename.
+    pub instance: InstanceId,
+    /// `access.rotate.reopen`; only used by `rename-reopen`.
+    pub reopen: Option<Reload>,
+}
+
+/// The manifest's `access.rotate` as a policy (absent: `none`, with the default size for
+/// the warning). An unreadable `max_size` falls back to the default; the manifest linter
+/// already rejects it.
+pub fn rotation_policy(rotate: Option<&AccessRotate>) -> RotatePolicy {
+    let Some(rotate) = rotate else {
+        return RotatePolicy::new(Strategy::None, None, None);
+    };
+    let strategy = match rotate.strategy {
+        RotateStrategy::RenameReopen => Strategy::RenameReopen,
+        RotateStrategy::SelfRotating => Strategy::SelfRotating,
+        RotateStrategy::None => Strategy::None,
+    };
+    let max_size = rotate
+        .max_size
+        .as_deref()
+        .and_then(forge_manifest::parse::parse_size);
+    RotatePolicy::new(strategy, max_size, Some(rotate.keep))
+}
+
+/// The rotation of every access log of the running instances (including `self` and `none`
+/// ones: the first is left alone, the second is watched).
+pub async fn rotation_targets(daemon: &Daemon) -> Vec<RotationTarget> {
+    running_access_logs(daemon)
+        .await
+        .into_iter()
+        .map(|log| RotationTarget {
+            key: log.key,
+            path: log.path,
+            policy: rotation_policy(log.access.rotate.as_ref()),
+            instance: log.instance,
+            reopen: log.access.rotate.as_ref().and_then(|r| r.reopen.clone()),
+        })
+        .collect()
+}
+
+/// What the blocking half of one rotation step decided.
+enum Step {
+    Idle,
+    Warn {
+        size: u64,
+        limit: u64,
+    },
+    /// Renamed (or a reopen is still owed): tell the server.
+    Reopen {
+        renamed_size: Option<u64>,
+    },
+    /// The rename failed; the next try is after the given wait.
+    RenameFailed {
+        error: String,
+        wait: Duration,
+    },
+}
+
+/// The reopen of a [`RotationTarget`]: `Ok(true)` when a running instance was told,
+/// `Ok(false)` when it is not running.
+pub type ReopenFuture = futures::future::BoxFuture<'static, forge_core::error::Result<bool>>;
+
+/// One pass over `targets`: renames the files that reached their `max_size` (in
+/// `spawn_blocking`), runs `reopen` for them (the daemon passes the instance's reload path,
+/// [`crate::services::ServiceManager::apply_reopen`]) and warns about the `none` ones that
+/// grew past 4x `max_size`. A failed rename or reopen backs off (5 s doubling to 10 min) and
+/// is tried again; `reopen` returning `Ok(false)` (instance not running) counts as done: the
+/// next start opens a new file.
+pub async fn run_rotation<F>(rotator: &Arc<Mutex<Rotator>>, targets: &[RotationTarget], reopen: F)
+where
+    F: Fn(RotationTarget) -> ReopenFuture,
+{
+    {
+        let paths: Vec<&Path> = targets.iter().map(|t| t.path.as_path()).collect();
+        if let Ok(mut r) = rotator.lock() {
+            r.retain(&paths);
+        }
+    }
+    for target in targets {
+        let step = {
+            let rotator = Arc::clone(rotator);
+            let (path, policy) = (target.path.clone(), target.policy);
+            forge_core::runtime::spawn_blocking_timeout(
+                "access log rotation",
+                ROTATE_STEP,
+                move || {
+                    // The lock lives inside the blocking closure: never across an `.await`.
+                    let mut r = rotator.lock().map_err(|_| {
+                        forge_core::error::ForgeError::Internal("rotator lock".into())
+                    })?;
+                    let now = Instant::now();
+                    Ok(match r.check(&path, &policy, now) {
+                        Check::Idle => Step::Idle,
+                        Check::Warn { size, limit } => Step::Warn { size, limit },
+                        Check::Reopen => Step::Reopen { renamed_size: None },
+                        Check::Rotate { size } => match rotate::rotate_files(&path, policy.keep) {
+                            Ok(()) => {
+                                r.rotated(&path, now);
+                                Step::Reopen {
+                                    renamed_size: Some(size),
+                                }
+                            }
+                            Err(e) => Step::RenameFailed {
+                                error: e.to_string(),
+                                wait: r.failed(&path, now),
+                            },
+                        },
+                    })
+                },
+            )
+            .await
+        };
+        match step {
+            Ok(Step::Idle) => {}
+            Ok(Step::Warn { size, limit }) => tracing::warn!(
+                log = %target.key, size, limit,
+                "metrics: access log is not rotated (strategy none) and grew past 4x max_size"
+            ),
+            Ok(Step::RenameFailed { error, wait }) => tracing::warn!(
+                log = %target.key, %error, retry_in = ?wait,
+                "metrics: access log could not be renamed for rotation"
+            ),
+            Ok(Step::Reopen { renamed_size }) => {
+                if let Some(size) = renamed_size {
+                    tracing::info!(log = %target.key, size, keep = target.policy.keep, "metrics: access log rotated");
+                }
+                let result = tokio::time::timeout(ROTATE_STEP, reopen(target.clone())).await;
+                let Ok(mut r) = rotator.lock() else {
+                    continue;
+                };
+                match result {
+                    Ok(Ok(_)) => r.reopened(&target.path),
+                    Ok(Err(err)) => {
+                        let wait = r.failed(&target.path, Instant::now());
+                        tracing::warn!(log = %target.key, %err, retry_in = ?wait, "metrics: the server did not reopen its access log");
+                    }
+                    Err(_) => {
+                        let wait = r.failed(&target.path, Instant::now());
+                        tracing::warn!(log = %target.key, retry_in = ?wait, "metrics: reopening the access log timed out");
+                    }
+                }
+            }
+            Err(err) => tracing::warn!(log = %target.key, %err, "metrics: rotation step failed"),
+        }
+    }
+}
+
+/// Scheduler task: every [`ROTATE_INTERVAL`], rotates the access logs of the running
+/// instances by their manifests (no per-tool code) until `stop`.
+pub async fn rotate_loop(daemon: Daemon, stop: CancellationToken) {
+    let rotator = Arc::new(Mutex::new(Rotator::default()));
+    let mut tick = tokio::time::interval(ROTATE_INTERVAL);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            () = stop.cancelled() => return,
+            _ = tick.tick() => {}
+        }
+        let targets = rotation_targets(&daemon).await;
+        if targets.is_empty() {
+            continue;
+        }
+        let processes = Arc::clone(daemon.platform.processes());
+        let reopen = |target: RotationTarget| -> ReopenFuture {
+            let (services, processes) = (daemon.services.clone(), Arc::clone(&processes));
+            Box::pin(async move {
+                match &target.reopen {
+                    Some(reopen) => {
+                        services
+                            .apply_reopen(target.instance, reopen, &processes)
+                            .await
+                    }
+                    None => Ok(true),
+                }
+            })
+        };
+        tokio::select! {
+            () = stop.cancelled() => return,
+            () = run_rotation(&rotator, &targets, reopen) => {}
+        }
+    }
 }
 
 /// Every site with its names and switch.

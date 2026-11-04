@@ -153,9 +153,7 @@ impl Rotator {
                     return Check::Idle;
                 }
                 match std::fs::metadata(path) {
-                    Ok(meta) if meta.len() >= policy.max_size => {
-                        Check::Rotate { size: meta.len() }
-                    }
+                    Ok(meta) if meta.len() >= policy.max_size => Check::Rotate { size: meta.len() },
                     _ => Check::Idle,
                 }
             }
@@ -184,9 +182,7 @@ impl Rotator {
         let state = self.files.entry(path.to_path_buf()).or_default();
         state.failures = state.failures.saturating_add(1);
         let shift = (state.failures - 1).min(10);
-        let wait = FIRST_BACKOFF
-            .saturating_mul(1u32 << shift)
-            .min(MAX_BACKOFF);
+        let wait = FIRST_BACKOFF.saturating_mul(1u32 << shift).min(MAX_BACKOFF);
         state.blocked_until = Some(now + wait);
         wait
     }

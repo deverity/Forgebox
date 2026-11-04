@@ -141,9 +141,12 @@ spec:
             method: /m
             uri: { pointer: /u }                         # $uri has no query string
             upstream: /up
+            # Measured with nginx 1.30.6 (docs/14 section 3.8): the log is opened with
+            # FILE_SHARE_DELETE, so the daemon renames it while nginx writes, and
+            # `-s reopen` makes the workers create a new one without losing a line.
             rotate:
-              max_size: 50MB
-              keep: 5
+              max_size: 64MB
+              keep: 1
               strategy: rename-reopen
               reopen: { command: "nginx.exe -s reopen -p {{ paths.version }} -c {{ instance.config.nginx_conf }}" }
       autostart: true
