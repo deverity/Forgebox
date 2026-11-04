@@ -12,7 +12,7 @@ export const BUTTON_VARIANTS: readonly ButtonVariant[] = [
 ];
 
 export const BUTTON_VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-fg-on-accent border-transparent hover:opacity-90 active:opacity-80",
+  primary: "bg-accent text-fg-on-accent border-transparent hover:bg-accent-hover active:bg-accent-pressed",
   secondary:
     "bg-surface text-fg-primary border-stroke-strong hover:bg-surface-2 active:bg-surface-2",
   ghost: "bg-transparent text-fg-primary border-transparent hover:bg-surface-2 active:bg-surface-2",

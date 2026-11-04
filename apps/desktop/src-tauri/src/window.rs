@@ -450,6 +450,9 @@ struct Inner {
     window_state: WindowStateFile,
     /// Last normal (not maximized/minimized) outer position + inner size.
     normal: Option<Rect>,
+    /// Minimum inner size (logical) last applied, so a move only calls the OS when the
+    /// monitor it lands on changes it ([`needs_min_size_update`]).
+    min_size: Option<(f64, f64)>,
 }
 
 impl WindowShell {
@@ -483,6 +486,7 @@ impl WindowShell {
                 tray_available: false,
                 window_state: boot.window_state,
                 normal: None,
+                min_size: None,
             }),
         }
     }
@@ -759,12 +763,29 @@ fn monitor_info(monitor: &Monitor) -> MonitorInfo {
     }
 }
 
-/// Applies the minimum size for the monitor the window is on (DPI or monitor change).
-fn update_min_size<R: Runtime>(window: &WebviewWindow<R>) {
-    if let Ok(Some(monitor)) = window.current_monitor() {
-        let info = monitor_info(&monitor);
-        let (w, h) = crate::window_state::min_logical_size(info.work_area, info.scale);
-        let _ = window.set_min_size(Some(tauri::LogicalSize::new(w, h)));
+/// True when `next` differs from the minimum size last applied (pure; see [`update_min_size`]).
+pub fn needs_min_size_update(applied: Option<(f64, f64)>, next: (f64, f64)) -> bool {
+    applied != Some(next)
+}
+
+/// Applies the minimum size min(960x600, work area) of the monitor the window is on
+/// (docs/07 section 4). Runs on a DPI change and on every move, because dragging to a
+/// monitor with another work area but the same scale (a 1366x768 laptop next to a 1080p
+/// screen) fires no scale event; the OS is only called when the value changes.
+fn update_min_size<R: Runtime>(window: &WebviewWindow<R>, shell: &WindowShell) {
+    let Ok(Some(monitor)) = window.current_monitor() else {
+        return;
+    };
+    let info = monitor_info(&monitor);
+    let next = crate::window_state::min_logical_size(info.work_area, info.scale);
+    if !needs_min_size_update(shell.lock().min_size, next) {
+        return;
+    }
+    if window
+        .set_min_size(Some(tauri::LogicalSize::new(next.0, next.1)))
+        .is_ok()
+    {
+        shell.lock().min_size = Some(next);
     }
 }
 
@@ -873,8 +894,12 @@ fn on_window_event<R: Runtime>(app: &AppHandle<R>, event: &WindowEvent) {
     };
     match event {
         WindowEvent::Focused(true) | WindowEvent::ThemeChanged(_) => refresh_appearance(app),
-        WindowEvent::Moved(_) | WindowEvent::Resized(_) => shell.track_normal_rect(&window),
-        WindowEvent::ScaleFactorChanged { .. } => update_min_size(&window),
+        WindowEvent::Moved(_) => {
+            shell.track_normal_rect(&window);
+            update_min_size(&window, &shell);
+        }
+        WindowEvent::Resized(_) => shell.track_normal_rect(&window),
+        WindowEvent::ScaleFactorChanged { .. } => update_min_size(&window, &shell),
         WindowEvent::CloseRequested { api, .. } => {
             shell.save_placement(&window);
             let (close_to_tray, tray) =
@@ -1074,6 +1099,15 @@ pub async fn appearance_get(shell: State<'_, Arc<WindowShell>>) -> Result<Appear
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_minimum_size_is_only_reapplied_when_the_monitor_changes_it() {
+        assert!(needs_min_size_update(None, (960.0, 600.0)));
+        assert!(!needs_min_size_update(Some((960.0, 600.0)), (960.0, 600.0)));
+        // Same scale, other work area (1080p screen -> 1366x768 laptop): no scale event, but
+        // the minimum drops from 960x600 to the area.
+        assert!(needs_min_size_update(Some((960.0, 600.0)), (960.0, 574.0)));
+    }
 
     fn snap() -> AppearanceSnapshot {
         AppearanceSnapshot {

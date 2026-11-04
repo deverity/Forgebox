@@ -82,6 +82,17 @@ describe("colour contrast (WCAG AA)", () => {
     }
   }
 
+  it("fg-on-accent keeps 4.5:1 on the hover and pressed accent fills (F-09)", () => {
+    for (const theme of ["light", "dark", "highContrast"] as const) {
+      const set = colors[theme];
+      for (const fill of ["accent", "accent-hover", "accent-pressed"] as const) {
+        expect(contrast(set["fg-on-accent"], set[fill]), `${theme} ${fill}`).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      }
+    }
+  });
+
   it("high contrast keeps text at AAA (7:1) and UI colours at 3:1", () => {
     const set = colors.highContrast;
     for (const fg of FG) {
@@ -131,6 +142,14 @@ describe("scales", () => {
 
 describe("generated css", () => {
   const css = readFileSync(join(root, "src/design/tokens.css"), "utf8");
+
+  it("the forced-colors block out-ranks the theme and contrast blocks (F-10)", () => {
+    // Specificity (0,2,0) via :root:root; a bare :root lost to data-theme and data-contrast.
+    expect(css).toMatch(
+      /@media \(forced-colors: active\) \{\s+:root:root \{[^}]*--accent: Highlight;/,
+    );
+    expect(css).not.toMatch(/@media \(forced-colors: active\) \{\s+:root \{/);
+  });
 
   it("switches the backgrounds with data-vibrancy and has a high-contrast override", () => {
     expect(css).toMatch(

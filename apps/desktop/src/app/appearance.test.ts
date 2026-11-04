@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  accentStates,
   applyAppearance,
   bootAppearance,
   followAppearance,
@@ -39,6 +40,8 @@ afterEach(() => {
   root.style.removeProperty("--system-accent");
   root.style.removeProperty("--accent");
   root.style.removeProperty("--fg-on-accent");
+  root.style.removeProperty("--accent-hover");
+  root.style.removeProperty("--accent-pressed");
 });
 
 describe("accent", () => {
@@ -62,6 +65,32 @@ describe("accent", () => {
     applyAppearance({ accent: "#FFB900", contrast: "high" });
     expect(root.style.getPropertyValue("--accent")).toBe("");
     expect(root.style.getPropertyValue("--fg-on-accent")).toBe("");
+  });
+});
+
+describe("accent hover and pressed fills", () => {
+  const ratio = (a: string, b: string) => {
+    const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m) as [number, number];
+    return (x + 0.05) / (y + 0.05);
+  };
+  it.each(["#0078D4", "#FFB900", "#E81123", "#00CC6A", "#0071E3", "#0A84FF", "#808080"])(
+    "keeps the text at >= 4.5:1 on %s in every state",
+    (accent) => {
+      const text = onAccentColor(accent) === "white" ? "#FFFFFF" : "#000000";
+      const { hover, pressed } = accentStates(accent);
+      expect(ratio(text, accent)).toBeGreaterThanOrEqual(4.5);
+      expect(ratio(text, hover)).toBeGreaterThanOrEqual(ratio(text, accent));
+      expect(ratio(text, pressed)).toBeGreaterThanOrEqual(ratio(text, hover));
+    },
+  );
+
+  it("sets the tokens and clears them in high contrast", () => {
+    const root = document.documentElement;
+    applyAppearance({ accent: "#0078D4" });
+    expect(root.style.getPropertyValue("--accent-hover")).toMatch(/^#[0-9a-f]{6}$/);
+    expect(root.style.getPropertyValue("--accent-pressed")).toMatch(/^#[0-9a-f]{6}$/);
+    applyAppearance({ accent: "#0078D4", contrast: "high" });
+    expect(root.style.getPropertyValue("--accent-hover")).toBe("");
   });
 });
 

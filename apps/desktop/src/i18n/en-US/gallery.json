@@ -72,5 +72,17 @@
   "kbd": {
     "title": "Kbd",
     "palette": "Open the command palette"
+  },
+  "pathField": {
+    "title": "PathField",
+    "label": "Site folder"
+  },
+  "portField": {
+    "title": "PortField",
+    "label": "HTTP port"
+  },
+  "commandPalette": {
+    "title": "CommandPalette",
+    "open": "Open the palette"
   }
 }

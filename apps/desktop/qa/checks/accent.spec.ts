@@ -1,6 +1,7 @@
 // Text on --accent >= 4.5:1 for the Windows system accents, in both themes.
 import {
   accentContrastViolations,
+  accentStateContrastViolations,
   expect,
   ready,
   routeUrl,
@@ -16,6 +17,16 @@ for (const theme of ["light", "dark"] as const) {
     await page.goto(routeUrl("/__gallery", { theme, vibrancy: "off" }));
     await ready(page);
     expect(await accentContrastViolations(page, PRIMARY)).toEqual([]);
+  });
+}
+
+for (const theme of ["light", "dark"] as const) {
+  test(`primary button text stays >= 4.5:1 hovered and pressed on every system accent (${theme})`, async ({
+    page,
+  }) => {
+    await page.goto(routeUrl("/__gallery", { theme, vibrancy: "off" }));
+    await ready(page);
+    expect(await accentStateContrastViolations(page, PRIMARY)).toEqual([]);
   });
 }
 

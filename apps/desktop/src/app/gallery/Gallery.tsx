@@ -10,6 +10,8 @@ import {
   Combobox,
   IconButton,
   Kbd,
+  PathField,
+  PortField,
   SegmentedControl,
   SERVICE_STATES,
   Select,
@@ -18,11 +20,21 @@ import {
   TextField,
   Toggle,
 } from "../../design/primitives";
+import { CommandPalette } from "../palette/CommandPalette";
+import type { PaletteActions } from "../palette/actions";
+import { P, shows, type GalleryMarker } from "../../design/gallery/marker";
 import { SurfacesGallery } from "../../design/gallery/SurfacesGallery";
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({
+  title,
+  children,
+  ...marker
+}: GalleryMarker & { title: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-3 rounded-card border border-stroke bg-surface p-4">
+    <section
+      {...marker}
+      className="flex flex-col gap-3 rounded-card border border-stroke bg-surface p-4"
+    >
       <h2 className="text-headline">{title}</h2>
       <div className="flex flex-wrap items-start gap-4">{children}</div>
     </section>
@@ -54,8 +66,21 @@ const [LIGHT, DARK, SYSTEM] = ["light", "dark", "system"] as const;
 const SAMPLE_SITE = "app.test";
 const SAMPLE_HOST = "app";
 const SAMPLE_PORT = "80";
+const SAMPLE_PATH = "C:/www/app";
 const KEY_CTRL = "Ctrl";
 const KEY_K = "K";
+// Inert actions: the gallery renders the real palette (rows with/without CLI, shortcut and
+// unavailable reason come from the live capabilities, instances and sites) without side effects.
+const NOOP_PALETTE_ACTIONS: PaletteActions = {
+  goTo: () => undefined,
+  openService: () => undefined,
+  newSite: () => undefined,
+  run: () => Promise.resolve(true),
+  startAll: () => Promise.resolve(true),
+  stopAll: () => Promise.resolve(true),
+  openTerminal: () => Promise.resolve(true),
+  handlers: () => ({}),
+};
 const HOST_RE = /^[a-z0-9-]+$/;
 
 /** `/__gallery`: every control primitive with all variants and states (docs/design/components.md). */
@@ -64,16 +89,19 @@ export default function Gallery() {
   const fmt = createFormatters(i18n.language);
   const MB = 1024 * 1024;
   const [toggle, setToggle] = useState(true);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [memory, setMemory] = useState(256);
   const [theme, setTheme] = useState<string>(SYSTEM);
+  const [path, setPath] = useState(SAMPLE_PATH);
+  const [port, setPort] = useState(SAMPLE_PORT);
   return (
-    <main className="flex h-full flex-col gap-4 overflow-auto bg-canvas p-6 text-fg-primary">
+    <main className="relative flex h-full flex-col gap-4 overflow-auto bg-canvas p-6 text-fg-primary">
       <header>
         <h1 className="text-title-1">{t("title")}</h1>
         <p className="text-callout text-fg-secondary">{t("intro")}</p>
       </header>
 
-      <Section title={t("button.title")}>
+      <Section title={t("button.title")} {...shows(P.Button)}>
         {BUTTON_VARIANTS.map((variant) => (
           <div
             key={variant}
@@ -91,7 +119,7 @@ export default function Gallery() {
         ))}
       </Section>
 
-      <Section title={t("iconButton.title")}>
+      <Section title={t("iconButton.title")} {...shows(P.IconButton)}>
         {BUTTON_VARIANTS.map((variant) => (
           <IconButton
             key={variant}
@@ -104,14 +132,14 @@ export default function Gallery() {
         <IconButton label={t("iconButton.loading")} icon={<RefreshIcon />} loading />
       </Section>
 
-      <Section title={t("toggle.title")}>
+      <Section title={t("toggle.title")} {...shows(P.Toggle)}>
         <Toggle label={t("toggle.autoStart")} checked={toggle} onCheckedChange={setToggle} />
         <Toggle label={t("toggle.off")} defaultChecked={false} />
         <Toggle label={t("toggle.disabled")} disabled />
         <Toggle label={t("toggle.disabled")} disabled defaultChecked />
       </Section>
 
-      <Section title={t("select.title")}>
+      <Section title={t("select.title")} {...shows(P.Select)}>
         <Select
           label={t("select.label")}
           options={PHP_VERSIONS}
@@ -121,7 +149,7 @@ export default function Gallery() {
         <Select label={t("select.disabled")} options={PHP_VERSIONS} defaultValue="8.3" disabled />
       </Section>
 
-      <Section title={t("combobox.title")}>
+      <Section title={t("combobox.title")} {...shows(P.Combobox)}>
         <Combobox
           label={t("combobox.label")}
           options={SITES}
@@ -137,7 +165,7 @@ export default function Gallery() {
         />
       </Section>
 
-      <Section title={t("segmented.title")}>
+      <Section title={t("segmented.title")} {...shows(P.SegmentedControl)}>
         <SegmentedControl
           label={t("segmented.label")}
           value={theme}
@@ -159,7 +187,7 @@ export default function Gallery() {
         />
       </Section>
 
-      <Section title={t("slider.title")}>
+      <Section title={t("slider.title")} {...shows(P.Slider)}>
         <Slider
           label={t("slider.label")}
           min={64}
@@ -175,7 +203,7 @@ export default function Gallery() {
         <Slider label={t("slider.disabled")} defaultValue={128} disabled />
       </Section>
 
-      <Section title={t("textField.title")}>
+      <Section title={t("textField.title")} {...shows(P.TextField)}>
         <TextField
           label={t("textField.label")}
           hint={t("textField.hint")}
@@ -190,7 +218,20 @@ export default function Gallery() {
         <TextField label={t("textField.disabled")} defaultValue={SAMPLE_HOST} disabled />
       </Section>
 
-      <Section title={t("badge.title")}>
+      <Section title={t("pathField.title")} {...shows(P.PathField)}>
+        <PathField
+          label={t("pathField.label")}
+          value={path}
+          onChange={setPath}
+          showDisabledBrowse
+        />
+      </Section>
+
+      <Section title={t("portField.title")} {...shows(P.PortField)}>
+        <PortField label={t("portField.label")} value={port} onChange={setPort} protocol="tcp" />
+      </Section>
+
+      <Section title={t("badge.title")} {...shows(P.Badge)}>
         {BADGE_TONES.map((tone) => (
           <Badge key={tone} tone={tone}>
             {t(`badge.${tone}`)}
@@ -198,16 +239,31 @@ export default function Gallery() {
         ))}
       </Section>
 
-      <Section title={t("statusDot.title")}>
+      <Section title={t("statusDot.title")} {...shows(P.StatusDot)}>
         {SERVICE_STATES.map((state) => (
           <StatusDot key={state} state={state} showLabel />
         ))}
       </Section>
 
-      <Section title={t("kbd.title")}>
+      <Section title={t("kbd.title")} {...shows(P.Kbd)}>
         <span className="inline-flex items-center gap-1 text-callout text-fg-secondary">
           <Kbd>{KEY_CTRL}</Kbd>+<Kbd>{KEY_K}</Kbd> {t("kbd.palette")}
         </span>
+      </Section>
+
+      <Section title={t("commandPalette.title")} {...shows(P.CommandPalette)}>
+        <Button
+          onClick={() => {
+            setPaletteOpen(true);
+          }}
+        >
+          {t("commandPalette.open")}
+        </Button>
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          actions={NOOP_PALETTE_ACTIONS}
+        />
       </Section>
 
       <SurfacesGallery />
