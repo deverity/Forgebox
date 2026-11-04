@@ -145,8 +145,6 @@ query:
 pending:
   - method: fs_parity.case_convert
     task: M2-E3-T18
-  - method: fs_parity.case_disable
-    task: M2-E3-T18
   - method: fs_parity.case_enable
     task: M2-E3-T18
   - method: fs_parity.lint_case

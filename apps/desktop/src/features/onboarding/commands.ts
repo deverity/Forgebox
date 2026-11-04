@@ -1,7 +1,7 @@
 // The `forge` commands equivalent to what the wizard does (docs/07 section 1.7), rendered by
 // the same actions the wizard runs so the panel can never drift from the real calls.
 import { enableDns, installCa, addToPath } from "../../actions/diagnostics";
-import { parkDirectory } from "../../actions/onboarding";
+import { disableCaseSensitivity, parkDirectory } from "../../actions/onboarding";
 import { setConfig } from "../../actions/system";
 import { installTools } from "../../actions/tools";
 import { DEFAULT_TLD, normalizeTld, type Choices, type RunStepId } from "./model";
@@ -48,6 +48,10 @@ export function equivalentCommands(
   for (const id of options.steps) {
     const command = stepCommand(id, options.specs);
     if (command !== null) rows.push({ id, command });
+    if (id === "parity") {
+      const disable = disableCaseSensitivity.cli({ dir: choices.parkedDir });
+      if (disable !== null) rows.push({ id: "parity-dir", command: disable });
+    }
   }
   return rows;
 }

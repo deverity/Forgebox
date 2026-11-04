@@ -45,6 +45,8 @@ export function RootStep({ wizard, onDone }: { wizard: Wizard; onDone: () => voi
         await onboardingNative().chooseRoot(root, api);
         applied.root = root;
         update({ applied: { ...applied } });
+        // The progress is now keyed by the new root: carry the whole step over (see persistAll).
+        await wizard.persistAll();
       }
       if (applied.tld !== tld && !(applied.tld === "" && tld === DEFAULT_TLD)) {
         await runAction(

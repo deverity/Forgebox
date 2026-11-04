@@ -367,6 +367,120 @@ describe("Onboarding wizard", () => {
     }, WAIT);
     const sets = h.fake.calls.filter((call) => call.method === "system.config_set");
     expect(sets.map((call) => call.params)).toEqual([{ key: "case_sensitive", value: false }]);
+    // The flag of the (still empty) parked folder is cleared right after, so new projects are
+    // not case-sensitive by inheritance.
+    expect(
+      firstOrder(methods(h), ["system.config_set", "fs_parity.case_disable", "tools.plan"]),
+    ).toEqual(["system.config_set", "fs_parity.case_disable"]);
+    const order = methods(h);
+    expect(order.indexOf("fs_parity.case_disable")).toBeGreaterThan(
+      order.indexOf("system.config_set"),
+    );
+    expect(h.fake.calls.find((call) => call.method === "fs_parity.case_disable")?.params).toEqual({
+      dir: "C:/Forgebox/www",
+    });
+  });
+
+  it("keeps a non-default root, TLD and parked folder when the wizard is reopened", async () => {
+    const first = await open();
+    const user = countingUser();
+    const root = await screen.findByRole("textbox", { name: "Root folder" }, WAIT);
+    await user.raw.clear(root);
+    await user.raw.type(root, "D:/Dev/Forgebox");
+    const parked = screen.getByRole("textbox", { name: "Folder for your sites" });
+    await user.raw.clear(parked);
+    await user.raw.type(parked, "D:/Sites");
+    const tld = screen.getByRole("textbox", { name: "Local domain (TLD)" });
+    await user.raw.clear(tld);
+    await user.raw.type(tld, "dev.test");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("radio", { name: /Empty/ }, WAIT));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { level: 2, name: "Permissions and parity" }, WAIT);
+
+    const { native } = first;
+    expect(native.chosen).toBe("D:/Dev/Forgebox");
+    cleanup();
+    await harness?.layer.dispose();
+    harness = null;
+    setOnboardingNativeForTest(native);
+    const data = populatedData();
+    harness = await renderApp({
+      path: "/onboarding",
+      data,
+      extra: {
+        notImplemented: [],
+        handlers: {
+          ...siteHandlers({ instances: [], sites: [], tools: [], daemon: data.daemon }),
+          ...createOnboardingQa({ instances: [], sites: [], tools: [], daemon: data.daemon }, {})
+            .handlers,
+        },
+      },
+    });
+    await screen.findByRole("heading", { level: 2, name: "Permissions and parity" }, WAIT);
+    // Back to step 1 shows the values and Continue repeats nothing.
+    const before = harness.fake.calls.length;
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Back" }, WAIT));
+    expect(await screen.findByRole("textbox", { name: "Root folder" }, WAIT)).toHaveValue(
+      "D:/Dev/Forgebox",
+    );
+    expect(screen.getByRole("textbox", { name: "Folder for your sites" })).toHaveValue("D:/Sites");
+    expect(screen.getByRole("textbox", { name: "Local domain (TLD)" })).toHaveValue("dev.test");
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { level: 2, name: "What will you build?" }, WAIT);
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByRole("heading", { level: 2, name: "Permissions and parity" }, WAIT);
+    const added = harness.fake.calls
+      .slice(before)
+      .map((call) => call.method)
+      .filter((method) => method === "system.config_set" || method === "sites.park");
+    expect(added).toEqual([]);
+    await userEvent.click(screen.getByRole("button", { name: "Install and set up" }));
+    await waitFor(() => {
+      expect(step("ca")?.dataset.status).toBe("done");
+    }, WAIT);
+    const commands = [...document.querySelectorAll("[data-testid=commands] [data-forge-cli]")].map(
+      (el) => el.getAttribute("data-forge-cli"),
+    );
+    expect(commands).toContain("forge park D:/Sites --tld .dev.test");
+    expect(commands).toContain("forge config set tld .dev.test");
+  });
+
+  describe("resume from the app shell", () => {
+    async function openAt(entry: MemoryNativeOptions["entry"]) {
+      const native = createMemoryNative(entry === undefined ? {} : { entry });
+      setOnboardingNativeForTest(native);
+      const data = populatedData();
+      const qaData = { instances: [], sites: [], tools: [], daemon: data.daemon };
+      harness = await renderApp({
+        path: "/dashboard",
+        data,
+        extra: {
+          notImplemented: [],
+          handlers: { ...siteHandlers(qaData), ...createOnboardingQa(qaData, {}).handlers },
+        },
+      });
+      return harness;
+    }
+
+    it("goes back to the wizard when it was closed half way", async () => {
+      const h = await openAt({ step: "options", done: false });
+      await screen.findByRole("heading", { level: 2, name: "Permissions and parity" }, WAIT);
+      expect(h.router.state.location.pathname).toBe("/onboarding");
+    });
+
+    it("stays on the dashboard when the onboarding is done", async () => {
+      const h = await openAt({ step: "options", done: true });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(h.router.state.location.pathname).toBe("/dashboard");
+    });
+
+    it("stays on the dashboard when it never started", async () => {
+      const h = await openAt({ step: "", done: false });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(h.router.state.location.pathname).toBe("/dashboard");
+    });
   });
 
   it("creates the first site from a typed folder and lists every equivalent command", async () => {

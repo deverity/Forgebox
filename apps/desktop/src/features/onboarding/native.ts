@@ -88,16 +88,24 @@ export function createMemoryNative(options: MemoryNativeOptions = {}): Onboardin
 } {
   const source = options.source ?? "default";
   const changeable = source === "default" || source === "root_toml";
-  let entry: OnboardingEntry = {
-    step: "",
-    choices: {},
-    done: false,
-    ...options.entry,
-  };
+  // Like `key_for` in src-tauri/src/onboarding.rs, the progress is keyed by the current root
+  // (`chooseRoot` switches the key to the chosen path), so a copy that is missing shows up.
+  const initialRoot = options.root ?? "C:/Forgebox";
+  let currentRoot = initialRoot;
+  const entries = new Map<string, OnboardingEntry>();
+  const blank = (): OnboardingEntry => ({ step: "", choices: {}, done: false });
+  const fold = (root: string) => root.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+  const entryOf = (): OnboardingEntry => entries.get(fold(currentRoot)) ?? blank();
+  entries.set(fold(initialRoot), { ...blank(), ...options.entry });
   if (options.persist === true) {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored !== null) entry = JSON.parse(stored) as OnboardingEntry;
+      if (stored !== null) {
+        const parsed = JSON.parse(stored) as { root: string; entries: [string, OnboardingEntry][] };
+        currentRoot = parsed.root;
+        entries.clear();
+        for (const [key, value] of parsed.entries) entries.set(key, value);
+      }
     } catch {
       /* no storage: in-memory only */
     }
@@ -110,7 +118,10 @@ export function createMemoryNative(options: MemoryNativeOptions = {}): Onboardin
   const save = () => {
     if (options.persist !== true) return;
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entry));
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ root: currentRoot, entries: [...entries] }),
+      );
     } catch {
       /* ignore */
     }
@@ -124,12 +135,12 @@ export function createMemoryNative(options: MemoryNativeOptions = {}): Onboardin
       Promise.resolve({
         context,
         local: options.local ?? true,
-        root: options.local === false ? null : (options.root ?? "C:/Forgebox"),
+        root: options.local === false ? null : currentRoot,
         source: options.local === false ? null : source,
         root_initialized: false,
         daemon_reachable: false,
-        onboarding_done: entry.done,
-        show_root_step: (options.local ?? true) && !entry.done && changeable,
+        onboarding_done: entryOf().done,
+        show_root_step: (options.local ?? true) && !entryOf().done && changeable,
       }),
     async chooseRoot(path: string, api: ForgeApi) {
       if (options.rejectRoot !== undefined) {
@@ -140,20 +151,23 @@ export function createMemoryNative(options: MemoryNativeOptions = {}): Onboardin
         });
       }
       fake.chosen = path;
+      currentRoot = path;
       await api.start({ initialize: true });
       return { root: path };
     },
-    get: (): Promise<OnboardingEntry> => Promise.resolve(structuredClone(entry)),
+    get: (): Promise<OnboardingEntry> => Promise.resolve(structuredClone(entryOf())),
     set: (_context: string, patch: OnboardingPatch): Promise<OnboardingEntry> => {
+      const entry = entryOf();
       const merged = { ...entry.choices, ...patch.choices };
       const choices = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== null));
-      entry = {
+      const next: OnboardingEntry = {
         step: patch.step ?? entry.step,
         choices,
         done: patch.done ?? entry.done,
       };
+      entries.set(fold(currentRoot), next);
       save();
-      return Promise.resolve(structuredClone(entry));
+      return Promise.resolve(structuredClone(next));
     },
     autostart: (): Promise<AutostartStatus> => Promise.resolve({ ...autostart }),
     setAutostart: (enabled: boolean): Promise<AutostartStatus> => {

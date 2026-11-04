@@ -59,6 +59,7 @@ export function OnboardingPage() {
   const run = useSetupRun({
     stack: choices.stack,
     versions: choices.versions,
+    parkedDir: choices.parkedDir,
     steps: runPlan(choices, {
       pathAvailable: wizard.pathAvailable,
       autostartAvailable: wizard.autostart !== null,

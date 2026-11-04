@@ -37,6 +37,12 @@ export interface Wizard {
   step: StepId;
   choices: Choices;
   update: (patch: Partial<Choices>) => void;
+  /**
+   * Writes the whole current step-1 state (and the step) in one `onboarding_set`. Needed right
+   * after `choose_root`: the native store keys the progress per root, so what was typed while
+   * the old root was current has to be copied to the new key.
+   */
+  persistAll: (step?: StepId) => Promise<void>;
   go: (step: StepId) => void;
   /** Marks the onboarding done and clears the stored step. */
   finish: () => Promise<void>;
@@ -54,6 +60,7 @@ export function useWizard(): Wizard {
   const [ready, setReady] = useState(false);
   // The source of truth between renders: `update` writes it before it asks React to render.
   const choicesRef = useRef(choices);
+  const stepRef = useRef<StepId>("root");
 
   useEffect(() => {
     let alive = true;
@@ -69,11 +76,11 @@ export function useWizard(): Wizard {
         setChoices(loaded);
         const showRoot = state.local && state.show_root_step;
         const first = visibleSteps(showRoot)[0] ?? "stack";
-        setStep(
-          isStepId(entry.step) && visibleSteps(showRoot).includes(entry.step) && !entry.done
+        const initial = isStepId(entry.step) && visibleSteps(showRoot).includes(entry.step) && !entry.done
             ? entry.step
-            : first,
-        );
+            : first;
+        stepRef.current = initial;
+        setStep(initial);
         setReady(true);
       },
       (error: unknown) => {
@@ -116,8 +123,26 @@ export function useWizard(): Wizard {
     [context],
   );
 
+  const persistAll = useCallback(
+    async (target?: StepId) => {
+      const current = choicesRef.current;
+      await onboardingNative().set(context, {
+        choices: {
+          root: current.root,
+          parkedDir: current.parkedDir,
+          parkedEdited: current.parkedEdited,
+          tld: current.tld,
+          applied: current.applied,
+        },
+        step: target ?? stepRef.current,
+      });
+    },
+    [context],
+  );
+
   const go = useCallback(
     (target: StepId) => {
+      stepRef.current = target;
       setStep(target);
       void onboardingNative()
         .set(context, { step: target })
@@ -146,6 +171,7 @@ export function useWizard(): Wizard {
     step: steps.includes(step) ? step : (steps[0] ?? "stack"),
     choices,
     update,
+    persistAll,
     go,
     finish,
   };

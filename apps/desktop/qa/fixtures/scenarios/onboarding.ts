@@ -87,6 +87,15 @@ export function createOnboardingQa(data: QaData, options: OnboardingQaOptions = 
       });
     },
     "system.config_set": ({ key, value }) => ({ key, value, is_default: false }),
+    "fs_parity.case_disable": ({ dir }) => ({
+      dir,
+      supported: true,
+      enabled: false,
+      fs_type: "NTFS",
+      os_build: 19045,
+      win_version_ok: true,
+      reason: null,
+    }),
     "sites.park": ({ dir, tld }) => ({ dir, tld: tld ?? ".test", sites: 0 }),
     "shell.path_add": () => ({
       entries: ["C:/Forgebox/bin/php/current"],

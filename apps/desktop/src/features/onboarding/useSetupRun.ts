@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { runAction, startJobAction } from "../../actions/registry";
 import { addToPath, enableDns, installCa } from "../../actions/diagnostics";
+import { disableCaseSensitivity } from "../../actions/onboarding";
 import { setConfig } from "../../actions/system";
 import { installTools } from "../../actions/tools";
 import { newIntent } from "../../ipc/api";
@@ -40,6 +41,8 @@ export interface SetupRunInput {
   stack: string | null;
   versions: Readonly<Record<string, string>>;
   steps: readonly RunStepId[];
+  /** The parked folder, whose case-sensitive flag the parity step clears. */
+  parkedDir: string;
 }
 
 const METHOD_OF: Record<RunStepId, string> = {
@@ -142,6 +145,14 @@ export function useSetupRun(input: SetupRunInput): SetupRun {
               runtime.queue,
               setConfig,
               { key: "case_sensitive", value: false },
+              intent,
+            );
+            // The folders were created case-sensitive by step 1 and NTFS children inherit the
+            // flag; the parked folder is still empty, so clearing it cannot conflict.
+            await runAction(
+              runtime.queue,
+              disableCaseSensitivity,
+              { dir: inputRef.current.parkedDir },
               intent,
             );
             break;

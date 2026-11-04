@@ -90,6 +90,7 @@ const SAMPLES: Record<string, unknown[]> = {
     { site: "loja.test", driver: "laravel" },
     { site: "loja.test", driver: null },
   ],
+  "onboarding.case_disable": [{ dir: String.raw`C:/Forgebox/www` }],
   "onboarding.park": [{ dir: String.raw`C:/Forgebox/www`, tld: ".test" }],
   "tools.install_spec": ["php@8.4"],
   "mail.mark_read": [

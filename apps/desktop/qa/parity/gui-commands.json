@@ -211,6 +211,19 @@
     ]
   },
   {
+    "action": "onboarding.case_disable",
+    "method": "fs_parity.case_disable",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:/Forgebox/www"
+        },
+        "command": "forge fs case-sensitive disable C:/Forgebox/www"
+      }
+    ]
+  },
+  {
     "action": "onboarding.park",
     "method": "sites.park",
     "kind": "call",
