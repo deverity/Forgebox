@@ -111,6 +111,56 @@ describe("fakeBridge jobs", () => {
     const failed = (await call(fake, "jobs.get", { job_id: given.id })) as T.JobDto;
     expect([failed.state, failed.error?.code]).toEqual(["failed", "io"]);
   });
+
+  it("hold the jobs of holdJobs methods and apply onFinish before the job event", async () => {
+    const finished: string[] = [];
+    const fake = createFakeBridge({
+      holdJobs: ["tools.remove"],
+      handlers: {
+        // No `hold` in the script: the scenario holds it.
+        "tools.remove": (params, ctx) =>
+          fakeJob({
+            outcome: { done: { ok: true, message: params.spec } },
+            onFinish: (outcome) => {
+              finished.push(`${"done" in outcome ? "done" : "other"}:${params.spec}`);
+              ctx.fake.publish("pool.scaled", {
+                v: 1,
+                version_id: ulid(),
+                series: "8.4",
+                unknown: [],
+              });
+            },
+          }),
+        "tools.install": () =>
+          fakeJob({
+            onFinish: () => {
+              finished.push("install");
+            },
+          }),
+      },
+    });
+    const events = await record(fake, "events.subscribe", {
+      filter: { kinds: ["job.done", "job.cancelled", "pool.scaled"] },
+    });
+    const held = (await call(fake, "tools.remove", { spec: "a" })) as T.JobDto;
+    const cancelled = (await call(fake, "tools.remove", { spec: "b" })) as T.JobDto;
+    await call(fake, "tools.install", { specs: ["php@8.4"] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // Methods outside holdJobs still end by themselves.
+    expect(finished).toEqual(["install"]);
+    expect(fake.jobList().map((j) => j.state)).toEqual(["running", "running", "done"]);
+    expect(fake.completeJob(held.id)).toBe(true);
+    await call(fake, "jobs.cancel", { job_id: cancelled.id });
+    expect(finished).toEqual(["install", "done:a", "other:b"]);
+    fake.flush();
+    expect(events.kinds()).toEqual([
+      "job.done",
+      "pool.scaled",
+      "job.done",
+      "pool.scaled",
+      "job.cancelled",
+    ]);
+  });
 });
 
 describe("fakeBridge streams", () => {
