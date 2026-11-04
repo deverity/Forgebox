@@ -9,7 +9,9 @@ import { setSiteMetrics, setSitePoolMode, statsCli, topCli } from "../../../acti
 import type * as T from "../../../ipc/generated";
 import { ForgeStateProvider } from "../../../state";
 import { IDS, startHarness, type Harness } from "../../../state/testFixtures";
-import { MetricsHub, applyEntries, type FrameScheduler } from "../state/hub";
+import type { FrameClock } from "../../../state/frame";
+import { manualPageActivity } from "../../../state/page";
+import { MetricsHub, applyEntries } from "../state/hub";
 import {
   TOP_POLL_MS,
   useSiteMetrics,
@@ -57,7 +59,7 @@ function sample(
 /** A frame clock the test advances by hand. */
 function manualFrames() {
   const pending: (() => void)[] = [];
-  const scheduler: FrameScheduler = {
+  const scheduler: FrameClock = {
     request: (callback) => pending.push(callback),
     cancel: () => {
       pending.length = 0;
@@ -79,7 +81,7 @@ function wrapperOf(h: Harness) {
   );
 }
 
-function hubOf(h: Harness, frame: FrameScheduler) {
+function hubOf(h: Harness, frame: FrameClock) {
   return new MetricsHub({
     api: h.runtime.api,
     connection: h.runtime.stores.connection,
@@ -224,6 +226,48 @@ describe("MetricsHub", () => {
     expect(a.store.getState().points).toHaveLength(0);
     a.release();
     b.release();
+    hub.dispose();
+  });
+
+  it("applies samples without rAF while the page is hidden and bounds the queue", async () => {
+    harness = await startHarness();
+    const h = harness;
+    const base = h.fake.openStreams();
+    const frames = manualFrames();
+    const page = manualPageActivity(false);
+    const hub = new MetricsHub({
+      api: h.runtime.api,
+      connection: h.runtime.stores.connection,
+      frame: frames.scheduler,
+      page,
+      maxQueue: 5,
+    });
+    const { store, release } = hub.acquire(IDS.site, "5m");
+    await waitFor(() => {
+      expect(h.fake.openStreams()).toBe(base + 1);
+    });
+    // Hidden: nothing is requested from rAF; the 250 ms timer applies the batch.
+    await act(async () => {
+      h.fake.emitMetrics(sample(IDS.site, "loja.test", 1));
+      h.fake.emitMetrics(sample(IDS.site, "loja.test", 2));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    expect(frames.pending()).toBe(0);
+    expect(store.getState().points).toHaveLength(2);
+    // Overflow: past maxQueue the backlog is dropped, never grown without bound.
+    await act(async () => {
+      for (let i = 3; i < 13; i += 1) h.fake.emitMetrics(sample(IDS.site, "loja.test", i));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    expect(store.getState().points.length).toBeLessThanOrEqual(10);
+    // A later sample after the overflow replaces the points (snapshot semantics).
+    await act(async () => {
+      h.fake.emitMetrics(sample(IDS.site, "loja.test", 20));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
+    expect(store.getState().points).toHaveLength(1);
+    expect(frames.pending()).toBe(0);
+    release();
     hub.dispose();
   });
 });

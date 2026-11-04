@@ -14,27 +14,22 @@ import type { ForgeApi } from "../../../ipc/api";
 import { toForgeApiError, type ApiErrorDto } from "../../../ipc/errors";
 import type * as T from "../../../ipc/generated";
 import type { ConnectionSlice } from "../../../state";
+import { FrameBatcher, browserFrameClock, type FrameClock } from "../../../state/frame";
+import { browserPageActivity, type PageActivity } from "../../../state/page";
 import { EMPTY_METRICS, MAX_POINTS, type MetricsPoint, type SiteMetricsState } from "./types";
 
 const METHOD = "metrics.subscribe";
 
-export interface FrameScheduler {
-  request(callback: () => void): unknown;
-  cancel(handle: unknown): void;
-}
-
-export const rafScheduler: FrameScheduler = {
-  request: (callback) => window.requestAnimationFrame(callback),
-  cancel: (handle) => {
-    window.cancelAnimationFrame(handle as number);
-  },
-};
-
 export interface MetricsHubOptions {
   api: ForgeApi;
   connection: StoreApi<ConnectionSlice>;
-  frame?: FrameScheduler;
+  /** Frame clock; defaults to rAF. Injectable for tests. */
+  frame?: FrameClock;
+  /** Page visibility; defaults to the browser page. A hidden page flushes on a timer. */
+  page?: PageActivity;
   maxPoints?: number;
+  /** Queue cap per store before the backlog is dropped and a snapshot awaited. */
+  maxQueue?: number;
 }
 
 export type Inbound =
@@ -50,8 +45,7 @@ interface Entry {
   store: StoreApi<SiteMetricsState>;
   refs: number;
   handle: { unsubscribe: () => Promise<void> } | "pending" | null;
-  inbox: Inbound[];
-  frame: unknown;
+  batcher: FrameBatcher<Inbound>;
   awaitingSnapshot: boolean;
 }
 
@@ -116,7 +110,8 @@ export function applyEntries(
 
 export class MetricsHub {
   private readonly options: MetricsHubOptions;
-  private readonly frame: FrameScheduler;
+  private readonly frame: FrameClock;
+  private readonly page: PageActivity;
   private readonly entries = new Map<string, Entry>();
   private readonly offConnection: () => void;
   private everConnected: boolean;
@@ -124,7 +119,8 @@ export class MetricsHub {
 
   constructor(options: MetricsHubOptions) {
     this.options = options;
-    this.frame = options.frame ?? rafScheduler;
+    this.frame = options.frame ?? browserFrameClock();
+    this.page = options.page ?? browserPageActivity();
     this.everConnected = options.connection.getState().status === "connected";
     this.offConnection = options.connection.subscribe((state, previous) => {
       if (state.status === previous.status || state.status !== "connected") return;
@@ -160,17 +156,31 @@ export class MetricsHub {
     const key = `${site}|${window}`;
     let entry = this.entries.get(key);
     if (entry === undefined) {
-      entry = {
+      const created: Entry = {
         key,
         site,
         window,
         store: createStore<SiteMetricsState>(() => ({ ...EMPTY_METRICS, status: "pending" })),
         refs: 0,
         handle: null,
-        inbox: [],
-        frame: null,
+        batcher: null as unknown as FrameBatcher<Inbound>,
         awaitingSnapshot: false,
       };
+      // docs/03 7.5: rAF while visible, a 250 ms timer while hidden (tray), flush on every
+      // visibility change; past maxQueue the backlog is dropped and the next sample replaces
+      // the points (as after a reconnect), so a hidden window never grows memory unbounded.
+      created.batcher = new FrameBatcher<Inbound>({
+        frame: this.frame,
+        page: this.page,
+        ...(this.options.maxQueue === undefined ? {} : { maxQueue: this.options.maxQueue }),
+        apply: (batch) => {
+          this.commit(created, batch);
+        },
+        onOverflow: () => {
+          created.awaitingSnapshot = true;
+        },
+      });
+      entry = created;
       this.entries.set(key, entry);
       this.open(entry);
     }
@@ -199,16 +209,14 @@ export class MetricsHub {
     this.options.api
       .subscribe(METHOD, { site: entry.site, window: entry.window }, (items) => {
         if (this.entries.get(entry.key) !== entry) return;
+        const batch: Inbound[] = [];
         for (const item of items) {
-          if (item.kind === "item") entry.inbox.push({ kind: "sample", sample: item.item.sample });
-          else if (item.kind === "lagged")
-            entry.inbox.push({ kind: "lagged", missed: item.missed });
-          else if (item.kind === "reset") entry.inbox.push({ kind: "reset" });
-          else entry.inbox.push({ kind: "end", error: item.error });
+          if (item.kind === "item") batch.push({ kind: "sample", sample: item.item.sample });
+          else if (item.kind === "lagged") batch.push({ kind: "lagged", missed: item.missed });
+          else if (item.kind === "reset") batch.push({ kind: "reset" });
+          else batch.push({ kind: "end", error: item.error });
         }
-        entry.frame ??= this.frame.request(() => {
-          this.flush(entry);
-        });
+        entry.batcher.push(batch);
       })
       .then(
         (handle) => {
@@ -228,10 +236,7 @@ export class MetricsHub {
       );
   }
 
-  private flush(entry: Entry): void {
-    entry.frame = null;
-    const batch = entry.inbox;
-    entry.inbox = [];
+  private commit(entry: Entry, batch: readonly Inbound[]): void {
     if (this.disposed || batch.length === 0 || this.entries.get(entry.key) !== entry) return;
     const before = entry.store.getState();
     const result = applyEntries(
@@ -246,9 +251,7 @@ export class MetricsHub {
 
   private close(entry: Entry): void {
     if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key);
-    if (entry.frame !== null) this.frame.cancel(entry.frame);
-    entry.frame = null;
-    entry.inbox = [];
+    entry.batcher.dispose();
     const handle = entry.handle;
     entry.handle = null;
     if (handle !== null && handle !== "pending") void handle.unsubscribe().catch(() => undefined);
