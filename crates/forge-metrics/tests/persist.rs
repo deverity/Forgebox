@@ -5,8 +5,6 @@
 //! after a kill, rehydration across a restart, and the cost of a 50-site flush.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use forge_core::ids::SiteId;
@@ -628,30 +626,40 @@ async fn a_fifty_site_flush_costs_the_writer_at_most_5_ms() {
     assert!(median <= Duration::from_millis(5), "median {median:?}");
 }
 
+/// Rehydrate is one call per daemon start; repeat it so a single descheduled poll is not taken
+/// for a stall.
+const REHYDRATE_RUNS: usize = 5;
+
+/// Awaits `fut` and returns its output with its longest single `poll`: the longest time it held
+/// the runtime thread in one go. Every SQLite call, decode or CPU burst made on the runtime
+/// (instead of the writer thread or `spawn_blocking`) falls inside one poll.
+async fn longest_poll<F: Future>(fut: F) -> (F::Output, Duration) {
+    let mut fut = std::pin::pin!(fut);
+    let mut longest = Duration::ZERO;
+    let out = std::future::poll_fn(|cx| {
+        let started = Instant::now();
+        let poll = fut.as_mut().poll(cx);
+        longest = longest.max(started.elapsed());
+        poll
+    })
+    .await;
+    (out, longest)
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn flush_and_rehydrate_never_stall_the_runtime() {
-    // One-thread runtime: any SQLite call or long CPU burst made on it shows as a gap in the
-    // heartbeat. Writes run on the store writer thread, reads and encoding in spawn_blocking,
-    // and the restore loop yields.
+    // One-thread runtime: writes run on the store writer thread, reads and encoding in
+    // spawn_blocking, and the restore loop yields, so no single poll of flush or rehydrate may
+    // hold the thread for long. The poll time is measured, not a heartbeat task's wake-up gap:
+    // a 1 ms sleep wakes on the ~15.6 ms Windows timer tick (two ticks are common) and a busy
+    // machine deschedules the process, which put 20-35 ms of noise on a lightly loaded run and 79/226 ms
+    // on a loaded one (M2-GATE-B8) without any of it being time spent in this code.
     let store = Store::open_in_memory().unwrap();
     let sites: Vec<SiteId> = (0..50).map(|_| SiteId::new()).collect();
     let mut rng = Rng(5);
     let mut agg = Aggregator::new(cfg(), ts(BASE));
     let mut persister = Persister::new();
-    let worst = Arc::new(AtomicU64::new(0));
-    let beat = {
-        let worst = worst.clone();
-        tokio::spawn(async move {
-            let mut last = Instant::now();
-            loop {
-                tokio::time::sleep(Duration::from_millis(1)).await;
-                let gap = u64::try_from(last.elapsed().as_micros()).unwrap();
-                worst.fetch_max(gap, Ordering::Relaxed);
-                last = Instant::now();
-            }
-        })
-    };
-    let mut worst_flush = 0;
+    let mut flushes = Vec::new();
     for minute in 0..30_i64 {
         for &site in &sites {
             for k in 0..4 {
@@ -664,35 +672,44 @@ async fn flush_and_rehydrate_never_stall_the_runtime() {
             }
         }
         // Closing the minutes is the aggregator's own CPU work, not persistence: do it first,
-        // let the heartbeat settle, then measure only the flush.
+        // then measure only the flush.
         let now = ts(BASE + (minute + 1) * 60 + 3);
         agg.advance(now);
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        worst.store(0, Ordering::Relaxed);
-        persister
-            .flush(&mut agg, store.writer(), now)
-            .await
-            .unwrap();
-        worst_flush = worst_flush.max(worst.load(Ordering::Relaxed));
+        let (report, longest) = longest_poll(persister.flush(&mut agg, store.writer(), now)).await;
+        assert_eq!(report.unwrap().rows, 50);
+        flushes.push(longest);
     }
     let now = ts(BASE + 31 * 60);
-    let mut again = Aggregator::new(cfg(), now);
-    tokio::time::sleep(Duration::from_millis(5)).await;
-    worst.store(0, Ordering::Relaxed);
-    let report = persist::rehydrate(&mut again, store.reader(), now, persist::REHYDRATE_WINDOW)
-        .await
-        .unwrap();
-    let worst_rehydrate = worst.load(Ordering::Relaxed);
-    beat.abort();
-    assert_eq!(report.restored, 50 * 30);
-    eprintln!("worst runtime gap: flush {worst_flush} us, rehydrate {worst_rehydrate} us");
+    let mut rehydrates = Vec::new();
+    for _ in 0..REHYDRATE_RUNS {
+        let mut again = Aggregator::new(cfg(), now);
+        let (report, longest) = longest_poll(persist::rehydrate(
+            &mut again,
+            store.reader(),
+            now,
+            persist::REHYDRATE_WINDOW,
+        ))
+        .await;
+        assert_eq!(report.unwrap().restored, 50 * 30);
+        rehydrates.push(longest);
+    }
+    flushes.sort();
+    rehydrates.sort();
+    eprintln!("longest poll per call: flush {flushes:?}, rehydrate {rehydrates:?}");
+    // On-thread work (a SQLite call, the decode, an unyielding restore loop) is in every call,
+    // while descheduling only adds time to some. The flushes are 30 calls of the same size: the
+    // median carries the budget. A rehydrate is ~25 polls of 64 restores each, so on a busy
+    // machine most calls catch a descheduled poll: the best of the runs is its on-thread cost.
+    let budget = Duration::from_millis(10);
+    let median_flush = flushes[flushes.len() / 2];
     assert!(
-        worst_flush < 50_000,
-        "flush stalled the runtime {worst_flush} us"
+        median_flush < budget,
+        "flush held the runtime {median_flush:?} in one poll (median of {flushes:?})"
     );
+    let best_rehydrate = rehydrates[0];
     assert!(
-        worst_rehydrate < 50_000,
-        "rehydrate stalled the runtime {worst_rehydrate} us"
+        best_rehydrate < budget,
+        "rehydrate held the runtime {best_rehydrate:?} in one poll (best of {rehydrates:?})"
     );
 }
 

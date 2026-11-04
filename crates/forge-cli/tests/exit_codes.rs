@@ -151,7 +151,7 @@ fn not_implemented_is_1_and_names_the_roadmap_task() {
             &["db", "open", "mysql/default", "--with", "heidisql"][..],
             "M3-E1",
         ),
-        (&["stats", "--routes", "a.test"][..], "M2-E5-T9"),
+        (&["site", "pool", "a.test", "dedicated"][..], "M2-E5-T11"),
         (&["remote", "pair"][..], "M6-E3"),
         (&["backup", "now"][..], "M3-E3"),
         (&["self-update", "--check"][..], "M4-E1"),

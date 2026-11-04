@@ -21,6 +21,7 @@ mod settings;
 mod shell;
 mod sites;
 mod stats;
+mod stats_series;
 mod system;
 mod terminal;
 mod tls;

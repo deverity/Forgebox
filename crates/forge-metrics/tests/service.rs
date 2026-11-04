@@ -7,7 +7,9 @@
 //! * disabled: no tailer runs, samples say `metrics_enabled = false`;
 //! * a stop flushes, and a new service on the same store resumes without counting a line
 //!   twice;
-//! * a range older than the in-memory retention merges the stored minutes.
+//! * a range older than the in-memory retention merges the stored minutes;
+//! * a series older than the in-memory retention reads the stored minutes and hours
+//!   (M2-E5-T9).
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -19,7 +21,7 @@ use forge_metrics::hist::FORMAT_VERSION;
 use forge_metrics::service::{self, ServiceConfig};
 use forge_metrics::{
     AccessFormat, FieldMap, LatencyHist, LogSource, MetricsHandle, Multi, SiteRoute, SiteSample,
-    Sites, Span, TailConfig, Unit, UpstreamMap,
+    Sites, Span, Step, TailConfig, Unit, UpstreamMap,
 };
 use jiff::Timestamp;
 
@@ -441,5 +443,124 @@ async fn old_ranges_merge_the_stored_minutes_with_memory() {
     )
     .await;
     assert_eq!(old.summary.counters.requests, 5);
+    handle.stop(ASK).await.unwrap();
+}
+
+fn row(site: SiteId, start: i64, requests: u64, hist: &LatencyHist) -> MetricsRow {
+    MetricsRow {
+        site,
+        start,
+        requests,
+        status: [0, requests, 0, 0, 0],
+        bytes: requests * 100,
+        rt_sum_us: requests * 1000,
+        ut_sum_us: 0,
+        ut_count: 0,
+        sampled: false,
+        rt_hist: hist.to_v2().unwrap(),
+        ut_hist: Vec::new(),
+        format_version: FORMAT_VERSION,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn series_beyond_memory_come_from_the_stored_minutes_and_hours() {
+    let fx = fixture();
+    let handle = start(&fx, true);
+    let site = fx.sites.a;
+    let now = Timestamp::now().as_second();
+    let hour = (now / 3600) * 3600;
+    // Two minutes of one hour (merged into one hourly point), another hour days earlier,
+    // and an hour row older than the minute retention.
+    let h48 = hour - 48 * 3600;
+    let h100 = hour - 100 * 3600;
+    let h10d = hour - 10 * 24 * 3600;
+    let fast = LatencyHist::from_values([10_000, 20_000]);
+    let slow = LatencyHist::from_values([900_000]);
+    let rows = vec![
+        (MetricsTier::Minute, row(site, h48 + 60, 2, &fast)),
+        (MetricsTier::Minute, row(site, h48 + 120, 1, &slow)),
+        (MetricsTier::Minute, row(site, h100, 2, &fast)),
+        (MetricsTier::Hour, row(site, h10d, 3, &slow)),
+    ];
+    fx.store
+        .writer()
+        .execute(move |conn| {
+            let repo = MetricsRepo::new(conn);
+            for (tier, row) in &rows {
+                repo.put(*tier, row)?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+    append(&fx.log, &line("a.test", 200, 1));
+    wait_requests(&handle, site, 1).await;
+    let route = routes(&fx.sites).remove(0);
+    assert_eq!(route.id, site);
+    let at = |s: i64| Timestamp::from_second(s).unwrap();
+
+    // Hours, 11 days back: the old hour row, the two merged minutes, the lone minute and
+    // the hour in memory, oldest first, each hour once.
+    let report = handle
+        .series(route.clone(), at(now - 11 * 86_400), None, Step::Hour, ASK)
+        .await
+        .unwrap();
+    let starts: Vec<i64> = report.points.iter().map(|p| p.start.as_second()).collect();
+    assert_eq!(starts, [h10d, h100, h48, hour], "{:?}", report.points);
+    let counts: Vec<u64> = report.points.iter().map(|p| p.requests).collect();
+    assert_eq!(counts, [3, 2, 3, 1]);
+    let merged = fast.merge(&slow).percentiles().unwrap();
+    assert_eq!(report.points[2].rt, Some(merged));
+    assert_eq!(report.points[2].err4xx, 0);
+    assert_eq!(report.points[2].bytes, 300);
+
+    // Minutes, 3 days back: the two stored minutes, no hour rows.
+    let report = handle
+        .series(route.clone(), at(now - 3 * 86_400), None, Step::Minute, ASK)
+        .await
+        .unwrap();
+    let starts: Vec<i64> = report.points.iter().map(|p| p.start.as_second()).collect();
+    assert_eq!(starts.len(), 3, "{starts:?}");
+    assert_eq!(&starts[..2], [h48 + 60, h48 + 120]);
+    assert_eq!(report.points[0].rt, fast.percentiles());
+    assert_eq!(report.points[1].rt, slow.percentiles());
+
+    // Fine steps never reach the store; metrics off answers nothing.
+    let report = handle
+        .series(
+            route.clone(),
+            at(now - 3 * 86_400),
+            None,
+            Step::TenSeconds,
+            ASK,
+        )
+        .await
+        .unwrap();
+    assert!(
+        report
+            .points
+            .iter()
+            .all(|p| p.start.as_second() > now - 87_000)
+    );
+    let mut off = route;
+    off.metrics_enabled = false;
+    let report = handle
+        .series(off.clone(), at(now - 3 * 86_400), None, Step::Minute, ASK)
+        .await
+        .unwrap();
+    assert!(report.points.is_empty());
+    assert!(handle.routes(off, ASK).await.unwrap().report.is_none());
+    let err = handle
+        .series(
+            routes(&fx.sites).remove(0),
+            at(now + 600),
+            None,
+            Step::Hour,
+            ASK,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "invalid_input");
     handle.stop(ASK).await.unwrap();
 }

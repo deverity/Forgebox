@@ -58,7 +58,7 @@ use forge_core::store::{
 };
 use jiff::Timestamp;
 
-use crate::agg::{Aggregator, Counters, MinuteDelta, Summary};
+use crate::agg::{Aggregator, Counters, MinuteDelta, SeriesPoint, Summary};
 use crate::hist::{FORMAT_VERSION, LatencyHist};
 use crate::record::AccessRecord;
 use crate::tail::{Checkpoint, TailBatch};
@@ -874,6 +874,101 @@ pub async fn query_range_hists(
             sampled,
         };
         (summary, rt, ut)
+    })
+    .await
+}
+
+/// Points of `[from, to)` at `step` (`Minute` or `Hour`; finer steps live in memory only)
+/// from SQLite, for the part of a series older than the in-memory retention. Hours older
+/// than the minute retention come from hour rows, the rest from minute rows grouped per hour
+/// (histograms merge exactly). Steps without rows are left out; no CPU/RAM (not stored).
+pub async fn query_series(
+    reader: &StoreReader,
+    site: SiteId,
+    from: Timestamp,
+    to: Timestamp,
+    step: crate::agg::Step,
+    now: Timestamp,
+) -> Result<Vec<SeriesPoint>> {
+    let width = match step {
+        crate::agg::Step::Minute => MINUTE,
+        crate::agg::Step::Hour => HOUR,
+        _ => return Ok(Vec::new()),
+    };
+    let now_s = secs(now);
+    let to_s = secs(to).min(now_s);
+    let from_s = secs(from).min(to_s);
+    let rows = reader
+        .query(move |conn| {
+            let repo = MetricsRepo::new(conn);
+            let split = ceil_to(now_s - dur_secs(RETENTION_1M), HOUR);
+            let first = floor_to(from_s, width);
+            let last = ceil_to(to_s, width);
+            let mut rows = Vec::new();
+            if width == HOUR {
+                let hour_to = last.min(split);
+                if hour_to > first {
+                    rows.extend(repo.range(MetricsTier::Hour, Some(site), first, hour_to)?);
+                }
+                let minute_from = first.max(split);
+                if last > minute_from {
+                    rows.extend(repo.range(MetricsTier::Minute, Some(site), minute_from, last)?);
+                }
+            } else if last > first {
+                rows.extend(repo.range(MetricsTier::Minute, Some(site), first, last)?);
+            }
+            Ok(rows)
+        })
+        .await?;
+    on_blocking("metrics series merge", move || {
+        struct Acc {
+            counters: Counters,
+            rt: LatencyHist,
+            ut: LatencyHist,
+            sampled: bool,
+        }
+        let mut groups: BTreeMap<i64, Acc> = BTreeMap::new();
+        for row in &rows {
+            let (row_rt, row_ut) = match (
+                decode(&row.rt_hist, row.format_version),
+                decode(&row.ut_hist, row.format_version),
+            ) {
+                (Ok(a), Ok(b)) => (a, b),
+                (Err(err), _) | (_, Err(err)) => {
+                    tracing::warn!(%err, site = %row.site, start = row.start,
+                        "stored metrics row skipped by series");
+                    continue;
+                }
+            };
+            let acc = groups
+                .entry(floor_to(row.start, width))
+                .or_insert_with(|| Acc {
+                    counters: Counters::default(),
+                    rt: LatencyHist::new(),
+                    ut: LatencyHist::new(),
+                    sampled: false,
+                });
+            add_counters(&mut acc.counters, &counters_of(row));
+            acc.sampled |= row.sampled;
+            acc.rt = acc.rt.merge(&row_rt);
+            acc.ut = acc.ut.merge(&row_ut);
+        }
+        groups
+            .into_iter()
+            .map(|(start, a)| SeriesPoint {
+                start: at(start),
+                requests: a.counters.requests,
+                err4xx: a.counters.err4xx(),
+                err5xx: a.counters.err5xx(),
+                bytes: a.counters.bytes,
+                rt_sum_us: a.counters.rt_sum_us,
+                ut_sum_us: a.counters.ut_sum_us,
+                rt: a.rt.percentiles(),
+                ut: a.ut.percentiles(),
+                resources: None,
+                sampled: a.sampled,
+            })
+            .collect()
     })
     .await
 }
