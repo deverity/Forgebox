@@ -34,7 +34,11 @@ export function XdebugSection({ version }: { version: PhpVersionDto }) {
   const [failure, setFailure] = useState<ForgeApiError | null>(null);
   const [portText, setPortText] = useState("");
 
-  const mode = pending ?? version.xdebug;
+  // This section's own `php.list` answer, not the column's prop: the page's observer is
+  // notified after `list.refetch()` resolves here, and the optimistic mode drops right then,
+  // so reading the prop showed the old mode for a render (and to a test on a loaded machine).
+  const current = list.data?.versions.find((v) => v.series === series) ?? version;
+  const mode = pending ?? current.xdebug;
   const port = parseXdebugPort(portText);
 
   const apply = async (next: XdebugMode) => {
