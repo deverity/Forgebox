@@ -308,12 +308,14 @@ Forgebox/
 │       ├── playwright.qa.config.ts  # M2-E4-T3: `pnpm qa:check` (porta FORGE_QA_CHECK_PORT, padrão 4175; relatório JSON/HTML em qa/out/check-report)
 │       ├── qa/checks/            # M2-E4-T3: lib.ts (regras), {a11y,keyboard,layout-shift,motion,contracts,accent}.spec.ts, shortcuts.ts; cada regra tem caso negativo em /qa/selftest (src/qa/selftest)
 │       ├── qa/{playwright.config.ts,matrix.ts,shots.spec.ts,contact-sheet.ts,emulation.ts}  # M2-E4-T2: `pnpm qa:shots [--grep]` (docs/07 §12; porta FORGE_QA_SHOTS_PORT, padrão 4176; saída em qa/out/shots/<run>/); `src/qa/matrix.test.ts` confere a matriz contra o router
+│       ├── qa/{playwright.states.config.ts,states.spec.ts}  # M2-E4-T7: capturas de estado (vazio, carregando, erro, not_implemented, remoto, daemon parado, heavy) por tela, claro/escuro (porta FORGE_QA_STATES_PORT, padrão 4178; saída em qa/out/states/<run>/ com folhas de contato)
 │       ├── e2e/                  # fixtures.ts (emulação, axe, teclado, CLS), *.spec.ts por cenário; real/app.spec.ts (Forgebox.exe via CDP, só por scripts/e2e-desktop.ps1)
 │       ├── qa/                   # fixtures/scenarios/ (biblioteca tipada com `satisfies` contra generated.ts: empty, populated, heavy...); out/ (gitignored)
 │       ├── scripts/              # perf-startup.mjs (pnpm perf:startup: partida a frio, JSON), qa-root.mjs (raiz portátil temporária, killTree),
 │       │                         #   bundle-size.mjs (M2-E1-T21: pnpm size, JS inicial gzip + maior chunk lazy + Forgebox.exe contra os orçamentos
 │       │                         #   de docs/07 §10; passo do `ci.ps1 -Desktop` e dos jobs desktop/desktop-release; src/qa/bundleSize.test.ts), qa-perf.mjs (qa:perf),
-│       │                         #   window-qa.mjs, gen-tokens.mjs (tokens:check), gen-icons.mjs (M2-E1-T22: icons / icons:check de docs/design/brand)
+│       │                         #   window-qa.mjs, gen-tokens.mjs (tokens:check), gen-icons.mjs (M2-E1-T22: icons / icons:check de docs/design/brand),
+│       │                         #   reference-shots.mjs (M2-E4-T7: copia e valida docs/design/screens, 1280x800, <= 250 KB cada, <= 8 MB; src/qa/referenceShots.test.ts)
 │       ├── dist-qa/              # saída de `vite build --mode qa` (gitignored; nunca sobre dist/)
 │       ├── src/
 │       │   ├── main.tsx / App.tsx / index.css   # entrada: StateLayer + router (o shell vive na árvore de rotas); Tailwind com `source("./")` (não varre src-tauri/target)

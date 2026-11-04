@@ -324,6 +324,8 @@ Capturas da rodada: `apps/desktop/qa/out/shots/ci/sheets/{dashboard,services,sit
 
 **Matriz do `qa:check` (M2-E4-T6).** `qa/checks/matrix.spec.ts` repete axe, contraste dos tokens `fg-*`, Tab/anel de foco, paleta aberta, banner `daemon-down` e sidebar recolhida em claro/escuro x vibrancy desligado x reduced-motion x DPR 1/1,25/1,5 (DPR real do contexto) e confere o layout a 960x540 e 1093x574. Os achados e as correções ficam em [`docs/design/qa/M2-E4-report.md`](design/qa/M2-E4-report.md).
 
+**Capturas de estado (M2-E4-T7).** `pnpm -C apps/desktop exec playwright test -c qa/playwright.states.config.ts [--grep <tela>]` fotografa cada tela da matriz nos estados que a matriz não cobre (`empty`, `loading` = cenário `slow` capturado durante a primeira resposta, `errors`, `not-implemented`, `remote`, `daemon-down`, `heavy`), claro e escuro, 1280x800, DPR 1, pt-BR, em `qa/out/states/<run>/` com uma folha de contato por tela (mesmo teardown do `qa:shots`). As capturas de referência versionadas ficam em `docs/design/screens/` (ver [docs/design/README.md](design/README.md)); a revisão completa está em [`docs/design/qa/M2-E4-report.md`](design/qa/M2-E4-report.md) §2.
+
 **Como o agente revisa.** (1) Rode `pnpm -C apps/desktop qa:shots --grep <tela>`; (2) leia com a ferramenta Read primeiro `sheets/<tela>.png` (visão geral de todas as células) e só então a célula suspeita em tamanho real; (3) percorra o checklist do §11 por tema/DPI/idioma; (4) nunca versione `qa/out`. O quadro nativo da janela (titlebar/material) não aparece aqui: usar `scripts/qa/capture-window.ps1` (§4, ADR-0035).
 
 ### Portão de paridade GUI/CLI (M2-E4-T5)
