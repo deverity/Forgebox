@@ -8,7 +8,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { call, connect, ipcState, need } from "./support";
+import { call, connect, invoke, ipcState, need } from "./support";
 
 const HOST = "perf.test";
 const SHOT_DIR = "qa/out/site-performance";
@@ -156,14 +156,18 @@ test("site-performance 2 the tab shows the daemon's numbers, light and dark", as
   await expect(page.getByTestId("perf-errors")).toContainText("50");
   await page.setViewportSize({ width: 1280, height: 1500 });
   for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
+    // The real preference path: the Rust shell applies the theme and publishes it to <html>.
+    await invoke(page, "gui_prefs_set", { patch: { theme: scheme } });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
     await page.waitForTimeout(800);
     await page.screenshot({ path: `${SHOT_DIR}/live-${scheme}.png`, fullPage: true });
   }
+  // Dark stays for the 1 h shot; the preference goes back to the system theme at the end.
   await page.getByRole("radio", { name: "1 h" }).click();
   await expect(page.getByTestId("site-performance")).toHaveAttribute("data-range", "1h");
   await expect(page.locator("[data-chart-state='ready']").first()).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOT_DIR}/live-1h-dark.png`, fullPage: true });
+  await invoke(page, "gui_prefs_set", { patch: { theme: "system" } });
 });
 
 test("site-performance 3 the dedicated pool toggle runs the real job", async () => {

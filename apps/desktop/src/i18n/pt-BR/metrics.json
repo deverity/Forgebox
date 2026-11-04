@@ -130,7 +130,7 @@
       "requests": "Reqs",
       "time": "Hora",
       "status": "Status",
-      "duration": "Tempo",
+      "duration": "Duração",
       "noErrors": "Nenhum erro 4xx ou 5xx nas últimas 24 h.",
       "failed": "Não foi possível carregar as rotas.",
       "p50": "p50",

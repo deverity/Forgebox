@@ -130,7 +130,7 @@
       "requests": "Reqs",
       "time": "Time",
       "status": "Status",
-      "duration": "Time taken",
+      "duration": "Duration",
       "noErrors": "No 4xx or 5xx errors in the last 24 h.",
       "failed": "Could not load the routes.",
       "p50": "p50",

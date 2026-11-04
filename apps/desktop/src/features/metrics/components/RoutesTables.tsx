@@ -96,9 +96,9 @@ export function RoutesTables({
             <thead>
               <tr style={{ height: ROW_HEIGHT }} className={HEAD}>
                 <th className="px-3 font-normal">{t("site.routes.route")}</th>
-                <th className="w-16 px-3 text-right font-normal">{t("site.routes.p50")}</th>
-                <th className="w-16 px-3 text-right font-normal">{t("site.routes.p99")}</th>
-                <th className="w-16 px-3 text-right font-normal">{t("site.routes.requests")}</th>
+                <th className="w-24 px-3 text-right font-normal">{t("site.routes.p50")}</th>
+                <th className="w-24 px-3 text-right font-normal">{t("site.routes.p99")}</th>
+                <th className="w-20 px-3 text-right font-normal">{t("site.routes.requests")}</th>
               </tr>
             </thead>
             <tbody>
@@ -136,7 +136,7 @@ export function RoutesTables({
                 <th className="w-24 px-3 font-normal">{t("site.routes.time")}</th>
                 <th className="w-16 px-3 font-normal">{t("site.routes.status")}</th>
                 <th className="px-3 font-normal">{t("site.routes.route")}</th>
-                <th className="w-16 px-3 text-right font-normal">{t("site.routes.duration")}</th>
+                <th className="w-24 px-3 text-right font-normal">{t("site.routes.duration")}</th>
               </tr>
             </thead>
             <tbody>
