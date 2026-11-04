@@ -8,6 +8,12 @@
 //
 //   node scripts/perf-startup.mjs [--exe <path>] [--runs 10] [--budget-ms 800]
 //                                 [--daemon both|running|stopped] [--budget-factor 1]
+//                                 [--settle-ms 1500]
+//
+// Every run starts after a settle pause (default 1.5 s) that follows the previous run and, in
+// the stopped mode, the kill of the daemon the previous GUI started after its first frame
+// (M2-E1-T21: with 300 ms the dying WebView2 and the half-booted daemon of the previous run
+// were measured as part of the next cold start).
 //
 // Prints one JSON object on stdout: {median, p90, p95, runs, session, webview2_version, rss_mb,
 // budget_ms, passed, modes: {daemon_running: {...}, daemon_stopped: {...}}}; the top-level
@@ -37,6 +43,7 @@ const daemonExe = resolve(arg("daemon-exe", join(exe, "..", "forgeboxd.exe")));
 const runs = Number(arg("runs", "10"));
 const budget = Number(arg("budget-ms", "800")) * Number(arg("budget-factor", "1"));
 const modes = arg("daemon", "both") === "both" ? ["running", "stopped"] : [arg("daemon", "both")];
+const settleMs = Number(arg("settle-ms", "1500"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 if (!existsSync(exe)) {
@@ -155,10 +162,10 @@ async function measureMode(mode) {
         let session = "unknown";
         for (let i = 0; i < runs; i++) {
             if (mode === "stopped") await ensureDaemonStopped(ctx);
+            await sleep(settleMs);
             const line = await oneRun(ctx);
             samples.push(line.first_frame_ms);
             session = line.session ?? session;
-            await sleep(300);
         }
         const rss_mb = await measureRss(ctx);
         return {
@@ -190,6 +197,7 @@ console.log(
         webview2_version: webview2Version(),
         rss_mb: worst.rss_mb,
         budget_ms: budget,
+        settle_ms: settleMs,
         passed,
         modes: result,
     }),
