@@ -1,12 +1,32 @@
 // /mail in a real browser against the fake bridge (M2-E3-T13): the sandbox of the HTML preview
 // (no scripts, a CSP, no request until the per-message toggle, no Tauri bridge inside the
 // frame) and the live badge without polling.
+import { readFileSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import type { QaHandle } from "../src/qa/bootstrap";
 import { expect, test } from "./fixtures";
 
 const URL = "/mail?scenario=populated&locale=en-US";
 const REMOTE_HOST = "127.0.0.1:9";
+
+// The srcdoc frame inherits the parent CSP, so the sandbox test must run under the one the app
+// really ships (tauri.conf.json), not the header-less vite preview.
+const APP_CSP = (
+  JSON.parse(
+    readFileSync(new globalThis.URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+  ) as { app: { security: { csp: string } } }
+).app.security.csp;
+
+async function serveWithAppCsp(page: Page) {
+  await page.route("**/*", async (route) => {
+    if (route.request().resourceType() !== "document") return route.continue();
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      headers: { ...response.headers(), "content-security-policy": APP_CSP },
+    });
+  });
+}
 
 async function openHtmlMessage(page: Page) {
   await page.goto(URL);
@@ -21,6 +41,7 @@ test("the HTML preview is sandboxed: no scripts, CSP, nothing remote until the t
   consoleErrors,
 }) => {
   const external: string[] = [];
+  await serveWithAppCsp(page);
   await page.route(`http://${REMOTE_HOST}/**`, async (route) => {
     external.push(route.request().url());
     await route.abort();
