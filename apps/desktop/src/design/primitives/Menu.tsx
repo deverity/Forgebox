@@ -67,7 +67,7 @@ export function Menu({ entries, children, className }: MenuProps) {
                       disabled={entry.disabled}
                       onSelect={entry.onSelect}
                       className={[
-                        "flex cursor-default items-center justify-between gap-6 rounded-control px-2 py-1 outline-none data-[disabled]:text-fg-tertiary data-[highlighted]:bg-accent data-[highlighted]:text-surface",
+                        "flex cursor-default items-center justify-between gap-6 rounded-control px-2 py-1 outline-none data-[disabled]:text-fg-tertiary data-[highlighted]:bg-accent data-[highlighted]:text-fg-on-accent",
                         entry.destructive ? "text-state-failed" : "",
                       ]
                         .filter(Boolean)

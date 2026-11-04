@@ -115,7 +115,7 @@ export function CommandPalette({ open, onOpenChange, actions }: CommandPalettePr
               value={query}
               onValueChange={setQuery}
               placeholder={t("placeholder")}
-              className="h-11 w-full border-b border-stroke bg-transparent px-4 text-body outline-none placeholder:text-fg-tertiary"
+              className="h-11 w-full border-b border-stroke bg-transparent px-4 text-body outline-hidden focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent placeholder:text-fg-tertiary"
             />
             <Command.List className="max-h-[360px] overflow-y-auto p-2">
               <Command.Empty className="px-3 py-6 text-center text-callout text-fg-secondary">
@@ -142,7 +142,7 @@ export function CommandPalette({ open, onOpenChange, actions }: CommandPalettePr
                             choose(command);
                           }}
                           data-forge-cli={command.cli ?? undefined}
-                          className="flex min-h-8 cursor-default items-center gap-3 rounded-control px-3 py-1 text-body data-[disabled=true]:text-fg-tertiary data-[selected=true]:bg-accent data-[selected=true]:text-fg-on-accent"
+                          className="flex min-h-8 cursor-default items-center gap-3 rounded-control px-3 py-1 text-body data-[disabled=true]:text-fg-tertiary data-[selected=true]:bg-accent data-[selected=true]:font-medium data-[selected=true]:text-fg-on-accent"
                         >
                           <span className="min-w-0 flex-1 truncate">{command.label}</span>
                           {command.unavailable === null ? null : (
@@ -151,7 +151,7 @@ export function CommandPalette({ open, onOpenChange, actions }: CommandPalettePr
                             </span>
                           )}
                           {command.cli === null ? null : (
-                            <code className="font-mono text-caption opacity-80">{command.cli}</code>
+                            <code className="font-mono text-caption">{command.cli}</code>
                           )}
                           {chord === null ? null : (
                             <span className="flex gap-0.5">
