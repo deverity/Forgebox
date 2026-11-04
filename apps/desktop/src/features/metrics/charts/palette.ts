@@ -40,6 +40,18 @@ export function readPalette(el: Element): ChartPalette {
   };
 }
 
+/**
+ * Tailwind token classes matching the palette entries, for the legend swatches and markers.
+ * Series colours and swatches both come from the same tokens, so they re-theme together.
+ */
+export const SWATCH = {
+  accent: "bg-accent",
+  warn: "bg-state-starting",
+  danger: "bg-state-failed",
+  info: "bg-state-updating",
+  ok: "bg-state-running",
+} as const;
+
 /** Translucent version of a resolved colour, for band and area fills. */
 export function withAlpha(color: string, percent: number): string {
   return `color-mix(in srgb, ${color} ${String(percent)}%, transparent)`;

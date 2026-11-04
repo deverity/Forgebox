@@ -1,4 +1,5 @@
 import type uPlot from "uplot";
+import { NO_VALUE } from "../format";
 import type { Column, SummaryRow } from "./types";
 
 export function lastValue(column: Column): number | null {
@@ -22,13 +23,15 @@ export function summarize(
   label: string,
   column: Column,
   format: (value: number) => string,
+  swatch?: string,
 ): SummaryRow {
   const latest = lastValue(column);
   const peak = peakValue(column);
   return {
     label,
-    latest: latest === null ? "-" : format(latest),
-    peak: peak === null ? "-" : format(peak),
+    ...(swatch === undefined ? {} : { swatch }),
+    latest: latest === null ? NO_VALUE : format(latest),
+    peak: peak === null ? NO_VALUE : format(peak),
   };
 }
 

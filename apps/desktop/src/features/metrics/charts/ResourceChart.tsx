@@ -2,16 +2,14 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type uPlot from "uplot";
 import { Badge } from "../../../design/primitives/Badge";
-import { useFormatters } from "../../../design/primitives/useFormatters";
 import { ChartShell, DEFAULT_CHART_HEIGHT } from "./ChartFrame";
 import { baseOptions, memoFormat } from "./options";
-import { AXIS_FONT_PX } from "./palette";
+import { APPROX } from "../format";
+import { useMetricsFormatters } from "../state";
+import { AXIS_FONT_PX, SWATCH } from "./palette";
 import { aligned, summarize } from "./summary";
 import type { BuildOptions } from "./UPlotCanvas";
 import type { ChartMarker, ResourceSeries } from "./types";
-
-/** Almost-equal sign: the figures are attributed estimates. */
-const APPROX = "≈";
 
 /** Right-hand axis side (a const enum cannot be imported under isolatedModules). */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-assignment -- uPlot's Side is a const enum
@@ -37,10 +35,10 @@ export default function ResourceChart({
   className,
 }: ResourceChartProps) {
   const { t, i18n } = useTranslation("metrics");
-  const fmt = useFormatters();
+  const mf = useMetricsFormatters();
   const locale = i18n.language;
-  const pct = useCallback((v: number) => fmt.percent(v / 100, 0), [fmt]);
-  const bytes = useCallback((v: number) => fmt.bytes(v), [fmt]);
+  const pct = useMemo(() => memoFormat((v) => mf.percent(v)), [mf]);
+  const bytes = useMemo(() => memoFormat((v) => mf.bytes(v)), [mf]);
 
   const build = useCallback<BuildOptions>(
     (p) => {
@@ -81,13 +79,14 @@ export default function ResourceChart({
     [series],
   );
   const summary = useMemo(
-    () => (series ? [summarize("CPU", series.cpu, pct), summarize("RAM", series.ram, bytes)] : []),
+    () => (series ? [summarize("CPU", series.cpu, pct, SWATCH.accent),
+          summarize("RAM", series.ram, bytes, SWATCH.info),] : []),
     [series, pct, bytes],
   );
 
   return (
     <ChartShell
-      title={t("resource.title")}
+      title={t("charts.resource.title")}
       height={height}
       loading={loading ?? false}
       empty={!series || series.t.length === 0}
@@ -97,10 +96,10 @@ export default function ResourceChart({
       markers={markers ?? []}
       className={className}
       badge={
-        <span title={t("resource.approx")} data-chart-approx="">
+        <span title={t("approx")} data-chart-approx="">
           <Badge>
             <span aria-hidden="true">{APPROX}</span>
-            <span className="sr-only">{t("resource.approx")}</span>
+            <span className="sr-only">{t("approx")}</span>
           </Badge>
         </span>
       }

@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import type uPlot from "uplot";
 import { useFormatters } from "../../../design/primitives/useFormatters";
 import { ChartShell, DEFAULT_CHART_HEIGHT } from "./ChartFrame";
-import { baseOptions } from "./options";
-import { withAlpha } from "./palette";
+import { baseOptions, memoFormat } from "./options";
+import { useMetricsFormatters } from "../state";
+import { SWATCH, withAlpha } from "./palette";
 import { aligned, summarize, sumColumns } from "./summary";
 import type { BuildOptions } from "./UPlotCanvas";
 import type { ChartMarker, ThroughputSeries } from "./types";
@@ -26,10 +27,13 @@ export default function ThroughputErrorsChart({
   className,
 }: ThroughputErrorsChartProps) {
   const { t, i18n } = useTranslation("metrics");
+  const mf = useMetricsFormatters();
   const fmt = useFormatters();
   const locale = i18n.language;
-  const rps = useCallback((v: number) => fmt.number(v, { maximumFractionDigits: 1 }), [fmt]);
-  const rpsLabel = t("series.rps");
+  const rps = useMemo(() => memoFormat((v) => mf.rps(v)), [mf]);
+  // Axis ticks stay unit-free; the unit lives in the legend and the summary.
+  const tick = useCallback((v: number) => fmt.number(v, { maximumFractionDigits: 1 }), [fmt]);
+  const rpsLabel = t("charts.series.rps");
 
   const build = useCallback<BuildOptions>(
     (p) => {
@@ -41,7 +45,7 @@ export default function ThroughputErrorsChart({
         points: { show: false },
       });
       return {
-        ...baseOptions(p, locale, [], rps),
+        ...baseOptions(p, locale, [], tick),
         scales: {
           x: { time: true },
           y: { range: (_u, _min, max) => [0, Math.max(max, 1) * 1.1] },
@@ -56,7 +60,7 @@ export default function ThroughputErrorsChart({
         ],
       };
     },
-    [locale, rps, rpsLabel],
+    [locale, tick, rpsLabel],
   );
 
   const data = useMemo(
@@ -70,9 +74,9 @@ export default function ThroughputErrorsChart({
     () =>
       series
         ? [
-            summarize(rpsLabel, series.rps, rps),
-            summarize("4xx", series.e4xx, rps),
-            summarize("5xx", series.e5xx, rps),
+            summarize(rpsLabel, series.rps, rps, SWATCH.accent),
+            summarize("4xx", series.e4xx, rps, SWATCH.warn),
+            summarize("5xx", series.e5xx, rps, SWATCH.danger),
           ]
         : [],
     [series, rps, rpsLabel],
@@ -80,7 +84,7 @@ export default function ThroughputErrorsChart({
 
   return (
     <ChartShell
-      title={t("throughput.title")}
+      title={t("charts.throughput.title")}
       height={height}
       loading={loading ?? false}
       empty={!series || series.t.length === 0}

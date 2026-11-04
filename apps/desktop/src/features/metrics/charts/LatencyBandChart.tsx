@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type uPlot from "uplot";
-import { useFormatters } from "../../../design/primitives/useFormatters";
 import { ChartShell, DEFAULT_CHART_HEIGHT } from "./ChartFrame";
-import { baseOptions } from "./options";
-import { withAlpha } from "./palette";
+import { baseOptions, memoFormat } from "./options";
+import { useMetricsFormatters } from "../state";
+import { SWATCH, withAlpha } from "./palette";
 import { aligned, summarize } from "./summary";
 import type { BuildOptions } from "./UPlotCanvas";
 import type { ChartMarker, LatencySeries } from "./types";
@@ -26,11 +26,11 @@ export default function LatencyBandChart({
   className,
 }: LatencyBandChartProps) {
   const { t, i18n } = useTranslation("metrics");
-  const fmt = useFormatters();
+  const mf = useMetricsFormatters();
   const locale = i18n.language;
   const hasPhp = series?.php !== undefined;
-  const ms = useCallback((v: number) => fmt.duration(v), [fmt]);
-  const phpLabel = t("series.php");
+  const ms = useMemo(() => memoFormat((v) => mf.ms(v)), [mf]);
+  const phpLabel = t("stat.php");
 
   const build = useCallback<BuildOptions>(
     (p) => {
@@ -78,10 +78,10 @@ export default function LatencyBandChart({
     () =>
       series
         ? [
-            summarize("p50", series.p50, ms),
-            summarize("p90", series.p90, ms),
-            summarize("p99", series.p99, ms),
-            ...(series.php ? [summarize(phpLabel, series.php, ms)] : []),
+            summarize("p50", series.p50, ms, SWATCH.accent),
+            summarize("p90", series.p90, ms, SWATCH.warn),
+            summarize("p99", series.p99, ms, SWATCH.danger),
+            ...(series.php ? [summarize(phpLabel, series.php, ms, SWATCH.info)] : []),
           ]
         : [],
     [series, ms, phpLabel],
@@ -89,7 +89,7 @@ export default function LatencyBandChart({
 
   return (
     <ChartShell
-      title={t("latency.title")}
+      title={t("charts.latency.title")}
       height={height}
       loading={loading ?? false}
       empty={!series || series.t.length === 0}

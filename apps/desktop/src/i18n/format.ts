@@ -25,8 +25,18 @@ function toMs(d: Date | number): number {
 export function createFormatters(locale: string): Formatters {
   // "pseudo" is not a BCP 47 tag; format like en-US so QA still sees realistic numbers.
   const tag = locale === "pseudo" ? "en-US" : locale;
-  const number = (value: number, options?: Intl.NumberFormatOptions) =>
-    new Intl.NumberFormat(tag, options).format(value);
+  // Building an Intl.NumberFormat is the costly part of formatting; chart summaries format
+  // several values per live update, so instances are reused per option set.
+  const numberFormats = new Map<string, Intl.NumberFormat>();
+  const number = (value: number, options?: Intl.NumberFormatOptions) => {
+    const key = options ? JSON.stringify(options) : "";
+    let nf = numberFormats.get(key);
+    if (!nf) {
+      nf = new Intl.NumberFormat(tag, options);
+      numberFormats.set(key, nf);
+    }
+    return nf.format(value);
+  };
 
   return {
     number,

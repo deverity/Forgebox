@@ -20,6 +20,16 @@ export interface MarkerLayout {
 
 const EMPTY: MarkerLayout = { top: 0, height: 0, placements: [] };
 
+/** Same markers (by identity) over the same plot box; only the x positions may differ. */
+function sameStructure(a: MarkerLayout, b: MarkerLayout): boolean {
+  return (
+    a.top === b.top &&
+    a.height === b.height &&
+    a.placements.length === b.placements.length &&
+    a.placements.every((p, i) => b.placements.at(i)?.marker === p.marker)
+  );
+}
+
 function sameLayout(a: MarkerLayout, b: MarkerLayout): boolean {
   return (
     a.top === b.top &&
@@ -45,22 +55,99 @@ export function placeMarkers(u: uPlot, markers: readonly ChartMarker[]): MarkerL
   return { top: u.over.offsetTop, height: u.over.offsetHeight, placements };
 }
 
-/** Tracks marker positions across draws; hand `onDraw` to the canvas. */
+/** Moves the rendered handles to `next`; false when the DOM does not hold exactly those markers. */
+function writeLefts(root: HTMLElement | null, next: MarkerLayout): boolean {
+  if (!root) return false;
+  if (root.children.length !== next.placements.length) return false;
+  const slots: HTMLElement[] = [];
+  for (const [i, p] of next.placements.entries()) {
+    const slot = root.children.item(i);
+    if (!(slot instanceof HTMLElement) || slot.dataset.markerId !== p.marker.id) return false;
+    slots.push(slot);
+  }
+  for (const [i, slot] of slots.entries()) {
+    slot.style.left = `${String(next.placements[i]?.left ?? 0)}px`;
+  }
+  return true;
+}
+
+type SettledListener = () => void;
+const settledListeners = new Set<SettledListener>();
+
+/**
+ * Subscribes to "the marker layout of a draw is committed" (QA harness: the update budget counts
+ * the overlay's commit, not only the canvas). Fires once per draw, after the DOM is up to date.
+ */
+export function onMarkerLayoutSettled(listener: SettledListener): () => void {
+  settledListeners.add(listener);
+  return () => {
+    settledListeners.delete(listener);
+  };
+}
+
+function emitSettled(): void {
+  for (const listener of [...settledListeners]) listener();
+}
+
+/**
+ * Tracks marker positions; hand `onDraw` to the canvas. The layout is recomputed on every draw
+ * (the x range moved) and also when `markers` change without a draw (markers arriving from a
+ * separate query, a refetch with new objects), using the last drawn uPlot instance.
+ */
 export function useMarkerLayout(markers: readonly ChartMarker[]) {
   const [layout, setLayout] = useState<MarkerLayout>(EMPTY);
+  const layoutRef = useRef(EMPTY);
   const markersRef = useRef(markers);
+  const lastPlot = useRef<uPlot | null>(null);
+  const settleOnCommit = useRef(false);
+
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  const apply = useCallback((next: MarkerLayout, fromDraw: boolean) => {
+    if (sameLayout(layoutRef.current, next)) {
+      if (fromDraw) emitSettled();
+      return;
+    }
+    // Hot path (every live update moves the x range): the same markers only shift sideways, so
+    // their `left` is written straight to the DOM and React does not re-render the overlay.
+    if (sameStructure(layoutRef.current, next) && writeLefts(overlayRef.current, next)) {
+      layoutRef.current = next;
+      if (fromDraw) emitSettled();
+      return;
+    }
+    layoutRef.current = next;
+    settleOnCommit.current = fromDraw;
+    setLayout(next);
+  }, []);
+
   useLayoutEffect(() => {
     markersRef.current = markers;
-  });
-  const onDraw = useCallback((u: uPlot) => {
-    const next = placeMarkers(u, markersRef.current);
-    setLayout((prev) => (sameLayout(prev, next) ? prev : next));
-  }, []);
-  return { layout, onDraw };
+    const u = lastPlot.current;
+    if (u) apply(placeMarkers(u, markers), false);
+  }, [markers, apply]);
+
+  useLayoutEffect(() => {
+    // React's `left` may be older than a direct write (see `apply`): the DOM follows the ref.
+    writeLefts(overlayRef.current, layoutRef.current);
+    if (settleOnCommit.current) {
+      settleOnCommit.current = false;
+      emitSettled();
+    }
+  }, [layout]);
+
+  const onDraw = useCallback(
+    (u: uPlot) => {
+      lastPlot.current = u;
+      apply(placeMarkers(u, markersRef.current), true);
+    },
+    [apply],
+  );
+  return { layout, onDraw, overlayRef };
 }
 
 const KIND_CLASS: Record<MarkerKind, string> = {
-  "php-version": "bg-accent",
+  // Its own token: the accent is already the p50/CPU/rps line colour.
+  "php-version": "bg-tool-4",
   restart: "bg-state-starting",
   config: "bg-state-updating",
   update: "bg-state-running",
@@ -71,13 +158,19 @@ const KIND_CLASS: Record<MarkerKind, string> = {
  * button (reachable by Tab) whose tooltip opens on hover and on focus. Transitions run only
  * under `motion-safe`.
  */
-export function MarkersOverlay({ layout }: { layout: MarkerLayout }) {
+export function MarkersOverlay({
+  layout,
+  overlayRef,
+}: {
+  layout: MarkerLayout;
+  overlayRef?: React.Ref<HTMLDivElement>;
+}) {
   const { t } = useTranslation("metrics");
   const fmt = useFormatters();
   const items = useMemo(
     () =>
       layout.placements.map((p) => {
-        const kind = t(`markers.${p.marker.kind}`);
+        const kind = t(`charts.markers.${p.marker.kind}`);
         const when = fmt.date(p.marker.t * 1000, { dateStyle: "short", timeStyle: "medium" });
         const text = p.marker.detail ? `${kind}: ${p.marker.detail}` : kind;
         return { ...p, text, when };
@@ -86,10 +179,11 @@ export function MarkersOverlay({ layout }: { layout: MarkerLayout }) {
   );
   if (items.length === 0) return null;
   return (
-    <div data-chart-markers="" className="pointer-events-none absolute inset-0">
+    <div ref={overlayRef} data-chart-markers="" className="pointer-events-none absolute inset-0">
       {items.map((m) => (
         <div
           key={m.marker.id}
+          data-marker-id={m.marker.id}
           style={{ left: m.left, top: layout.top, height: layout.height }}
           className="absolute w-0"
         >

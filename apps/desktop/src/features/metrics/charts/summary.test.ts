@@ -16,7 +16,7 @@ describe("chart summaries", () => {
       latest: "20 ms",
       peak: "40 ms",
     });
-    expect(summarize("p50", [null, null], fmt)).toEqual({ label: "p50", latest: "-", peak: "-" });
+    expect(summarize("p50", [null, null], fmt)).toEqual({ label: "p50", latest: "—", peak: "—" });
   });
 
   it("stacks columns, keeping a gap only when both are gaps", () => {

@@ -1,6 +1,8 @@
 // Input shapes of the metrics charts (M2-E5-T15). Columnar on purpose: uPlot takes parallel
 // arrays, so the data layer (M2-E5-T14) can hand its series over without a per-point copy.
-// `t` is unix seconds; `null` marks a gap (no traffic in that bucket).
+// `t` is unix SECONDS (uPlot's time scale), whereas the data layer's `MetricsPoint.t`
+// (features/metrics/state/types.ts) is epoch MILLISECONDS: divide by 1000 when building a series
+// (`points.map((p) => p.t / 1000)`). `null` marks a gap (no traffic in that bucket).
 
 export type Column = readonly (number | null)[];
 
@@ -44,6 +46,8 @@ export interface ChartMarker {
 
 export interface SummaryRow {
   label: string;
+  /** Tailwind token class of the series colour (`bg-accent`...); rows with one feed the legend. */
+  swatch?: string;
   latest: string;
   peak: string;
 }

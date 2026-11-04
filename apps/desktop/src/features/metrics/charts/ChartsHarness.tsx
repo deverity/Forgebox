@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Skeleton } from "../../../design/primitives/Skeleton";
 import { DEFAULT_CHART_HEIGHT } from "./ChartFrame";
+import { onMarkerLayoutSettled } from "./MarkersOverlay";
 import {
   ChartSparkline,
   LatencyBandChart,
@@ -17,8 +18,8 @@ import {
 // data (fixed clock and seed) so screenshots are stable. Query params:
 //   state=data|empty|loading   points=<n>   only=latency|throughput|resource   markers=off
 // `window.__charts.run(n)` appends one point per update (n updates) to the visible chart and
-// resolves with the milliseconds each update took, from state change to the canvas being drawn
-// (qa/checks/charts.spec.ts, acceptance criterion 2).
+// resolves with the milliseconds each update took, from state change until the canvas is drawn
+// AND the markers overlay has committed its new layout (acceptance criterion 2).
 
 /** 2026-03-14T12:00:00Z, the fixed clock of the QA stills. */
 const END = 1_773_489_600;
@@ -159,11 +160,23 @@ export default function ChartsHarness() {
           const started = performance.now();
           counter.current += 1;
           frameRef.current = next;
+          // uPlot draws in a microtask after setData; its draw hook then re-lays the markers out,
+          // which React commits in a later task. The clock stops on that commit (the draw's
+          // layout settle signal), with a 100 ms guard so a missing draw cannot hang the run.
+          const settled = new Promise<void>((resolve) => {
+            const off = onMarkerLayoutSettled(() => {
+              off();
+              resolve();
+            });
+            setTimeout(() => {
+              off();
+              resolve();
+            }, 100);
+          });
           flushSync(() => {
             setFrame(next);
           });
-          // uPlot commits (draws) in a microtask after setData.
-          await Promise.resolve();
+          await settled;
           times.push(performance.now() - started);
           // Let the browser breathe like the real 2 s cadence would.
           await new Promise<void>((resolve) => setTimeout(resolve, 0));

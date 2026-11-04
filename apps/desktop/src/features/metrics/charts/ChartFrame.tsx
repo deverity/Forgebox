@@ -25,6 +25,31 @@ export interface ChartShellProps {
 }
 
 /**
+ * Compact key for sighted users: a token-coloured swatch, the series name and its latest value.
+ * Decorative (`aria-hidden`): the summary table below carries the same information for
+ * assistive technology.
+ */
+export function ChartLegend({ rows }: { rows: readonly SummaryRow[] }) {
+  const items = rows.filter((row) => row.swatch !== undefined);
+  if (items.length === 0) return null;
+  return (
+    <ul
+      aria-hidden="true"
+      data-chart-legend=""
+      className="m-0 ml-auto flex list-none flex-wrap justify-end gap-x-3 gap-y-1 p-0 text-caption"
+    >
+      {items.map((row) => (
+        <li key={row.label} className="flex items-center gap-1">
+          <span data-legend-swatch="" className={`size-2 rounded-full ${row.swatch ?? ""}`} />
+          <span>{row.label}</span>
+          <span className="text-fg-primary tabular-nums">{row.latest}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
  * Shared frame of the three charts: a <figure> with a fixed-height slot (skeleton while loading,
  * empty state without points, canvas otherwise), the markers overlay and an accessible summary
  * table (the canvas itself is aria-hidden).
@@ -42,7 +67,7 @@ export function ChartShell({
   className,
 }: ChartShellProps) {
   const { t } = useTranslation("metrics");
-  const { layout, onDraw } = useMarkerLayout(markers);
+  const { layout, onDraw, overlayRef } = useMarkerLayout(markers);
   const state = loading ? "loading" : empty ? "empty" : "ready";
 
   return (
@@ -54,29 +79,30 @@ export function ChartShell({
       <figcaption className="flex items-center gap-2 text-callout text-fg-secondary">
         <span>{title}</span>
         {badge}
+        {state === "ready" ? <ChartLegend rows={summary} /> : null}
       </figcaption>
-      <SkeletonSlot loading={loading} height={height} label={t("loading")} className="relative">
+      <SkeletonSlot loading={loading} height={height} label={t("charts.loading")} className="relative">
         {empty ? (
           <EmptyState
-            title={t("empty.title")}
-            description={t("empty.description")}
+            title={t("charts.empty.title")}
+            description={t("charts.empty.description")}
             className="h-full p-4"
           />
         ) : (
           <>
             <UPlotCanvas build={build} data={data} height={height} onDraw={onDraw} />
-            {markers.length > 0 ? <MarkersOverlay layout={layout} /> : null}
+            {markers.length > 0 ? <MarkersOverlay layout={layout} overlayRef={overlayRef} /> : null}
           </>
         )}
       </SkeletonSlot>
       {state === "ready" ? (
         <table className="sr-only" data-chart-summary="">
-          <caption>{t("summary.caption", { title })}</caption>
+          <caption>{t("charts.summary.caption", { title })}</caption>
           <thead>
             <tr>
-              <th scope="col">{t("summary.series")}</th>
-              <th scope="col">{t("summary.latest")}</th>
-              <th scope="col">{t("summary.peak")}</th>
+              <th scope="col">{t("charts.summary.series")}</th>
+              <th scope="col">{t("charts.summary.latest")}</th>
+              <th scope="col">{t("charts.summary.peak")}</th>
             </tr>
           </thead>
           <tbody>

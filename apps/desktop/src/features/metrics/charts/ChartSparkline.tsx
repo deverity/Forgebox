@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { NO_VALUE } from "../format";
 import { useFormatters } from "../../../design/primitives/useFormatters";
 import { withAlpha } from "./palette";
 import { aligned, lastValue, peakValue } from "./summary";
@@ -43,10 +44,10 @@ export default function ChartSparkline({
   const data = useMemo(() => aligned(t, values), [t, values]);
   const latest = lastValue(values);
   const peak = peakValue(values);
-  const label = tr("sparkline.label", {
+  const label = tr("charts.sparkline.label", {
     count: values.length,
-    latest: latest === null ? "-" : f(latest),
-    peak: peak === null ? "-" : f(peak),
+    latest: latest === null ? NO_VALUE : f(latest),
+    peak: peak === null ? NO_VALUE : f(peak),
   });
   return (
     <div role="img" aria-label={label} data-chart-sparkline="" style={{ width, height }}>

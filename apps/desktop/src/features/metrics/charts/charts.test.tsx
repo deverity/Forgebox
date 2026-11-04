@@ -110,7 +110,7 @@ describe("chart states", () => {
     for (const label of ["p50", "p90", "p99"]) {
       expect(within(table).getByRole("rowheader", { name: label })).toBeInTheDocument();
     }
-    expect(within(table).getByRole("row", { name: /p99/ })).toHaveTextContent("52ms");
+    expect(within(table).getByRole("row", { name: /p99/ })).toHaveTextContent(/52\s+ms/);
     expect(document.querySelector("[data-chart-canvas]")).toHaveAttribute("aria-hidden", "true");
   });
 
@@ -140,7 +140,7 @@ describe("chart states", () => {
       wrap(<ResourceChart series={{ t: T, cpu: [10, 20, 30, 40], ram: [1e8, 1e8, 2e8, 2e8] }} />),
     );
     expect(document.querySelector("[data-chart-approx]")).toHaveTextContent("≈");
-    expect(screen.getAllByText(/^Approximate:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Estimate:/).length).toBeGreaterThan(0);
     const scales = instances[0]?.opts.scales as Record<string, unknown>;
     expect(Object.keys(scales)).toEqual(["x", "y", "ram"]);
   });
@@ -208,6 +208,111 @@ describe("markers", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Restart");
     await user.tab();
     expect(buttons[1]).toHaveFocus();
+  });
+});
+
+describe("markers arriving without a draw", () => {
+  it("places markers when only the markers prop changes (no setData)", async () => {
+    const { rerender } = render(wrap(<LatencyBandChart series={latency} markers={[]} />));
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    rerender(wrap(<LatencyBandChart series={latency} markers={markers} />));
+    expect(await screen.findAllByRole("button")).toHaveLength(2);
+    expect(instances).toHaveLength(1);
+    expect(instances[0]?.setData).not.toHaveBeenCalled();
+
+    // A refetch returning new objects with the same ids and a new detail updates the tooltip text.
+    rerender(
+      wrap(
+        <LatencyBandChart
+          series={latency}
+          markers={markers.map((m) => (m.id === "b" ? { ...m, detail: "8.4 to 8.5" } : { ...m }))}
+        />,
+      ),
+    );
+    expect(await screen.findByRole("button", { name: /8\.4 to 8\.5/ })).toBeInTheDocument();
+    expect(instances[0]?.setData).not.toHaveBeenCalled();
+  });
+});
+
+describe("markers on live updates", () => {
+  it("moves the handles with the x range by writing the DOM, keeping the same buttons", async () => {
+    render(wrap(<LatencyBandChart series={latency} markers={markers} />));
+    const before = await screen.findAllByRole("button");
+    const slot = before[0]?.closest<HTMLElement>("[data-marker-id]");
+    if (!slot) throw new Error("marker slot missing");
+    const left0 = slot.style.left;
+    const chart = instances[0] as unknown as {
+      scales: { x: { min: number; max: number } };
+      opts: { hooks: { draw: ((u: unknown) => void)[] } };
+    };
+    chart.scales.x = { min: 1000, max: 1020 };
+    for (const hook of chart.opts.hooks.draw) hook(chart);
+    expect(slot.style.left).not.toBe(left0);
+    expect(screen.getAllByRole("button")[0]).toBe(before[0]);
+  });
+});
+
+describe("legend", () => {
+  const legendOf = () => {
+    const legend = document.querySelector<HTMLElement>("[data-chart-legend]");
+    if (!legend) throw new Error("legend missing");
+    expect(legend).toHaveAttribute("aria-hidden", "true");
+    return legend;
+  };
+  const swatches = (el: HTMLElement) =>
+    [...el.querySelectorAll("[data-legend-swatch]")].map((n) => n.className);
+
+  it("names each latency series with its latest value and its token swatch", () => {
+    render(wrap(<LatencyBandChart series={{ ...latency, php: [5, 6, 7, 8] }} />));
+    const legend = legendOf();
+    for (const [name, value] of [
+      ["p50", "13"],
+      ["p90", "26"],
+      ["p99", "52"],
+      ["PHP time", "8"],
+    ] as const) {
+      const item = within(legend).getByText(name).closest("li");
+      expect(item).toHaveTextContent(value);
+    }
+    const classes = swatches(legend);
+    expect(classes).toHaveLength(4);
+    expect(new Set(classes).size).toBe(4);
+  });
+
+  it("names rps, 4xx and 5xx in the throughput chart", () => {
+    render(
+      wrap(
+        <ThroughputErrorsChart
+          series={{ t: T, rps: [5, 6, 7, 8], e4xx: [1, 1, 1, 1], e5xx: [2, 0, null, 1] }}
+        />,
+      ),
+    );
+    const legend = legendOf();
+    for (const name of ["Requests/s", "4xx", "5xx"]) {
+      expect(within(legend).getByText(name)).toBeInTheDocument();
+    }
+    expect(new Set(swatches(legend)).size).toBe(3);
+  });
+
+  it("names CPU and RAM in the resource chart", () => {
+    render(
+      wrap(<ResourceChart series={{ t: T, cpu: [10, 20, 30, 40], ram: [1e8, 1e8, 2e8, 2e8] }} />),
+    );
+    const legend = legendOf();
+    expect(within(legend).getByText("CPU").closest("li")).toHaveTextContent("40%");
+    expect(within(legend).getByText("RAM")).toBeInTheDocument();
+    expect(new Set(swatches(legend)).size).toBe(2);
+  });
+
+  it("gives the php-version marker a colour other than the p50 line", async () => {
+    render(wrap(<LatencyBandChart series={latency} markers={markers} />));
+    const marker = (await screen.findAllByRole("button")).find(
+      (b) => b.dataset.markerKind === "php-version",
+    );
+    const p50 = document.querySelector("[data-chart-legend] [data-legend-swatch]");
+    expect(marker?.className).toContain("bg-tool-4");
+    expect(marker?.className).not.toContain("bg-accent");
+    expect(p50?.className).toContain("bg-accent");
   });
 });
 
