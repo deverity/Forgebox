@@ -1,7 +1,7 @@
 // `pnpm qa:perf` (M2-E4-T4): runs the perf specs RUNS times (default 3, env FORGE_PERF_RUNS),
 // each run writing its JSON to qa/out/perf/run-<n>/, then writes qa/out/perf/summary.json with the
 // mean and coefficient of variation (CV = stddev / mean) of every metric. A metric whose CV is
-// above 15 % is flagged: list it in qa/perf/informative.json (as "<spec>.<metric>") and document
+// above 15 % that passes in at least one run is flagged (over the threshold in every run it is a budget miss, never informative): list it in qa/perf/informative.json (as "<spec>.<metric>") and document
 // it in the PR; it is then recorded but no longer fails. The exit code is the worst spec run.
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -59,11 +59,19 @@ function main() {
     const summary = {};
     for (const [key, entry] of series) {
         const { mean, cv } = summarize(entry.values);
-        summary[key] = { ...entry, mean, cv, noisy: cv > CV_LIMIT };
+        // Variance may only relax a metric that passes in some runs; a metric over its threshold
+        // in every run is a budget miss, never "noise".
+        const passes = entry.values.map((v) => (entry.bound === "max" ? v <= entry.threshold : v >= entry.threshold));
+        const failsAlways = passes.every((p) => !p);
+        summary[key] = { ...entry, mean, cv, failsAlways, noisy: cv > CV_LIMIT && !failsAlways };
     }
     writeFileSync(join(out, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`);
     for (const [key, s] of Object.entries(summary)) {
-        const flag = s.noisy ? "  <- CV > 15 %: make informative" : "";
+        const flag = s.failsAlways
+            ? "  <- over the threshold in every run: budget miss, not informative"
+            : s.noisy
+              ? "  <- CV > 15 %: make informative"
+              : "";
         console.log(
             `${key}: mean ${s.mean.toFixed(2)} ${s.unit}, CV ${(s.cv * 100).toFixed(1)} %${flag}`,
         );

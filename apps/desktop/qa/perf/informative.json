@@ -1,5 +1,4 @@
 [
   "interaction.longTaskMaxMs",
-  "interaction.clickEventMaxMs",
   "list-500.medianFps"
 ]
