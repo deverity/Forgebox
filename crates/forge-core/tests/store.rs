@@ -377,3 +377,76 @@ fn migration_0005_upgrades_a_schema_4_database_keeping_sites() {
             .all(|s| s.pool_mode == SitePoolMode::Shared && s.metrics_enabled)
     );
 }
+
+#[test]
+fn events_between_filters_by_instant_and_kind_with_the_ts_index() {
+    use forge_core::event::Event;
+    use forge_core::store::EventRepo;
+
+    let store = Store::open_in_memory().unwrap();
+    let repo = EventRepo::new(store.conn());
+    let ts = |s: &str| -> jiff::Timestamp { s.parse().unwrap() };
+    // Fractions of different lengths sort wrongly as text; the exact comparison fixes it.
+    let at = [
+        "2026-11-01T10:00:00Z",
+        "2026-11-01T10:00:00.5Z",
+        "2026-11-01T10:00:01.250Z",
+        "2026-11-01T10:05:00Z",
+        "2026-11-01T11:00:00Z",
+    ];
+    let kinds = [
+        EventKind::SitePhpChanged,
+        EventKind::SiteUpdated,
+        EventKind::SitePhpChanged,
+        EventKind::ConfigRendered,
+        EventKind::SitePhpChanged,
+    ];
+    for (i, (when, kind)) in at.iter().zip(kinds).enumerate() {
+        let event = Event {
+            id: forge_core::ids::EventId::new(),
+            seq: i as u64 + 1,
+            ts: ts(when),
+            kind,
+            payload: json!({ "i": i }),
+        };
+        repo.insert(&event).unwrap();
+    }
+    let seqs = |from: &str, to: &str, kinds: &[EventKind], limit: usize| -> Vec<u64> {
+        repo.list_between(ts(from), ts(to), kinds, limit)
+            .unwrap()
+            .iter()
+            .map(|e| e.seq)
+            .collect()
+    };
+    let php = [EventKind::SitePhpChanged];
+    let both = [EventKind::SitePhpChanged, EventKind::SiteUpdated];
+    // `to` is exclusive, `from` inclusive.
+    assert_eq!(
+        seqs("2026-11-01T10:00:00Z", "2026-11-01T11:00:00Z", &php, 10),
+        [1, 3]
+    );
+    assert_eq!(
+        seqs("2026-11-01T10:00:00Z", "2026-11-01T11:00:00.001Z", &php, 10),
+        [1, 3, 5]
+    );
+    assert_eq!(
+        seqs("2026-11-01T10:00:00.4Z", "2026-11-01T10:00:02Z", &both, 10),
+        [2, 3]
+    );
+    // The oldest `limit` come back.
+    assert_eq!(
+        seqs("2026-11-01T09:00:00Z", "2026-11-01T12:00:00Z", &both, 2),
+        [1, 2]
+    );
+    assert!(seqs("2026-11-01T09:00:00Z", "2026-11-01T12:00:00Z", &[], 10).is_empty());
+    assert!(seqs("2026-11-01T12:00:00Z", "2026-11-01T09:00:00Z", &php, 10).is_empty());
+    let plan: Vec<String> = store
+        .conn()
+        .prepare("EXPLAIN QUERY PLAN SELECT id FROM events WHERE ts >= ?1 AND ts < ?2")
+        .unwrap()
+        .query_map(["a", "b"], |r| r.get::<_, String>(3))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(plan.iter().any(|p| p.contains("events_ts")), "{plan:?}");
+}

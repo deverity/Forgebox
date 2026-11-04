@@ -45,26 +45,6 @@
     "what": "editor launcher"
   },
   {
-    "method": "stats.top",
-    "task": "M2-E5-T9",
-    "what": "Forgebox processes and machine stats"
-  },
-  {
-    "method": "stats.export",
-    "task": "M2-E5-T9",
-    "what": "metrics export"
-  },
-  {
-    "method": "stats.series",
-    "task": "M2-E5-T9",
-    "what": "per-site metric series and markers"
-  },
-  {
-    "method": "stats.routes",
-    "task": "M2-E5-T9",
-    "what": "top routes and recent errors"
-  },
-  {
     "method": "sites.pool_mode",
     "task": "M2-E5-T11",
     "what": "dedicated PHP pool per site"

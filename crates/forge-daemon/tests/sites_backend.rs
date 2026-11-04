@@ -20,12 +20,13 @@ use std::time::{Duration, Instant};
 use forge_ipc::Client;
 use forge_ipc::api::methods::{
     events_subscribe, jobs_get, php_pool_status, sites_add, sites_driver, sites_info, sites_list,
-    sites_park, sites_php, sites_ps, sites_up, tls_ca_status, tls_issue, tls_list,
+    sites_park, sites_php, sites_ps, sites_up, stats_series, tls_ca_status, tls_issue, tls_list,
 };
 use forge_ipc::api::{
     CheckStatus, EventFilter, EventsSubscribeParams, JobDto, JobIdParams, JobState, NoParams,
     ParkParams, PhpPoolStatusParams, ProjectParams, SiteAddParams, SiteDriverParams, SiteDto,
-    SiteInfoDto, SitePhpParams, SitePsParams, SiteRef, TlsHostParams,
+    SiteInfoDto, SitePhpParams, SitePsParams, SiteRef, StatsSeriesParams, StatsWindow,
+    TlsHostParams,
 };
 use forge_ipc::client::SubscriptionItem;
 use serde_json::Value;
@@ -290,6 +291,47 @@ async fn php_switch_is_validated_announced_and_scoped_to_its_site() {
     assert_eq!(payload["to"], "8.4.27");
     assert_eq!(payload["host"], "app.test");
     assert_eq!(payload["site_id"], serde_json::json!(switched.id));
+
+    // stats.series draws the switch as a marker of this site only (M2-E5-T9), even with the
+    // metrics off (a portable root): `from`/`to` are the resolved versions.
+    let series = client
+        .call::<stats_series>(StatsSeriesParams {
+            site: SiteRef::from("app.test".to_owned()),
+            range: StatsWindow::OneHour,
+            from: None,
+            to: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(series.points.len(), 360);
+    let switch = series
+        .markers
+        .iter()
+        .find(|m| m.kind == "site.php_changed")
+        .unwrap_or_else(|| panic!("{:?}", series.markers));
+    assert_eq!(switch.args["from"], "8.3.36");
+    assert_eq!(switch.args["to"], "8.4.27");
+    assert_eq!(
+        switch.seq,
+        events.seq_of("site.php_changed", |_| true).unwrap()
+    );
+    let neighbour_series = client
+        .call::<stats_series>(StatsSeriesParams {
+            site: SiteRef::from("other.test".to_owned()),
+            range: StatsWindow::OneHour,
+            from: None,
+            to: None,
+        })
+        .await
+        .unwrap();
+    assert!(
+        !neighbour_series
+            .markers
+            .iter()
+            .any(|m| m.kind == "site.php_changed"),
+        "{:?}",
+        neighbour_series.markers
+    );
 
     // The same version again changes nothing and announces nothing.
     let job = client

@@ -45,6 +45,7 @@ pub mod services;
 pub mod settings;
 pub mod shutdown;
 pub mod terminal;
+pub mod top;
 pub mod update_feed;
 pub mod vars;
 pub mod web;

@@ -44,7 +44,8 @@ use forge_core::runtime::spawn_blocking_timeout;
 use forge_manifest::schema::project::ProcessAutostart;
 use forge_render::Engine;
 use forge_supervisor::{
-    InstanceHandle, InstanceState, InstanceStatus, JobTree, QUICK_ASK_TIMEOUT, Supervisor,
+    InstanceHandle, InstanceMetrics, InstanceState, InstanceStatus, JobTree, QUICK_ASK_TIMEOUT,
+    Supervisor,
 };
 use futures::future::join_all;
 use serde::Serialize;
@@ -94,6 +95,19 @@ pub struct ProcView {
     pub manually_stopped: bool,
     /// An on-visit start was already dispatched (by a visit or by the user).
     pub visit_started: bool,
+}
+
+/// Latest resource sample of one process of a site (`stats.top`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProcessSample {
+    pub site_id: SiteId,
+    /// Primary host of the site.
+    pub host: String,
+    /// Procfile name (`web`, `queue`).
+    pub name: String,
+    pub instance_id: forge_core::ids::InstanceId,
+    /// `None` while the process is not running.
+    pub metrics: Option<InstanceMetrics>,
 }
 
 /// Status of one process.
@@ -863,6 +877,25 @@ impl AppManager {
             host: primary,
             processes,
         })
+    }
+
+    /// The latest resource sample of every registered process of every site, by host and
+    /// name (quick asks in parallel; a process that does not answer has `metrics: None`).
+    pub async fn process_samples(&self) -> Result<Vec<ProcessSample>> {
+        let views = self.ask(|reply| AppMsg::View { host: None, reply }).await?;
+        let asks = views.into_iter().map(|view| async move {
+            let metrics = view.handle.metrics(QUICK_ASK_TIMEOUT).await.ok().flatten();
+            ProcessSample {
+                site_id: view.spec.site_id,
+                host: view.host,
+                name: view.name,
+                instance_id: view.handle.id(),
+                metrics,
+            }
+        });
+        let mut out: Vec<ProcessSample> = join_all(asks).await;
+        out.sort_by(|a, b| (&a.host, &a.name).cmp(&(&b.host, &b.name)));
+        Ok(out)
     }
 
     /// Hosts that have processes registered, sorted.

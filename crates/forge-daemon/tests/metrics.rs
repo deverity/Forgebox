@@ -13,6 +13,11 @@
 //!   `services.status` stays under 50 ms;
 //! * a 50 MiB backlog: 200 `stats.get` with p99 < 50 ms;
 //! * a restart keeps the numbers (24 h and 5 min) without counting a line twice;
+//! * `stats.series` (360 points at 10 s for 1 h, 1,440 at 60 s for 24 h, 168 hours for 7 d,
+//!   the traffic adding up, event markers without absolute paths), `stats.routes`
+//!   (`/users/{id}`, recent errors newest first), `stats.export` (CSV, one line per minute)
+//!   and `stats.top` (the nginx instance with its image name and owner, the daemon, the
+//!   machine);
 //! * `[metrics] enabled = false`: no tailer, `metrics_enabled = false`; a portable root is off
 //!   until `metrics.enabled` is set, which applies live.
 #![cfg(windows)]
@@ -26,11 +31,14 @@ use std::time::{Duration, Instant};
 
 use forge_ipc::Client;
 use forge_ipc::api::methods::{
-    jobs_get, metrics_subscribe, services_status, sites_alias, stats_get, system_config_set,
+    jobs_get, metrics_subscribe, services_status, sites_alias, stats_export, stats_get,
+    stats_routes, stats_series, stats_top, system_config_set,
 };
 use forge_ipc::api::{
     ConfigSetParams, JobIdParams, JobState, ListAction, MetricsSubscribeParams, NoParams,
-    ServiceState, SiteAliasParams, SiteRef, SiteStatsDto, StatsParams, StatsWindow,
+    PortOwnerKind, ServiceState, SiteAliasParams, SiteRef, SiteStatsDto, StatsExportDto,
+    StatsExportFormat, StatsExportParams, StatsParams, StatsRoutesParams, StatsSeriesParams,
+    StatsWindow,
 };
 use forge_ipc::client::SubscriptionItem;
 use futures::{SinkExt, StreamExt};
@@ -647,5 +655,254 @@ async fn disabled_metrics_run_no_tailer_and_portable_roots_start_off() {
         toml.contains("[metrics]") && toml.contains("enabled = true"),
         "{toml}"
     );
+    t.down().await;
+}
+
+/// A line of `log_format forgebox` that ended at `at`, for `uri`.
+fn line_at(host: &str, status: u16, rt_ms: u64, uri: &str, at: jiff::Timestamp) -> String {
+    format!(
+        "{{\"t\":\"{}.000\",\"host\":\"{host}\",\"s\":{status},\"rt\":{}.{:03},\"ut\":\"0.001\",\"b\":100,\"m\":\"GET\",\"u\":\"{uri}\",\"up\":\"127.0.0.1:19000\"}}\n",
+        at.as_second(),
+        rt_ms / 1000,
+        rt_ms % 1000,
+    )
+}
+
+async fn export_of(client: &Client, params: StatsExportParams) -> StatsExportDto {
+    let started = client.call::<stats_export>(params).await.unwrap();
+    wait_job(client, started.id).await;
+    let done = client
+        .call::<jobs_get>(JobIdParams { job_id: started.id })
+        .await
+        .unwrap();
+    serde_json::from_value(done.result.unwrap()).unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn series_routes_export_and_top_answer_from_the_real_traffic() {
+    let t = up(root_with(&["loja", "probe"], true, ""), true).await;
+    let c = &t.client;
+    wait_following(c, &t.root, "probe.test").await;
+    let job = c
+        .call::<sites_alias>(SiteAliasParams {
+            site: SiteRef::from("loja.test"),
+            action: ListAction::Add,
+            alias: "loja.local".into(),
+        })
+        .await
+        .unwrap();
+    wait_job(c, job.id).await;
+
+    // 20 successes on two ids of the same route, then three failures 200 ms apart. They end
+    // within the grace of the 2 s buckets (older lines are late and only count in minutes).
+    let now = jiff::Timestamp::now();
+    let sec = |back_ms: i64| now - jiff::SignedDuration::from_millis(back_ms);
+    let mut text = String::new();
+    for i in 0..20u64 {
+        text.push_str(&line_at(
+            "loja.test",
+            200,
+            5 + i,
+            &format!("/users/{}", 1 + i % 2),
+            sec(800),
+        ));
+    }
+    text.push_str(&line_at("loja.test", 500, 300, "/pay", sec(600)));
+    text.push_str(&line_at("loja.test", 502, 400, "/pay", sec(400)));
+    text.push_str(&line_at("loja.test", 404, 4, "/missing", sec(200)));
+    append(&access_log(&t.root), &text);
+    let total = 23;
+    let seen = wait_requests(c, "loja.test", total).await;
+    assert_eq!(seen.requests, total, "{seen:?}");
+
+    // stats.series: dense, the documented number of points, the traffic adds up.
+    for (range, step_ms, points) in [
+        (StatsWindow::OneMinute, 2_000, 30),
+        (StatsWindow::OneHour, 10_000, 360),
+        (StatsWindow::OneDay, 60_000, 1_440),
+        (StatsWindow::SevenDays, 3_600_000, 168),
+    ] {
+        let series = c
+            .call::<stats_series>(StatsSeriesParams {
+                site: SiteRef::from("loja.test"),
+                range,
+                from: None,
+                to: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(series.points.len(), points, "{range:?}");
+        assert_eq!(series.step_ms, step_ms);
+        let step = jiff::SignedDuration::from_millis(i64::from(step_ms));
+        for pair in series.points.windows(2) {
+            assert_eq!(pair[1].at.duration_since(pair[0].at), step, "{range:?}");
+        }
+        assert_eq!(series.to.duration_since(series.from), step * points as i32);
+        let requests: u64 = series.points.iter().map(|p| p.requests).sum();
+        assert_eq!(
+            requests,
+            total,
+            "{range:?} from {} to {} now {now}: {:?}",
+            series.from,
+            series.to,
+            series
+                .points
+                .iter()
+                .filter(|p| p.requests > 0)
+                .map(|p| (p.at.to_string(), p.requests))
+                .collect::<Vec<_>>()
+        );
+        let errors: u64 = series
+            .points
+            .iter()
+            .map(|p| p.status_4xx + p.status_5xx)
+            .sum();
+        assert_eq!(errors, 3, "{range:?}");
+        let busy = series.points.iter().find(|p| p.requests > 0).unwrap();
+        assert!(busy.p50_ms.is_some() && busy.p99_ms.is_some());
+        assert!(
+            series
+                .points
+                .iter()
+                .any(|p| p.requests == 0 && p.p50_ms.is_none())
+        );
+        // Markers: the nginx start and its configuration, never an absolute path.
+        let kinds: Vec<&str> = series.markers.iter().map(|m| m.kind.as_str()).collect();
+        assert!(kinds.contains(&"service.running"), "{kinds:?}");
+        assert!(kinds.contains(&"config.rendered"), "{kinds:?}");
+        assert!(kinds.contains(&"site.updated"), "{kinds:?}");
+        assert!(
+            series
+                .markers
+                .iter()
+                .flat_map(|m| m.args.values())
+                .all(|v| !v.contains(":/") && !v.contains(":\\")),
+            "{:?}",
+            series.markers
+        );
+        assert!(series.markers.windows(2).all(|p| p[0].seq < p[1].seq));
+    }
+    let err = c
+        .call::<stats_series>(StatsSeriesParams {
+            site: SiteRef::from("loja.test"),
+            range: StatsWindow::OneMinute,
+            from: Some(now),
+            to: Some(now - jiff::SignedDuration::from_secs(60)),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "invalid_input", "{err:?}");
+    let err = c
+        .call::<stats_series>(StatsSeriesParams {
+            site: SiteRef::from("nope.test"),
+            range: StatsWindow::OneHour,
+            from: None,
+            to: None,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "not_found", "{err:?}");
+
+    // stats.routes: ids grouped, recent errors newest first.
+    let routes = c
+        .call::<stats_routes>(StatsRoutesParams {
+            site: SiteRef::from("loja.test"),
+        })
+        .await
+        .unwrap();
+    assert_eq!(routes.host, "loja.test");
+    assert_eq!(routes.total, total);
+    let users = routes
+        .routes
+        .iter()
+        .find(|r| r.route == "/users/{id}")
+        .unwrap_or_else(|| panic!("{:?}", routes.routes));
+    assert_eq!((users.method.as_str(), users.count), ("GET", 20));
+    assert!(
+        !routes
+            .routes
+            .iter()
+            .any(|r| r.route == "/users/1" || r.route == "/users/2" || r.route.contains('?'))
+    );
+    let statuses: Vec<u16> = routes.recent_errors.iter().map(|e| e.status).collect();
+    assert_eq!(statuses, [404, 502, 500]);
+    assert_eq!(routes.recent_errors[0].route, "/missing");
+    assert_eq!(routes.recent_errors[0].host, "loja.test");
+
+    // stats.export: one CSV line per minute with traffic, no routes in it.
+    let minutes: std::collections::BTreeSet<i64> = [sec(800), sec(600), sec(400), sec(200)]
+        .iter()
+        .map(|t| t.as_second().div_euclid(60))
+        .collect();
+    let range = |format| StatsExportParams {
+        site: SiteRef::from("loja.test"),
+        from: now - jiff::SignedDuration::from_secs(3600),
+        to: now + jiff::SignedDuration::from_secs(60),
+        format,
+    };
+    let export = export_of(c, range(StatsExportFormat::Csv)).await;
+    let lines: Vec<&str> = export.content.lines().collect();
+    assert_eq!(lines.len(), 1 + minutes.len(), "{}", export.content);
+    assert!(lines[0].starts_with("timestamp,requests,"));
+    let exported: u64 = lines[1..]
+        .iter()
+        .map(|l| l.split(',').nth(1).unwrap().parse::<u64>().unwrap())
+        .sum();
+    assert_eq!(exported, total);
+    assert!(!export.content.contains("/users") && !export.content.contains("/pay"));
+    let export = export_of(c, range(StatsExportFormat::Json)).await;
+    let doc: Value = serde_json::from_str(&export.content).unwrap();
+    assert_eq!(doc["step"], "minute");
+    assert_eq!(doc["rows"].as_array().unwrap().len(), minutes.len());
+
+    // stats.top: the (fake) nginx with its owner and image, the daemon, the machine. The
+    // instance's processes are sampled every 2 s: wait for the first sample.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let top = loop {
+        let top = c.call::<stats_top>(NoParams {}).await.unwrap();
+        if top
+            .processes
+            .iter()
+            .any(|p| p.owner_name == "nginx/default")
+        {
+            break top;
+        }
+        assert!(Instant::now() < deadline, "{top:?}");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    };
+    let nginx = top
+        .processes
+        .iter()
+        .find(|p| p.owner_name == "nginx/default")
+        .unwrap();
+    assert_eq!(nginx.owner_kind, PortOwnerKind::Instance);
+    assert_eq!(nginx.name.to_lowercase(), "nginx.exe");
+    assert!(nginx.rss_bytes > 0 && nginx.pid > 0);
+    let daemon = top
+        .processes
+        .iter()
+        .find(|p| p.owner_kind == PortOwnerKind::Daemon)
+        .expect("the daemon");
+    assert_eq!(daemon.owner_name, "forgeboxd");
+    assert!(
+        daemon.name.to_lowercase().starts_with("forgeboxd"),
+        "{}",
+        daemon.name
+    );
+    let machine = top.machine.expect("machine stats");
+    assert!(machine.mem_total > 0 && machine.mem_available <= machine.mem_total);
+    assert!(machine.logical_cpus > 0 && machine.forgebox_rss > 0);
+    assert!(!machine.disks.is_empty());
+    // The second call has an earlier sample to compare with.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let machine = c
+        .call::<stats_top>(NoParams {})
+        .await
+        .unwrap()
+        .machine
+        .unwrap();
+    let cpu = machine.cpu_pct.expect("machine cpu from the second call");
+    assert!((0.0..=100.0).contains(&cpu));
+    assert!(machine.forgebox_cpu_pct.unwrap() <= cpu);
     t.down().await;
 }

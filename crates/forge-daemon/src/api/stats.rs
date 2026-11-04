@@ -4,6 +4,7 @@
 //! * `stats.get`: without `from`, the last `window` up to `to` (default now); with `from`,
 //!   the exact range `[from, to)` (the window only labels it). Ranges older than the
 //!   in-memory retention are merged with the stored minutes and hours.
+//! * `stats.series|routes|export|top`: [`super::stats_series`].
 //! * `metrics.subscribe`: answers `last_seq` = `resume_from` (0 without it), then a snapshot
 //!   at once (one sample per matched site, metrics off included), then one sample per
 //!   matched site with metrics on every `StatsWindow::subscribe_cadence_ms`. `seq` is the
@@ -16,7 +17,9 @@ use std::time::Duration;
 use forge_core::error::{ForgeError, Result};
 use forge_core::ids::SiteId;
 use forge_core::store::Site;
-use forge_ipc::api::methods::{metrics_subscribe, stats_get};
+use forge_ipc::api::methods::{
+    metrics_subscribe, stats_export, stats_get, stats_routes, stats_series, stats_top,
+};
 use forge_ipc::api::{
     MetricsEnvelope, MetricsSubscribeParams, SiteRef, StatsDto, StatsParams, StatsWindow,
     SubscriptionDto,
@@ -24,7 +27,7 @@ use forge_ipc::api::{
 use forge_ipc::server::{Ctx, Router, StreamSender};
 use forge_metrics::{SiteRoute, Sites, Snapshot, Span};
 
-use super::{convert, route};
+use super::{convert, route, stats_series as views};
 use crate::daemon::Daemon;
 
 /// Answer deadline of both methods: a range beyond the in-memory retention reads up to
@@ -36,8 +39,13 @@ const ASK_TIMEOUT: Duration = Duration::from_secs(2);
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, stats_get, get);
     route!(router, daemon, metrics_subscribe, subscribe);
+    route!(router, daemon, stats_series, views::series);
+    route!(router, daemon, stats_routes, views::routes);
+    route!(router, daemon, stats_export, views::export);
+    route!(router, daemon, stats_top, views::top);
     router
         .timeout::<stats_get>(ANSWER_TIMEOUT)
+        .timeout::<stats_series>(views::ANSWER_TIMEOUT)
         .timeout::<metrics_subscribe>(ANSWER_TIMEOUT);
 }
 

@@ -153,6 +153,8 @@ pub struct Inner {
     pub mail: crate::mail::MailHub,
     /// Per-site metrics (`stats.get`, `metrics.subscribe`; fed by [`crate::metrics`]).
     pub metrics: forge_metrics::MetricsHandle,
+    /// State between two `stats.top` calls (previous machine sample, daemon CPU).
+    pub top: Arc<crate::top::TopSampler>,
 }
 
 /// Handle on the composed daemon. Cheap to clone.
