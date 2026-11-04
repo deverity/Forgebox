@@ -93,6 +93,86 @@ pub async fn save_text_file(
     .map_err(|e| ApiError::new("internal", format!("save_text_file: {e}")))?
 }
 
+/// Largest certificate `save_ca_certificate` writes (a PEM certificate is about 1 KiB).
+const SAVE_CERT_MAX_BYTES: usize = 64 * 1024;
+
+/// Writes the local CA certificate (PEM, public part only) to `path`, chosen in the native
+/// "Save as" dialog opened by `save_ca_certificate`. Only absolute `.crt`, `.cer` or `.pem`
+/// paths are accepted and the content must be a PEM certificate, so a compromised page cannot
+/// use it to drop executables or scripts, nor to write a private key.
+pub fn write_certificate_file(path: &std::path::Path, contents: &str) -> Result<(), ApiError> {
+    let allowed = path.extension().is_some_and(|ext| {
+        ["crt", "cer", "pem"]
+            .iter()
+            .any(|name| ext.eq_ignore_ascii_case(name))
+    });
+    if !path.is_absolute() || !allowed || path.file_name().is_none() {
+        return Err(ApiError::new(
+            "invalid_input",
+            format!(
+                "{} is not an absolute .crt, .cer or .pem path",
+                path.display()
+            ),
+        ));
+    }
+    let trimmed = contents.trim();
+    if !trimmed.starts_with("-----BEGIN CERTIFICATE-----")
+        || !trimmed.ends_with("-----END CERTIFICATE-----")
+        || trimmed.contains("PRIVATE KEY")
+        || contents.len() > SAVE_CERT_MAX_BYTES
+    {
+        return Err(ApiError::new(
+            "invalid_input",
+            "the content is not a PEM certificate",
+        ));
+    }
+    let io = |e: std::io::Error| ApiError::new("io", format!("{}: {e}", path.display()));
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".forgebox-tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp, contents).map_err(io)?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        io(e)
+    })
+}
+
+/// "Exportar CA": asks where to save the certificate (native dialog, opened here so the
+/// webview never picks the destination) and writes it atomically. Resolves the chosen path,
+/// or `None` when the user cancelled.
+#[tauri::command]
+pub async fn save_ca_certificate(
+    app: AppHandle,
+    default_name: String,
+    contents: String,
+) -> Result<Option<String>, ApiError> {
+    if contents.len() > SAVE_CERT_MAX_BYTES {
+        return Err(ApiError::new(
+            "invalid_input",
+            "the content is not a PEM certificate",
+        ));
+    }
+    let suggested = crate::files::sanitize_file_name(&default_name);
+    tokio::task::spawn_blocking(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .set_file_name(suggested)
+            .add_filter("Certificate", &["crt", "cer", "pem"])
+            .blocking_save_file();
+        let Some(file) = picked else {
+            return Ok(None);
+        };
+        let path = file
+            .into_path()
+            .map_err(|e| ApiError::new("invalid_input", format!("unusable path: {e}")))?;
+        write_certificate_file(&path, &contents)?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| ApiError::new("internal", format!("save_ca_certificate: {e}")))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +216,28 @@ mod tests {
         }
         let huge = "x".repeat(SAVE_TEXT_MAX_BYTES + 1);
         assert!(write_text_file(&dir.join("big.json"), &huge).is_err());
+    }
+
+    #[test]
+    fn write_certificate_file_accepts_only_pem_certificates_at_certificate_paths() {
+        let dir = std::env::temp_dir().join(format!("forgebox-cert-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+        let target = dir.join("ca.crt");
+        write_certificate_file(&target, pem).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), pem);
+        assert!(!dir.join("ca.crt.forgebox-tmp").exists());
+        for bad in [dir.join("run.bat"), dir.join("noext"), "ca.crt".into()] {
+            let err = write_certificate_file(&bad, pem).unwrap_err();
+            assert_eq!(err.code, "invalid_input", "{}", bad.display());
+        }
+        for content in [
+            "echo hi",
+            "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+            "-----BEGIN CERTIFICATE-----\nPRIVATE KEY\n-----END CERTIFICATE-----\n",
+        ] {
+            assert!(write_certificate_file(&dir.join("x.pem"), content).is_err());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -268,6 +268,66 @@
     ]
   },
   {
+    "action": "security.ca_export",
+    "method": "tls.ca_export",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tls ca export"
+      }
+    ]
+  },
+  {
+    "action": "security.ca_uninstall",
+    "method": "tls.ca_uninstall",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "scope": "current_user"
+        },
+        "command": "forge tls ca uninstall --scope user"
+      },
+      {
+        "input": {
+          "scope": "local_machine"
+        },
+        "command": "forge tls ca uninstall --scope machine"
+      }
+    ]
+  },
+  {
+    "action": "security.cert_renew",
+    "method": "tls.renew",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "host": "loja.test"
+        },
+        "command": "forge tls renew loja.test"
+      },
+      {
+        "input": {
+          "all": true
+        },
+        "command": "forge tls renew --all"
+      }
+    ]
+  },
+  {
+    "action": "security.dns_disable",
+    "method": "net.dns_disable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge dns disable"
+      }
+    ]
+  },
+  {
     "action": "services.create_instance",
     "method": "services.create",
     "kind": "job",

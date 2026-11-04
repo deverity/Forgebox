@@ -30,6 +30,7 @@ import {
 } from "./data";
 import { mailHandlers } from "./mail";
 import { phpHandlers } from "./php";
+import { createNetworkSecurityQa } from "./networkSecurity";
 import { settingsHandlers } from "./settings";
 import { siteDetailHandlers } from "./siteDetail";
 import { terminalHandlers } from "./terminal";
@@ -213,6 +214,14 @@ export function registerQaScenarios(): void {
   define("dashboard", healthy.data, healthy.extra);
   const attention = attentionDashboard();
   define("dashboard-attention", attention.data, attention.extra);
+  // Settings > Rede and Seguranca (M2-E3-T17): DNS/CA jobs with the UAC prompt, certificates,
+  // external port conflict, helper log. Its own scenario: Diagnostics answers `net.dns_enable`
+  // and `tls.ca_install` differently.
+  define("network-security", populatedData(), {
+    latencyMs: 0,
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
+    handlers: createNetworkSecurityQa().handlers,
+  });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
   define("slow", populatedData(), builtin("slow"));
   define("remote", populatedData(), builtin("remote"));
