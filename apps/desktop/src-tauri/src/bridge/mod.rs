@@ -313,6 +313,14 @@ impl Bridge {
         self.inner.streams.len()
     }
 
+    /// Drops the connection of `context` so its next use re-discovers the root
+    /// (`choose_root`, M2-E2-T11). Streams of the context are closed.
+    pub async fn reset(&self, context: &str) -> Result<(), ApiError> {
+        self.inner.streams.close_all();
+        let context = context.to_owned();
+        self.ask(|reply| Msg::Reset { context, reply }).await
+    }
+
     /// Closes every stream and context (app exit, tests).
     pub async fn shutdown(&self) {
         self.inner.streams.close_all();

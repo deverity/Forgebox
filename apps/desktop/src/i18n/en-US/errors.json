@@ -45,7 +45,17 @@
     "root_uninitialized": "{root} is not set up yet: finish the first-run setup.",
     "unknown_context": "The connection {context} does not exist.",
     "unknown_method": "This daemon does not offer this action.",
-    "job_cancelled": "The operation was cancelled."
+    "job_cancelled": "The operation was cancelled.",
+    "path_invalid": "The path is empty or contains invalid characters.",
+    "root_overridden_env": "The FORGEBOX_ROOT environment variable decides the root; remove it to choose another folder.",
+    "root_overridden_portable": "Portable mode decides the root; it cannot be changed here.",
+    "path_not_absolute": "Enter a full path, such as C:\\Forgebox.",
+    "path_not_local": "The root must be on a local drive, not a network path.",
+    "path_is_file": "That path is a file; choose a folder.",
+    "path_inside_bin": "That folder is inside the bin folder of a Forgebox root; choose another.",
+    "path_not_empty": "That folder is not empty and is not a Forgebox root; choose an empty folder.",
+    "path_not_writable": "Forgebox cannot write to that folder; choose another or check its permissions.",
+    "pointer_unavailable": "There is no folder to save the root choice in this session."
   },
   "failure": {
     "port_in_use": "Port {port} is in use by {exe} (PID {pid}).",

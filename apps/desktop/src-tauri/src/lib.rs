@@ -13,6 +13,7 @@ pub mod data_dir;
 pub mod files;
 pub mod i18n;
 pub mod notifications;
+pub mod onboarding;
 pub mod perf;
 pub mod prefs;
 pub mod shortcuts;
@@ -95,6 +96,9 @@ pub fn run() {
                 .unwrap_or_else(|_| Boot::load(appearance.as_ref()));
             let shell = Arc::new(WindowShell::new(launch, clock, boot, appearance, forced));
             app.manage(shell.clone());
+            app.manage(Arc::new(onboarding::OnboardingStore::new(
+                shell.data_dir().path().join(onboarding::ONBOARDING_FILE),
+            )));
             window::create_main_window(app.handle(), &shell)?;
             // The tray (docs/07 §7) exists from the start; it connects after the first paint.
             // `--perf-startup` measures the window alone.
@@ -132,6 +136,10 @@ pub fn run() {
             bridge::commands::ipc_ack,
             bridge::commands::ipc_unsubscribe,
             bridge::commands::ipc_start,
+            bridge::commands::first_run_state,
+            bridge::commands::choose_root,
+            bridge::commands::onboarding_get,
+            bridge::commands::onboarding_set,
             window::ready,
             window::appearance_get,
             perf::perf_startup,
