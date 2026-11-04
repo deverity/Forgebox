@@ -48,6 +48,31 @@ describe("merging streams", () => {
     expect(texts(merger)).toEqual(["a1", "a2", "b1", "a3", "b2"]);
   });
 
+  it("keeps a source without ts at the bottom next to a source with ts", () => {
+    const merger = new LineMerger();
+    const t = (ms: number) => new Date(Date.parse("2026-01-01T00:00:00Z") + ms).toISOString();
+    merger.push("a", [line(1, null, "a1"), line(2, null, "a2")]);
+    merger.push("b", [line(1, t(1000), "b1")]);
+    merger.push("a", [line(3, null, "a3")]);
+    expect(texts(merger)).toEqual(["a1", "a2", "b1", "a3"]);
+    merger.push("b", [line(2, t(2000), "b2")]);
+    merger.push("a", [line(4, null, "a4")]);
+    expect(texts(merger)).toEqual(["a1", "a2", "b1", "a3", "b2", "a4"]);
+    expect(merger.rows[merger.rows.length - 1]).toMatchObject({ target: "a" });
+  });
+
+  it("keeps arrival order among sources without ts when a source with ts exists", () => {
+    const merger = new LineMerger();
+    const t = (ms: number) => new Date(Date.parse("2026-01-01T00:00:00Z") + ms).toISOString();
+    merger.push("a", [line(1, null, "a1")]);
+    merger.push("c", [line(1, t(500), "c1")]);
+    merger.push("b", [line(1, null, "b1")]);
+    merger.push("a", [line(2, null, "a2")]);
+    merger.push("b", [line(2, null, "b2")]);
+    const out = texts(merger);
+    expect(out).toEqual(["a1", "c1", "b1", "a2", "b2"]);
+  });
+
   it("puts a line without ts after the previous line of its own stream", () => {
     const merger = new LineMerger();
     merger.push("a", [line(1, at(5), "a1"), line(2, null, "a2-no-ts")]);

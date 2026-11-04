@@ -41,9 +41,9 @@ function keyOf(line: LogLineDto, fallback: number): number {
 }
 
 /**
- * Merges the lines of several targets. Rows are ordered by `ts`; a line without `ts` takes the
- * key of the line before it in its own target, so it stays where it arrived (a target with no
- * `ts` at all keeps its arrival order). Ties break by arrival.
+ * Merges the lines of several targets. Rows are ordered by `ts`; a live line without `ts` takes the
+ * larger of the previous key of its own target and the key of the newest row, so it stays where
+ * it arrived (arrival order, even among targets with no `ts`). Ties break by arrival.
  */
 export class LineMerger {
   private list: LogRow[] = [];
@@ -77,12 +77,15 @@ export class LineMerger {
   /** Lines that arrived live (or the first tail). Lines at or below the newest `seq` are skipped. */
   push(target: string, lines: readonly LogLineDto[]): number {
     const fresh: LogRow[] = [];
-    let at = this.lastAt.get(target) ?? this.list[this.list.length - 1]?.at ?? 0;
+    // A line without ts never sorts before what is already shown: it takes the larger of its
+    // source's previous key and the key of the newest row when the batch arrives.
+    const floor = Math.max(this.lastAt.get(target) ?? 0, this.list[this.list.length - 1]?.at ?? 0);
+    let at = floor;
     let top = this.newest.get(target) ?? -1;
     for (const line of lines) {
       if (line.seq <= top) continue;
       top = line.seq;
-      at = keyOf(line, at);
+      at = keyOf(line, Math.max(at, floor));
       fresh.push({ kind: "line", id: this.nextId++, target, line, at });
     }
     this.lastAt.set(target, at);
