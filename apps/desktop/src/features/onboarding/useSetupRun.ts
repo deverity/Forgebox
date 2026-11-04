@@ -41,8 +41,13 @@ export interface SetupRunInput {
   stack: string | null;
   versions: Readonly<Record<string, string>>;
   steps: readonly RunStepId[];
-  /** The parked folder, whose case-sensitive flag the parity step clears. */
-  parkedDir: string;
+  /**
+   * The parked folder step 1 just created, whose case-sensitive flag the parity step clears.
+   * `null` when this client did not create it (remote, portable, forced root, re-run): the
+   * daemon's layout is unknown (ADR-0009) and may already hold projects, so only the config
+   * key is written.
+   */
+  parkedDir: string | null;
 }
 
 const METHOD_OF: Record<RunStepId, string> = {
@@ -103,7 +108,9 @@ export function useSetupRun(input: SetupRunInput): SetupRun {
     if (alive.current) {
       setSpecs(missing.map((item) => item.spec));
       // A retry shows only what is still being installed: finished rows stay, failed ones go.
-      setRows((current) => current.filter((row) => !failedRows.current.has(row.key)));
+      // Snapshot first: React runs the updater at render time, after the clear below.
+      const failed = new Set(failedRows.current);
+      setRows((current) => current.filter((row) => !failed.has(row.key)));
     }
     failedRows.current.clear();
     if (missing.length === 0) {
@@ -148,13 +155,16 @@ export function useSetupRun(input: SetupRunInput): SetupRun {
               intent,
             );
             // The folders were created case-sensitive by step 1 and NTFS children inherit the
-            // flag; the parked folder is still empty, so clearing it cannot conflict.
-            await runAction(
-              runtime.queue,
-              disableCaseSensitivity,
-              { dir: inputRef.current.parkedDir },
-              intent,
-            );
+            // flag; that folder is still empty, so clearing it cannot conflict. Without step 1
+            // there is no folder known to be empty: skip it.
+            if (inputRef.current.parkedDir !== null) {
+              await runAction(
+                runtime.queue,
+                disableCaseSensitivity,
+                { dir: inputRef.current.parkedDir },
+                intent,
+              );
+            }
             break;
           case "install":
             await install();

@@ -123,6 +123,8 @@ test("a failed download shows its cause and the retry installs only what is miss
   await install.getByRole("button", { name: "Try again" }).first().click();
   await expect(install).toHaveAttribute("data-status", "done");
   expect((await callCount(page, "tools.install")) - before).toBe(1);
+  await expect(install.locator("[data-install-job]")).toHaveCount(3);
+  await expect(install.locator("[data-error-code]")).toHaveCount(0);
 });
 
 test("a remote daemon hides step 1 and the PATH and startup toggles, with the reason", async ({

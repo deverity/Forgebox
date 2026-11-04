@@ -229,6 +229,10 @@ describe("Onboarding wizard", () => {
       plansBefore,
     );
     expect([...scenario.installed].sort()).toEqual(["mysql@8.4.3", "php@8.4.27", "redis@7.4.1"]);
+    // The failed row is replaced by the retry's row: three rows, none with a failure left.
+    const area = step("install");
+    expect(area?.querySelectorAll("[data-install-job]")).toHaveLength(3);
+    expect(area?.querySelector("[data-error-code]")).toBeNull();
   });
 
   it("re-plans when a version changes and lists the new total", async () => {
@@ -279,6 +283,25 @@ describe("Onboarding wizard", () => {
     expect(screen.queryByRole("switch", { name: "Add Forgebox to PATH" })).toBeNull();
     expect(screen.queryByRole("switch", { name: "Start with Windows" })).toBeNull();
     expect(screen.getByRole("switch", { name: "Trust the local CA" })).toBeInTheDocument();
+  });
+
+  it("does not clear the case flag of a folder it does not know when parity is off without step 1 (portable)", async () => {
+    const { h } = await open(
+      {},
+      { source: "portable", autostart: { available: false, enabled: false, reason: "portable" } },
+    );
+    const user = countingUser();
+    await user.click(await screen.findByRole("radio", { name: /Empty/ }, WAIT));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("switch", { name: /Linux parity mode/ }));
+    await user.click(screen.getByRole("button", { name: "Install and set up" }));
+    await waitFor(() => {
+      expect(step("ca")?.dataset.status).toBe("done");
+    }, WAIT);
+    expect(
+      h.fake.calls.filter((call) => call.method === "system.config_set").map((c) => c.params),
+    ).toEqual([{ key: "case_sensitive", value: false }]);
+    expect(methods(h)).not.toContain("fs_parity.case_disable");
   });
 
   it("hides step 1 and the PATH and startup toggles in portable mode", async () => {
