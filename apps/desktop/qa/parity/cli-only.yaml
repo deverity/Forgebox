@@ -178,10 +178,6 @@ pending:
     task: M2-E4-T9
   - method: sites.server
     task: M2-E4-T9
-  - method: system.config_set
-    task: M2-E3-T16
-  - method: tls.ca_rotate
-    task: M2-E3-T17
   - method: tls.ca_uninstall
     task: M2-E3-T17
   - method: tls.issue
@@ -196,8 +192,6 @@ pending:
   # per tool, not per series, so the button needs a decision).
   - method: tools.update
     task: M2-E4-T9
-  - method: daemon.restart
-    task: M2-E3-T16
   - method: sites.park
     task: M2-E2-T19
   - method: tls.ca_export

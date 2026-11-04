@@ -10,6 +10,7 @@ import type mail from "./en-US/mail.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
 import type php from "./en-US/php.json";
+import type settings from "./en-US/settings.json";
 import type services from "./en-US/services.json";
 import type shell from "./en-US/shell.json";
 import type sites from "./en-US/sites.json";
@@ -31,6 +32,7 @@ export interface Resources {
   gallery: typeof gallery;
   updater: typeof updater;
   services: typeof services;
+  settings: typeof settings;
   sites: typeof sites;
   catalog: typeof catalog;
   dashboard: typeof dashboard;

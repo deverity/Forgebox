@@ -460,6 +460,49 @@
     ]
   },
   {
+    "action": "settings.ca_rotate",
+    "method": "tls.ca_rotate",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tls ca rotate"
+      }
+    ]
+  },
+  {
+    "action": "settings.config_set",
+    "method": "system.config_set",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "key": "dns.enabled",
+          "value": true
+        },
+        "command": "forge config set dns.enabled true"
+      },
+      {
+        "input": {
+          "key": "editor.command",
+          "value": "code -g {path}:{line}"
+        },
+        "command": "forge config set editor.command \"code -g {path}:{line}\""
+      }
+    ]
+  },
+  {
+    "action": "settings.daemon_restart",
+    "method": "daemon.restart",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge daemon restart"
+      }
+    ]
+  },
+  {
     "action": "sites.add",
     "method": "sites.add",
     "kind": "job",
