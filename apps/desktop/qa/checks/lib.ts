@@ -9,6 +9,7 @@ import { SELFTEST_PATH, type SelftestCase } from "../../src/qa/selftest/cases";
 import type { QaUrl } from "../../e2e/fixtures";
 
 export { expect, test, emulate, qaUrl, SCENARIOS } from "../../e2e/fixtures";
+export type { QaUrl };
 
 /** WCAG 2.1 AA colours of docs/07 section 2.3. */
 export const SYSTEM_ACCENTS = ["#0078D4", "#FFB900", "#E81123", "#00CC6A"] as const;
@@ -192,6 +193,9 @@ export async function accentContrastViolations(
 // axe
 
 export async function axeViolations(page: Page): Promise<string[]> {
+  // axe samples the computed colour: a button halfway through its colour transition reads as a
+  // false contrast failure (seen at 960x540 on /services), so measure the settled state.
+  await freezeTransitions(page);
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
