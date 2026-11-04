@@ -5,8 +5,10 @@ import type { ShortcutCheck } from "./lib";
 
 export const SECTION_8: readonly ShortcutCheck[] = [
   { keys: "Control+k", label: "command palette", effect: "[role=dialog] [cmdk-input]" },
-  { keys: "Control+Shift+s", label: "start all", effect: null, pending: "M2-E1-T14" },
-  { keys: "Control+Shift+x", label: "stop all", effect: null, pending: "M2-E1-T14" },
+  // Start/Stop all run the action and announce it in the polite toast region (M2-E1-T14); an
+  // error toast lands in role=alert instead and fails the check.
+  { keys: "Control+Shift+s", label: "start all", effect: "[role=status] [data-kind]" },
+  { keys: "Control+Shift+x", label: "stop all", effect: "[role=status] [data-kind]" },
   { keys: "Control+n", label: "new site", effect: '[data-testid="page-sites"]' },
   { keys: "Control+l", label: "logs", effect: '[data-testid="page-logs"]' },
   { keys: "Control+,", label: "settings", effect: '[data-testid="page-settings"]' },
