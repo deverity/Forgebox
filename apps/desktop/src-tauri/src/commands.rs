@@ -2,6 +2,8 @@
 
 use forge_ipc::ApiError;
 use serde::Serialize;
+use tauri::AppHandle;
+use tauri_plugin_dialog::DialogExt;
 
 /// Static facts about this build, shown by the shell and used by smoke tests.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,8 +33,7 @@ pub async fn app_info() -> AppInfo {
 /// Largest file `save_text_file` writes (a support bundle is a few hundred KiB).
 const SAVE_TEXT_MAX_BYTES: usize = 8 * 1024 * 1024;
 
-/// Writes `contents` to `path`, chosen by the user in the dialog plugin's "Save as" (the webview
-/// has no file system access). Only absolute `.json` paths are accepted, so a compromised page
+/// Writes `contents` to `path`, chosen by the user in the native "Save as" dialog opened by `save_text_file`. Only absolute `.json` paths are accepted, so a compromised page
 /// cannot use it to drop executables or scripts. The write is atomic (temporary file + rename)
 /// and runs in `spawn_blocking`.
 pub fn write_text_file(path: &std::path::Path, contents: &str) -> Result<(), ApiError> {
@@ -59,11 +60,37 @@ pub fn write_text_file(path: &std::path::Path, contents: &str) -> Result<(), Api
     })
 }
 
+/// Asks where to save the report (native dialog, opened here so the webview never picks the
+/// destination, same rule as `files::save_attachment`) and writes `contents` there atomically.
+/// Resolves the chosen path, or `None` when the user cancelled.
 #[tauri::command]
-pub async fn save_text_file(path: String, contents: String) -> Result<(), ApiError> {
-    tokio::task::spawn_blocking(move || write_text_file(std::path::Path::new(&path), &contents))
-        .await
-        .map_err(|e| ApiError::new("internal", format!("save_text_file: {e}")))?
+pub async fn save_text_file(
+    app: AppHandle,
+    default_name: String,
+    contents: String,
+) -> Result<Option<String>, ApiError> {
+    if contents.len() > SAVE_TEXT_MAX_BYTES {
+        return Err(ApiError::new("invalid_input", "the file is too large"));
+    }
+    let suggested = crate::files::sanitize_file_name(&default_name);
+    tokio::task::spawn_blocking(move || {
+        let picked = app
+            .dialog()
+            .file()
+            .set_file_name(suggested)
+            .add_filter("JSON", &["json"])
+            .blocking_save_file();
+        let Some(file) = picked else {
+            return Ok(None);
+        };
+        let path = file
+            .into_path()
+            .map_err(|e| ApiError::new("invalid_input", format!("unusable path: {e}")))?;
+        write_text_file(&path, &contents)?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| ApiError::new("internal", format!("save_text_file: {e}")))?
 }
 
 #[cfg(test)]

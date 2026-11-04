@@ -360,7 +360,7 @@ Forgebox/
 │       │   └── src/
 │       │       ├── main.rs / lib.rs  # lib.rs: Builder (Bridge gerenciado, on_page_load fecha streams da página) +
 │       │       │                     #   teste que exige `async` em todo #[tauri::command]
-│       │       ├── commands.rs   # app_info (fatos do build) e save_text_file (grava o relatório escolhido no diálogo "Salvar como": caminho absoluto `.json`, atômico); nunca lógica de domínio aqui
+│       │       ├── commands.rs   # app_info (fatos do build) e save_text_file (abre o diálogo "Salvar como" no lado Rust, grava o relatório só no caminho escolhido: `.json` absoluto, atômico; devolve `None` ao cancelar); nunca lógica de domínio aqui
 │       │       ├── bridge/       # ponte IPC (ADR-0034): mod.rs (Bridge: call/subscribe/state/start, validação contra METHODS),
 │       │       │                 #   commands.rs (ipc_state|call|subscribe|ack|unsubscribe|start, evento forge://connection),
 │       │       │                 #   contexts.rs (ator Contexts: um Client por contexto, LocalConnector = discover +

@@ -112,19 +112,14 @@ export type SaveOutcome = { saved: string } | { cancelled: true };
 
 /**
  * Saves `contents` through the native "Save as" dialog and the `save_text_file` command
- * (dialog plugin `save` + a Rust write; the webview has no file system access). Outside Tauri
+ * (Rust opens the dialog and writes; the webview never picks the path). Outside Tauri
  * (QA builds in a plain browser) it downloads the file instead. Rejects when the write fails.
  */
 export async function saveTextFile(defaultName: string, contents: string): Promise<SaveOutcome> {
   if (inTauri()) {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const path = await save({
-      defaultPath: defaultName,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    if (path === null) return { cancelled: true };
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("save_text_file", { path, contents });
+    const path = await invoke<string | null>("save_text_file", { defaultName, contents });
+    if (path === null) return { cancelled: true };
     return { saved: path };
   }
   const url = URL.createObjectURL(new Blob([contents], { type: "application/json" }));
