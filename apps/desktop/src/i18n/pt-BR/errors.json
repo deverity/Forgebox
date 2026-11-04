@@ -45,7 +45,17 @@
     "root_uninitialized": "{root} ainda não foi configurada: conclua a configuração inicial.",
     "unknown_context": "A conexão {context} não existe.",
     "unknown_method": "Este daemon não oferece esta ação.",
-    "job_cancelled": "A operação foi cancelada."
+    "job_cancelled": "A operação foi cancelada.",
+    "path_invalid": "O caminho está vazio ou tem caracteres inválidos.",
+    "root_overridden_env": "A variável de ambiente FORGEBOX_ROOT define a raiz; remova-a para escolher outra pasta.",
+    "root_overridden_portable": "O modo portátil define a raiz; ela não pode ser alterada aqui.",
+    "path_not_absolute": "Informe um caminho completo, como C:\\Forgebox.",
+    "path_not_local": "A raiz precisa estar em um disco local, não em um caminho de rede.",
+    "path_is_file": "Esse caminho é um arquivo; escolha uma pasta.",
+    "path_inside_bin": "Essa pasta está dentro da pasta bin de uma raiz do Forgebox; escolha outra.",
+    "path_not_empty": "Essa pasta não está vazia e não é uma raiz do Forgebox; escolha uma pasta vazia.",
+    "path_not_writable": "O Forgebox não consegue gravar nessa pasta; escolha outra ou verifique as permissões.",
+    "pointer_unavailable": "Não há pasta para salvar a escolha da raiz nesta sessão."
   },
   "failure": {
     "port_in_use": "A porta {port} está em uso por {exe} (PID {pid}).",

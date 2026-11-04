@@ -92,6 +92,16 @@ export const DESCRIBED_REASONS = [
   "unknown_context",
   "unknown_method",
   "job_cancelled",
+  "path_invalid",
+  "root_overridden_env",
+  "root_overridden_portable",
+  "path_not_absolute",
+  "path_not_local",
+  "path_is_file",
+  "path_inside_bin",
+  "path_not_empty",
+  "path_not_writable",
+  "pointer_unavailable",
 ] as const;
 type DescribedReason = (typeof DESCRIBED_REASONS)[number];
 

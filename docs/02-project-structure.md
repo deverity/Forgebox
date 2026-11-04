@@ -376,6 +376,10 @@ Forgebox/
 │       │       │                 #   root_initialized (state/ só com gui/ não conta)
 │       │       ├── prefs.rs      # prefs.json (theme, vibrancy, win10_acrylic, close_to_tray + chaves de outras features),
 │       │       │                 #   comandos gui_prefs_get/gui_prefs_set
+│       │       ├── onboarding.rs # (M2-E2-T11) validate_choice/choose_root (grava root.toml via RootPointer e reconecta a ponte),
+│       │       │                 #   first_run (raiz, origem, inicializada, daemon alcançável, onboarding feito) e OnboardingStore
+│       │       │                 #   (onboarding.json na pasta de dados da GUI, por raiz ou contexto); comandos first_run_state,
+│       │       │                 #   choose_root, onboarding_get/onboarding_set em bridge/commands.rs
 │       │       ├── perf.rs       # criação do processo → `ready` (perf_startup, `--perf-startup` imprime JSON e sai)
 │       │       └── autostart.rs  # (M2-E1-T18)
 │       └── public/               # (quando houver assets estáticos)

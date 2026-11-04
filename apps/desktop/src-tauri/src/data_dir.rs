@@ -173,6 +173,7 @@ mod tests {
                 env_root: None,
                 exe_dir: Some(sandbox.join("install")),
                 local_app_data: Some(sandbox.join("lad")),
+                config_dir: None,
             },
             local_app_data: Some(sandbox.join("lad")),
             temp_dir: sandbox.join("tmp"),

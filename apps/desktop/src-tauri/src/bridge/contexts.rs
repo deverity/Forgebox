@@ -318,6 +318,9 @@ pub enum Msg {
     },
     /// Closes every context (app exit, tests).
     Close { reply: Reply<()> },
+    /// Drops the connection of one context so it reopens (and re-discovers its root) on
+    /// next use; the daemon of the old root keeps running.
+    Reset { context: String, reply: Reply<()> },
     // Internal: results of the actor's own tasks. `open` names the open instance so
     // stale reports (a context reopened since) are ignored.
     Opened {
@@ -539,6 +542,10 @@ impl Actor for Contexts {
             } => self.on_start(&context, initialize, reply, &weak),
             Msg::Close { reply } => {
                 self.close_all();
+                let _ = reply.send(());
+            }
+            Msg::Reset { context, reply } => {
+                self.on_reset(&context);
                 let _ = reply.send(());
             }
             Msg::Opened {
@@ -1027,14 +1034,32 @@ impl Contexts {
     fn close_all(&mut self) {
         let ids: Vec<String> = self.entries.keys().cloned().collect();
         for id in ids {
+            self.close_entry(&id, true);
+        }
+    }
+
+    /// Drops the connection of `context` (waiters get `context_closed`) but leaves it
+    /// reopenable: the next use runs the connector's `open` again, which re-discovers the
+    /// root (M2-E2-T11: the root was just changed).
+    fn on_reset(&mut self, context: &str) {
+        if self.entries.contains_key(context) {
+            self.close_entry(context, false);
+        }
+    }
+
+    fn close_entry(&mut self, id: &str, final_: bool) {
+        let id = id.to_owned();
+        {
             let Some(entry) = self.entries.get_mut(&id) else {
-                continue;
+                return;
             };
+            // Results of an opening in flight belong to the previous instance.
+            entry.open = OPEN_COUNTER.fetch_add(1, Ordering::Relaxed);
             let previous = std::mem::replace(
                 &mut entry.phase,
                 Phase::Closed {
                     error: None,
-                    final_: true,
+                    final_,
                 },
             );
             match previous {

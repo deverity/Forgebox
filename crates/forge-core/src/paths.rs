@@ -27,6 +27,12 @@ pub const DAEMON_LOCK_FILE: &str = "forgeboxd.lock";
 /// Top-level directories that get the NTFS case-sensitive flag (docs/08 §2.4).
 pub const CASE_SENSITIVE_DIRS: &[&str] = &["www", "etc", "data", "logs", "tmp", "backups"];
 
+/// Environment variable that moves the client files folder (and so `root.toml`).
+pub const CONFIG_DIR_ENV: &str = "FORGE_CONFIG_DIR";
+
+/// Name of the pointer file (docs/08 §2.1).
+pub const ROOT_POINTER_FILE: &str = "root.toml";
+
 /// Absolute path of a Forgebox installation root (`C:\Forgebox` by default).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ForgeRoot(PathBuf);
@@ -58,6 +64,9 @@ pub struct DiscoverInputs {
     pub exe_dir: Option<PathBuf>,
     /// `%LOCALAPPDATA%` (Windows) where `Forgebox\root.toml` may live.
     pub local_app_data: Option<PathBuf>,
+    /// `FORGE_CONFIG_DIR`: the folder of the client files; when set, `root.toml` is read
+    /// from (and written to) it instead of `%LOCALAPPDATA%\Forgebox`.
+    pub config_dir: Option<PathBuf>,
 }
 
 impl DiscoverInputs {
@@ -70,7 +79,15 @@ impl DiscoverInputs {
                 .ok()
                 .and_then(|exe| exe.parent().map(Path::to_path_buf)),
             local_app_data: std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
+            config_dir: std::env::var_os(CONFIG_DIR_ENV)
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
         }
+    }
+
+    /// Where `root.toml` lives for these inputs, if anywhere ([`RootPointer::file_for`]).
+    pub fn root_toml(&self) -> Option<PathBuf> {
+        RootPointer::file_for(self)
     }
 }
 
@@ -136,8 +153,7 @@ impl ForgeRoot {
                 return Ok((Self::new(exe_dir)?, RootSource::Portable));
             }
         }
-        if let Some(lad) = &inputs.local_app_data {
-            let file = lad.join("Forgebox").join("root.toml");
+        if let Some(file) = RootPointer::file_for(inputs) {
             if file.is_file() {
                 return Ok((Self::from_root_toml(&file)?, RootSource::RootToml));
             }
@@ -522,6 +538,64 @@ fn validate_component(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The per-user pointer to the root, `%LOCALAPPDATA%\Forgebox\root.toml` (or
+/// `$FORGE_CONFIG_DIR/root.toml`), read by [`ForgeRoot::discover`] after `--root`,
+/// `FORGEBOX_ROOT` and `portable.flag`. This is the writer (M2-E2-T11).
+pub struct RootPointer;
+
+impl RootPointer {
+    /// The pointer file for `inputs`: `config_dir` if set, else
+    /// `<local_app_data>/Forgebox`; `None` when neither is known.
+    pub fn file_for(inputs: &DiscoverInputs) -> Option<PathBuf> {
+        if let Some(dir) = &inputs.config_dir {
+            return Some(dir.join(ROOT_POINTER_FILE));
+        }
+        inputs
+            .local_app_data
+            .as_ref()
+            .map(|lad| lad.join("Forgebox").join(ROOT_POINTER_FILE))
+    }
+
+    /// The pointer file of the current process environment.
+    pub fn file() -> Option<PathBuf> {
+        Self::file_for(&DiscoverInputs::from_env(None))
+    }
+
+    /// Writes the pointer to `root` in the current environment's file; returns its path.
+    /// Blocking.
+    pub fn write(root: &ForgeRoot) -> Result<PathBuf> {
+        let file = Self::file().ok_or_else(|| {
+            ForgeError::InvalidInput(
+                "no folder for root.toml: neither FORGE_CONFIG_DIR nor LOCALAPPDATA is set"
+                    .to_owned(),
+            )
+        })?;
+        Self::write_to(&file, root)?;
+        Ok(file)
+    }
+
+    /// Writes `root = "<root>"` to `file` atomically (creates the folder; temporary file
+    /// then rename). `root` must be absolute and free of control characters. Blocking.
+    pub fn write_to(file: &Path, root: &ForgeRoot) -> Result<()> {
+        let text = root.to_posix_string();
+        if !root.path().is_absolute() || text.chars().any(char::is_control) {
+            return Err(ForgeError::InvalidInput(format!(
+                "{text:?} is not a valid root path"
+            )));
+        }
+        #[derive(serde::Serialize)]
+        struct RootToml<'a> {
+            root: &'a str,
+        }
+        let body = toml::to_string(&RootToml { root: &text })
+            .map_err(|e| ForgeError::ConfigInvalid(format!("root.toml: {e}")))?;
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).at("creating", parent)?;
+        }
+        write_atomic(file, body.as_bytes())
+    }
+}
+
 /// Writes `bytes` to `path` atomically: `<path>.tmp` then rename over the target, so
 /// readers never see a half-written file. Blocking.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -657,6 +731,7 @@ mod tests {
             env_root: Some(base.path().join("env").into_os_string()),
             exe_dir: Some(exe_dir.clone()),
             local_app_data: Some(lad.clone()),
+            config_dir: None,
         };
         let (r, src) = ForgeRoot::discover_with(&inputs).unwrap();
         assert_eq!(
@@ -697,6 +772,7 @@ mod tests {
         std::fs::write(base.path().join("Forgebox").join("root.toml"), "nope").unwrap();
         let inputs = DiscoverInputs {
             local_app_data: Some(base.path().to_path_buf()),
+            config_dir: None,
             ..DiscoverInputs::default()
         };
         let err = ForgeRoot::discover_with(&inputs).unwrap_err();
@@ -833,5 +909,62 @@ mod tests {
         assert_eq!(report.case_sensitive_failed.len(), 1);
         assert_eq!(report.case_sensitive_failed[0].0, r.logs());
         assert!(report.case_sensitive_applied.contains(&r.www()));
+    }
+
+    #[test]
+    fn root_pointer_round_trips_through_discover() {
+        let base = tempfile::tempdir().unwrap();
+        let cfg = base.path().join("cfg");
+        let target = root(&base.path().join("My Root"));
+        let inputs = DiscoverInputs {
+            config_dir: Some(cfg.clone()),
+            // A different LOCALAPPDATA must be ignored while the override is set.
+            local_app_data: Some(base.path().join("lad")),
+            ..DiscoverInputs::default()
+        };
+        let file = RootPointer::file_for(&inputs).unwrap();
+        assert_eq!(file, cfg.join("root.toml"));
+        RootPointer::write_to(&file, &target).unwrap();
+        let (found, source) = ForgeRoot::discover_with(&inputs).unwrap();
+        assert_eq!(source, RootSource::RootToml);
+        assert_eq!(found, target);
+        assert!(
+            !cfg.join("root.toml.tmp").exists(),
+            "temporary file renamed"
+        );
+        assert!(!base.path().join("lad").exists(), "LOCALAPPDATA untouched");
+
+        // Rewriting replaces the previous pointer.
+        let other = root(&base.path().join("other"));
+        RootPointer::write_to(&file, &other).unwrap();
+        assert_eq!(ForgeRoot::discover_with(&inputs).unwrap().0, other);
+    }
+
+    #[test]
+    fn root_pointer_falls_back_to_local_app_data_and_rejects_bad_paths() {
+        let base = tempfile::tempdir().unwrap();
+        let inputs = DiscoverInputs {
+            local_app_data: Some(base.path().to_path_buf()),
+            ..DiscoverInputs::default()
+        };
+        assert_eq!(
+            RootPointer::file_for(&inputs),
+            Some(base.path().join("Forgebox").join("root.toml"))
+        );
+        assert_eq!(RootPointer::file_for(&DiscoverInputs::default()), None);
+
+        let file = base.path().join("x").join("root.toml");
+        let bad = ForgeRoot(PathBuf::from("relative/root"));
+        let err = RootPointer::write_to(&file, &bad).unwrap_err();
+        assert_eq!(err.code(), "invalid_input");
+        let ctl = ForgeRoot(base.path().join(
+            "a
+b",
+        ));
+        assert_eq!(
+            RootPointer::write_to(&file, &ctl).unwrap_err().code(),
+            "invalid_input"
+        );
+        assert!(!file.exists());
     }
 }

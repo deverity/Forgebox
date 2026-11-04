@@ -10,6 +10,10 @@
 //! | `ipc_ack` | `stream_id, frame` | — |
 //! | `ipc_unsubscribe` | `context, stream_id` | — |
 //! | `ipc_start` | `context, initialize?` | [`ContextStateDto`] |
+//! | `first_run_state` | `context?` | [`FirstRunState`] |
+//! | `choose_root` | `path` | [`ChooseRootAnswer`] |
+//! | `onboarding_get` | `context?` | [`OnboardingEntry`] |
+//! | `onboarding_set` | `context?, patch` | [`OnboardingEntry`] |
 //!
 //! Errors are always `ApiError {code, message, details}` ([`super::errors`]). State changes
 //! are pushed as the [`CONNECTION_EVENT`] (`forge://connection`) event.
@@ -21,6 +25,11 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State, Webview};
 
 use forge_ipc::ApiError;
+use forge_ipc::base::paths::DiscoverInputs;
+
+use crate::onboarding::{
+    self, ChooseRootAnswer, FirstRunState, OnboardingEntry, OnboardingPatch, OnboardingStore,
+};
 
 use super::{
     Bridge, CONNECTION_EVENT, CallArgs, ConnectionSink, ContextStateDto, StreamFrame,
@@ -112,4 +121,67 @@ pub async fn ipc_start(
     initialize: Option<bool>,
 ) -> Result<ContextStateDto, ApiError> {
     bridge.start(&context, initialize.unwrap_or(false)).await
+}
+
+/// First-run facts for `context` (default `local`): the root and where it comes from,
+/// whether a daemon initialized it, whether the daemon answers, and the stored onboarding
+/// progress. No domain logic: see [`onboarding::first_run`].
+#[tauri::command(rename_all = "snake_case")]
+pub async fn first_run_state(
+    bridge: State<'_, Bridge>,
+    store: State<'_, Arc<OnboardingStore>>,
+    context: Option<String>,
+) -> Result<FirstRunState, ApiError> {
+    let context = context.unwrap_or_else(|| super::LOCAL_CONTEXT.to_owned());
+    onboarding::first_run(
+        &bridge,
+        store.file().to_path_buf(),
+        &context,
+        DiscoverInputs::from_env(None),
+    )
+    .await
+}
+
+/// Onboarding step 1: validates `path`, writes `root.toml`, reconnects the `local` context
+/// to the new root (starting its daemon, which creates the layout). Refusals are
+/// `invalid_input` with a `details.reason` ([`onboarding::RootRejection`]).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn choose_root(
+    bridge: State<'_, Bridge>,
+    path: String,
+) -> Result<ChooseRootAnswer, ApiError> {
+    onboarding::choose_root(&bridge, &path, DiscoverInputs::from_env(None)).await
+}
+
+/// Stored onboarding progress of `context` (default `local`, keyed by its root).
+#[tauri::command(rename_all = "snake_case")]
+pub async fn onboarding_get(
+    store: State<'_, Arc<OnboardingStore>>,
+    context: Option<String>,
+) -> Result<OnboardingEntry, ApiError> {
+    let context = context.unwrap_or_else(|| super::LOCAL_CONTEXT.to_owned());
+    let store = Arc::clone(&store);
+    tokio::task::spawn_blocking(move || {
+        let key = onboarding::key_for(&context, &DiscoverInputs::from_env(None))?;
+        Ok(store.get(&key))
+    })
+    .await
+    .map_err(|e| ApiError::new("internal", format!("onboarding_get: {e}")))?
+}
+
+/// Merges `patch` (`step`, `choices`, `done`) into the progress of `context`.
+#[tauri::command(rename_all = "snake_case")]
+pub async fn onboarding_set(
+    store: State<'_, Arc<OnboardingStore>>,
+    context: Option<String>,
+    patch: OnboardingPatch,
+) -> Result<OnboardingEntry, ApiError> {
+    let context = context.unwrap_or_else(|| super::LOCAL_CONTEXT.to_owned());
+    let store = Arc::clone(&store);
+    tokio::task::spawn_blocking(move || {
+        let key = onboarding::key_for(&context, &DiscoverInputs::from_env(None))?;
+        store.update(&key, patch)
+    })
+    .await
+    .map_err(|e| ApiError::new("internal", format!("onboarding_set: {e}")))?
 }

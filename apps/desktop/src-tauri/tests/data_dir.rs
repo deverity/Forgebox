@@ -71,6 +71,7 @@ impl Sandbox {
                 env_root: None,
                 exe_dir: Some(p.join("install")),
                 local_app_data: Some(p.join("lad")),
+                config_dir: None,
             },
             local_app_data: Some(p.join("lad")),
             temp_dir: p.join("tmp"),
