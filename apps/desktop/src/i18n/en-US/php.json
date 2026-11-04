@@ -39,7 +39,7 @@
   "sites": {
     "count_one": "{count} site",
     "count_other": "{count} sites",
-    "link": "See the sites using PHP {series}"
+    "forSeries": " (PHP {series})"
   },
   "quick": {
     "title": "Quick settings",

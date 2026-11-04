@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../design/primitives/Button";
 import { AsyncView } from "../../design/primitives/AsyncView";
+import { FOCUS_RING } from "../../design/primitives/shared";
 import { useConnectionStatus, useForgeQuery, useRuntime } from "../../state";
 import { seriesColumns } from "./model";
 import { SeriesColumn } from "./SeriesColumn";
@@ -49,7 +50,7 @@ export function PhpPage() {
           aria-label={t("columns")}
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- scrollable region must be keyboard reachable
           tabIndex={0}
-          className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-4"
+          className={`flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-4 ${FOCUS_RING}`}
         >
           {columns.map((version) => (
             <SeriesColumn key={version.series} version={version} />

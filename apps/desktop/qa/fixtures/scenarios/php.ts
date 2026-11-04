@@ -106,7 +106,6 @@ interface SeriesState {
   extensions: T.PhpExtDto[];
   xdebug: T.XdebugMode;
   pool: T.PoolDto | null;
-  sites: number;
   settings: Map<string, string>;
 }
 
@@ -158,7 +157,6 @@ function seriesState(n: number, series: string, version: string): SeriesState {
     extensions: extensionList(series),
     xdebug: "off",
     pool: n === 1 ? null : poolOf(n, series, version, "running", n === 2 ? 1 : 0),
-    sites: n === 2 ? 1 : 0,
     settings: new Map(),
   };
 }
@@ -239,7 +237,7 @@ export function phpHandlers(data: QaData, config: FakeHandlers): FakeHandlers {
     arch: "x64",
     is_current_cli: cli === s.version,
     pool: s.pool === null ? null : { ...s.pool, xdebug: s.xdebug !== "off" },
-    sites: s.sites,
+    sites: data.sites.filter((site) => site.php?.series === s.series).length,
     xdebug: s.xdebug,
   });
   const history: T.UpdateHistoryEntryDto[] = [

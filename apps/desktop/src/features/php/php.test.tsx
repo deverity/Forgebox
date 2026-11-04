@@ -21,7 +21,12 @@ function phpData(): ScenarioData {
 }
 
 async function mountPhp(data: ScenarioData = phpData()) {
-  const qa = { instances: [], sites: [], tools: data.tools, daemon: daemonStatus() };
+  const qa = {
+    instances: [],
+    sites: data.sites.map((s) => ({ ...s })),
+    tools: data.tools,
+    daemon: daemonStatus(),
+  };
   const h = await renderApp({
     path: "/php",
     data,

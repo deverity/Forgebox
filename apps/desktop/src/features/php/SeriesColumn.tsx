@@ -21,6 +21,8 @@ import { PoolCard } from "./PoolCard";
 import { UpdateSection } from "./UpdateSection";
 import { XdebugSection } from "./XdebugSection";
 
+/** Height of a typical quick-settings form: the placeholder matches it so the cards below stay put. */
+const QUICK_SETTINGS_HEIGHT = 330;
 const SITES_PATH = "/sites";
 const SITES_LINK_ID = "series-sites";
 
@@ -77,7 +79,7 @@ function QuickSettings({ series }: { series: string }) {
   return (
     <section aria-label={t("quick.title")} className="flex flex-col gap-2">
       <h3 className="text-headline">{t("quick.title")}</h3>
-      <QueryBoundary query={settings} height={160}>
+      <QueryBoundary query={settings} height={QUICK_SETTINGS_HEIGHT}>
         {(dto) => (
           <QuickSettingsForm
             key={JSON.stringify([dto.settings, dto.ports])}
@@ -120,10 +122,10 @@ export function SeriesColumn({ version }: { version: PhpVersionDto }) {
           to={SITES_PATH}
           search={{ php: version.series }}
           data-testid={SITES_LINK_ID}
-          aria-label={t("sites.link", { series: version.series })}
-          className={`w-fit rounded-control text-callout text-accent underline-offset-2 hover:underline ${FOCUS_RING}`}
+          className={`w-fit rounded-control text-callout text-fg-primary underline underline-offset-2 ${FOCUS_RING}`}
         >
           {t("sites.count", { count: version.sites })}
+          <span className="sr-only">{t("sites.forSeries", { series: version.series })}</span>
         </Link>
         <CliRadio version={version} checked={cli} />
       </Card>
