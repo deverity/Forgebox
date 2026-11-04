@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import i18n from "i18next";
+import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it } from "vitest";
 import { renderApp } from "../testApp";
 import { GALLERY_PATH } from "../routes/root";
@@ -69,6 +70,16 @@ describe("/__gallery", () => {
     expect(
       screen.getAllByRole("button", { name: /Primary|Disabled|Saving/ }).length,
     ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("renders the real CommandPalette from the gallery button", async () => {
+    await renderApp({ path: GALLERY_PATH });
+    await screen.findByRole("heading", { level: 1, name: "Component gallery" });
+    await userEvent.click(screen.getByRole("button", { name: "Open the palette" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(dialog.querySelector("[cmdk-input]")).not.toBeNull();
+    });
   });
 
   it("is a route of the app router", async () => {

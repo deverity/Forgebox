@@ -20,7 +20,8 @@ import {
   TextField,
   Toggle,
 } from "../../design/primitives";
-import { OPEN_PALETTE_EVENT } from "../shell/Titlebar";
+import { CommandPalette } from "../palette/CommandPalette";
+import type { PaletteActions } from "../palette/actions";
 import { P, shows, type GalleryMarker } from "../../design/gallery/marker";
 import { SurfacesGallery } from "../../design/gallery/SurfacesGallery";
 
@@ -68,6 +69,18 @@ const SAMPLE_PORT = "80";
 const SAMPLE_PATH = "C:/www/app";
 const KEY_CTRL = "Ctrl";
 const KEY_K = "K";
+// Inert actions: the gallery renders the real palette (rows with/without CLI, shortcut and
+// unavailable reason come from the live capabilities, instances and sites) without side effects.
+const NOOP_PALETTE_ACTIONS: PaletteActions = {
+  goTo: () => undefined,
+  openService: () => undefined,
+  newSite: () => undefined,
+  run: () => Promise.resolve(true),
+  startAll: () => Promise.resolve(true),
+  stopAll: () => Promise.resolve(true),
+  openTerminal: () => Promise.resolve(true),
+  handlers: () => ({}),
+};
 const HOST_RE = /^[a-z0-9-]+$/;
 
 /** `/__gallery`: every control primitive with all variants and states (docs/design/components.md). */
@@ -76,6 +89,7 @@ export default function Gallery() {
   const fmt = createFormatters(i18n.language);
   const MB = 1024 * 1024;
   const [toggle, setToggle] = useState(true);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [memory, setMemory] = useState(256);
   const [theme, setTheme] = useState<string>(SYSTEM);
   const [path, setPath] = useState(SAMPLE_PATH);
@@ -240,11 +254,16 @@ export default function Gallery() {
       <Section title={t("commandPalette.title")} {...shows(P.CommandPalette)}>
         <Button
           onClick={() => {
-            window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT));
+            setPaletteOpen(true);
           }}
         >
           {t("commandPalette.open")}
         </Button>
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          actions={NOOP_PALETTE_ACTIONS}
+        />
       </Section>
 
       <SurfacesGallery />
