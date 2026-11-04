@@ -98,3 +98,22 @@ e o evento `forge://connection` (todo `ContextStateDto` que muda, com `version` 
 
 **Consequências.** Épicos posteriores trocam o placeholder em `features/<id>/index.tsx` e registram slots em `features/<id>/slots.ts`, sem editar arquivos do shell. A paleta (T14) lê `features.ts`. Remotos (M6) acrescentam linhas a `shell/contexts.ts`.
 
+
+## Adendo M2-E1-T21 — auto-start depois do primeiro quadro e orçamento do bundle (2026-11-04)
+
+**Contexto.** No gate do M2-E1, o cold start com o daemon parado deu mediana de 1 037 ms (release, RDP, máquina quieta). Com o daemon rodando foram 782 ms, e sem poder lançar o daemon, 774 ms. O `ipc_state` do primeiro commit abre o contexto e a política dispara o start inicial na hora, então o `forgeboxd` nascia durante a pintura e disputava a CPU de 4 núcleos com o WebView2.
+
+**Decisão.**
+- Starts automáticos (inicial e restart da política) esperam o `FirstFrameGate` (`bridge::contexts`), aberto pelo comando `ready` ou pelo vigia de 5 s, com teto de 3 s (`FIRST_FRAME_WAIT_CAP`). A UI já mostra `starting` enquanto espera.
+- Conectar a um daemon que já roda e o start pedido pelo usuário (`ipc_start`) não esperam.
+- O portão padrão vem aberto (testes, embutimentos sem janela).
+- Orçamento do bundle re-baselinado: JS inicial ≤ 175 KiB gzip (medido 163,3), chunk lazy ≤ 100 KiB (xterm 80,2) e `Forgebox.exe` ≤ 17 MiB (medido 16,2, contra o alvo ~8 MB da docs/08, que segue como meta de follow-up). Tudo verificado por `pnpm size`.
+
+**Alternativas descartadas.**
+- Atrasar o `runtime.start()` do frontend até depois do `ready`: atrasaria também a conexão com um daemon já rodando e mudaria o tempo de centenas de testes vitest.
+- Mover o spawn para `spawn_blocking`: o custo é CPU/disco do daemon iniciando, não bloqueio de thread.
+
+**Consequências.**
+- Cold start com o daemon parado: 760,5 e 770,5 ms (duas séries).
+- O daemon sobe ~1 frame mais tarde na primeira abertura.
+- O `perf:startup` pausa 1,5 s entre execuções para não medir a saída da execução anterior.
