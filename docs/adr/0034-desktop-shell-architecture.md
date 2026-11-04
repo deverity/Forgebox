@@ -114,6 +114,6 @@ e o evento `forge://connection` (todo `ContextStateDto` que muda, com `version` 
 - Mover o spawn para `spawn_blocking`: o custo é CPU/disco do daemon iniciando, não bloqueio de thread.
 
 **Consequências.**
-- Cold start com o daemon parado: 760,5 e 770,5 ms (duas séries).
+- Cold start com o daemon parado: 760,5 e 770,5 ms (duas séries, RDP); 565,5 e 563,5 ms na sessão console depois do M2-E1-T23 (rodando: 590 e 579,5 ms).
 - O daemon sobe ~1 frame mais tarde na primeira abertura.
 - O `perf:startup` pausa 1,5 s entre execuções para não medir a saída da execução anterior.
