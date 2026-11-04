@@ -1,7 +1,7 @@
 import { Outlet, useRouterState } from "@tanstack/react-router";
 import { Suspense, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { useRuntime } from "../../state";
+import { useHello, useRuntime } from "../../state";
 import { featureAt } from "../features";
 import { PaletteHost } from "../palette/PaletteHost";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -33,6 +33,8 @@ export function AppShell() {
   useTrayBridge();
   const title = useSectionTitle();
   const narrow = useSidebarCollapsed();
+  // `hello.local === false` is the daemon telling it is on another machine (docs/13 section 5).
+  const remote = useHello()?.local === false;
   const accent = accentOf(context);
   // A remote context re-tints the window accent (docs/13 section 5); `local` keeps the system's.
   const style = accent === null ? undefined : ({ "--accent": accent } as CSSProperties);
@@ -40,6 +42,7 @@ export function AppShell() {
     <div
       data-testid="app-shell"
       data-context={context}
+      data-remote={remote ? "true" : undefined}
       style={style}
       className="flex h-full bg-canvas text-fg-primary"
     >

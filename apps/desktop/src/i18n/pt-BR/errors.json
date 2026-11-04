@@ -87,7 +87,6 @@
     "restart_service": "Reiniciar serviço",
     "reinstall": "Reinstalar {spec}",
     "download_runtime": "Baixar o redistribuível",
-    "check_app_update": "Procurar atualizações do Forgebox",
     "daemon_status": "Ver versão do daemon",
     "update_registry": "Atualizar catálogo"
   },

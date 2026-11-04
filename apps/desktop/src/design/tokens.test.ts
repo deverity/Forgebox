@@ -51,6 +51,7 @@ const BG = ["bg-canvas", "bg-sidebar", "bg-surface"] as const;
 const UI = [
   "stroke-strong",
   "accent",
+  "accent-remote",
   "state-running",
   "state-starting",
   "state-stopped",

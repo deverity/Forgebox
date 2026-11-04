@@ -11,6 +11,7 @@
     "list": "Lista"
   },
   "new": "Novo site",
+  "count_zero": "Nenhum site",
   "count_one": "{count} site",
   "count_other": "{count} sites",
   "countFiltered": "{shown} de {total}",

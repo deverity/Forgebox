@@ -1,5 +1,6 @@
 {
   "title": "PHP",
+  "summary_zero": "Nenhuma versão instalada",
   "summary_one": "{count} versão instalada",
   "summary_other": "{count} versões instaladas",
   "install": "Instalar outra versão",
@@ -37,6 +38,7 @@
     "none": "O pool inicia com o primeiro site que usar esta versão."
   },
   "sites": {
+    "count_zero": "Nenhum site",
     "count_one": "{count} site",
     "count_other": "{count} sites",
     "forSeries": " (PHP {series})"

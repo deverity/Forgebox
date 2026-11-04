@@ -67,6 +67,8 @@
       "stopped": "Daemon stopped",
       "uninitialized": "Not set up yet",
       "closed": "Disconnected",
+      "remote": "Remote daemon",
+      "remoteRtt": "Remote daemon · {ms} ms",
       "idle": "Connecting to the daemon…"
     },
     "cpu": "CPU {value}",

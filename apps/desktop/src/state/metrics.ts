@@ -62,7 +62,9 @@ export function statusTotals(
     daemonRss,
     stackCpu,
     stackRss,
-    cpu: stackCpu + (daemonCpu ?? 0),
+    // Already normalised by the logical CPUs (docs/14 §3.1); clamped because the footer must
+    // never show more than the machine (R-04), whatever an older daemon or fixture reports.
+    cpu: Math.min(100, stackCpu + (daemonCpu ?? 0)),
     rss: stackRss + (daemonRss ?? 0),
     running,
   };

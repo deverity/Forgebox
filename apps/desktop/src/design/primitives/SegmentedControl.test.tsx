@@ -73,3 +73,39 @@ describe("SegmentedControl", () => {
     expect(next.style.transform === "" || next.style.transform === "none").toBe(true);
   });
 });
+
+describe("SegmentedControl pill placement (R-02)", () => {
+  it("follows the checked item's offsets inside the group, whatever is above the page", async () => {
+    // jsdom has no layout: give each radio the box a browser would report relative to the group.
+    const offsets: Record<string, [number, number, number, number]> = {
+      System: [2, 2, 60, 24],
+      Light: [64, 2, 52, 24],
+      Dark: [118, 2, 48, 24],
+    };
+    const props = ["offsetLeft", "offsetTop", "offsetWidth", "offsetHeight"] as const;
+    const originals = props.map((prop) =>
+      Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop),
+    );
+    props.forEach((prop, index) => {
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return (offsets[this.textContent] as number[] | undefined)?.[index] ?? 0;
+        },
+      });
+    });
+    try {
+      mockReducedMotion(true);
+      render(<SegmentedControl label="Theme" options={OPTIONS} value="light" />);
+      const pill = await screen.findByTestId("segment-pill");
+      expect(pill).toHaveStyle({ left: "64px", top: "2px", width: "52px", height: "24px" });
+      // The pill is positioned in the group's own box, never from the page position.
+      expect(screen.getByRole("radiogroup").className).toContain("relative");
+    } finally {
+      props.forEach((prop, index) => {
+        const original = originals[index];
+        if (original !== undefined) Object.defineProperty(HTMLElement.prototype, prop, original);
+      });
+    }
+  });
+});

@@ -76,6 +76,21 @@ describe("statusTotals", () => {
     });
   });
 
+  it("never reports more than the machine: the footer CPU is clamped to 100 (R-04)", () => {
+    const totals = statusTotals(
+      {
+        instances: [
+          instance(IDS.mysql, "mysql/default", { state: "running", cpu_pct: 90 }),
+          instance(IDS.redis, "redis/default", { state: "running", cpu_pct: 50 }),
+        ],
+        pools: [],
+      },
+      daemonStatus({ cpu_pct: 6 }),
+    );
+    expect(totals.cpu).toBe(100);
+    expect(totals.stackCpu).toBe(140);
+  });
+
   it("keeps a 30-sample ring and drops entities that are gone", () => {
     let slice = { instances: {}, pools: {}, totals: null, lastPollAt: null };
     const status: T.ServiceStatusDto = {

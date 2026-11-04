@@ -3,6 +3,7 @@
   "region": "Log lines of {name}",
   "targets": {
     "label": "Sources",
+    "summary_zero": "No sources",
     "summary_one": "{count} source",
     "summary_other": "{count} sources",
     "none": "Choose up to {max} sources to follow.",

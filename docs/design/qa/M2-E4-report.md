@@ -160,3 +160,22 @@ No cenário `not-implemented` (todo método fora de `system.*`, `events.*` e `jo
 ### 2.7 Resultado
 
 31 achados novos (R-01 a R-31): **0 P0**, **2 P1** (R-09 e R-10, ambos do E4-T9), 15 P2 e 14 P3. Por bucket: E4-T8 com 8 (mais E2-02 e E2-05), E4-T9 com 13 (mais E2-06), E4-T10 com 9, e R-16 dividido entre E4-T9 e E4-T10. Os P1 são estados de erro sem causa em Sites e no detalhe do site; os P2 mais visíveis são o layout do PHP a 960 px e a rolagem do documento (R-21, R-22), o contexto remoto invisível (R-01) e a falta de uma regra automática para esqueleto eterno (R-08).
+
+## §3 Correções do bucket do shell (M2-E4-T8)
+
+Todos os achados do bucket E4-T8 do §2 (R-01 a R-08, E2-02, E2-05). Nenhum P0/P1 estava neste bucket (os dois P1 são R-09 e R-10, do E4-T9). Teste de regressão de cada correção entre parênteses.
+
+| ID | Sev. | Antes | Depois | Teste |
+|---|---|---|---|---|
+| R-01 | P2 | Remoto parecia Local: rodapé "Daemon conectado", sem latência nem cor | `hello.local === false`: `AppShell[data-remote]`, `--accent` vira o token novo `--accent-remote` (roxo; claro `#7A3CCB`, escuro `#BF5AF2`, alto contraste `#E0B0FF`, cores forçadas `Highlight`), rodapé "Daemon remoto · N ms" com o ponto roxo; sidebar recolhida fala o mesmo no nome do link | `AppShell.test.tsx › remote daemon indication`; `qa/checks/shell-fixes.spec.ts › R-01` (2); `tokens.test.ts` (contraste 3:1 do novo token) |
+| R-02 | P2 | Indicador do `SegmentedControl` 12 px fora do lugar com um `ErrorNotice` acima (`layoutId` mede a posição na página) | Pílula posicionada por `offsetLeft/Top/Width/Height` do item marcado dentro do grupo (`relative`), remedida por `ResizeObserver`; reduced motion: fade sem deslocamento | `SegmentedControl.test.tsx › pill placement`; `shell-fixes.spec.ts › R-02` (Configurações, cenário `errors`: pílula = item marcado, tolerância 1 px) |
+| R-03 | P3 | `not_implemented` sugeria "verificar atualização do app" (também `not_implemented`) | Só `forge daemon status`; ação, chave i18n e id removidos | `describeError.test.ts` |
+| R-04 | P3 | Rodapé "CPU 146%" | `statusTotals.cpu` limitado a 100 | `metrics.test.tsx › never reports more than the machine` |
+| R-05 | P3 | Barra de rolagem clássica de 17 px | `scrollbar-width: thin` + `scrollbar-color` dos tokens (fora de cores forçadas) | `shell-fixes.spec.ts › R-05` |
+| R-06 | P3 | "0 site", "0 fonte" | formas `_zero` ("Nenhum site", "Nenhuma fonte", "Nenhuma versão instalada") em pt-BR e en-US | `switch.test.tsx › pt-BR zero plural`; paridade de `i18n.test.ts` |
+| R-07 | P3 | Duas ações primárias cheias (Iniciar tudo + "Novo site"/"Executar diagnóstico") | **Adiado**: Iniciar tudo como primária da barra é o mockup aprovado em 2026-11-04 (docs/07 §4); rebaixar o botão da página é mudança nas telas de Sites e Diagnóstico (E4-T9/T10), e a decisão de hierarquia é do usuário | - |
+| R-08 | P2 | Contratos passavam com esqueleto eterno | Regra `eternalSkeletonViolations` + caso negativo `eternal-skeleton` + `states.spec.ts` (3 cenários x 16 rotas) com lista `KNOWN_OPEN` dos 16 casos abertos de E4-T9/T10 e guarda contra entrada obsoleta | `states.spec.ts` (inclui o negativo) |
+| E2-02 | P2 | Idioma escolhido não era lido no boot | `LanguageSwitcher` grava `language` nas prefs; `main.tsx` lê com limite de 250 ms antes do primeiro render (QA override > salvo > SO) | `guiPrefs.language.test.ts`; `switch.test.tsx › language persistence` |
+| E2-05 | P3 | `e2e/real/app.spec.ts` procurava `connection-status` | usa `status-connection`, que ganhou `data-status` | (o próprio spec real) |
+
+Estados transversais, paleta, atalhos do §8, "reconectando", fallback sem vibrancy, reduced motion de transições compartilhadas e truncamento i18n: a revisão do §2 não registrou achado nesses itens além dos acima; a rede de testes existente (`qa:check` axe com vibrancy off, `layout-shift`, `motion`, `keyboard`, `shortcuts`, `qa:perf` "reconectando") continua verde na execução final abaixo.

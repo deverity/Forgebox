@@ -18,3 +18,20 @@ body {
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
 }
+
+/* A remote daemon re-tints the accent of the whole shell (docs/13 section 5, R-01). The hover
+   and pressed fills are derived from the same token so primary buttons keep their depth. */
+[data-testid="app-shell"][data-remote="true"] {
+    --accent: var(--accent-remote);
+    --accent-hover: color-mix(in srgb, var(--accent-remote) 85%, var(--fg-primary));
+    --accent-pressed: color-mix(in srgb, var(--accent-remote) 70%, var(--fg-primary));
+}
+
+/* Thin scrollbars from the tokens instead of the 17 px classic Windows bar (R-05).
+   Forced colours keep the system bars. */
+@media not (forced-colors: active) {
+    * {
+        scrollbar-width: thin;
+        scrollbar-color: var(--stroke-strong) transparent;
+    }
+}

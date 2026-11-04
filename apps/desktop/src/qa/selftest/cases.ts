@@ -16,6 +16,7 @@ export const SELFTEST_CASES = [
   "contract-error",
   "contract-local-only",
   "contract-client-path",
+  "eternal-skeleton",
 ] as const;
 
 export type SelftestCase = (typeof SELFTEST_CASES)[number];

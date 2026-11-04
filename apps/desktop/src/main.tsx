@@ -5,6 +5,7 @@ import { bootAppearance, followAppearance, isTauri } from "./app/appearance";
 import { initI18n } from "./i18n";
 import type { Bridge } from "./ipc/bridge";
 import { createTauriBridge } from "./ipc/tauriBridge";
+import { readSavedLanguage } from "./features/settings/guiPrefs";
 import { StateLayer } from "./state";
 import "./index.css";
 
@@ -52,12 +53,14 @@ const qa =
     : Promise.resolve(null);
 
 // Render even if i18n init fails: the UI must never stay blank because of it.
-qa.then((handle) =>
-  initI18n({
+// Language precedence: QA override, then the saved choice (prefs.json), then the OS locale (E2-02).
+qa.then(async (handle) => {
+  const saved = handle?.locale ? null : await readSavedLanguage();
+  return initI18n({
     allowPseudo: import.meta.env.MODE !== "production",
-    ...(handle?.locale ? { override: handle.locale } : {}),
-  }),
-)
+    override: handle?.locale ?? saved,
+  });
+})
   .catch((error: unknown) => {
     console.warn("i18n init failed", error);
   })
