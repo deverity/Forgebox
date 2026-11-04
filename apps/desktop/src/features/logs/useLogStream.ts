@@ -53,6 +53,7 @@ export function useLogStream(targets: readonly string[]): LogStream {
   const total = useRef(0);
   const exhausted = useRef(new Set<string>());
   const active = useRef(new Map<string, { unsubscribe: () => Promise<void> } | "pending">());
+  const mounted = useRef(false);
   const targetsRef = useRef<readonly string[]>(targets);
   const key = targets.join("\n");
 
@@ -65,6 +66,8 @@ export function useLogStream(targets: readonly string[]): LogStream {
     const batch = inbox.current;
     inbox.current = [];
     for (const entry of batch) {
+      // Lines of a source that was unchecked meanwhile must not come back.
+      if (!targetsRef.current.includes(entry.target)) continue;
       if (entry.reset) merger.remove(entry.target);
       total.current += merger.push(entry.target, entry.lines);
       for (const missed of entry.gaps) merger.gap(entry.target, missed);
@@ -80,7 +83,6 @@ export function useLogStream(targets: readonly string[]): LogStream {
   useEffect(() => {
     targetsRef.current = targets;
     const wanted = new Set(targets);
-    let alive = true;
     let removed = false;
     for (const target of [...active.current.keys()]) {
       if (wanted.has(target)) continue;
@@ -97,6 +99,8 @@ export function useLogStream(targets: readonly string[]): LogStream {
       active.current.set(target, "pending");
       api
         .subscribe(SUBSCRIBE, { target, tail: TAIL_LINES }, (entries) => {
+          if (active.current.get(target) === undefined || !targetsRef.current.includes(target))
+            return;
           const entry: Inbox = { target, lines: [], gaps: [], reset: false };
           for (const item of entries) {
             if (item.kind === "item") entry.lines.push(item.item.line);
@@ -114,7 +118,7 @@ export function useLogStream(targets: readonly string[]): LogStream {
           },
           (error: unknown) => {
             active.current.delete(target);
-            if (alive) {
+            if (mounted.current && targetsRef.current.includes(target)) {
               setFailures((current) =>
                 new Map(current).set(target, toForgeApiError(error, { method: SUBSCRIBE })),
               );
@@ -122,21 +126,23 @@ export function useLogStream(targets: readonly string[]): LogStream {
           },
         )
         .finally(() => {
-          if (alive) setReady((current) => new Set(current).add(target));
+          if (mounted.current && targetsRef.current.includes(target))
+            setReady((current) => new Set(current).add(target));
         });
     }
     // Removed sources leave the list: the next frame shows what is left.
     if (removed) schedule();
-    return () => {
-      alive = false;
-    };
+    // `ready`/`failures` are settled against the current targets, not against this run: a later
+    // run skips targets whose subscription is still pending and relies on this promise.
     // `key` stands for the list of targets (the array itself is a new object every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps -- depending on `targets` would resubscribe on every render
   }, [api, key, merger, publish, schedule]);
 
   useEffect(() => {
     const live = active.current;
+    mounted.current = true;
     return () => {
+      mounted.current = false;
       if (frame.current !== null) window.cancelAnimationFrame(frame.current);
       for (const handle of live.values()) {
         if (handle !== "pending") void handle.unsubscribe().catch(() => undefined);

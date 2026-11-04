@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import i18next from "i18next";
 import type { ReactElement } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ForgeApiError } from "../../ipc/errors";
 import { fakeError, type FakeHandlers, type FakeScenario } from "../../ipc/fakeBridge";
 import type * as T from "../../ipc/generated";
 import { ForgeStateProvider } from "../../state";
@@ -403,5 +404,74 @@ describe("TargetPicker", () => {
       handlers: { "logs.targets": () => fakeError("internal", "boom") },
     });
     expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+});
+
+describe("sources changing while streams are in flight", () => {
+  async function mountSwitchable(scenario: FakeScenario, prepare?: (h: Harness) => void) {
+    harness = await startHarness({ scenario: { notImplemented: [], ...scenario } });
+    const h = harness;
+    const ui = (targets: string[]) => (
+      <ForgeStateProvider layer={h.layer}>
+        <LogViewer targets={targets} name="logs" height={320} />
+      </ForgeStateProvider>
+    );
+    prepare?.(h);
+    const view = render(ui(["nginx.error"]));
+    return { h, view, ui };
+  }
+
+  it("leaves the loading state when B is picked before A answers", async () => {
+    const { h, view, ui } = await mountSwitchable({ latencyMs: 120 });
+    emit(h, "nginx.error", ["from nginx"]);
+    emit(h, "mysql/default", ["from mysql"]);
+    view.rerender(ui(["nginx.error", "mysql/default"]));
+    const log = await screen.findByRole("log", {}, { timeout: 3000 });
+    await waitFor(() => {
+      expect(within(log).getByText("from nginx")).toBeInTheDocument();
+      expect(within(log).getByText("from mysql")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("logs-loading")).toBeNull();
+  });
+
+  it("shows the failure of a subscription that answers after the targets changed", async () => {
+    let spy: { mockRestore: () => void } | null = null;
+    const { view, ui } = await mountSwitchable({ latencyMs: 0 }, (h) => {
+      const real = h.layer.runtime("local").api;
+      const original = real.subscribe.bind(real);
+      spy = vi.spyOn(real, "subscribe").mockImplementation(async (method, params, cb) => {
+        const target = (params as { target: string }).target;
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        if (target === "nginx.error")
+          throw new ForgeApiError({ code: "internal", message: "boom" });
+        return original(method, params, cb);
+      });
+    });
+    view.rerender(ui(["nginx.error", "mysql/default"]));
+    expect(await screen.findByRole("alert", {}, { timeout: 3000 })).toBeInTheDocument();
+    (spy as { mockRestore: () => void } | null)?.mockRestore();
+  });
+
+  it("drops the rows of a source unchecked while its lines arrive", async () => {
+    const { h, view, ui } = await mountSwitchable({});
+    view.rerender(ui(["nginx.error", "mysql/default", "php@8.4"]));
+    const log = await screen.findByRole("log");
+    emit(h, "nginx.error", ["n1", "n2"]);
+    emit(h, "mysql/default", ["m1"]);
+    await flush(h);
+    await waitFor(() => {
+      expect(within(log).getByText("n1")).toBeInTheDocument();
+    });
+    emit(h, "nginx.error", ["n3", "n4"]);
+    view.rerender(ui(["mysql/default", "php@8.4"]));
+    await flush(h);
+    emit(h, "nginx.error", ["n5"]);
+    await flush(h);
+    await waitFor(() => {
+      expect(within(log).getByText("m1")).toBeInTheDocument();
+    });
+    const targetsShown = [...log.querySelectorAll('[data-col="target"]')].map((c) => c.textContent);
+    expect(targetsShown.some((t) => t.includes("nginx"))).toBe(false);
+    expect(within(log).queryByText("n3")).toBeNull();
   });
 });
