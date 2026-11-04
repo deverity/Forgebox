@@ -137,3 +137,33 @@ export async function saveTextFile(defaultName: string, contents: string): Promi
   }, 0);
   return { saved: defaultName };
 }
+
+export type SaveResult = { status: "saved"; path: string | null } | { status: "cancelled" };
+
+/**
+ * Saves a downloaded attachment. In Tauri the `save_attachment` command shows the native
+ * "save as" dialog and writes the file (the webview never chooses the path); in a plain
+ * browser (QA builds) it falls back to a download link.
+ */
+export async function saveAttachment(
+  fileName: string,
+  contentBase64: string,
+  contentType: string,
+): Promise<SaveResult> {
+  if (inTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const path = await invoke<string | null>("save_attachment", {
+      fileName,
+      contentBase64,
+    });
+    return path === null ? { status: "cancelled" } : { status: "saved", path };
+  }
+  const bytes = Uint8Array.from(atob(contentBase64), (char) => char.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: contentType }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+  return { status: "saved", path: null };
+}

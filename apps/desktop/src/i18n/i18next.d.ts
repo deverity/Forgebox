@@ -6,6 +6,7 @@ import type databases from "./en-US/databases.json";
 import type diagnostics from "./en-US/diagnostics.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
+import type mail from "./en-US/mail.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
 import type php from "./en-US/php.json";
@@ -34,6 +35,7 @@ export interface Resources {
   catalog: typeof catalog;
   dashboard: typeof dashboard;
   terminal: typeof terminal;
+  mail: typeof mail;
   php: typeof php;
   databases: typeof databases;
   diagnostics: typeof diagnostics;

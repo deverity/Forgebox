@@ -10,6 +10,7 @@ pub mod autostart;
 pub mod bridge;
 pub mod commands;
 pub mod data_dir;
+pub mod files;
 pub mod i18n;
 pub mod notifications;
 pub mod perf;
@@ -123,6 +124,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::save_text_file,
+            files::save_attachment,
             i18n::set_language,
             bridge::commands::ipc_state,
             bridge::commands::ipc_call,

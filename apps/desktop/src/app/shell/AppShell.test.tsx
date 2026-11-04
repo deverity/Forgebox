@@ -289,6 +289,7 @@ const REAL_SCREENS: ReadonlySet<string> = new Set([
   "catalog",
   "terminal",
   "databases",
+  "mail",
   "php",
 ]);
 

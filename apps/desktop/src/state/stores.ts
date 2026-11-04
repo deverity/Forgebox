@@ -90,6 +90,20 @@ export interface AttentionSlice {
   helperFailures: ById<Stamped<T.HelperOpPayload>>;
 }
 
+/** Mailbox counts from the last `mail.changed` (the badge; the messages are `mail.*` queries). */
+export interface MailCounts {
+  messages: number;
+  unread: number;
+  /** Messages that arrived with that event (0 for reads and deletions). */
+  newMessages: number;
+  /** Client time the event was reduced (ms), to tell it from a newer `mail.status` answer. */
+  at: number;
+}
+
+export interface MailSlice {
+  counts: MailCounts | null;
+}
+
 export interface InstanceSample {
   /** Client time of the poll (ms). */
   t: number;
@@ -147,13 +161,14 @@ export interface ContextStores {
   jobs: StoreApi<JobsSlice>;
   system: StoreApi<SystemSlice>;
   attention: StoreApi<AttentionSlice>;
+  mail: StoreApi<MailSlice>;
   metrics: StoreApi<MetricsSlice>;
   sync: StoreApi<SyncSlice>;
 }
 
 /** Stores whose state is written by event batches (`Tx`). */
 export type EventStoreName =
-  "connection" | "services" | "sites" | "tools" | "jobs" | "system" | "attention";
+  "connection" | "services" | "sites" | "tools" | "jobs" | "system" | "attention" | "mail";
 
 export function createContextStores(context: ContextId): ContextStores {
   return {
@@ -192,6 +207,7 @@ export function createContextStores(context: ContextId): ContextStores {
       caseUnavailable: {},
       helperFailures: {},
     })),
+    mail: createStore<MailSlice>(() => ({ counts: null })),
     metrics: createStore<MetricsSlice>(() => ({
       instances: {},
       pools: {},
