@@ -87,7 +87,7 @@ test.afterAll(async () => {
 
 test("1 mail: list, read, delete with undo window, and the badge moves from mail.changed", async () => {
   const mailpit = await instance(page, "mailpit");
-  const ui = mailpit?.ports.find((p) => p.name === "ui")?.port;
+  const ui = mailpit?.ports.find((p) => p.name === "http")?.port;
   expect(ui, JSON.stringify(mailpit?.ports)).toBeTruthy();
   await go(page, "/mail");
   await expect(page.getByTestId("page-mail")).toBeVisible();
@@ -125,8 +125,13 @@ test("1 mail: list, read, delete with undo window, and the badge moves from mail
     .toBe(2);
   await expect(page.locator("[data-mail-row]")).toHaveCount(2);
   // Another client changes the mailbox: the badge follows with no navigation.
+  // (Which messages are unread by now depends on what the screen auto-selected after the
+  // delete, so the badge is compared with the daemon's own count.)
+  const unreadNow = async () => (await call<{ unread: number }>(page, "mail.status")).unread;
+  const before = await unreadNow();
   await fetch(`http://127.0.0.1:${String(ui)}/fake/inject?count=1&subject=Late`, { method: "POST" });
-  await expect(badge).toHaveText("3", { timeout: 20_000 });
+  await expect.poll(unreadNow, { timeout: 20_000 }).toBe(before + 1);
+  await expect(badge).toHaveText(String(before + 1), { timeout: 20_000 });
 });
 
 test("2 terminal: typed input runs in a real shell and exit shows the ended banner", async () => {

@@ -123,14 +123,16 @@ function regenerateIndex(repo, dir) {
     else execFileSync("cargo", ["xtask", ...args], { stdio: "pipe", cwd: repo });
 }
 
-export async function createLiveRoot({ repo = repoRoot, profile = "debug" } = {}) {
+// `portable: false` (E3 suite): a root without portable.flag, so the daemon offers the CA install
+// and the PATH checks; the live daemon's trust store is in memory, nothing reaches Windows.
+export async function createLiveRoot({ repo = repoRoot, profile = "debug", portable = true } = {}) {
     const base = mkdtempSync(join(tmpdir(), "forgebox-live-"));
     const root = join(base, "root");
     const gui = join(base, "gui");
     const registry = join(base, "registry");
     const fakes = join(base, "fakes");
     for (const d of [join(root, "etc"), join(root, "state"), gui, fakes]) mkdirSync(d, { recursive: true });
-    writeFileSync(join(root, "portable.flag"), "");
+    if (portable) writeFileSync(join(root, "portable.flag"), "");
 
     const ports = {
         tlsCrl: await freePort(),
@@ -234,6 +236,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const ctx = await createLiveRoot({
         repo: at >= 0 ? resolve(args[at + 1]) : repoRoot,
         profile: args.includes("--release") ? "release" : "debug",
+        portable: !args.includes("--no-portable"),
     });
     process.stdout.write(`${JSON.stringify(ctx)}\n`);
 }

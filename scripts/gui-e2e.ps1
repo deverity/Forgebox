@@ -69,6 +69,7 @@ foreach ($f in @($exe, $daemon, $forge)) { if (-not (Test-Path $f)) { throw "mis
 
 $fixtureArgs = @('create', '--repo', $repo)
 if ($Release) { $fixtureArgs += '--release' }
+if ($Suite -eq 'e3') { $fixtureArgs += '--no-portable' }
 $ctx = (node (Join-Path $desktop 'e2e\live\fixture.mjs') @fixtureArgs) | ConvertFrom-Json
 if (-not $ctx.base) { throw 'fixture.mjs create printed no root' }
 $base = $ctx.base
