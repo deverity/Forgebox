@@ -64,16 +64,29 @@ describe("Sites screen", () => {
     expect(cards().length).toBeLessThan(60);
     const search = screen.getByRole("searchbox", { name: "Search sites" });
 
-    const timings: number[] = [];
+    // The filter and the render run synchronously inside fireEvent (act), so the CPU time of this
+    // thread is the work of one keystroke. Wall-clock time is not: under the full suite (parallel
+    // vitest workers) on a shared 4-core machine the worker waits for a core and one sample read
+    // 256 ms while the work stayed ~30 ms. Windows updates thread times once per clock tick
+    // (~15.6 ms), well below the budget.
+    const cpuMs: number[] = [];
+    const wallMs: number[] = [];
     for (const query of ["s", "si", "site4", "site42"]) {
+      const cpu = process.threadCpuUsage();
       const start = performance.now();
       fireEvent.change(search, { target: { value: query } });
-      timings.push(performance.now() - start);
+      wallMs.push(performance.now() - start);
+      const used = process.threadCpuUsage(cpu);
+      cpuMs.push((used.user + used.system) / 1000);
       expect(cards().length).toBeLessThan(60);
     }
     // jsdom renders several times slower than a browser: this is a regression guard (the real
-    // < 50 ms measurement is e2e/sites.spec.ts). The first keystroke warms the code paths.
-    expect(Math.max(...timings.slice(1)), timings.join(", ")).toBeLessThan(150);
+    // < 50 ms measurement is e2e/sites.spec.ts and qa:perf). The first keystroke warms the code
+    // paths.
+    expect(
+      Math.max(...cpuMs.slice(1)),
+      `cpu ${cpuMs.join(", ")} ms; wall ${wallMs.map((ms) => ms.toFixed(2)).join(", ")} ms`,
+    ).toBeLessThan(150);
     expect(cards().length).toBeGreaterThan(0);
     expect(screen.getAllByText("site42.test").length).toBeGreaterThan(0);
 
