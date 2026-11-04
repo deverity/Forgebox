@@ -6,7 +6,7 @@
 //   FORGE_E2E_PROBE      scripts/qa/window-probe.ps1
 // The M2 screens do not exist yet at this task: the connection and the services are driven
 // through the same Tauri commands the state layer (src/state) uses, and the status bar is
-// asserted too as soon as it exposes `data-testid="connection-status"` with `data-status`.
+// asserted too through `data-testid="status-connection"` (sidebar footer) with `data-status`.
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -93,7 +93,7 @@ test("the daemon auto-starts and the connection reports connected", async () => 
   await expect.poll(async () => (await state(page)).status, { timeout: 60_000 }).toBe("connected");
   expect((await state(page)).hello?.local).toBe(true);
   expect(daemonPid(root())).not.toBeNull();
-  const bar = page.getByTestId("connection-status");
+  const bar = page.getByTestId("status-connection");
   if ((await bar.count()) > 0) await expect(bar).toHaveAttribute("data-status", "connected");
 });
 
@@ -224,7 +224,7 @@ test("killing forgeboxd shows starting, then reconnecting, and reconnects within
   const third = daemonPid(root());
   expect(third).not.toBeNull();
   expect(third).not.toBe(second);
-  const bar = page.getByTestId("connection-status");
+  const bar = page.getByTestId("status-connection");
   if ((await bar.count()) > 0) await expect(bar).toHaveAttribute("data-status", "connected");
 });
 

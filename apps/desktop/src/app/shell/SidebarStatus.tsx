@@ -3,7 +3,13 @@ import { useTranslation } from "react-i18next";
 import { FOCUS_RING, cx } from "../../design/primitives/shared";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import type { ConnectionStatus } from "../../ipc/bridge";
-import { useConnectionStatus, useStatusTotals, useSystem } from "../../state";
+import {
+  useConnection,
+  useConnectionStatus,
+  useHello,
+  useStatusTotals,
+  useSystem,
+} from "../../state";
 
 type Tone = "running" | "starting" | "stopped";
 
@@ -49,6 +55,8 @@ function useStatusText() {
   const dns = useSystem((s) => s.dns);
   const ca = useSystem((s) => s.ca);
   const dash = t("status.unknownValue");
+  const remote = useHello()?.local === false;
+  const rttMs = useConnection((state) => state.rttMs);
 
   const dnsKey: DnsKey =
     dns === null ? "unknown" : !dns.enabled ? "off" : dns.server_running ? "ok" : "attention";
@@ -64,9 +72,17 @@ function useStatusText() {
     t("status.cpu", { value: totals === null ? dash : fmt.percent(totals.cpu / 100, 1) }) +
     SEPARATOR +
     t("status.ram", { value: totals === null ? dash : fmt.bytes(totals.rss) });
+  // A remote daemon says so, with the round trip once measured (docs/07 section 4, R-01).
+  const connection =
+    remote && status === "connected"
+      ? rttMs === null
+        ? t("status.connection.remote")
+        : t("status.connection.remoteRtt", { ms: Math.round(rttMs) })
+      : t(`status.connection.${status}`);
   return {
     status,
-    connection: t(`status.connection.${status}`),
+    remote,
+    connection,
     resources,
     dnsKey,
     dns: t(`status.dns.${dnsKey}`),
@@ -88,7 +104,11 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
     <span
       aria-hidden="true"
       data-tone={DOT[s.status]}
-      className={`size-2 shrink-0 rounded-full ${TONE_CLASS[DOT[s.status]]}`}
+      data-remote={s.remote ? "true" : undefined}
+      className={cx(
+        "size-2 shrink-0 rounded-full",
+        s.remote && s.status === "connected" ? "bg-accent-remote" : TONE_CLASS[DOT[s.status]],
+      )}
     />
   );
 
@@ -109,7 +129,12 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
         >
           {dot}
           {/* Same test ids as the expanded footer; the link's name is what is announced. */}
-          <span aria-hidden="true" className="sr-only" data-testid="status-connection">
+          <span
+            aria-hidden="true"
+            className="sr-only"
+            data-testid="status-connection"
+            data-status={s.status}
+          >
             {s.connection}
           </span>
           <span aria-hidden="true" className="sr-only" data-testid="status-resources">
@@ -130,7 +155,12 @@ export function SidebarStatus({ collapsed }: { collapsed: boolean }) {
       className="flex flex-col gap-1.5 px-2 text-caption text-fg-secondary"
     >
       <p className="m-0 flex flex-wrap items-center gap-x-1.5">
-        <span className="inline-flex items-center gap-1.5" data-testid="status-connection">
+        <span
+          className="inline-flex items-center gap-1.5"
+          data-testid="status-connection"
+          data-status={s.status}
+          data-remote={s.remote ? "true" : undefined}
+        >
           {dot}
           <span>{s.connection}</span>
         </span>

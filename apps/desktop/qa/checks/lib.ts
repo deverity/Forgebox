@@ -596,3 +596,23 @@ export async function contractViolations(page: Page, remote = false): Promise<st
     return out;
   }, remote);
 }
+
+/**
+ * Eternal skeletons (R-08): once the page has settled, no `[data-skeleton]` may stay visible.
+ * A skeleton that outlives the data means a failed, `not_implemented` or unanswered call left
+ * the screen with no cause and no action (docs/07 section 1.2, section 11 items 2-3). The
+ * `errors`, `not-implemented` and `daemon-down` scenarios are the ones that can leave it behind.
+ */
+export async function eternalSkeletonViolations(page: Page, settleMs = 1500): Promise<string[]> {
+  await page.waitForTimeout(settleMs);
+  return page.evaluate(() => {
+    const visible = [...document.querySelectorAll<HTMLElement>("[data-skeleton]")].filter((el) => {
+      const box = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return box.width > 0 && box.height > 0 && style.visibility !== "hidden";
+    });
+    return visible.length === 0
+      ? []
+      : [`${String(visible.length)} skeleton(s) still visible after the page settled`];
+  });
+}

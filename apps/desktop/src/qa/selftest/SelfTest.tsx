@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string, no-restricted-syntax, jsx-a11y/click-events-have-key-events, jsx-a11y/alt-text, jsx-a11y/interactive-supports-focus -- qa-only fixture: deliberately renders the violations the qa:check rules must catch (never part of a production build), and its text is not user-facing so it is not translated */
 import { useEffect, useState } from "react";
 import { defineAction } from "../../actions/registry";
-import { ActionButton, ErrorNotice, Popover, Sheet } from "../../design/primitives";
+import { ActionButton, ErrorNotice, Popover, Sheet, Skeleton } from "../../design/primitives";
 import { FOCUS_RING } from "../../design/primitives/shared";
 import { parseCase, type SelftestCase } from "./cases";
 
@@ -208,6 +208,9 @@ function Body({ which }: { which: SelftestCase }) {
           </button>
         </span>
       );
+    case "eternal-skeleton":
+      // A list that never leaves its placeholder: no data, no cause, no action.
+      return <Skeleton height={48} />;
     case "contract-client-path":
       return <p>Config saved to C:\Users\someone\forgebox\config.yaml</p>;
   }

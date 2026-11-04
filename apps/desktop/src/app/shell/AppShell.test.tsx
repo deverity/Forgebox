@@ -489,3 +489,26 @@ describe("slot registries", () => {
     expect(settingsSections.list().map((s) => s.id)).toEqual(["general"]);
   });
 });
+
+describe("remote daemon indication (R-01)", () => {
+  it("names the remote daemon in the footer and re-tints the shell", async () => {
+    await renderApp({ scenario: "remote", path: "/services" });
+    const connection = await screen.findByTestId("status-connection");
+    await waitFor(() => {
+      expect(connection).toHaveTextContent(/^Remote daemon/);
+    });
+    expect(connection).toHaveAttribute("data-remote", "true");
+    expect(screen.getByTestId("app-shell")).toHaveAttribute("data-remote", "true");
+  });
+
+  it("keeps the plain text for a local daemon", async () => {
+    await renderApp({ scenario: "populated", path: "/services" });
+    const connection = await screen.findByTestId("status-connection");
+    await waitFor(() => {
+      expect(connection).toHaveTextContent("Daemon connected");
+    });
+    expect(connection).not.toHaveAttribute("data-remote");
+    expect(screen.getByTestId("app-shell")).not.toHaveAttribute("data-remote");
+    expect(connection).toHaveAttribute("data-status", "connected");
+  });
+});

@@ -123,7 +123,6 @@ export type ErrorActionId =
   | "restart_service"
   | "reinstall"
   | "download_runtime"
-  | "check_app_update"
   | "daemon_status"
   | "update_registry";
 
@@ -266,7 +265,6 @@ const A = {
   doctor: () => [methodAction("run_doctor", "daemon.doctor", {})],
   daemonLogs: () => [methodAction("daemon_logs", "logs.read", { target: "daemon" })],
   daemonStatus: () => [methodAction("daemon_status", "daemon.status", {})],
-  appUpdate: () => [methodAction("check_app_update", "system.self_update", { check: true })],
   registry: () => [methodAction("update_registry", "registry.update", {})],
   serviceLogs(ctx: ErrorContext): ErrorAction[] {
     return ctx.target === undefined
@@ -324,7 +322,9 @@ function codeActions(code: string, reason: string | null, ctx: ErrorContext): Er
     case "needs_elevation":
       return [...A.retry(ctx), ...A.doctor()];
     case "not_implemented":
-      return [...A.appUpdate(), ...A.daemonStatus()];
+      // No "check for app updates" here: the app updater ships inactive in 0.2.0 (R-03), so the
+      // suggestion would itself be not_implemented. Daemon status tells which side is older.
+      return [...A.daemonStatus()];
     case "unauthorized":
       return [...A.restartDaemon(), ...A.doctor()];
     case "disconnected":

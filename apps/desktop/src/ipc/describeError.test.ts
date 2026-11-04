@@ -154,10 +154,8 @@ describe("describeError", () => {
     });
     const actions = (code: string) =>
       describeError({ code, message: "x" }).actions.map((a) => a.cli);
-    expect(actions("not_implemented")).toEqual([
-      "forge self-update --check",
-      "forge daemon status",
-    ]);
+    // R-03: the app updater ships inactive in 0.2.0, so the suggestion is the daemon status only.
+    expect(actions("not_implemented")).toEqual(["forge daemon status"]);
     expect(actions("unauthorized")).toEqual(["forge daemon restart", "forge doctor"]);
     expect(actions("needs_elevation")).toEqual(["forge doctor"]);
     expect(actions("disconnected")).toEqual(["forge daemon start"]);

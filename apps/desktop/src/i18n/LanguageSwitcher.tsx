@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { saveLanguage } from "../features/settings/guiPrefs";
 import { FOCUS_RING } from "../design/primitives/shared";
 import { SUPPORTED_LOCALES, setLanguage, type Locale } from "./index";
 
@@ -12,7 +13,9 @@ export function LanguageSwitcher() {
         className={FOCUS_RING}
         value={i18n.language}
         onChange={(event) => {
-          void setLanguage(event.target.value as Locale);
+          const locale = event.target.value as Locale;
+          void setLanguage(locale);
+          void saveLanguage(locale);
         }}
       >
         {SUPPORTED_LOCALES.map((locale) => (

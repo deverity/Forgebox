@@ -3,6 +3,7 @@
   "region": "Linhas de log de {name}",
   "targets": {
     "label": "Fontes",
+    "summary_zero": "Nenhuma fonte",
     "summary_one": "{count} fonte",
     "summary_other": "{count} fontes",
     "none": "Escolha até {max} fontes para acompanhar.",
