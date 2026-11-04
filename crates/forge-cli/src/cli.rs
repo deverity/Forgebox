@@ -993,6 +993,9 @@ pub struct StatsArgs {
     /// Rotas mais lentas e erros recentes do site.
     #[arg(long, requires = "site", conflicts_with_all = ["from", "to"])]
     pub routes: bool,
+    /// Mais colunas na tabela: classes de status, bytes, percentis do PHP, workers, última requisição.
+    #[arg(long, conflicts_with_all = ["series", "routes"])]
+    pub wide: bool,
     #[command(subcommand)]
     pub command: Option<StatsCmd>,
 }

@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::*;
 
@@ -89,6 +89,43 @@ fn stats_watch_prints_the_snapshot_and_keeps_running() {
         stream.kill(),
         "the watcher keeps running until it is stopped"
     );
+}
+
+#[test]
+fn stats_watch_redraws_the_table_every_two_seconds() {
+    let fx = Fixture::new();
+    let dir = fx.root.www("redraw");
+    std::fs::write(dir.join("index.html"), "<h1>r</h1>").unwrap();
+    fx.root.json(&[
+        "site",
+        "add",
+        &dir.display().to_string(),
+        "--host",
+        "redraw.test",
+    ]);
+    // Human mode, window 24h: the samples come every 60 s, the table every 2 s.
+    let mut stream = fx
+        .root
+        .forge()
+        .spawn(&["stats", "--watch", "--window", "24h"]);
+    let mut headers = Vec::new();
+    let started = Instant::now();
+    while headers.len() < 3 && started.elapsed() < Duration::from_secs(15) {
+        if let Some(line) = stream.next_line(Duration::from_millis(500)) {
+            if line.starts_with("SITE") {
+                headers.push(Instant::now());
+            }
+        }
+    }
+    assert!(stream.kill());
+    assert_eq!(headers.len(), 3, "three redraws within 15 s");
+    for pair in headers.windows(2) {
+        let gap = pair[1] - pair[0];
+        assert!(
+            gap >= Duration::from_millis(1700) && gap <= Duration::from_millis(2600),
+            "redraw every 2 s, not at the 60 s cadence: {gap:?}"
+        );
+    }
 }
 
 #[test]

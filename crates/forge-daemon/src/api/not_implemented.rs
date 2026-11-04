@@ -36,18 +36,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ("shell.open", "M2-E3-T9", "external terminal launcher"),
     ("shell.open_editor", "M2-E3-T9", "editor launcher"),
     (
-        "stats.top",
-        "M2-E5-T9",
-        "Forgebox processes and machine stats",
-    ),
-    ("stats.export", "M2-E5-T9", "metrics export"),
-    (
-        "stats.series",
-        "M2-E5-T9",
-        "per-site metric series and markers",
-    ),
-    ("stats.routes", "M2-E5-T9", "top routes and recent errors"),
-    (
         "sites.pool_mode",
         "M2-E5-T11",
         "dedicated PHP pool per site",
@@ -209,10 +197,6 @@ mod tests {
     fn e5_methods_name_their_task() {
         // The metrics contract (ADR-0044): each backend task owns its methods.
         for (method, task) in [
-            ("stats.top", "M2-E5-T9"),
-            ("stats.export", "M2-E5-T9"),
-            ("stats.series", "M2-E5-T9"),
-            ("stats.routes", "M2-E5-T9"),
             ("sites.pool_mode", "M2-E5-T11"),
             ("sites.metrics", "M2-E5-T11"),
         ] {
@@ -226,8 +210,15 @@ mod tests {
             assert_eq!(details["args"]["task"], task, "{method}");
             assert_eq!(details["args"]["method"], method);
         }
-        // The metrics backend exists (M2-E5-T8); metrics.unsubscribe is a server built-in.
-        for method in ["stats.get", "metrics.subscribe"] {
+        // The metrics backend exists (M2-E5-T8, T9); metrics.unsubscribe is a server built-in.
+        for method in [
+            "stats.get",
+            "metrics.subscribe",
+            "stats.series",
+            "stats.routes",
+            "stats.export",
+            "stats.top",
+        ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
         assert!(crate::api::SERVER_BUILTINS.contains(&"metrics.unsubscribe"));

@@ -50,7 +50,10 @@ use jiff::Timestamp;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 
-use crate::agg::{AggConfig, AggStats, Aggregator, Counters, Summary};
+use crate::agg::{
+    AggConfig, AggStats, Aggregator, Counters, RecentErrors, RoutesReport, SeriesPoint, Step,
+    Summary,
+};
 use crate::attribution::{AppSample, Bucket, PoolRoute, PoolSample, SiteResources, attribute};
 use crate::hist::LatencyHist;
 use crate::parse::AccessParser;
@@ -257,6 +260,17 @@ enum Msg {
         cadence: Duration,
         reply: Reply<SnapshotRx>,
     },
+    Series {
+        site: SiteRoute,
+        from: Timestamp,
+        to: Option<Timestamp>,
+        step: Step,
+        reply: Reply<Result<SeriesPartial>>,
+    },
+    Routes {
+        site: SiteRoute,
+        reply: Reply<RoutesSnapshot>,
+    },
     Status {
         reply: Reply<ServiceStatus>,
     },
@@ -276,6 +290,31 @@ struct Partial {
     /// `[from, split)` to read through the store (older than the in-memory retention).
     store: Option<(Timestamp, Timestamp)>,
     samples: Vec<(SiteSample, Option<(LatencyHist, LatencyHist)>)>,
+}
+
+/// The in-memory part of a series and the span still to read from SQLite.
+#[derive(Debug)]
+struct SeriesPartial {
+    at: Timestamp,
+    store: Option<(Timestamp, Timestamp)>,
+    points: Vec<SeriesPoint>,
+}
+
+/// Points of a series (steps without data are absent) at the service clock `at`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeriesReport {
+    pub at: Timestamp,
+    /// Oldest first, by `start`.
+    pub points: Vec<SeriesPoint>,
+}
+
+/// Top routes and recent errors of a site, at the service clock `at`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoutesSnapshot {
+    pub at: Timestamp,
+    /// `None` while the site has no traffic seen or its metrics are off.
+    pub report: Option<RoutesReport>,
+    pub errors: RecentErrors,
 }
 
 /// Handle on the service. Cheap to clone; the actor stops when [`Self::stop`] is called or
@@ -379,6 +418,50 @@ impl MetricsHandle {
             timeout,
         )
         .await
+    }
+
+    /// Points of `[from, to)` (`to` defaults to now) of `site` at `step`. The part older than
+    /// the in-memory retention is read from SQLite here (minute and hour steps only).
+    pub async fn series(
+        &self,
+        site: SiteRoute,
+        from: Timestamp,
+        to: Option<Timestamp>,
+        step: Step,
+        timeout: Duration,
+    ) -> Result<SeriesReport> {
+        let id = site.id;
+        let partial = self
+            .ask(
+                |reply| Msg::Series {
+                    site,
+                    from,
+                    to,
+                    step,
+                    reply,
+                },
+                timeout,
+            )
+            .await??;
+        let SeriesPartial {
+            at,
+            store,
+            mut points,
+        } = partial;
+        if let Some((from, split)) = store {
+            let mut older = persist::query_series(&self.reader, id, from, split, step, at).await?;
+            // The memory wins on a step both hold.
+            let first = points.first().map(|p| p.start);
+            older.retain(|p| first.is_none_or(|f| p.start < f));
+            older.extend(points);
+            points = older;
+        }
+        Ok(SeriesReport { at, points })
+    }
+
+    /// Top routes and recent errors of `site` (memory only).
+    pub async fn routes(&self, site: SiteRoute, timeout: Duration) -> Result<RoutesSnapshot> {
+        self.ask(|reply| Msg::Routes { site, reply }, timeout).await
     }
 
     /// Diagnostics.
@@ -677,6 +760,18 @@ impl Service {
                 reply,
             } => {
                 let _ = reply.send(self.subscribe(span, cadence));
+            }
+            Msg::Series {
+                site,
+                from,
+                to,
+                step,
+                reply,
+            } => {
+                let _ = reply.send(self.series(&site, from, to, step));
+            }
+            Msg::Routes { site, reply } => {
+                let _ = reply.send(self.routes_of(&site));
             }
             Msg::Status { reply } => {
                 let _ = reply.send(self.status());
@@ -1122,6 +1217,61 @@ impl Service {
             store,
             samples,
         })
+    }
+
+    /// The in-memory part of a series of `site` and what is left for the store.
+    fn series(
+        &mut self,
+        site: &SiteRoute,
+        from: Timestamp,
+        to: Option<Timestamp>,
+        step: Step,
+    ) -> Result<SeriesPartial> {
+        let now = self.advance();
+        let to = to.unwrap_or(now).min(now);
+        if from > to {
+            return Err(ForgeError::InvalidInput(
+                "the start of the range is after its end".into(),
+            ));
+        }
+        if !(self.enabled && site.metrics_enabled) {
+            return Ok(SeriesPartial {
+                at: now,
+                store: None,
+                points: Vec::new(),
+            });
+        }
+        let retention = self.retention_secs();
+        let horizon = (now.as_second() - retention).div_euclid(HOUR) * HOUR;
+        // Only minutes and hours exist beyond the memory.
+        let stored = matches!(step, Step::Minute | Step::Hour);
+        let (store, mem_from) = if from.as_second() >= horizon || !stored {
+            (None, from)
+        } else {
+            let split = at_secs(-((retention - now.as_second()).div_euclid(HOUR) * HOUR));
+            (Some((from, split.min(to))), split.min(to))
+        };
+        Ok(SeriesPartial {
+            at: now,
+            store,
+            points: self.agg.series(site.id, mem_from, to, step),
+        })
+    }
+
+    fn routes_of(&mut self, site: &SiteRoute) -> RoutesSnapshot {
+        let at = self.advance();
+        if !(self.enabled && site.metrics_enabled) {
+            return RoutesSnapshot {
+                at,
+                report: None,
+                errors: RecentErrors::default(),
+            };
+        }
+        RoutesSnapshot {
+            at,
+            report: self.agg.routes(site.id),
+            errors: self.agg.recent_errors(site.id),
+        }
     }
 
     fn sample(

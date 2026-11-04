@@ -523,6 +523,9 @@ pub async fn boot_with(
     );
 
     let endpoint = forge_ipc::transport::local_transport(&root).endpoint();
+    let top = Arc::new(crate::top::TopSampler::new(Arc::clone(
+        platform.process_stats(),
+    )));
     let daemon = Daemon::new(Inner {
         root: root.clone(),
         args: args.clone(),
@@ -565,6 +568,7 @@ pub async fn boot_with(
         db_sizes: crate::databases::SizeCache::default(),
         mail: crate::mail::MailHub::default(),
         metrics,
+        top,
     });
 
     // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web

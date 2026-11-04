@@ -58,8 +58,8 @@ pub use record::{AccessFormat, AccessRecord, FieldMap, FormatError, Multi, Unit,
 pub use route::UriNormalizer;
 pub use router::{HostRouter, Routed, SiteHosts, normalize_host};
 pub use service::{
-    LogSource, MetricsHandle, PoolFeed, ServiceConfig, ServiceStatus, SiteRoute, SiteSample, Sites,
-    Snapshot, SourceStatus, Span, StopReport,
+    LogSource, MetricsHandle, PoolFeed, RoutesSnapshot, SeriesReport, ServiceConfig, ServiceStatus,
+    SiteRoute, SiteSample, Sites, Snapshot, SourceStatus, Span, StopReport,
 };
 pub use tail::{
     Checkpoint, LineDecoder, StartAt, StartOutcome, TailBatch, TailConfig, TailControl, TailSpec,
