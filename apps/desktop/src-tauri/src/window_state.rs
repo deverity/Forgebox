@@ -365,6 +365,18 @@ mod tests {
     }
 
     #[test]
+    fn small_work_areas_give_the_qa_window_sizes() {
+        // docs/07 section 4 / section 12: a 1366x768 screen at 125 % with a 50 px taskbar has a
+        // 1093x574 DIP work area (the height caps the 600 minimum), and 1440x810 at 150 % has
+        // 960x540 (both axes fit exactly).
+        assert_eq!(
+            min_logical_size(rect(0, 0, 1366, 718), 1.25),
+            (960.0, 574.0)
+        );
+        assert_eq!(min_logical_size(rect(0, 0, 1440, 810), 1.5), (960.0, 540.0));
+    }
+
+    #[test]
     fn the_file_round_trips_and_rejects_other_versions() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("gui").join("window-state.json");
