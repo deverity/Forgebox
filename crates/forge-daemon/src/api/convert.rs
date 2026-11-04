@@ -484,6 +484,13 @@ pub fn registry(info: &RegistryInfo) -> RegistryDto {
         priority: i32::try_from(info.priority).unwrap_or(i32::MAX),
         tools: u32::try_from(info.tools).unwrap_or(u32::MAX),
         last_refresh_at: info.last_refresh_at,
+        trusted_unsigned: info.trusted_unsigned,
+        verified: info.verification.as_ref().is_some_and(|v| v.is_verified()),
+        key_id: match &info.verification {
+            Some(forge_registry::Verification::Verified { key_id }) => Some(key_id.clone()),
+            _ => None,
+        },
+        last_error: info.last_error.clone(),
     }
 }
 

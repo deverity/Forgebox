@@ -291,6 +291,8 @@ const REAL_SCREENS: ReadonlySet<string> = new Set([
   "databases",
   "mail",
   "php",
+  "logs",
+  "settings",
 ]);
 
 describe("routes", () => {

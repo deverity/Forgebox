@@ -128,6 +128,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::save_text_file,
+            commands::save_ca_certificate,
             files::save_attachment,
             i18n::set_language,
             bridge::commands::ipc_state,

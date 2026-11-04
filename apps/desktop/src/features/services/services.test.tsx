@@ -1,7 +1,7 @@
 // Acceptance of M2-E2-T12: states, grouped list, failure card, job feedback, typed-name removal.
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { App } from "../../App";
 import { createTestRouter } from "../../app/router";
 import { warmAppModules, renderApp, type AppHarness } from "../../app/testApp";
@@ -419,25 +419,24 @@ describe("instances", () => {
 });
 
 describe("logs and timeline", () => {
+  beforeEach(() => {
+    // jsdom has no layout: give every element the viewport the LogViewer's virtualizer reads.
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get: () => 600,
+    });
+  });
+  afterEach(() => {
+    delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+  });
+
   it("tails the log: backlog, live lines, filter, pause and resume", async () => {
     const user = userEvent.setup();
     const h = await renderApp({
       path: "/services",
       data: categorized(),
-      extra: {
-        handlers: {
-          "logs.read": () => ({
-            target: "mysql/default",
-            last_seq: 2,
-            lines: [
-              { seq: 1, ts: null, source: "stdout", level: "info", text: "ready for connections" },
-              { seq: 2, ts: null, source: "stderr", level: "warn", text: "slow query" },
-            ],
-          }),
-        },
-      },
     });
-    // Same seq domain as the backlog: the fake numbers the live lines from 1.
+    // The shared LogViewer opens its stream with `tail`: lines emitted before it are the backlog.
     act(() => {
       for (const text of ["ready for connections", "slow query"]) {
         h.fake.emitLog("mysql/default", { ts: null, source: "stdout", level: null, text });
@@ -466,7 +465,9 @@ describe("logs and timeline", () => {
     });
     await user.type(screen.getByLabelText("Filter"), "slow");
     expect(within(log).queryByText("ready for connections")).toBeNull();
-    expect(within(log).getByText("slow query")).toBeInTheDocument();
+    // The matched part is highlighted (split in a <mark>): look at the row text.
+    expect(log.querySelector("mark")).toHaveTextContent("slow");
+    expect(log).toHaveTextContent("slow query");
     await user.clear(screen.getByLabelText("Filter"));
 
     await user.click(screen.getByRole("button", { name: "Pause" }));

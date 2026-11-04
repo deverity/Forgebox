@@ -41,12 +41,22 @@ cli_only:
     reason: "LAN exposure is an M3 feature (no GUI in M2)."
   - method: sites.new
     reason: "Project scaffolding (forge new) is an M3 feature."
+  - method: tools.add_local
+    reason: "Installing a local zip or folder as a tool version is M3-E1; the daemon answers not_implemented in M2 (crates/forge-daemon/src/api/not_implemented.rs)."
   - method: sites.unpark
     reason: "No unpark screen in the M2 plan (onboarding M2-E2-T19 only parks); folders are unparked from the CLI."
   - method: sites.alias
     reason: "Aliases are shown read-only in the site detail Geral tab (M2-E2-T16); editing them is CLI/manifest only in M2."
+  - method: shell.path_remove
+    reason: "No M2 screen takes Forgebox out of the user PATH: onboarding (M2-E2-T19) and the Diagnostics 'Corrigir' (M2-E3-T19) only add it; `forge path remove` undoes it."
   - method: jobs.cancel
     reason: "The GUI cancels through the job abort in InstallProgressList (catalog and PHP switch), not through a registry action; no screen needs a separate action."
+  - method: tls.issue
+    reason: "Certificates are issued by site creation and by 'sites.secure' (M2-E4-T9); the Settings Seguranca list renews them (tls.renew) but a manual issue is `forge tls issue`."
+  - method: tls.export
+    reason: "Exporting a site certificate with its key (PFX) is a CLI-only admin export; Settings Seguranca exports only the public CA certificate (tls.ca_export)."
+  - method: fs_parity.site_case
+    reason: "The per-site switch stays `forge site case-sensitive` (the Settings screen has no site-level toggle); Settings > Sistema de arquivos converts folders and runs the Case Mismatch Finder (M2-E3-T18)."
 query:
   - method: daemon.status
     reason: "Query shown by: Shell status footer and Settings (M2-E1, M2-E3-T16)."
@@ -64,6 +74,10 @@ query:
     reason: "Query shown by: Diagnostics screen, run as a job with progress (M2-E3-T19)."
   - method: logs.targets
     reason: "Query shown by: Logs screen target picker (M2-E3-T12)."
+  - method: logs.read
+    reason: "Query shown by: Logs screen / LogViewer, Load earlier pages back with before_seq (M2-E3-T12)."
+  - method: logs.subscribe
+    reason: "Stream shown by: Logs screen / LogViewer, Services Logs tab, site Processes logs (M2-E3-T12)."
   - method: mail.attachment
     reason: "Query shown by: Mail screen attachment preview (M2-E3-T13)."
   - method: mail.env
@@ -143,65 +157,32 @@ query:
   - method: tools.plan
     reason: "Query shown by: Catalog tool page install plan and the site PHP switch confirmation (M2-E2-T18, M2-E2-T16)."
 pending:
-  - method: fs_parity.case_convert
-    task: M2-E3-T18
-  - method: fs_parity.case_enable
-    task: M2-E3-T18
-  - method: fs_parity.lint_case
-    task: M2-E3-T18
-  - method: fs_parity.site_case
-    task: M2-E3-T18
-  - method: net.dns_disable
-    task: M2-E3-T17
-  - method: registry.add
-    task: M2-E3-T18
-  - method: registry.remove
-    task: M2-E3-T18
-  - method: registry.update
-    task: M2-E3-T18
   # PHP screen gap left by M2-E2-T17 (pool card 'Recarregar' for php@<series>).
   - method: services.reload
     task: M2-E4-T9
-  - method: shell.path_remove
-    task: M2-E3-T16
   - method: sites.down
     task: M2-E4-T9
   - method: sites.up
     task: M2-E4-T9
+  # API/CLI shipped by M2-E5-T11; the 'Pool dedicado' toggle lives in the Desempenho tab.
   - method: sites.pool_mode
-    task: M2-E5-T11
+    task: M2-E5-T16
   - method: sites.metrics
     task: M2-E5-T16
   - method: sites.secure
     task: M2-E4-T9
   - method: sites.server
     task: M2-E4-T9
-  - method: tls.ca_uninstall
-    task: M2-E3-T17
-  - method: tls.issue
-    task: M2-E3-T17
-  - method: tls.renew
-    task: M2-E3-T17
-  - method: tools.add_local
-    task: M2-E3-T18
+  # Left by M2-E3-T18 (Settings part 3 did not take it): 'Procurar pastas em bin/' on the
+  # Catalog screen (docs/03 §5 discover, docs/09 `forge tool discover`).
   - method: tools.discover
-    task: M2-E3-T18
+    task: M2-E4-T9
   # PHP screen gap left by M2-E2-T17 (apply the update 'Verificar agora' found; the API is
   # per tool, not per series, so the button needs a decision).
   - method: tools.update
     task: M2-E4-T9
-  - method: tls.ca_export
-    task: M2-E3-T17
-  - method: tls.export
-    task: M2-E3-T17
-  - method: logs.read
-    task: M2-E3-T12
-  - method: logs.subscribe
-    task: M2-E3-T12
   - method: stats.export
     task: M2-E5-T16
   # PHP screen gap left by M2-E2-T17 ('Abrir php.ini', local only).
   - method: php.ini_open
     task: M2-E4-T9
-  - method: shell.open
-    task: M2-E3-T16

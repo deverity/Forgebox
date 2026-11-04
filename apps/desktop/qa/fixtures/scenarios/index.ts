@@ -17,6 +17,7 @@ import { catalogHandlers } from "./catalog";
 import { attentionDashboard, healthyDashboard } from "./dashboard";
 import { configHandlers } from "./config";
 import { databasesHandlers } from "./databases";
+import { createFilesystemQa } from "./filesystem";
 import { diagnosticsHandlers, QA_HOLDER_PORT } from "./diagnostics";
 import {
   CA_STATUS,
@@ -28,9 +29,11 @@ import {
   site,
   type QaData,
 } from "./data";
+import { logsHandlers } from "./logs";
 import { mailHandlers } from "./mail";
 import { createOnboardingQa } from "./onboarding";
 import { phpHandlers } from "./php";
+import { createNetworkSecurityQa } from "./networkSecurity";
 import { settingsHandlers } from "./settings";
 import { siteDetailHandlers } from "./siteDetail";
 import { terminalHandlers } from "./terminal";
@@ -117,6 +120,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const detail = siteDetailHandlers(data);
   const catalog = catalogHandlers(data, config);
   const terminal = terminalHandlers();
+  const logs = logsHandlers();
   const mail = mailHandlers(data).handlers;
   const php = phpHandlers(data, config);
   const databases = databasesHandlers();
@@ -126,6 +130,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
     ...detail,
     ...catalog,
     ...terminal,
+    ...logs,
     ...mail,
     ...php,
     ...databases,
@@ -154,11 +159,22 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...config,
       ...catalog,
       ...terminal,
+      ...logs,
       ...mail,
       ...php,
       ...databases,
       ...diagnostics,
       ...settings,
+      // `logs.read` without `before_seq` is the Diagnostics export of the daemon log; paging back
+      // (the Logs screen) reads the history of `logs.ts`.
+      "logs.read": (params, ctx) => {
+        const handler =
+          params.before_seq === undefined || params.before_seq === null
+            ? diagnostics["logs.read"]
+            : logs["logs.read"];
+        if (handler === undefined) return { target: params.target, lines: [], last_seq: 0 };
+        return handler(params, ctx);
+      },
       // Both answer `net.port_check`: the held port is the Diagnostics scenario's, the rest config's.
       "net.port_check": (params, ctx) => {
         const handler =
@@ -233,6 +249,20 @@ export function registerQaScenarios(): void {
   onboarding("onboarding-uac", { uac: true });
   onboarding("onboarding-fail", { fail: true });
   onboarding("onboarding-hosts", { hosts: true });
+  // Settings > Rede and Seguranca (M2-E3-T17): DNS/CA jobs with the UAC prompt, certificates,
+  // external port conflict, helper log. Its own scenario: Diagnostics answers `net.dns_enable`
+  // and `tls.ca_install` differently.
+  define("network-security", populatedData(), {
+    latencyMs: 0,
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
+    handlers: createNetworkSecurityQa().handlers,
+  });
+  // Settings > Sistema de arquivos, Registries and Atualizacoes (M2-E3-T18).
+  define("filesystem", populatedData(), {
+    latencyMs: 0,
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
+    handlers: createFilesystemQa().handlers,
+  });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
   define("slow", populatedData(), builtin("slow"));
   define("remote", populatedData(), builtin("remote"));

@@ -150,6 +150,72 @@
     ]
   },
   {
+    "action": "filesystem.case_convert",
+    "method": "fs_parity.case_convert",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:/forgebox/www",
+          "revert": false
+        },
+        "command": "forge fs case-sensitive convert C:/forgebox/www"
+      },
+      {
+        "input": {
+          "dir": "C:/forgebox/www",
+          "revert": true
+        },
+        "command": "forge fs case-sensitive convert C:/forgebox/www --revert"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.case_disable",
+    "method": "fs_parity.case_disable",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "C:/forgebox/www",
+        "command": "forge fs case-sensitive disable C:/forgebox/www"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.case_enable",
+    "method": "fs_parity.case_enable",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "C:/forgebox/www",
+        "command": "forge fs case-sensitive enable C:/forgebox/www"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.lint_case",
+    "method": "fs_parity.lint_case",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "strategy": "auto",
+          "dryRun": true
+        },
+        "command": "forge site lint-case loja.test --fix --dry-run --strategy auto"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "strategy": "rename",
+          "dryRun": false
+        },
+        "command": "forge site lint-case loja.test --fix --strategy rename"
+      }
+    ]
+  },
+  {
     "action": "mail.clear",
     "method": "mail.clear",
     "kind": "call",
@@ -291,6 +357,102 @@
           "mode": "off"
         },
         "command": "forge php xdebug 8.4 off"
+      }
+    ]
+  },
+  {
+    "action": "registries.add",
+    "method": "registry.add",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "url": "https://example.org/registry/index.yaml",
+          "name": "acme"
+        },
+        "command": "forge registry add https://example.org/registry/index.yaml --name acme"
+      }
+    ]
+  },
+  {
+    "action": "registries.remove",
+    "method": "registry.remove",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "acme",
+        "command": "forge registry remove acme"
+      }
+    ]
+  },
+  {
+    "action": "registries.update",
+    "method": "registry.update",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge registry update"
+      }
+    ]
+  },
+  {
+    "action": "security.ca_export",
+    "method": "tls.ca_export",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tls ca export"
+      }
+    ]
+  },
+  {
+    "action": "security.ca_uninstall",
+    "method": "tls.ca_uninstall",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "scope": "current_user"
+        },
+        "command": "forge tls ca uninstall --scope user"
+      },
+      {
+        "input": {
+          "scope": "local_machine"
+        },
+        "command": "forge tls ca uninstall --scope machine"
+      }
+    ]
+  },
+  {
+    "action": "security.cert_renew",
+    "method": "tls.renew",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "host": "loja.test"
+        },
+        "command": "forge tls renew loja.test"
+      },
+      {
+        "input": {
+          "all": true
+        },
+        "command": "forge tls renew --all"
+      }
+    ]
+  },
+  {
+    "action": "security.dns_disable",
+    "method": "net.dns_disable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge dns disable"
       }
     ]
   },
@@ -526,6 +688,19 @@
       {
         "input": null,
         "command": "forge daemon restart"
+      }
+    ]
+  },
+  {
+    "action": "settings.terminal_test",
+    "method": "shell.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:\\Meus Projetos\\loja virtual"
+        },
+        "command": "forge shell \"C:\\Meus Projetos\\loja virtual\""
       }
     ]
   },
@@ -772,6 +947,13 @@
           "policy": "notify"
         },
         "command": "forge tool policy php notify"
+      },
+      {
+        "input": {
+          "tool": "php",
+          "policy": "auto-patch"
+        },
+        "command": "forge tool policy php auto-patch"
       }
     ]
   },
@@ -786,6 +968,17 @@
           "version": "8.4"
         },
         "command": "forge use php 8.4"
+      }
+    ]
+  },
+  {
+    "action": "updates.check_all",
+    "method": "tools.check_updates",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tool update --check"
       }
     ]
   }

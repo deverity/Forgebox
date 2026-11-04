@@ -1,11 +1,18 @@
 {
   "title": "Settings",
-  "nav": { "label": "Settings sections" },
+  "nav": {
+    "label": "Settings sections"
+  },
   "sections": {
     "general": "General",
+    "network": "Network",
+    "security": "Security",
     "editor": "Editor and terminal",
     "shortcuts": "Shortcuts",
-    "advanced": "Advanced"
+    "advanced": "Advanced",
+    "filesystem": "File system",
+    "updates": "Updates",
+    "registries": "Registries"
   },
   "search": {
     "label": "Search settings",
@@ -89,7 +96,9 @@
       "label": "Close to tray",
       "description": "Closing the window keeps Forgebox in the system tray."
     },
-    "autostart": { "label": "Start with Windows" },
+    "autostart": {
+      "label": "Start with Windows"
+    },
     "onboarding": {
       "label": "Welcome",
       "description": "Runs the first-steps assistant again.",
@@ -122,6 +131,337 @@
       "label": "Diagnostics",
       "description": "Checks PATH, DNS, CA, ports and versions, and exports a report.",
       "open": "Open diagnostics"
+    }
+  },
+  "job": {
+    "uac": "Windows is asking for administrator permission (UAC). Confirm the prompt to continue; this window stays usable.",
+    "done": "Done",
+    "running": "Working…"
+  },
+  "confirm": {
+    "cancel": "Cancel"
+  },
+  "network": {
+    "tld": {
+      "label": "Local TLD",
+      "description": "Ending of local site names (.test). Reserved for local use, so it never reaches the internet.",
+      "invalid": "Use a dot and lowercase letters or digits, like .test.",
+      "confirmTitle": "Change the TLD to {tld}?",
+      "confirmBody": "Moving from {from} to {to} changes the name of every site and reissues all certificates: the local CA has to be rotated afterwards and the DNS enabled again. Cancel keeps {from}.",
+      "confirm": "Change TLD",
+      "needsRotate": "Rotate the local CA so certificates cover the new TLD.",
+      "needsDns": "Enable the local DNS again for the new TLD."
+    },
+    "dns": {
+      "label": "Local DNS",
+      "description": "Answers any name under the TLD with 127.0.0.1, so sites open without editing hosts.",
+      "server": "Server",
+      "running": "Running",
+      "stopped": "Stopped",
+      "listen": "Listens on",
+      "mode": "Routing",
+      "off": "Off",
+      "reason": "Why not NRPT",
+      "modes": {
+        "nrpt": "NRPT rule (Windows follows it)",
+        "hosts": "hosts file fallback",
+        "none": "Not routed"
+      },
+      "reasons": {
+        "group_policy_table_present": "A Group Policy NRPT table exists, so Windows ignores local rules.",
+        "resolver_probe_failed": "The rule exists, but the Windows resolver did not answer a test name (VPN or security agent intercepting DNS).",
+        "resolver_not_on_port53": "The Forgebox resolver is not on port 53, which NRPT requires.",
+        "nrpt_unsupported": "This Windows has no NRPT.",
+        "nrpt_points_elsewhere": "Another rule sends the TLD to a different server."
+      },
+      "enable": "Enable DNS",
+      "disable": "Disable DNS",
+      "enabling": "Enabling the local DNS",
+      "disabling": "Disabling the local DNS",
+      "uacNote": "Enabling or disabling asks Windows for administrator permission (UAC).",
+      "host": "Host to test",
+      "testHost": "Test host",
+      "testing": "Testing…",
+      "test": {
+        "ok": "Resolves as expected",
+        "fail": "Does not resolve as expected",
+        "via": "answered by {via}",
+        "resolved": "Resolved",
+        "expected": "Expected",
+        "none": "nothing"
+      }
+    },
+    "ports": {
+      "label": "Port ranges",
+      "description": "Where Forgebox picks ports for web servers, databases and pools. Use ports and spans separated by commas.",
+      "probe": "Check a port",
+      "invalid": "Use ports from 1 to 65535 or spans like 3306-3399, separated by commas.",
+      "none": "The daemon did not list any range."
+    },
+    "portMap": {
+      "label": "Ports in use",
+      "description": "Read-only: ports Forgebox reserved and other programs sitting on its ranges.",
+      "empty": "No port is reserved yet.",
+      "port": "Port",
+      "owner": "Owner",
+      "state": "State",
+      "states": {
+        "reserved": "Reserved",
+        "bound": "Listening",
+        "conflict": "Conflict"
+      },
+      "externalTitle": "Held by other programs",
+      "noExternal": "No outside program holds a Forgebox port.",
+      "conflict": "Conflict",
+      "heldBy": "held by {exe} (pid {pid})"
+    },
+    "lan": {
+      "label": "Access from the local network",
+      "description": "Open a site to phones and other computers on the same network.",
+      "soon": "Coming soon"
+    }
+  },
+  "security": {
+    "ca": {
+      "label": "Local CA",
+      "description": "Certificate authority that signs the HTTPS of your sites. Browsers must trust it once.",
+      "state": "State",
+      "exists": "Created",
+      "missing": "Not created yet",
+      "subject": "Name",
+      "thumbprint": "SHA-256",
+      "expires": "Expires",
+      "trust": "Trusted by",
+      "trustedUser": "Current user",
+      "notTrustedUser": "Current user: no",
+      "trustedMachine": "Whole machine",
+      "notTrustedMachine": "Whole machine: no",
+      "constraints": "Only signs for",
+      "installTitle": "Trust the CA",
+      "scope": "Where to trust",
+      "scopeUser": "Current user",
+      "scopeMachine": "Whole machine",
+      "installUserNote": "Windows shows a security dialog asking to add the certificate to your account. Confirm it.",
+      "installMachineNote": "Needs administrator permission: Windows shows the UAC prompt and then the certificate dialog.",
+      "install": "Install CA",
+      "installing": "Installing the CA",
+      "exportTitle": "Export",
+      "exportNote": "Saves the public certificate (never the key) to import into another browser or machine.",
+      "export": "Export CA…",
+      "exporting": "Exporting…",
+      "exported": "CA saved to {path}",
+      "rotateTitle": "Rotate the CA",
+      "rotateNote": "Creates a new CA and reissues every certificate.",
+      "rotate": "Rotate CA",
+      "rotating": "Rotating the CA",
+      "rotateBody": "This replaces the local CA and reissues every site certificate. Browsers must trust the new CA, and the old one stops working. This cannot be undone.",
+      "rotateConfirm": "Rotate now",
+      "uninstallTitle": "Remove from trust",
+      "uninstallNote": "Browsers stop trusting the HTTPS of your sites until the CA is installed again.",
+      "uninstallUser": "Remove from user",
+      "uninstallMachine": "Remove from machine",
+      "notInstalledUser": "Not trusted by the current user.",
+      "notInstalledMachine": "Not trusted by the machine.",
+      "uninstalling": "Removing the CA"
+    },
+    "certs": {
+      "label": "Certificates",
+      "description": "One per site, issued by the local CA.",
+      "empty": "No certificate issued yet.",
+      "daysLeft_one": "{count} day left",
+      "daysLeft_other": "{count} days left",
+      "states": {
+        "ok": "Valid",
+        "expiring": "Expiring",
+        "untrusted": "Not trusted",
+        "expired": "Expired"
+      },
+      "renew": "Renew",
+      "renewAll": "Renew all",
+      "renewing": "Renewing {host}",
+      "renewingAll": "Renewing every certificate"
+    },
+    "helper": {
+      "label": "Helper log",
+      "description": "Everything the elevated helper did, newest last. Administrators only.",
+      "empty": "The helper has not logged anything yet.",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "ok": "ok",
+      "failed": "failed"
+    }
+  },
+  "filesystem": {
+    "global": {
+      "label": "Case-sensitive by default",
+      "description": "New folders the Forgebox creates (www, etc, data, logs, tmp) are flagged case-sensitive, like Linux. bin/ stays insensitive."
+    },
+    "table": {
+      "label": "Folder status",
+      "description": "Whether each folder is case-sensitive on this volume.",
+      "noRoot": "The root folder is not known yet.",
+      "dir": "Folder",
+      "state": "State",
+      "fs": "File system",
+      "actions": "Actions",
+      "enable": "Enable",
+      "disable": "Disable",
+      "states": {
+        "enabled": "Case-sensitive",
+        "disabled": "Case-insensitive",
+        "unsupported": "Not supported"
+      }
+    },
+    "convert": {
+      "label": "Convert a folder",
+      "description": "Moves an existing folder into a case-sensitive one (or back). Nothing else changes, but stop your servers first: files in use cannot be moved.",
+      "dir": "Folder to convert",
+      "run": "Convert to case-sensitive",
+      "revert": "Revert to insensitive",
+      "cancel": "Cancel",
+      "cancelling": "Cancelling…",
+      "cancelled": "The conversion was cancelled. The folder was left as it was.",
+      "again": "Try again",
+      "converting": "Converting {dir}/",
+      "reverting": "Reverting {dir}/",
+      "revertConflict": "The folder could not go back to case-insensitive because two names differ only by case (for example Readme.md and readme.md). Windows would merge them and lose one. Rename or remove one of each pair, then try again.",
+      "already": "The folder was already in that state; nothing was moved.",
+      "report": "Done: {files} files in {directories} folders ({size}).",
+      "hint": "A long conversion keeps running if you leave this screen; follow it in the jobs indicator.",
+      "revertTitle": "Revert {dir}/ to case-insensitive?",
+      "revertBody": "Names that differ only by case cannot exist in a case-insensitive folder. If there are any, the revert stops and explains which."
+    },
+    "finder": {
+      "label": "Case Mismatch Finder",
+      "description": "Finds references whose case differs from the file on disk (they work on Windows but break on Linux).",
+      "site": "Site",
+      "strategy": "Fix strategy",
+      "noSites": "No sites yet",
+      "scan": "Scan (dry run)",
+      "scanning": "Scanning the site",
+      "clean_one": "No case mismatch found in {count} file.",
+      "clean_other": "No case mismatch found in {count} files.",
+      "appliedClean": "Nothing left to fix.",
+      "summary_one": "{count} finding, {fixable} fixable. Nothing was changed yet.",
+      "summary_other": "{count} findings, {fixable} fixable. Nothing was changed yet.",
+      "appliedSummary": "Fixes applied. {remaining} mismatches remain.",
+      "dryRunNote": "This is a preview: the lines above show what would change.",
+      "apply_one": "Apply {count} fix…",
+      "apply_other": "Apply {count} fixes…",
+      "applying": "Applying the fixes",
+      "hint": "Rename changes the file on disk; edit rewrites the reference. Auto renames when only the file name differs.",
+      "confirmTitle": "Apply the fixes to {site}?",
+      "confirmBody_one": "{count} fix will rename files or rewrite references in the project. Commit or back up first.",
+      "confirmBody_other": "{count} fixes will rename files or rewrite references in the project. Commit or back up first.",
+      "confirmApply": "Apply",
+      "categories": {
+        "mismatch": "Case mismatch",
+        "case_duplicate": "Names differ only by case",
+        "reserved_name": "Reserved name",
+        "env_case_duplicate": ".env keys differ only by case",
+        "crlf_shebang": "CRLF shebang"
+      },
+      "strategies": {
+        "auto": "Automatic",
+        "rename": "Rename file",
+        "edit": "Edit reference"
+      }
+    }
+  },
+  "updates": {
+    "app": {
+      "label": "Forgebox updates",
+      "description": "Channel and self-update of the app.",
+      "channel": "Channel",
+      "stable": "Stable",
+      "beta": "Beta",
+      "selfUpdate": "Update Forgebox",
+      "inactive": "App updates arrive in 1.0. Until then, install new versions from the release page."
+    },
+    "check": {
+      "label": "Check for tool updates",
+      "description": "Looks for newer versions of every installed tool now.",
+      "now": "Check now",
+      "checking": "Checking for updates",
+      "none": "Every tool is up to date.",
+      "found_one": "{count} tool has an update.",
+      "found_other": "{count} tools have an update."
+    },
+    "quiet": {
+      "label": "Quiet hours",
+      "description": "Background checks and downloads wait outside this window (24 h, local time; it may cross midnight). Leave both empty for none.",
+      "start": "From",
+      "end": "Until",
+      "unchanged": "Nothing to save",
+      "problem": {
+        "format": "Use HH:MM, 24 hours (for example 22:00).",
+        "incomplete": "Fill in both times or leave both empty.",
+        "same": "The two times are the same."
+      }
+    },
+    "metered": {
+      "label": "Metered connection",
+      "description": "What background updates do when Windows says the connection is metered.",
+      "values": {
+        "pause": "Pause downloads",
+        "allow": "Download anyway"
+      }
+    },
+    "policy": {
+      "label": "Policy per tool",
+      "description": "How each installed tool is updated.",
+      "tool": "Tool",
+      "installed": "Versions",
+      "policy": "Policy",
+      "select": "Update policy of {tool}",
+      "empty": "No tool is installed yet.",
+      "available": "{version} available",
+      "values": {
+        "manual": "Manual",
+        "notify": "Notify",
+        "auto-patch": "Patch automatically",
+        "auto-minor": "Minor automatically",
+        "auto": "Everything automatically"
+      }
+    }
+  },
+  "registries": {
+    "list": {
+      "label": "Registries",
+      "description": "Where the catalog reads tool manifests from. The official one cannot be removed."
+    },
+    "add": {
+      "label": "Add a registry",
+      "description": "Third-party registries show a badge and cannot run install scripts.",
+      "url": "Registry URL",
+      "name": "Name (optional)",
+      "nameHint": "Default: derived from the URL.",
+      "adding": "Adding…",
+      "submit": "Add registry"
+    },
+    "trust": {
+      "official": "Official",
+      "third-party": "Third-party",
+      "unverified": "Unverified"
+    },
+    "disabled": "Disabled",
+    "removing": "Removing…",
+    "remove": "Remove",
+    "removeTitle": "Remove the registry {name}?",
+    "removeBody": "Its tools disappear from the catalog. Versions already installed stay.",
+    "tools_one": "{count} tool",
+    "tools_other": "{count} tools",
+    "neverRefreshed": "never refreshed",
+    "refreshed": "refreshed {when}",
+    "noRefresh": "This registry was never refreshed. Update the registries to load it.",
+    "lastError": "Last refresh failed: {error}",
+    "update": "Update registries",
+    "updating": "Updating the registries",
+    "empty": "No registry configured",
+    "problem": {
+      "empty": "Enter a URL or a folder.",
+      "scheme": "Use an https:// URL, git+https://, file:/// or a folder path.",
+      "invalid": "This is not a valid URL."
     }
   }
 }

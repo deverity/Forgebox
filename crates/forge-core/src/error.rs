@@ -36,6 +36,16 @@ pub enum ForgeError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    /// Reverting a case-sensitive tree would merge names that differ only by case
+    /// (`code` is still `conflict`; `details.reason = "case_collisions"` lets the GUI tell
+    /// it apart from other conflicts such as a file held open, ADR-0039).
+    #[error("conflict: {message}")]
+    CaseCollisions {
+        message: String,
+        examples: String,
+        count: usize,
+    },
+
     /// A TCP/UDP port is taken, optionally by a known owner (`mysqld.exe (PID 4412)`).
     /// `pid`/`exe` name the listening process when it is known (a listener of the OS
     /// table, not a reservation): the GUI offers to end it (`services.kill_port_holder`).
@@ -198,7 +208,7 @@ impl ForgeError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::NotFound(_) | Self::VersionNotInstalled { .. } => "not_found",
-            Self::Conflict(_) => "conflict",
+            Self::Conflict(_) | Self::CaseCollisions { .. } => "conflict",
             Self::PortInUse { .. } => "port_in_use",
             Self::NeedsElevation(_) => "needs_elevation",
             Self::VerificationFailed(_) => "verification_failed",
@@ -221,7 +231,8 @@ impl ForgeError {
     /// plus these, never from the English message. Only the errors a GUI acts on carry
     /// them: `port_in_use` (`port`, `owner`, `pid`, `exe`), `needs_elevation` (`detail`), `not_found`
     /// (`what`), `not_implemented` (`method`, `task`, `what`) and `timeout`
-    /// (`operation`, `after_ms`).
+    /// (`operation`, `after_ms`) and `conflict` from a revert with case collisions
+    /// (`reason: "case_collisions"`, `examples`, `count`).
     pub fn details(&self) -> Option<serde_json::Value> {
         use serde_json::json;
         let (reason, args) = match self {
@@ -235,6 +246,12 @@ impl ForgeError {
                 json!({ "port": port, "owner": owner, "pid": pid, "exe": exe }),
             ),
             Self::NeedsElevation(detail) => ("needs_elevation", json!({ "detail": detail })),
+            Self::CaseCollisions {
+                examples, count, ..
+            } => (
+                "case_collisions",
+                json!({ "examples": examples, "count": count }),
+            ),
             Self::NotFound(what) => ("not_found", json!({ "what": what })),
             Self::VersionNotInstalled {
                 tool,
@@ -472,6 +489,14 @@ mod tests {
         // Errors nobody acts on structurally stay without details.
         assert!(ForgeError::Internal("x".into()).details().is_none());
         assert!(ForgeError::Conflict("x".into()).details().is_none());
+        let d = details(ForgeError::CaseCollisions {
+            message: "m".into(),
+            examples: "A.php; a.php".into(),
+            count: 1,
+        });
+        assert_eq!(d["reason"], "case_collisions");
+        assert_eq!(d["args"]["count"], 1);
+        assert_eq!(d["args"]["examples"], "A.php; a.php");
     }
 
     #[test]
