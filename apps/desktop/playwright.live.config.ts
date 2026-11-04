@@ -5,6 +5,8 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e/live",
+  // parity.test.ts is a vitest file (the scan validator's own tests), not part of this run.
+  testMatch: "**/*.live.spec.ts",
   outputDir: "./qa/out/test-results-live",
   fullyParallel: false,
   workers: 1,

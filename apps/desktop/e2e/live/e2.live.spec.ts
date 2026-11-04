@@ -60,6 +60,16 @@ function daemonPid(): number | null {
   }
 }
 
+/** Is the process still there? (signal 0 only probes). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 let page: Page;
 let close: () => Promise<void>;
 
@@ -350,7 +360,13 @@ test("8 killing the daemon shows disconnected within 2 s and the screens resync 
   const before = daemonPid();
   expect(before).not.toBeNull();
   const killedAt = Date.now();
-  execFileSync("taskkill", ["/PID", String(before), "/T", "/F"], { stdio: "ignore" });
+  // taskkill exits non-zero when a child of the tree is already gone: judge by the daemon itself.
+  try {
+    execFileSync("taskkill", ["/PID", String(before), "/T", "/F"], { stdio: "ignore" });
+  } catch {
+    /* checked below */
+  }
+  expect(alive(Number(before))).toBe(false);
 
   const log = () =>
     page.evaluate(() => (window as unknown as { __conn: { t: number; status: string }[] }).__conn);
