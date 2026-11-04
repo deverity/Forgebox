@@ -1,0 +1,105 @@
+{
+  "title": "PHP",
+  "summary_one": "{count} version installed",
+  "summary_other": "{count} versions installed",
+  "install": "Install another version",
+  "empty": {
+    "title": "No PHP installed",
+    "description": "Install PHP 8.4 to run your sites and use it in the terminal.",
+    "action": "Install PHP 8.4"
+  },
+  "columns": "PHP versions",
+  "column": "PHP {series}",
+  "variant": {
+    "label": "Build variant",
+    "nts": "NTS: the usual build for FastCGI pools."
+  },
+  "cli": {
+    "label": "Default CLI",
+    "hint": "Used by the forge command line and your terminal. Sites keep their own version.",
+    "switching": "Switching…"
+  },
+  "pool": {
+    "title": "Pool",
+    "workers": "{busy}/{total} workers",
+    "rate": "{rate} req/s",
+    "noRate": "— req/s",
+    "rss": "{size} in memory",
+    "state": {
+      "stopped": "Stopped",
+      "starting": "Starting",
+      "running": "Running",
+      "stopping": "Stopping",
+      "crashed": "Crashed",
+      "failed": "Failed",
+      "maintenance": "Updating"
+    },
+    "none": "The pool starts with the first site that uses this version."
+  },
+  "sites": {
+    "count_one": "{count} site",
+    "count_other": "{count} sites",
+    "forSeries": " (PHP {series})"
+  },
+  "quick": {
+    "title": "Quick settings",
+    "loading": "Loading settings…"
+  },
+  "ext": {
+    "title": "Extensions",
+    "search": "Search extensions",
+    "searchPlaceholder": "Search extensions",
+    "bundled": "Bundled",
+    "registry": "Registry",
+    "zend": "Zend",
+    "zendHint": "Loaded with zend_extension.",
+    "toggle": "{name} extension",
+    "count": "{shown} of {total}",
+    "none": "No extension matches “{query}”.",
+    "empty": "No extensions found.",
+    "failed": "Could not change {name}: it was put back."
+  },
+  "xdebug": {
+    "title": "Xdebug",
+    "mode": "Xdebug mode",
+    "off": "Off",
+    "on": "On",
+    "trigger": "Trigger",
+    "hint": {
+      "off": "Xdebug is not loaded.",
+      "on": "Every request starts a debug session.",
+      "trigger": "Only requests with XDEBUG_TRIGGER start a debug session."
+    },
+    "port": "Client port",
+    "portHint": "Blank keeps the saved port (default 9003).",
+    "portInvalid": "Use a port between 1 and 65535.",
+    "ideKey": "IDE key",
+    "ideKeyHint": "Default value; editing it arrives with extension settings.",
+    "apply": "Apply port",
+    "applying": "Applying…",
+    "applied": "Port applied",
+    "installing": "Installing Xdebug for PHP {series}",
+    "working": "Applying Xdebug mode…"
+  },
+  "updates": {
+    "title": "Updates",
+    "policyNote": "The policy applies to all PHP versions. A policy per series arrives later without changing this screen.",
+    "check": "Check now",
+    "checking": "Checking…",
+    "checked": "Checked",
+    "upToDate": "PHP is up to date.",
+    "available": "PHP {from} can update to {to}.",
+    "history": "History",
+    "historyEmpty": "No updates yet for this series.",
+    "historyLine": "{from} → {to} · {status}",
+    "rollback": "Roll back",
+    "rollingBack": "Rolling back…",
+    "rolledBack": "Rolled back",
+    "status": {
+      "started": "Started",
+      "completed": "Updated",
+      "failed": "Failed",
+      "rolled_back": "Rolled back"
+    }
+  }
+}

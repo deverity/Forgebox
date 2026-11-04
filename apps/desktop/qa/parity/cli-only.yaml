@@ -169,12 +169,6 @@ pending:
     task: M2-E3-T17
   - method: net.dns_enable
     task: M2-E3-T17
-  - method: php.ext_disable
-    task: M2-E2-T17
-  - method: php.ext_enable
-    task: M2-E2-T17
-  - method: php.xdebug
-    task: M2-E2-T17
   - method: registry.add
     task: M2-E3-T18
   - method: registry.remove

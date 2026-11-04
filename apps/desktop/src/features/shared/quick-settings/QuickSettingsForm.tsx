@@ -90,6 +90,13 @@ export function QuickSettingsForm({
 
   const apply = applyOf(settings, dirty);
   const changed = changedSettings(baseline, draft);
+  // The button is disabled while nothing changed, but its tooltip and `data-forge-cli` still show
+  // the command shape: the first key at its saved value (never run, the button is disabled).
+  const firstKey = Object.keys(baseline)[0];
+  const preview =
+    dirty.length === 0 && firstKey !== undefined
+      ? { [firstKey]: baseline[firstKey] ?? "" }
+      : changed;
 
   return (
     <form
@@ -178,7 +185,7 @@ export function QuickSettingsForm({
           <ActionButton
             variant="primary"
             action={setServiceSettings}
-            input={{ target, settings: changed }}
+            input={{ target, settings: preview }}
             loadingLabel={t("quick.saving")}
             successLabel={t("quick.saved")}
             {...(reason === undefined ? {} : { disabledReason: reason })}

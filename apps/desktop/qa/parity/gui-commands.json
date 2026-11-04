@@ -1,5 +1,62 @@
 [
   {
+    "action": "php.ext_disable",
+    "method": "php.ext_disable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "version": "8.4",
+          "extension": "intl"
+        },
+        "command": "forge php ext disable 8.4 intl"
+      }
+    ]
+  },
+  {
+    "action": "php.ext_enable",
+    "method": "php.ext_enable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "version": "8.4",
+          "extension": "intl"
+        },
+        "command": "forge php ext enable 8.4 intl"
+      }
+    ]
+  },
+  {
+    "action": "php.xdebug",
+    "method": "php.xdebug",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "version": "8.4",
+          "mode": "trigger"
+        },
+        "command": "forge php xdebug 8.4 trigger"
+      },
+      {
+        "input": {
+          "version": "8.3",
+          "mode": "on",
+          "port": 9010
+        },
+        "command": "forge php xdebug 8.3 on --port 9010"
+      },
+      {
+        "input": {
+          "version": "8.4",
+          "mode": "off"
+        },
+        "command": "forge php xdebug 8.4 off"
+      }
+    ]
+  },
+  {
     "action": "services.create_instance",
     "method": "services.create",
     "kind": "job",
