@@ -503,6 +503,19 @@
     ]
   },
   {
+    "action": "settings.terminal_test",
+    "method": "shell.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:\\Meus Projetos\\loja virtual"
+        },
+        "command": "forge shell \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
     "action": "sites.add",
     "method": "sites.add",
     "kind": "job",
