@@ -29,8 +29,19 @@ export function SlotLabelText({ label }: { label: SlotLabel }) {
 }
 
 /** Dashboard sections in registry order, each in its own boundary. */
-export function DashboardSectionsHost() {
-  const sections = useSlot(dashboardSections);
+export function DashboardSectionsHost({
+  only,
+  except,
+}: {
+  /** Render just this section id. */
+  only?: string;
+  /** Skip these section ids (the Dashboard renders them in its own places). */
+  except?: readonly string[];
+} = {}) {
+  const sections = useSlot(dashboardSections).filter(
+    (section) =>
+      (only === undefined || section.id === only) && !(except?.includes(section.id) ?? false),
+  );
   return (
     <>
       {sections.map((section) => (

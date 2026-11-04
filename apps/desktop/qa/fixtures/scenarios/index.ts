@@ -14,6 +14,7 @@ import {
   type FakeScenario,
 } from "../../../src/ipc/fakeBridge";
 import { catalogHandlers } from "./catalog";
+import { attentionDashboard, healthyDashboard } from "./dashboard";
 import { configHandlers } from "./config";
 import {
   CA_STATUS,
@@ -117,6 +118,9 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       "sites.list": () => ({ sites: data.sites }),
       "tools.list": () => ({ tools: data.tools }),
       "net.dns_status": () => DNS_STATUS,
+      // The Dashboard (M2-E2-T14) asks for both: nothing external, no certificates by default.
+      "services.ports": () => ({ ports: [], external: [] }),
+      "tls.list": () => ({ certificates: [] }),
       "tls.ca_status": () => CA_STATUS,
       "daemon.status": () => data.daemon,
       ...siteHandlers(data),
@@ -175,6 +179,11 @@ export function registerQaScenarios(): void {
       (method) => method !== "tools.releases" && method !== "tools.plan",
     ),
   });
+  // The Dashboard (M2-E2-T14): healthy, and every Atenção source at once.
+  const healthy = healthyDashboard();
+  define("dashboard", healthy.data, healthy.extra);
+  const attention = attentionDashboard();
+  define("dashboard-attention", attention.data, attention.extra);
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
   define("slow", populatedData(), builtin("slow"));
   define("remote", populatedData(), builtin("remote"));

@@ -111,13 +111,19 @@ export interface AttentionItem {
   /** Stable within the source (React key, dismissals). */
   id: string;
   severity: AttentionSeverity;
-  /** `errors`-namespace texts, like every other cause shown by the GUI. */
+  /** Texts are keys of `ns` (default `errors`, like every other cause shown by the GUI). */
   title: I18nText;
   cause?: I18nText;
+  /** Namespace of `title`, `cause` and `actionLabel` (the source's own feature namespace). */
+  ns?: string;
   /** Equivalent `forge` command, never translated. */
   cli?: string;
   /** Where the primary action goes (router path), when it is a navigation. */
   href?: string;
+  /** Search params of `href` (`/services?instance=<id>`). */
+  search?: Readonly<Record<string, string>>;
+  /** Label of the primary action. */
+  actionLabel?: I18nText;
 }
 
 /**
