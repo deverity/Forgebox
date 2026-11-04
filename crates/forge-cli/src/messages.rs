@@ -359,6 +359,23 @@ messages! {
     SiteSecured => ("HTTPS ligado em {0}", "HTTPS enabled on {0}"),
     SiteUnsecured => ("HTTPS desligado em {0}", "HTTPS disabled on {0}"),
     SiteCaseSet => ("{0}: case-sensitive = {1}", "{0}: case-sensitive = {1}"),
+    SitePoolShared => (
+        "{0}: pool PHP compartilhado ({1})",
+        "{0}: shared PHP pool ({1})"
+    ),
+    SitePoolDedicated => (
+        "{0}: pool PHP dedicado ({1}); CPU/RAM exatos",
+        "{0}: dedicated PHP pool ({1}); exact CPU/RAM"
+    ),
+    SitePoolNoPhp => (
+        "nenhum PHP instalado atende o site agora",
+        "no installed PHP serves the site right now"
+    ),
+    SiteMetricsOn => ("Métricas de {0}: ligadas", "Metrics of {0}: on"),
+    SiteMetricsOff => (
+        "Métricas de {0}: desligadas (o histórico fica)",
+        "Metrics of {0}: off (the history stays)"
+    ),
     ConfirmRemoveSite => (
         "Remover o site {0}? (os arquivos do projeto não são apagados)",
         "Remove site {0}? (project files are not deleted)"
