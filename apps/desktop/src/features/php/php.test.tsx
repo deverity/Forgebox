@@ -20,8 +20,15 @@ function phpData(): ScenarioData {
   return data;
 }
 
-/** `holdJobs`: methods whose jobs run until the test ends them (`FakeBridge.completeJob`). */
-async function mountPhp(data: ScenarioData = phpData(), holdJobs: readonly string[] = []) {
+/**
+ * `holdJobs`: methods whose jobs run until the test ends them (`FakeBridge.completeJob`);
+ * `latencyMs`: delay of every call.
+ */
+async function mountPhp(
+  data: ScenarioData = phpData(),
+  holdJobs: readonly string[] = [],
+  latencyMs = 0,
+) {
   const qa = {
     instances: [],
     sites: data.sites.map((s) => ({ ...s })),
@@ -31,7 +38,7 @@ async function mountPhp(data: ScenarioData = phpData(), holdJobs: readonly strin
   const h = await renderApp({
     path: "/php",
     data,
-    extra: { notImplemented: [], handlers: phpHandlers(qa, {}), holdJobs },
+    extra: { notImplemented: [], handlers: phpHandlers(qa, {}), holdJobs, latencyMs },
   });
   await screen.findByTestId("php-columns");
   return h;
@@ -203,6 +210,37 @@ describe("Xdebug", () => {
       column("8.4").querySelector('[data-forge-cli="forge php xdebug 8.4 trigger"]'),
     ).not.toBeNull();
   });
+
+  it.each([0, 250])(
+    "never falls back to the old mode while the change settles (%i ms per call)",
+    async (latencyMs) => {
+      // The column's `version` comes from the page's `php.list` observer, which is notified
+      // after the section's own refetch resolves: reading it showed "off" for a render once
+      // the job ended. 250 ms per call stands in for a loaded machine (past the invalidation
+      // debounce of the job's effects).
+      const user = userEvent.setup();
+      await mountPhp(phpData(), [], latencyMs);
+      const section = within(column("8.3")).getByTestId("xdebug");
+      expect(section).toHaveAttribute("data-mode", "off");
+      const shown: string[] = [];
+      const observer = new MutationObserver((records) => {
+        for (const record of records) shown.push(record.oldValue ?? "");
+      });
+      observer.observe(section, { attributeFilter: ["data-mode"], attributeOldValue: true });
+      await user.click(within(section).getByRole("radio", { name: "On" }));
+      await waitFor(
+        () => {
+          expect(within(section).getByRole("radio", { name: "Off" })).toBeEnabled();
+          expect(section).toHaveAttribute("data-mode", "on");
+        },
+        { timeout: 5000 },
+      );
+      observer.disconnect();
+      shown.push(section.dataset.mode ?? "");
+      expect(shown).toEqual(["off", "on"]);
+    },
+    15_000,
+  );
 
   it("refuses a port that is not a port before sending anything", async () => {
     const user = userEvent.setup();
