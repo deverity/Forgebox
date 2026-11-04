@@ -372,7 +372,6 @@ async fn instance_settings_and_port_moves_keep_the_users_text() {
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::copy(fake("fake_mysqld"), bin.join("mysqld.exe")).unwrap();
     std::fs::copy(fake("fake_mysqld"), bin.join("mysqladmin.exe")).unwrap();
-    let before_pids = pids_of("mysqld.exe");
     let mut daemon = spawn_daemon(&root, &[]);
     let (client, _) = connect(&root, &mut daemon, Duration::from_secs(60)).await;
     // `autostart: true` in the manifest: `mysql/default` comes up at boot.
@@ -558,10 +557,7 @@ async fn instance_settings_and_port_moves_keep_the_users_text() {
 
     let (status, _) = stop(&client, &mut daemon, Duration::from_secs(60)).await;
     assert!(status.success(), "{status}");
-    let left: Vec<u32> = pids_of("mysqld.exe")
-        .into_iter()
-        .filter(|p| !before_pids.contains(p))
-        .collect();
+    let left: Vec<u32> = pids_under("mysqld.exe", root.path());
     assert!(left.is_empty(), "fake mysqld left running: {left:?}");
 }
 

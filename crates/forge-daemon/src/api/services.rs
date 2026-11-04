@@ -12,23 +12,24 @@ use forge_core::platform::{KILL_EXIT_CODE, KillPolicy};
 use forge_ipc::api::methods::{
     services_config, services_config_files, services_create, services_kill_port_holder,
     services_ports, services_reload, services_remove, services_restart, services_start,
-    services_status, services_stop,
+    services_status, services_stop, services_update,
 };
 use forge_ipc::api::{
     Ack, ConfigFilesDto, ExternalPortDto, FileRefDto, InstanceDto, JobDto, KillPortHolderParams,
     NoParams, PoolDto, PortHolderDto, PortHolderKilledPayload, PortMapDto, PortProtocol,
     ServiceCreateParams, ServiceRemoveParams, ServiceStatusDto, ServiceTarget, ServiceTargetParams,
-    ServiceTargetsParams,
+    ServiceTargetsParams, ServiceUpdateParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_supervisor::QUICK_ASK_TIMEOUT;
 
 use super::convert;
 use super::route;
+use crate::advanced;
 use crate::catalog;
 use crate::daemon::Daemon;
 use crate::install;
-use crate::services::Entry;
+use crate::services::{AdvancedChange, Entry, check_data_dir_free, validate_data_dir};
 
 pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, services_start, start);
@@ -38,6 +39,7 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, services_status, status);
     route!(router, daemon, services_create, create);
     route!(router, daemon, services_remove, remove);
+    route!(router, daemon, services_update, update);
     route!(router, daemon, services_config, config);
     route!(router, daemon, services_config_files, config_files);
     route!(router, daemon, services_ports, ports);
@@ -124,7 +126,11 @@ async fn ports_of(daemon: &Daemon) -> BTreeMap<String, Vec<PortReservation>> {
 async fn snapshot(daemon: &Daemon, only: Option<&Targets>) -> Result<ServiceStatusDto> {
     let ports = ports_of(daemon).await;
     let mut instances: Vec<InstanceDto> = Vec::new();
-    for (entry, status) in daemon.services.statuses().await {
+    let statuses = daemon.services.statuses().await;
+    // Sizes come from the periodic scan (never measured here): `None` until it ran.
+    let entries: Vec<Entry> = statuses.iter().map(|(e, _)| e.clone()).collect();
+    let sizes = daemon.services.data_sizes(&entries);
+    for (entry, status) in statuses {
         if let Some(only) = only {
             if !only.instances.iter().any(|e| e.row.id == entry.row.id) {
                 continue;
@@ -141,6 +147,7 @@ async fn snapshot(daemon: &Daemon, only: Option<&Targets>) -> Result<ServiceStat
             status.as_ref(),
             &owned,
             metrics.as_ref(),
+            sizes.get(&entry.row.id).copied(),
         ));
     }
     let sites = daemon.sites.list().await.unwrap_or_default();
@@ -292,15 +299,34 @@ async fn reload(daemon: Daemon, params: ServiceTargetParams, ctx: Ctx) -> Result
 }
 
 async fn create(daemon: Daemon, params: ServiceCreateParams, ctx: Ctx) -> Result<JobDto> {
-    if params.data_dir.is_some() {
-        // API 1.1 (ADR-0041): ignoring it would put the data where the user did not ask.
-        return Err(ForgeError::NotImplementedYet {
-            method: "services.create".into(),
-            task: super::not_implemented::SERVICES_DATA_DIR_TASK.into(),
-            what: "choosing the data folder of a new instance (--data-dir)".into(),
-        });
-    }
+    // Checked before the job: a folder the daemon would refuse never starts one.
     let (tool_id, version) = install::parse_spec(params.tool.as_str())?;
+    let data_dir = match params.data_dir.clone() {
+        Some(dir) => {
+            let root = daemon.root.clone();
+            let entries = daemon.services.entries();
+            let others: Vec<String> = entries
+                .iter()
+                .filter_map(|e| e.row.data_dir.clone())
+                .collect();
+            let mut tools: Vec<String> =
+                entries.iter().map(|e| e.row.tool_id.to_string()).collect();
+            tools.push(tool_id.to_string());
+            Some(
+                forge_core::runtime::spawn_blocking_timeout(
+                    "checking the data folder",
+                    Duration::from_secs(5),
+                    move || {
+                        let dir = validate_data_dir(&root, &dir)?;
+                        check_data_dir_free(&root, &dir, &others, &tools)?;
+                        Ok(dir)
+                    },
+                )
+                .await?,
+            )
+        }
+        None => None,
+    };
     let tool = catalog::require_tool(&daemon.registry, &tool_id)?;
     let rows = catalog::installed(&daemon.reader, &tool_id, Some(&tool.manifest)).await?;
     let row = match version.as_deref() {
@@ -316,7 +342,14 @@ async fn create(daemon: Daemon, params: ServiceCreateParams, ctx: Ctx) -> Result
         move |_job| async move {
             let entry = d
                 .services
-                .create(&tool, &row, &params.name, params.port, params.autostart)
+                .create(
+                    &tool,
+                    &row,
+                    &params.name,
+                    params.port,
+                    params.autostart,
+                    data_dir.as_deref(),
+                )
                 .await?;
             let ports = d
                 .ports
@@ -331,9 +364,132 @@ async fn create(daemon: Daemon, params: ServiceCreateParams, ctx: Ctx) -> Result
                 Some(h) => h.status(QUICK_ASK_TIMEOUT).await.ok(),
                 None => None,
             };
-            Ok(convert::instance(&entry, status.as_ref(), &ports, None))
+            Ok(convert::instance(
+                &entry,
+                status.as_ref(),
+                &ports,
+                None,
+                None,
+            ))
         },
     )
+}
+
+/// `services.update` (admin job, ADR-0041): the advanced settings of an instance.
+/// Everything is validated before the job (invalid input, a version of another series or
+/// not installed); the job stores it, rebuilds the instance and restarts it when it ran.
+async fn update(daemon: Daemon, params: ServiceUpdateParams, ctx: Ctx) -> Result<JobDto> {
+    let entries = daemon.services.resolve(params.instance.as_str())?;
+    let [entry] = entries.as_slice() else {
+        return Err(ForgeError::InvalidInput(format!(
+            "{} matches {} instances; use tool/name",
+            params.instance,
+            entries.len()
+        )));
+    };
+    let entry = entry.clone();
+    let manifest = entry.manifest.clone().ok_or_else(|| {
+        ForgeError::ConfigInvalid(format!(
+            "{} cannot be changed: {}",
+            entry.label(),
+            entry.error.clone().unwrap_or_default()
+        ))
+    })?;
+    let mut change = AdvancedChange {
+        autostart: params.autostart,
+        ..AdvancedChange::default()
+    };
+    if let Some(launch) = &params.launch {
+        if let Some(args) = &launch.args {
+            advanced::validate_args(args)?;
+            change.args = Some(args.clone());
+        }
+        if let Some(env) = &launch.env {
+            advanced::validate_env(env)?;
+            change.env = Some(env.clone());
+        }
+    }
+    if let Some(patch) = &params.restart_policy {
+        let current = advanced::current_restart(&manifest, &entry.row);
+        change.restart = Some(advanced::merge_restart(current, patch)?);
+    }
+    if let Some(wanted) = params.version.as_deref() {
+        change.version = pick_same_series(&daemon, &entry, &manifest, wanted).await?;
+    }
+    let id = entry.row.id;
+    let d = daemon.clone();
+    daemon.job(
+        &ctx,
+        format!("services.update {}", params.instance),
+        move |_job| async move {
+            d.services.update_advanced(id, change).await?;
+            let entry = d
+                .services
+                .get(id)
+                .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+            let owner_key = format!("{}:{}", OwnerKind::Instance.as_str(), id);
+            let ports = ports_of(&d).await.remove(&owner_key).unwrap_or_default();
+            let status = match &entry.handle {
+                Some(h) => h.status(QUICK_ASK_TIMEOUT).await.ok(),
+                None => None,
+            };
+            Ok(convert::instance(
+                &entry,
+                status.as_ref(),
+                &ports,
+                None,
+                None,
+            ))
+        },
+    )
+}
+
+/// The installed version `wanted` names, when it belongs to the **same series** as the
+/// instance's; `None` when it is the version already in use. A data folder is not
+/// migrated between series, so another series is `invalid_input` with the reason.
+async fn pick_same_series(
+    daemon: &Daemon,
+    entry: &Entry,
+    manifest: &forge_manifest::schema::tool::ToolManifest,
+    wanted: &str,
+) -> Result<Option<forge_core::store::ToolVersionRow>> {
+    let tool_id = &entry.row.tool_id;
+    let rows = catalog::installed(&daemon.reader, tool_id, Some(manifest)).await?;
+    let current = entry
+        .version
+        .as_ref()
+        .map(|v| v.version.clone())
+        .unwrap_or_default();
+    let series = catalog::series_of(manifest, &current);
+    let refuse = |other: &str| {
+        ForgeError::InvalidInput(format!(
+            "{tool_id}/{} runs {current} (series {series}) but {wanted} belongs to series \
+             {other}: data folders are not migrated between series, so create a new \
+             instance on that series instead",
+            entry.row.name
+        ))
+    };
+    let Some(row) = catalog::pick(manifest, &rows, wanted) else {
+        // Not installed: a version of another series is still refused for its series.
+        let versioning = &manifest.spec.versioning;
+        let parsed = forge_manifest::version::Version::parse(versioning.scheme, wanted)
+            .ok()
+            .and_then(|v| v.series(&versioning.series_key).ok());
+        if let Some(other) = parsed.filter(|o| *o != series) {
+            return Err(refuse(&other));
+        }
+        return Err(ForgeError::NotFound(format!(
+            "{tool_id}@{wanted} is not installed; install it first"
+        )));
+    };
+    let other = catalog::series_of(manifest, &row.version);
+    if other != series {
+        return Err(refuse(&other));
+    }
+    if row.id == entry.row.version_id {
+        return Ok(None);
+    }
+    Ok(Some(row.clone()))
 }
 
 async fn remove(daemon: Daemon, params: ServiceRemoveParams, ctx: Ctx) -> Result<JobDto> {

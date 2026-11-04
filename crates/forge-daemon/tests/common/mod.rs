@@ -73,6 +73,19 @@ pub fn compile_fixture(name: &str) -> PathBuf {
     exe
 }
 
+/// `n` distinct free TCP ports, as a TOML list body. Used for a private `databases` range so
+/// parallel test processes never reserve (and then fail to bind) each other's ports.
+pub fn free_ports(n: usize) -> String {
+    let listeners: Vec<_> = (0..n)
+        .map(|_| std::net::TcpListener::bind("127.0.0.1:0").unwrap())
+        .collect();
+    listeners
+        .iter()
+        .map(|l| l.local_addr().unwrap().port().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// A free TCP port of 127.0.0.1 right now.
 pub fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -96,9 +109,10 @@ impl TestRoot {
         std::fs::create_dir_all(root.etc()).unwrap();
         // Private CRL and internal-endpoint ports: tests run in parallel.
         let toml = format!(
-            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\n",
+            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\ndatabases = [{}]\n",
             free_port(),
-            free_port()
+            free_port(),
+            free_ports(16)
         );
         std::fs::write(root.forgebox_toml(), toml).unwrap();
         Self { dir, root }
@@ -265,6 +279,33 @@ pub fn working_set_kib(pid: u32) -> Option<u64> {
     let mem = line.rsplit("\",\"").next()?;
     let digits: String = mem.chars().filter(char::is_ascii_digit).collect();
     digits.parse().ok()
+}
+
+/// PIDs of the processes named `image` whose executable lives under `dir` (a test root).
+/// Unlike [`pids_of`] it ignores same-named processes of other tests running in parallel.
+pub fn pids_under(image: &str, dir: &Path) -> Vec<u32> {
+    let dir = dir.to_string_lossy().replace('/', "\\").to_lowercase();
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"Name='{image}'\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.ExecutablePath)\" }}"
+    );
+    let Ok(out) = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let (pid, path) = l.trim().split_once('|')?;
+            let path = path.replace('/', "\\").to_lowercase();
+            // The root may be spelled 8.3 or with a verbatim prefix: compare on the unique
+            // temp folder name.
+            let leaf = dir.rsplit('\\').next().unwrap_or(&dir);
+            path.contains(&format!("\\{leaf}\\"))
+                .then(|| pid.parse().ok())?
+        })
+        .collect()
 }
 
 /// PIDs of the processes named `image` (`forgeboxd.exe`) from `tasklist`.

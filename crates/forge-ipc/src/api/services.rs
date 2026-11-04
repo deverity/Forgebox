@@ -222,8 +222,12 @@ pub struct ServiceCreateParams {
     pub autostart: bool,
     /// Data folder on the daemon's machine (absolute; inside the root or a folder the user
     /// chose, never inside `bin/`); default: the manifest's `service.daemon.data.dir`. CLI
-    /// `--data-dir`. API 1.1 (ADR-0041); answers `not_implemented` (M2-E2-T10) until the
-    /// backend lands.
+    /// `--data-dir`. API 1.1 (ADR-0041). Relative paths, `..`, a drive root, the Forgebox
+    /// root (or a parent of it), anything under `bin/` and a folder another instance
+    /// already uses are refused (`invalid_input` / `conflict`) before the job starts; the
+    /// folder is used as is (never moved or migrated) and is never deleted: `delete_data` on
+    /// removal skips it. It cannot overlap another instance's folder (inside, equal or
+    /// containing) nor be `data/` or `data/<tool>`.
     #[serde(default)]
     pub data_dir: Option<String>,
 }

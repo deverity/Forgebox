@@ -35,6 +35,19 @@ pub fn plain(path: &Path) -> PathBuf {
     PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned())
 }
 
+/// `n` distinct free TCP ports, as a TOML list body. Used for a private `databases` range so
+/// parallel test processes never reserve (and then fail to bind) each other's ports.
+pub fn free_ports(n: usize) -> String {
+    let listeners: Vec<_> = (0..n)
+        .map(|_| std::net::TcpListener::bind("127.0.0.1:0").unwrap())
+        .collect();
+    listeners
+        .iter()
+        .map(|l| l.local_addr().unwrap().port().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// A free TCP port of 127.0.0.1 right now.
 pub fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -82,9 +95,10 @@ impl TestRoot {
         std::fs::create_dir_all(path.join("etc")).unwrap();
         // No DNS resolver (port 53 is machine-wide); private CRL and internal ports.
         let toml = format!(
-            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\n",
+            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\ndatabases = [{}]\n",
             free_port(),
-            free_port()
+            free_port(),
+            free_ports(16)
         );
         std::fs::write(path.join("etc").join("forgebox.toml"), toml).unwrap();
         if portable {

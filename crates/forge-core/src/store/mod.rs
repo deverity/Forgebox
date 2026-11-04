@@ -48,7 +48,7 @@ use crate::error::{ForgeError, IoResultExt, Result};
 pub use events::EventRepo;
 pub use instances::{
     CASE_SENSITIVE_KEY, DesiredState, EXTERNAL_DATA_DIR_KEY, InstanceRepo, InstanceRow,
-    validate_instance_name,
+    LAUNCH_ARGS_KEY, LAUNCH_ENV_KEY, RESTART_POLICY_KEY, validate_instance_name,
 };
 pub use metrics::{MetricsRepo, MetricsRow, TailRow, Tier as MetricsTier};
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};

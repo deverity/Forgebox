@@ -11,6 +11,13 @@
 //!   <port>` and serves until `mysqladmin ... --port=<port> shutdown` (which leaves a
 //!   `shutdown-<port>` file next to the executable) or CTRL_BREAK;
 //! * run as `mysqladmin.exe`: writes that file and exits 0.
+//!
+//! M2-E2-T10 (`services.update`): the version printed by `--version` is the name of the
+//! version folder (`bin/mysql/<version>/bin/mysqld.exe`, default 8.4.13), the data
+//! initialization leaves a 4096-byte `ibdata1` in the datadir, and every server start
+//! appends one line to `<datadir>/launch.log`: `version=<folder> argv=<arguments joined by
+//! "|"> FB_T10=<value of the variable or "-">`, so tests assert the argv and environment
+//! the daemon launched it with.
 
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -59,8 +66,15 @@ fn main() {
         let _ = std::fs::write(marker(&exe, &port), b"");
         return;
     }
+    let version = exe
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::file_name)
+        .map(|n| n.to_string_lossy().into_owned())
+        .filter(|n| n.chars().next().is_some_and(|c| c.is_ascii_digit()))
+        .unwrap_or_else(|| "8.4.13".to_owned());
     if args.iter().any(|a| a == "--version") {
-        println!("{} Ver 8.4.13 for Win64 on x86_64 (fake)", exe.display());
+        println!("{} Ver {version} for Win64 on x86_64 (fake)", exe.display());
         return;
     }
     let defaults = value_of(&args, "--defaults-file=").expect("--defaults-file");
@@ -70,11 +84,25 @@ fn main() {
     }
     if args.iter().any(|a| a == "--initialize-insecure") {
         let dir = ini_value(&text, "mysqld", "datadir").expect("datadir");
-        std::fs::create_dir_all(dir).expect("creating the datadir");
+        std::fs::create_dir_all(&dir).expect("creating the datadir");
+        std::fs::write(Path::new(&dir).join("ibdata1"), vec![0u8; 4096]).expect("ibdata1");
         return;
     }
     let port = ini_value(&text, "mysqld", "port").expect("port");
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("binding the port");
+    if let Some(dir) = ini_value(&text, "mysqld", "datadir") {
+        use std::io::Write;
+        let line = format!(
+            "version={version} argv={} FB_T10={}\n",
+            args.join("|"),
+            std::env::var("FB_T10").unwrap_or_else(|_| "-".into())
+        );
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(Path::new(&dir).join("launch.log"))
+            .and_then(|mut f| f.write_all(line.as_bytes()));
+    }
+    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).unwrap_or_else(|e| panic!("binding port {port}: {e}"));
     listener.set_nonblocking(true).expect("non-blocking");
     let stop = marker(&exe, &port);
     let _ = std::fs::remove_file(&stop);

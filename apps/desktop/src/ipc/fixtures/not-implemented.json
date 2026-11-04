@@ -15,11 +15,6 @@
     "what": "install plans"
   },
   {
-    "method": "services.update",
-    "task": "M2-E2-T10",
-    "what": "advanced instance settings"
-  },
-  {
     "method": "sites.share",
     "task": "M3-E3",
     "what": "public tunnels (cloudflared, ngrok, expose)"

@@ -18,12 +18,14 @@
 //!
 //! Nothing here knows a tool by id: everything a service needs comes from its manifest.
 
+pub mod advanced;
 pub mod api;
 pub mod args;
 pub mod boot;
 pub mod catalog;
 pub mod config_owner;
 pub mod daemon;
+pub mod data_size;
 pub mod databases;
 pub mod event_log;
 pub mod install;

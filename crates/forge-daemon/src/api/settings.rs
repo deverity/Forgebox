@@ -26,8 +26,8 @@ use forge_core::store::{ToolSeriesSettingsRepo, ToolVersionRow};
 use forge_fcgi::PoolHandle;
 use forge_ipc::api::methods::{services_set, services_settings};
 use forge_ipc::api::{
-    FileRefDto, JobDto, PortProtocol, ServicePortSettingDto, ServiceSetParams, ServiceSettingsDto,
-    ServiceStatusDto, ServiceTarget, ServiceTargetParams,
+    FileRefDto, InstanceAdvancedDto, JobDto, PortProtocol, Role, ServicePortSettingDto,
+    ServiceSetParams, ServiceSettingsDto, ServiceStatusDto, ServiceTarget, ServiceTargetParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_manifest::schema::common::Apply;
@@ -35,6 +35,7 @@ use forge_manifest::schema::tool::{ServiceKind, ToolManifest};
 use tokio::sync::OwnedSemaphorePermit;
 
 use super::route;
+use crate::advanced;
 use crate::catalog::{self, ToolEntry};
 use crate::daemon::Daemon;
 use crate::install;
@@ -216,6 +217,39 @@ async fn resolve(daemon: &Daemon, target: &str) -> Result<Scope> {
     }
 }
 
+/// The "Avançado" facts of an instance: its stored launch, the manifest's restart policy
+/// and the installed versions of the same series it can move to.
+async fn advanced_of(
+    daemon: &Daemon,
+    entry: &Entry,
+    manifest: &ToolManifest,
+) -> InstanceAdvancedDto {
+    let launch = advanced::launch_of(&entry.row);
+    let default = advanced::default_restart(manifest);
+    let current = entry
+        .version
+        .as_ref()
+        .map(|v| catalog::series_of(manifest, &v.version));
+    let versions = match &current {
+        Some(series) => catalog::installed(&daemon.reader, &entry.row.tool_id, Some(manifest))
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| catalog::series_of(manifest, &r.version) == *series)
+            .map(|r| r.version)
+            .collect(),
+        None => Vec::new(),
+    };
+    InstanceAdvancedDto {
+        autostart: entry.row.autostart,
+        args: launch.args.clone(),
+        env: launch.env.clone(),
+        restart_policy: launch.restart.unwrap_or(default).dto(),
+        restart_policy_default: default.dto(),
+        versions,
+    }
+}
+
 fn file_ref(daemon: &Daemon, role: String, path: &str, managed: bool) -> FileRefDto {
     let fs_path = std::path::Path::new(path)
         .strip_prefix(daemon.root.path())
@@ -231,12 +265,10 @@ fn file_ref(daemon: &Daemon, role: String, path: &str, managed: bool) -> FileRef
 
 /// `services.settings`: the quick settings with their values, the config files (the
 /// user's file of an overlay is `managed: false`; the overlay itself is listed with role
-/// `<id>.overlay`) and the named ports of an instance. `advanced` is M2-E2-T10.
-async fn read(
-    daemon: Daemon,
-    params: ServiceTargetParams,
-    _ctx: Ctx,
-) -> Result<ServiceSettingsDto> {
+/// `<id>.overlay`) and the named ports of an instance. `advanced` (instances, `admin`
+/// connections only: the extra environment may hold secrets) is what `services.update`
+/// changes.
+async fn read(daemon: Daemon, params: ServiceTargetParams, ctx: Ctx) -> Result<ServiceSettingsDto> {
     let scope = resolve(&daemon, params.target.as_str()).await?;
     let manifest = scope.manifest()?;
     let stored = scope.stored(&daemon).await?;
@@ -288,13 +320,23 @@ async fn read(
         }
         Scope::Series { .. } => Vec::new(),
     };
+    let advanced = match &scope {
+        Scope::Instance(entry) if ctx.session().role.allows(Role::Admin) => {
+            let current = daemon
+                .services
+                .get(entry.row.id)
+                .unwrap_or_else(|| (**entry).clone());
+            Some(advanced_of(&daemon, &current, &manifest).await)
+        }
+        _ => None,
+    };
     Ok(ServiceSettingsDto {
         target: ServiceTarget::from(scope.label()),
         tool: manifest.metadata.id.clone(),
         settings: settings::describe(&manifest, &stored),
         files,
         ports,
-        advanced: None,
+        advanced,
     })
 }
 
