@@ -13,6 +13,7 @@ export const QA_FAILING_EXTENSION = "sodium";
 export const QA_NO_XDEBUG_SERIES = "8.4";
 
 const STEP_MS = 120;
+const XDEBUG_INSTALL_STEP_MS = 400;
 const PHP = "php";
 
 const BUNDLED = [
@@ -289,6 +290,8 @@ export function phpHandlers(data: QaData, config: FakeHandlers): FakeHandlers {
         fakeError("conflict", `port ${String(port)} is reserved`, "port_reserved", { port });
       }
       const missing = !s.extensions.some((e) => e.name === "xdebug");
+      // An install is slow enough to be seen (and screenshotted) on a loaded machine.
+      const xdebugStepMs = missing ? XDEBUG_INSTALL_STEP_MS : STEP_MS;
       const steps: { pct: number; message: string; bytes_done?: number; bytes_total?: number }[] =
         missing
           ? [
@@ -312,11 +315,11 @@ export function phpHandlers(data: QaData, config: FakeHandlers): FakeHandlers {
             unknown: [],
           });
         },
-        STEP_MS * (steps.length + 0.5),
+        xdebugStepMs * (steps.length + 0.5),
       );
       return fakeJob({
         steps,
-        stepMs: STEP_MS,
+        stepMs: xdebugStepMs,
         outcome: {
           done: poolOf(states.indexOf(s) + 1, s.series, s.version, "running", 0),
         },
