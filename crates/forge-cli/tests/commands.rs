@@ -145,11 +145,12 @@ fn table() -> Vec<Case> {
                 "--data-dir",
                 "{TMP}/mysql-legacy",
             ],
-            NI,
+            E("not_found"),
         ),
+        // M2-E2-T10: real now (tests/service_update.rs); no MySQL in this root.
         case(
             &["service", "update", "mysql/default", "--no-autostart"],
-            NI,
+            E("not_found"),
         ),
         case(
             &[
@@ -161,7 +162,7 @@ fn table() -> Vec<Case> {
                 "--restart",
                 "always",
             ],
-            NI,
+            E("not_found"),
         ),
         case(&["service", "ports"], OK),
         // Port 1 is free: without --pid there is nothing to terminate; with one, the CLI

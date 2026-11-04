@@ -263,6 +263,7 @@ pub fn instance(
     status: Option<&InstanceStatus>,
     ports: &[PortReservation],
     metrics: Option<&forge_supervisor::InstanceMetrics>,
+    size_bytes: Option<u64>,
 ) -> InstanceDto {
     let (state, pid, last_error, restarts, started_at) = match status {
         Some(s) => (
@@ -311,8 +312,7 @@ pub fn instance(
         restarts,
         last_error,
         data_dir: entry.row.data_dir.as_ref().map(|d| d.replace('\\', "/")),
-        // The periodic data-dir scan is M2-E2-T10.
-        size_bytes: None,
+        size_bytes,
     }
 }
 

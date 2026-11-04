@@ -227,7 +227,7 @@ impl Harness {
         );
         services.set_renderer(Arc::new(web.clone()));
         let entry = services
-            .create(&tool, &version, "default", None, false)
+            .create(&tool, &version, "default", None, false, None)
             .await
             .unwrap();
         Self {

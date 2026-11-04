@@ -53,7 +53,7 @@ Cinco escolhas precisavam de decisão: o que é job e o que é call; como repres
 - **`services.settings` como `operator`:** os ajustes não são segredo (limites de memória, uploads, portas — que viewers já veem em `services.ports`), e o que pode ser (`advanced`, com o `env` extra) já só vai para admin.
 
 ## Consequências
-- Os backends do E2 (T4–T10) e as telas (T12–T19) trabalham contra tipos gerados já mesclados; cada backend remove suas linhas de `NOT_IMPLEMENTED` (e do espelho `apps/desktop/src/ipc/fixtures/not-implemented.json`, conferido por um teste do `forge-daemon`), as constantes `EXTENSION_TARGET_TASK`/`SERVICES_DATA_DIR_TASK` e as linhas `NI` da tabela da CLI.
+- Os backends do E2 (T4–T10) e as telas (T12–T19) trabalham contra tipos gerados já mesclados; cada backend remove suas linhas de `NOT_IMPLEMENTED` (e do espelho `apps/desktop/src/ipc/fixtures/not-implemented.json`, conferido por um teste do `forge-daemon`), as constantes `EXTENSION_TARGET_TASK`/`SERVICES_DATA_DIR_TASK` e as linhas `NI` da tabela da CLI. (M2-E2-T10: `services.update` e `services.create {data_dir}` implementados; ver [03 §3.5](../03-engine.md#35-configurações-avançadas-da-instância-adr-0041-m2-e2-t10).)
 - Comandos novos do `forge`: `tool info --versions [--channel]`, `tool info --history [--series] [--limit]`, `tool install --dry-run`, `tool install|remove --for`, `service create --data-dir`, `service set <alvo>` sem pares, `service update`, `site driver`, `tls list`. Sem CLI: `tools.icon`.
 - A GUI ganhou as linhas de `JOB_EFFECTS` dos jobs novos e as consultas novas nos grupos de invalidação (`tools.history` em tools, `services.settings` em config, `tls.list` em tls).
 - Os nomes seguem abertos a ajuste até a tag v0.2.0 (ADR-0039 §1).

@@ -17,7 +17,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ),
     ("tools.releases", "M2-E2-T5", "listing provider releases"),
     ("tools.plan", "M2-E2-T5", "install plans"),
-    ("services.update", "M2-E2-T10", "advanced instance settings"),
     (
         "sites.share",
         "M3-E3",
@@ -74,9 +73,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
 /// Roadmap task of the editor and terminal targets of `sites.open` (the browser and the
 /// file manager already work; this is a partial method, so it is not in the table).
 pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
-
-/// Roadmap task of `services.create {data_dir}` (ADR-0041). The method works without it.
-pub const SERVICES_DATA_DIR_TASK: &str = "M2-E2-T10";
 
 /// The method names of the table, in table order: what `system.hello` reports as
 /// `not_implemented` (API 1.1) so clients can disable the matching controls.
@@ -183,11 +179,7 @@ mod tests {
     #[test]
     fn e2_methods_name_their_task() {
         // The E2 contract (ADR-0041): each backend task owns its methods.
-        for (method, task) in [
-            ("tools.releases", "M2-E2-T5"),
-            ("tools.plan", "M2-E2-T5"),
-            ("services.update", "M2-E2-T10"),
-        ] {
+        for (method, task) in [("tools.releases", "M2-E2-T5"), ("tools.plan", "M2-E2-T5")] {
             let err = error(method);
             assert_eq!(err.code(), "not_implemented", "{method}");
             assert!(
@@ -208,13 +200,13 @@ mod tests {
             "services.create",
             "services.settings",
             "services.set",
+            "services.update",
             "php.ext_enable",
             "php.ext_disable",
             "php.xdebug",
         ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
-        assert_eq!(SERVICES_DATA_DIR_TASK, "M2-E2-T10");
         // Every E2 row names its task, not only the epic.
         for (method, task, _) in NOT_IMPLEMENTED {
             if task.starts_with("M2-E2") {

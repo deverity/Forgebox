@@ -52,6 +52,18 @@ pub const EXTERNAL_DATA_DIR_KEY: &str = "forgebox.external_data_dir";
 /// `forgebox.` are the daemon's, never quick settings.
 pub const CASE_SENSITIVE_KEY: &str = "forgebox.case_sensitive";
 
+/// `instances.settings` key with the extra command line arguments of the instance (JSON
+/// array of strings, after the manifest's `args`; `services.update`, M2-E2-T10).
+pub const LAUNCH_ARGS_KEY: &str = "forgebox.launch_args";
+
+/// `instances.settings` key with the extra environment of the instance (JSON object of
+/// strings, over the manifest's `env`; `services.update`).
+pub const LAUNCH_ENV_KEY: &str = "forgebox.launch_env";
+
+/// `instances.settings` key with the restart policy of the instance (JSON
+/// `{"on","max","window_secs"}`, over the manifest's `restart_policy`; `services.update`).
+pub const RESTART_POLICY_KEY: &str = "forgebox.restart_policy";
+
 /// A stored instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstanceRow {
@@ -294,6 +306,41 @@ impl<'c> InstanceRepo<'c> {
         Ok(row.settings)
     }
 
+    /// `services.update`: a read-modify-write on the writer thread that sets `autostart`
+    /// and `version_id` when given and applies `settings` changes (`Some` = store, `None`
+    /// = forget). Unlike [`Self::update_settings`] the keys are the daemon's own
+    /// (`forgebox.*`). Returns the row now stored; `not_found` when gone.
+    pub fn update_advanced(
+        &self,
+        id: InstanceId,
+        autostart: Option<bool>,
+        version_id: Option<VersionId>,
+        settings: &BTreeMap<String, Option<String>>,
+    ) -> Result<InstanceRow> {
+        let mut row = self
+            .get(id)?
+            .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+        if let Some(autostart) = autostart {
+            row.autostart = autostart;
+        }
+        if let Some(version_id) = version_id {
+            row.version_id = version_id;
+        }
+        for (key, value) in settings {
+            match value {
+                Some(value) => {
+                    row.settings.insert(key.clone(), value.clone());
+                }
+                None => {
+                    row.settings.remove(key);
+                }
+            }
+        }
+        self.update(&row)?;
+        self.get(id)?
+            .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))
+    }
+
     /// Sets only the desired state (what the daemon restores at boot).
     pub fn set_desired_state(&self, id: InstanceId, state: DesiredState) -> Result<()> {
         self.conn.execute(
@@ -420,6 +467,38 @@ mod tests {
         assert_eq!(row.external_data_dir(), None);
         row.data_dir = None;
         assert_eq!(row.external_data_dir(), None);
+    }
+
+    #[test]
+    fn update_advanced_changes_only_what_is_given() {
+        let store = Store::open_in_memory().unwrap();
+        let (tool, version_id) = version(&store);
+        let mut row = InstanceRow::new(tool, version_id, "default");
+        row.settings.insert("max_connections".into(), "200".into());
+        row.desired_state = DesiredState::Running;
+        let repo = InstanceRepo::new(store.conn());
+        repo.insert(&row).unwrap();
+        let mut changes = BTreeMap::new();
+        changes.insert(LAUNCH_ARGS_KEY.to_owned(), Some("[\"--x\"]".to_owned()));
+        let after = repo
+            .update_advanced(row.id, Some(true), None, &changes)
+            .unwrap();
+        assert!(after.autostart);
+        assert_eq!(after.version_id, version_id);
+        assert_eq!(after.settings[LAUNCH_ARGS_KEY], "[\"--x\"]");
+        assert_eq!(after.settings["max_connections"], "200");
+        assert_eq!(after.desired_state, DesiredState::Running);
+        changes.insert(LAUNCH_ARGS_KEY.to_owned(), None);
+        let after = repo.update_advanced(row.id, None, None, &changes).unwrap();
+        assert!(after.autostart, "untouched");
+        assert!(!after.settings.contains_key(LAUNCH_ARGS_KEY));
+        let gone = InstanceId::new();
+        assert_eq!(
+            repo.update_advanced(gone, None, None, &changes)
+                .unwrap_err()
+                .code(),
+            "not_found"
+        );
     }
 
     #[test]
