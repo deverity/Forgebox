@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { Button } from "../../design/primitives/Button";
@@ -46,13 +46,18 @@ function useSelected(): [string | undefined, (id: string | undefined) => void] {
     select: (search: Record<string, unknown>) =>
       typeof search.instance === "string" ? search.instance : undefined,
   });
-  const select = (id: string | undefined) => {
-    void navigate({
-      to: "/services",
-      search: id === undefined ? {} : { instance: id },
-      replace: true,
-    });
-  };
+  // Stable identity: `InstanceRow` is memoized and receives this as `onOpen`, so a new function
+  // per render would re-render every row on each event (found by qa:perf, event-storm).
+  const select = useCallback(
+    (id: string | undefined) => {
+      void navigate({
+        to: "/services",
+        search: id === undefined ? {} : { instance: id },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
   return [selected, select];
 }
 

@@ -7,6 +7,7 @@ import { StatusDot } from "../../design/primitives/StatusDot";
 import { useFormatters } from "../../design/primitives/useFormatters";
 import { TNUM_CLASS } from "../../i18n/format";
 import type { InstanceDto, PoolDto } from "../../ipc/generated";
+import { countRender } from "../../qa/render-counter";
 import { useInstanceMetrics, usePoolMetrics } from "../../state";
 import { PHP_TOOL, dotState, isActive, mainPort, poolName, targetOf, uptimeMs } from "./model";
 import { ToolIcon } from "./ToolIcon";
@@ -39,6 +40,7 @@ export const InstanceRow = memo(function InstanceRow({
   now,
   onOpen,
 }: InstanceRowProps) {
+  if (import.meta.env.MODE === "qa") countRender("instance", instance.id);
   const { t } = useTranslation("services");
   const format = useFormatters();
   const samples = useInstanceMetrics(instance.id);

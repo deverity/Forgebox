@@ -15,6 +15,7 @@ import { applyMutationEffect } from "./effects";
 import { EventStream, type GapReason } from "./eventStream";
 import { FrameBatcher, browserFrameClock, type FrameClock } from "./frame";
 import { MetricsPoller } from "./metrics";
+import { recordEvents } from "../qa/render-counter";
 import { browserPageActivity, type PageActivity } from "./page";
 import { Invalidator } from "./queries";
 import { ReconnectQueue, RECONNECT_HOLD_MS } from "./reconnectQueue";
@@ -111,6 +112,7 @@ export class ContextRuntime {
     this.stream = new EventStream({
       api: this.api,
       onEvents: (events) => {
+        if (import.meta.env.MODE === "qa") recordEvents(events);
         this.batcher.push(events);
       },
       onGap: (reason: GapReason) => {

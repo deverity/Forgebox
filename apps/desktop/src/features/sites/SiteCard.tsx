@@ -6,6 +6,7 @@ import { Button } from "../../design/primitives/Button";
 import { StatusDot, type ServiceState } from "../../design/primitives/StatusDot";
 import type * as T from "../../ipc/generated";
 import { openUrl } from "../../ipc/native";
+import { countRender } from "../../qa/render-counter";
 
 const DETAIL_ROUTE = "/sites/$id";
 
@@ -42,6 +43,7 @@ export interface SiteCardProps {
 
 /** One site as a card (grid) or a row (list). Pure over its props, memoized for fast typing. */
 export const SiteCard = memo(function SiteCard({ site, layout, onRemove }: SiteCardProps) {
+  if (import.meta.env.MODE === "qa") countRender("site", site.id);
   const { t } = useTranslation("sites");
   const web = site.processes.find((process) => process.name === "web");
   const php = site.php?.resolved ?? site.php?.series ?? null;
