@@ -21,6 +21,7 @@ import {
   useForgeQuery,
   useHello,
   useInstance,
+  useInstances,
   useRuntime,
 } from "../../state";
 import { useMailCounts, useMailList } from "../../state/mail";
@@ -289,7 +290,12 @@ export function MailPage() {
   const connection = useConnectionStatus();
   const capability = useCapability("mail.status");
   const status = useForgeQuery("mail.status", {}, { enabled: capability.available });
-  const instance = useInstance(status.data?.instance_id ?? "");
+  const known = useInstance(status.data?.instance_id ?? "");
+  const instances = useInstances();
+  // Last good answer first; otherwise the Mailpit instance from the store, so a hung
+  // Mailpit (timeout/conflict) still offers Restart.
+  const instance =
+    known ?? Object.values(instances).find((candidate) => candidate.tool === MAILPIT_TOOL);
   const target = instance === undefined ? null : targetOf(instance);
 
   let body;
@@ -323,17 +329,11 @@ export function MailPage() {
         </div>
       </div>
     );
-  } else if (status.isError && status.error.code === "conflict" && status.data === undefined) {
-    body = (
-      <div data-testid="mail-stopped" className="flex flex-col items-center gap-3 p-8">
-        <EmptyState title={t("stopped.title")} description={t("stopped.description")} />
-      </div>
-    );
   } else if (status.isError && status.data === undefined) {
     body = (
       <MailboxError
         error={status.error}
-        target={null}
+        target={target}
         onRetry={() => void status.refetch()}
         title={t("error.title")}
       />

@@ -128,6 +128,33 @@ describe("Mail screen states", () => {
     expect(calls(h, "services.restart")[0]?.params).toMatchObject({ targets: ["mailpit/default"] });
   });
 
+  it.each(["timeout", "conflict"] as const)(
+    "offers restart when mail.status fails with %s",
+    async (code) => {
+      const { h } = await open(seedMessages(), {
+        handlers: {
+          extra: {
+            handlers: {
+              "mail.status": () => {
+                fakeError(code, "the mail backend is not answering");
+              },
+            },
+          },
+        },
+      });
+      const error = await screen.findByTestId("mail-error");
+      expect(within(error).getByText("Mailpit did not answer")).toBeInTheDocument();
+      expect(screen.queryByTestId("mail-stopped")).toBeNull();
+      await userEvent.setup().click(within(error).getByRole("button", { name: "Restart Mailpit" }));
+      await waitFor(() => {
+        expect(calls(h, "services.restart").length).toBe(1);
+      });
+      expect(calls(h, "services.restart")[0]?.params).toMatchObject({
+        targets: ["mailpit/default"],
+      });
+    },
+  );
+
   it("explains a stopped Mailpit", async () => {
     await open(seedMessages(), { data: withMailpit("stopped") });
     expect(await screen.findByTestId("mail-stopped")).toBeInTheDocument();
