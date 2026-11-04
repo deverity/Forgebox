@@ -189,6 +189,55 @@ export async function accentContrastViolations(
   return out;
 }
 
+/**
+ * Same measurement as `accentContrastViolations`, but with the first matching element hovered and
+ * then pressed (mouse down held), for each Windows accent: the resting-state check cannot see a
+ * hover/pressed fill that fades the text (F-09).
+ */
+export async function accentStateContrastViolations(
+  page: Page,
+  selector: string,
+  accents: readonly string[] = SYSTEM_ACCENTS,
+): Promise<string[]> {
+  await withColorTools(page);
+  await freezeTransitions(page);
+  const out: string[] = [];
+  const target = page.locator(selector).first();
+  const measure = () =>
+    target.evaluate((el) => {
+      const tools = window.__qaColor;
+      if (!tools) throw new Error("color tools missing");
+      const style = getComputedStyle(el);
+      return { fg: tools.resolve(style.color), bg: tools.resolve(style.backgroundColor) };
+    });
+  for (const accent of accents) {
+    await page.evaluate((hex) => {
+      const qa = window.__FORGEBOX_QA__;
+      if (!qa) throw new Error("not a qa build");
+      qa.setAccent(hex);
+    }, accent);
+    await target.scrollIntoViewIfNeeded();
+    await target.hover();
+    const hover = await measure();
+    await page.mouse.down();
+    const pressed = await measure();
+    await page.mouse.up();
+    await page.mouse.move(0, 0);
+    for (const [state, { fg, bg }] of [
+      ["hover", hover],
+      ["pressed", pressed],
+    ] as const) {
+      const ratio = contrastRatio([fg[0], fg[1], fg[2]], [bg[0], bg[1], bg[2]]);
+      if (ratio < MIN_TEXT_CONTRAST) {
+        out.push(
+          `${state} text on accent ${accent} is ${ratio.toFixed(2)}:1 (< ${String(MIN_TEXT_CONTRAST)})`,
+        );
+      }
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------
 // axe
 

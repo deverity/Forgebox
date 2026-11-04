@@ -70,6 +70,8 @@ export function applyAppearance(
   if (appearance.contrast === "high") {
     root.style.removeProperty("--accent");
     root.style.removeProperty("--fg-on-accent");
+    root.style.removeProperty("--accent-hover");
+    root.style.removeProperty("--accent-pressed");
   }
 }
 
@@ -92,11 +94,43 @@ export function onAccentColor(accent: string): "black" | "white" {
   return 1.05 / (l + 0.05) >= (l + 0.05) / 0.05 ? "white" : "black";
 }
 
-/** The Windows accent drives `--accent`; `--fg-on-accent` follows it. */
+/** Mixes `hex` toward `target` by `amount` (0..1), in sRGB. */
+export function mixHex(hex: string, target: "black" | "white", amount: number): string {
+  const t = target === "white" ? 255 : 0;
+  return (
+    "#" +
+    [1, 3, 5]
+      .map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16);
+        return Math.round(c + (t - c) * amount)
+          .toString(16)
+          .padStart(2, "0");
+      })
+      .join("")
+  );
+}
+
+/**
+ * Hover and pressed fills for `accent`: mixed AWAY from the text colour (towards black when the
+ * text is white, towards white when it is black), so the contrast with `--fg-on-accent` only
+ * grows. Opacity on the button faded the text and the fill (F-09).
+ */
+export function accentStates(accent: string): { hover: string; pressed: string } {
+  const away = onAccentColor(accent) === "white" ? "black" : "white";
+  return { hover: mixHex(accent, away, 0.15), pressed: mixHex(accent, away, 0.28) };
+}
+
+/** The Windows accent drives `--accent`; `--fg-on-accent` and the hover/pressed fills follow it. */
 function applyAccent(root: HTMLElement, accent: string): void {
   if (root.dataset.contrast === "high") return;
+  // Forced colours: an inline --accent would beat the Highlight tokens (higher specificity).
+  if ("matchMedia" in globalThis && globalThis.matchMedia("(forced-colors: active)").matches)
+    return;
   root.style.setProperty("--accent", accent);
   root.style.setProperty("--fg-on-accent", onAccentColor(accent));
+  const states = accentStates(accent);
+  root.style.setProperty("--accent-hover", states.hover);
+  root.style.setProperty("--accent-pressed", states.pressed);
 }
 
 function isTheme(value: string | null): value is ThemeName {

@@ -147,7 +147,9 @@ export function buildCss(t) {
         "}",
         "",
     );
-    L.push("@media (forced-colors: active) {", "  :root {", colorVars(t.color.forced, "    "));
+    // `:root:root` (0,2,0) ties with the theme/contrast blocks above and wins by coming later; a bare
+    // `:root` (0,1,0) lost to them, so forced-color-adjust-none parts painted the dark palette.
+    L.push("@media (forced-colors: active) {", "  :root:root {", colorVars(t.color.forced, "    "));
     L.push(
         "    --bg-canvas: var(--bg-canvas-solid);",
         "    --bg-sidebar: var(--bg-sidebar-solid);",
