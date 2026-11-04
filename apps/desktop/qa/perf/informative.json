@@ -1,1 +1,4 @@
-["interaction.longTaskMaxMs", "list-500.medianFps"]
+[
+  "interaction.longTaskMaxMs",
+  "list-500.medianFps"
+]
