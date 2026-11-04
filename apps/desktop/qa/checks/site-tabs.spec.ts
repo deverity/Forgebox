@@ -21,6 +21,8 @@ const TABS = [
   { name: "Database", testId: "site-database-tab" },
   { name: "Environment", testId: "site-env-tab" },
   { name: "Processes", testId: undefined },
+  // Desempenho (M2-E5-T16).
+  { name: "Performance", testId: "site-performance" },
 ] as const;
 
 for (const tab of TABS) {

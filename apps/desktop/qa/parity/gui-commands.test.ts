@@ -84,6 +84,14 @@ const SAMPLES: Record<string, unknown[]> = {
   ],
   "sites.remove": ["loja.test"],
   "sites.switch_php": [{ site: "loja.test", php: "8.4" }],
+  "sites.set_pool_mode": [
+    { site: "loja.test", mode: "dedicated" },
+    { site: "loja.test", mode: "shared" },
+  ],
+  "sites.set_metrics": [
+    { site: "loja.test", enabled: true },
+    { site: "loja.test", enabled: false },
+  ],
   "sites.open": [
     { site: "loja.test", with: "browser" },
     { site: "loja.test", with: "editor" },

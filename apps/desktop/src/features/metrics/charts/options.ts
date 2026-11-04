@@ -19,6 +19,33 @@ export function memoFormat(format: (value: number) => string): (value: number) =
   };
 }
 
+export type XTimeStyle = "seconds" | "minutes" | "days";
+
+/** Picks the x tick style from the visible span in seconds: <= 10 min shows seconds, <= 24 h
+ * hour:minute, longer spans show day and month with the hour (a bare hour:minute hides the date). */
+export function xTimeStyle(spanSeconds: number): XTimeStyle {
+  if (spanSeconds <= 600) return "seconds";
+  if (spanSeconds <= 24 * 3600) return "minutes";
+  return "days";
+}
+
+export function timeFormats(locale: string): Record<XTimeStyle, Intl.DateTimeFormat> {
+  return {
+    seconds: new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    minutes: new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }),
+    days: new Intl.DateTimeFormat(locale, {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
 /** Shared uPlot options: no legend, no cursor chrome, token-coloured axes and grid. */
 export function baseOptions(
   p: ChartPalette,
@@ -28,7 +55,7 @@ export function baseOptions(
 ): Pick<uPlot.Options, "legend" | "cursor" | "select" | "axes" | "padding"> {
   const format = yFormat ? memoFormat(yFormat) : undefined;
   const font = `${String(AXIS_FONT_PX)}px ${p.fontFamily}`;
-  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+  const formats = timeFormats(locale);
   const axis = {
     stroke: p.axis,
     font,
@@ -43,7 +70,11 @@ export function baseOptions(
     axes: [
       {
         ...axis,
-        values: (_u, splits) => splits.map((v) => time.format(v * 1000)),
+        values: (u, splits) => {
+          const span = (u.scales.x?.max ?? 0) - (u.scales.x?.min ?? 0);
+          const fmt = formats[xTimeStyle(span)];
+          return splits.map((v) => fmt.format(v * 1000));
+        },
       },
       {
         ...axis,

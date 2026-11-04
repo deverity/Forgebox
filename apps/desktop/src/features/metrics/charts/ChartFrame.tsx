@@ -81,7 +81,12 @@ export function ChartShell({
         {badge}
         {state === "ready" ? <ChartLegend rows={summary} /> : null}
       </figcaption>
-      <SkeletonSlot loading={loading} height={height} label={t("charts.loading")} className="relative">
+      <SkeletonSlot
+        loading={loading}
+        height={height}
+        label={t("charts.loading")}
+        className="relative"
+      >
         {empty ? (
           <EmptyState
             title={t("charts.empty.title")}

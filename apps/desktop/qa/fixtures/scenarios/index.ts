@@ -30,6 +30,7 @@ import {
   type QaData,
 } from "./data";
 import { logsHandlers } from "./logs";
+import { metricsHandlers } from "./metrics";
 import { mailHandlers } from "./mail";
 import { createOnboardingQa } from "./onboarding";
 import { phpHandlers } from "./php";
@@ -143,7 +144,9 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const databases = databasesHandlers();
   const diagnostics = diagnosticsHandlers();
   const settings = settingsHandlers().handlers;
+  const metrics = metricsHandlers(data);
   const answered = {
+    ...metrics.handlers,
     ...detail,
     ...catalog,
     ...terminal,
@@ -182,6 +185,26 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...databases,
       ...diagnostics,
       ...settings,
+      ...metrics.handlers,
+      // `metrics.enabled` is the daemon's global switch (M2-E5-T16); the rest is Settings'.
+      "system.config_get": (params, ctx) => {
+        if (params.key === "metrics.enabled") {
+          return { key: params.key, value: metrics.globalEnabled(), is_default: true };
+        }
+        const handler = settings["system.config_get"];
+        if (handler === undefined) fakeError("not_found", `unknown key ${params.key}`);
+        return handler(params, ctx);
+      },
+      "system.config_set": (params, ctx) => {
+        if (params.key === "metrics.enabled") {
+          metrics.setGlobalEnabled(params.value === true);
+          ctx.fake.publish("config.changed", { v: 1, keys: [params.key], requires: [] });
+          return { key: params.key, value: params.value, is_default: false, requires: [] };
+        }
+        const handler = settings["system.config_set"];
+        if (handler === undefined) fakeError("not_found", `unknown key ${params.key}`);
+        return handler(params, ctx);
+      },
       // `logs.read` without `before_seq` is the Diagnostics export of the daemon log; paging back
       // (the Logs screen) reads the history of `logs.ts`.
       "logs.read": (params, ctx) => {
@@ -294,13 +317,13 @@ export function registerQaScenarios(): void {
     handlers: createFilesystemQa().handlers,
   });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
-  // Populated data with the three site-tab methods failing (M2-E3-T21): Banco (`db.list`),
-  // Ambiente (`sites.env`) and Processos (`sites.ps`) must show cause + action, not a blank tab.
+  // Populated data with the site-tab methods failing (M2-E3-T21): Banco (`db.list`),
+  // Ambiente (`sites.env`), Processos (`sites.ps`) and Desempenho (`stats.series`, M2-E5-T16) must show cause + action, not a blank tab.
   define("tab-errors", populatedData(), {
     latencyMs: 0,
     notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
     handlers: Object.fromEntries(
-      ["db.list", "sites.env", "sites.ps"].map((method) => [
+      ["db.list", "sites.env", "sites.ps", "stats.series"].map((method) => [
         method,
         () =>
           fakeError("internal", `${method} failed (scenario tab-errors)`, "fake_error", { method }),

@@ -57,6 +57,8 @@ cli_only:
     reason: "Exporting a site certificate with its key (PFX) is a CLI-only admin export; Settings Seguranca exports only the public CA certificate (tls.ca_export)."
   - method: fs_parity.site_case
     reason: "The per-site switch stays `forge site case-sensitive` (the Settings screen has no site-level toggle); Settings > Sistema de arquivos converts folders and runs the Case Mismatch Finder (M2-E3-T18)."
+  - method: stats.export
+    reason: "Metrics export is CLI-first in v1 (forge stats export, docs/14 section 6); the Desempenho tab (M2-E5-T16) has no export button."
 query:
   - method: daemon.status
     reason: "Query shown by: Shell status footer and Settings (M2-E1, M2-E3-T16)."
@@ -176,8 +178,6 @@ pending:
   # per tool, not per series, so the button needs a decision).
   - method: tools.update
     task: M2-E4-T9
-  - method: stats.export
-    task: M2-E5-T16
   # PHP screen gap left by M2-E2-T17 ('Abrir php.ini', local only).
   - method: php.ini_open
     task: M2-E4-T9
