@@ -89,7 +89,7 @@ forge site alias loja.test add admin.loja.test
 forge site open loja.test [--editor|--terminal|--explorer]
 forge site info loja.test                           # diagnóstico: site.dns, site.certificate (aviso < 30 dias), site.php_pool, site.root_access
 forge site env loja.test [--reveal]                 # .env/.env.local da pasta do projeto, segredos mascarados no daemon (--reveal: só admin; docs/11 §6)
-forge site pool loja.test shared|dedicated          # pool PHP compartilhado (CPU/RAM ≈) ou exclusivo (exatos, upstream php_<ver>__<slug>); job
+forge site pool loja.test shared|dedicated          # pool PHP compartilhado (CPU/RAM ≈) ou exclusivo (exatos, upstream php_<ver>__<slug>); job  # só sites php; faixa de portas do PHP cheia: conflict (exit 4)
 forge site metrics loja.test on|off                 # liga/desliga as métricas do site (desligadas por padrão em raízes portáteis)
 forge park <dir> [--tld .test] | forge unpark <dir> | forge parked
 forge link [<dir>] [--host] | forge unlink [<dir>]    # equivalente valet; unlink acha o site pela pasta
