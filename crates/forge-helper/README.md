@@ -6,6 +6,6 @@
 
 **Quem depende dele:** ninguém diretamente; o daemon o inicia sob demanda com UAC (`forge_core::platform::Elevation`, `HelperClient`).
 
-**Testes sem UAC:** `cargo test -p forge-helper` (fakes na lib; binário real copiado para uma raiz temporária e iniciado com `__COMPAT_LAYER=RunAsInvoker`); `cargo test -p forge-helper --test cli -- --ignored vcredist_dry_run_online` baixa o `vc_redist.x64.exe` real para `Forgebox-wt/cache` e confere hash + Authenticode em `--dry-run`. Manifest: `mt.exe -inputresource:target\debug\forgebox-helper.exe;#1 -out:con`.
+**Testes sem UAC:** `cargo test -p forge-helper` (fakes na lib; binário real copiado para uma raiz temporária e iniciado com `__COMPAT_LAYER=RunAsInvoker`; o teste de elevação remove a variável herdada do ambiente antes de conferir o `ERROR_ELEVATION_REQUIRED`); `cargo test -p forge-helper --test cli -- --ignored vcredist_dry_run_online` baixa o `vc_redist.x64.exe` real para `Forgebox-wt/cache` e confere hash + Authenticode em `--dry-run`. Manifest: `mt.exe -inputresource:target\debug\forgebox-helper.exe;#1 -out:con`.
 
 **Referência:** [docs/11-security.md](../../docs/11-security.md) §1, [ADR-0022](../../docs/adr/0022-elevated-helper-protocol.md), [ADR-0024](../../docs/adr/0024-helper-execution.md).
