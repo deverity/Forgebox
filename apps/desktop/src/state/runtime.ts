@@ -69,6 +69,7 @@ export class ContextRuntime {
   private measuring = false;
   private readonly cleanups: (() => void)[] = [];
   private disposed = false;
+  private readonly eventListeners = new Set<(events: readonly T.EventDto[]) => void>();
 
   constructor(bridge: Bridge, context: ContextId, options: RuntimeOptions = {}) {
     this.bridge = bridge;
@@ -113,6 +114,7 @@ export class ContextRuntime {
       api: this.api,
       onEvents: (events) => {
         if (import.meta.env.MODE === "qa") recordEvents(events);
+        for (const listener of [...this.eventListeners]) listener(events);
         this.batcher.push(events);
       },
       onGap: (reason: GapReason) => {
@@ -145,6 +147,17 @@ export class ContextRuntime {
   start(): Promise<void> {
     this.started ??= this.boot();
     return this.started;
+  }
+
+  /**
+   * Raw event feed for screens that show events themselves (the Dashboard activity list). The
+   * listener gets every received batch before it is reduced; the returned function removes it.
+   */
+  onEvents(listener: (events: readonly T.EventDto[]) => void): () => void {
+    this.eventListeners.add(listener);
+    return () => {
+      this.eventListeners.delete(listener);
+    };
   }
 
   /** Refetch every snapshot once (debounced). */

@@ -1,6 +1,7 @@
 import "i18next";
 import type catalog from "./en-US/catalog.json";
 import type common from "./en-US/common.json";
+import type dashboard from "./en-US/dashboard.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
 import type notifications from "./en-US/notifications.json";
@@ -29,6 +30,7 @@ export interface Resources {
   services: typeof services;
   sites: typeof sites;
   catalog: typeof catalog;
+  dashboard: typeof dashboard;
   terminal: typeof terminal;
   php: typeof php;
 }
