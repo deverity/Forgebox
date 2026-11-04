@@ -282,7 +282,7 @@ describe("connection banners", () => {
   });
 });
 
-const REAL_SCREENS: ReadonlySet<string> = new Set(["services", "sites", "catalog", "terminal"]);
+const REAL_SCREENS: ReadonlySet<string> = new Set(["services", "sites", "catalog", "terminal", "php"]);
 
 describe("routes", () => {
   it("redirects / to the Dashboard and each placeholder names its task", async () => {

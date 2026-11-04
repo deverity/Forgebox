@@ -1,0 +1,105 @@
+{
+  "title": "PHP",
+  "summary_one": "{count} versão instalada",
+  "summary_other": "{count} versões instaladas",
+  "install": "Instalar outra versão",
+  "empty": {
+    "title": "Nenhum PHP instalado",
+    "description": "Instale o PHP 8.4 para rodar seus sites e usar no terminal.",
+    "action": "Instalar PHP 8.4"
+  },
+  "columns": "Versões do PHP",
+  "column": "PHP {series}",
+  "variant": {
+    "label": "Variante do build",
+    "nts": "NTS: o build usual para pools FastCGI."
+  },
+  "cli": {
+    "label": "CLI padrão",
+    "hint": "Usada pela linha de comando forge e pelo seu terminal. Os sites mantêm a própria versão.",
+    "switching": "Trocando…"
+  },
+  "pool": {
+    "title": "Pool",
+    "workers": "{busy}/{total} workers",
+    "rate": "{rate} req/s",
+    "noRate": "— req/s",
+    "rss": "{size} em memória",
+    "state": {
+      "stopped": "Parado",
+      "starting": "Iniciando",
+      "running": "Em execução",
+      "stopping": "Parando",
+      "crashed": "Caiu",
+      "failed": "Falhou",
+      "maintenance": "Atualizando"
+    },
+    "none": "O pool inicia com o primeiro site que usar esta versão."
+  },
+  "sites": {
+    "count_one": "{count} site",
+    "count_other": "{count} sites",
+    "link": "Ver os sites que usam o PHP {series}"
+  },
+  "quick": {
+    "title": "Ajustes rápidos",
+    "loading": "Carregando ajustes…"
+  },
+  "ext": {
+    "title": "Extensões",
+    "search": "Buscar extensões",
+    "searchPlaceholder": "Buscar extensões",
+    "bundled": "Embutida",
+    "registry": "Registro",
+    "zend": "Zend",
+    "zendHint": "Carregada com zend_extension.",
+    "toggle": "Extensão {name}",
+    "count": "{shown} de {total}",
+    "none": "Nenhuma extensão corresponde a “{query}”.",
+    "empty": "Nenhuma extensão encontrada.",
+    "failed": "Não foi possível alterar {name}: voltou ao estado anterior."
+  },
+  "xdebug": {
+    "title": "Xdebug",
+    "mode": "Modo do Xdebug",
+    "off": "Desligado",
+    "on": "Ligado",
+    "trigger": "Gatilho",
+    "hint": {
+      "off": "O Xdebug não é carregado.",
+      "on": "Toda requisição inicia uma sessão de depuração.",
+      "trigger": "Só requisições com XDEBUG_TRIGGER iniciam uma sessão de depuração."
+    },
+    "port": "Porta do cliente",
+    "portHint": "Em branco mantém a porta salva (padrão 9003).",
+    "portInvalid": "Use uma porta entre 1 e 65535.",
+    "ideKey": "Chave da IDE",
+    "ideKeyHint": "Valor padrão; editar chega com os ajustes de extensão.",
+    "apply": "Aplicar porta",
+    "applying": "Aplicando…",
+    "applied": "Porta aplicada",
+    "installing": "Instalando o Xdebug para o PHP {series}",
+    "working": "Aplicando o modo do Xdebug…"
+  },
+  "updates": {
+    "title": "Atualização",
+    "policyNote": "A política vale para todas as versões do PHP. Uma política por série chega depois, sem mudar esta tela.",
+    "check": "Verificar agora",
+    "checking": "Verificando…",
+    "checked": "Verificado",
+    "upToDate": "O PHP está atualizado.",
+    "available": "O PHP {from} pode atualizar para {to}.",
+    "history": "Histórico",
+    "historyEmpty": "Nenhuma atualização desta série ainda.",
+    "historyLine": "{from} → {to} · {status}",
+    "rollback": "Reverter",
+    "rollingBack": "Revertendo…",
+    "rolledBack": "Revertido",
+    "status": {
+      "started": "Iniciada",
+      "completed": "Atualizada",
+      "failed": "Falhou",
+      "rolled_back": "Revertida"
+    }
+  }
+}

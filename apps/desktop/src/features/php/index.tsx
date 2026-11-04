@@ -1,6 +1,2 @@
-import { PlaceholderPage } from "../../app/shell/PlaceholderPage";
-
-/** Placeholder until the task named on screen delivers the real php screen. */
-export function PhpPage() {
-  return <PlaceholderPage id="php" />;
-}
+// The PHP screen (M2-E2-T17, docs/07 section 5.5). The route imports `PhpPage`.
+export { PhpPage } from "./PhpPage";

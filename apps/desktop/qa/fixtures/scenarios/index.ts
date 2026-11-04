@@ -25,6 +25,7 @@ import {
   site,
   type QaData,
 } from "./data";
+import { phpHandlers } from "./php";
 import { siteDetailHandlers } from "./siteDetail";
 import { terminalHandlers } from "./terminal";
 
@@ -104,7 +105,8 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const detail = siteDetailHandlers(data);
   const catalog = catalogHandlers(data, config);
   const terminal = terminalHandlers();
-  const answered = { ...detail, ...catalog, ...terminal };
+  const php = phpHandlers(data, config);
+  const answered = { ...detail, ...catalog, ...terminal, ...php };
   return {
     // The Site detail and the catalog answer `tools.plan` etc. before their backend tasks land.
     notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
@@ -124,6 +126,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...config,
       ...catalog,
       ...terminal,
+      ...php,
       ...extra.handlers,
     },
   } satisfies FakeScenario;

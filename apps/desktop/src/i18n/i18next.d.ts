@@ -5,6 +5,7 @@ import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
+import type php from "./en-US/php.json";
 import type services from "./en-US/services.json";
 import type shell from "./en-US/shell.json";
 import type sites from "./en-US/sites.json";
@@ -29,6 +30,7 @@ export interface Resources {
   sites: typeof sites;
   catalog: typeof catalog;
   terminal: typeof terminal;
+  php: typeof php;
 }
 
 declare module "i18next" {

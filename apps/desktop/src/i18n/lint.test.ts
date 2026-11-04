@@ -45,7 +45,9 @@ describe("no-literal-string lint", () => {
     ["expression literal", `<p>{"Salvar alteracoes"}</p>`],
     ["ternary literal", `<p>{ok ? "Pronto" : "Falhou"}</p>`],
   ])("fails on a user-visible literal: %s", async (_name, jsx) => {
-    const messages = await lint(`export function Screen({ ok }: { ok: boolean }) { return ${jsx}; }`);
+    const messages = await lint(
+      `export function Screen({ ok }: { ok: boolean }) { return ${jsx}; }`,
+    );
     expect(messages.map((m) => m.ruleId)).toContain("i18next/no-literal-string");
   });
 
