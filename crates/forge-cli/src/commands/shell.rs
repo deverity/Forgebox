@@ -16,16 +16,20 @@ use crate::messages::Msg;
 use crate::output::{GREEN, YELLOW, paint};
 
 pub async fn shell(ctx: &Context, args: OptDirArg) -> CliResult<()> {
-    let dir = args
-        .dir
-        .as_deref()
-        .map(crate::parse::absolute)
-        .transpose()?;
     let ack = ctx
-        .call::<forge_ipc::api::methods::shell_open>(ShellOpenParams { dir })
+        .call::<forge_ipc::api::methods::shell_open>(shell_open_params(
+            ctx.dir_or_cwd(args.dir.as_deref())?,
+        ))
         .await?;
     ctx.out.emit(&ack, |_| {});
     Ok(())
+}
+
+/// The request of `forge shell`: always a project folder (the argument or the current one,
+/// resolved here like `forge env`), so the terminal gets the project's versions. The daemon
+/// default (no folder means the Forgebox root) is for the GUI.
+fn shell_open_params(dir: String) -> ShellOpenParams {
+    ShellOpenParams { dir: Some(dir) }
 }
 
 /// `--powershell` (default), `--cmd`, `--bash`; `--json` asks for the data only.
@@ -233,6 +237,12 @@ pub async fn path(ctx: &Context, command: PathCmd) -> CliResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_sends_the_project_folder() {
+        let params = shell_open_params(r"C:\www\proj".to_owned());
+        assert_eq!(params.dir.as_deref(), Some(r"C:\www\proj"));
+    }
 
     #[test]
     fn exec_finds_batch_shims_like_a_shell() {

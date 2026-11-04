@@ -314,7 +314,7 @@ fn fill(word: &str, values: &[(&str, String)]) -> String {
 
 /// The program of a configured command: absolute as written, or looked up in `PATH`
 /// (`.exe`, `.cmd`, `.bat` when it has no extension). Batch files run through
-/// `cmd.exe /d /c`.
+/// `cmd.exe /d /v:off /s /c` with every word quoted.
 fn resolve_program(
     program: &str,
     rest: Vec<OsString>,
@@ -339,12 +339,45 @@ fn resolve_program(
         .and_then(OsStr::to_str)
         .is_some_and(|e| e.eq_ignore_ascii_case("bat") || e.eq_ignore_ascii_case("cmd"));
     if batch {
-        let mut args = vec![OsString::from("/d"), OsString::from("/c"), exe.into()];
-        args.extend(rest);
+        // cmd.exe re-parses the whole line: `&`, `|`, `<`, `>` and `^` split or redirect
+        // unless quoted, and `%VAR%` expands even inside quotes. So every word is quoted
+        // and `"`, `%`, CR and LF (which cannot be quoted safely) are refused. The `/s`
+        // form strips exactly the outer pair of quotes, which keeps a batch path with
+        // spaces intact; `/v:off` disables `!var!` expansion. The Windows launcher passes
+        // the last argument to CreateProcess verbatim (`command_line`).
+        check_batch_arg(exe.as_os_str())?;
+        let mut tail = OsString::from("\"\"");
+        tail.push(exe.as_os_str());
+        tail.push("\"");
+        for word in &rest {
+            check_batch_arg(word)?;
+            tail.push(" \"");
+            tail.push(word);
+            tail.push("\"");
+        }
+        tail.push("\"");
+        let args = vec![
+            OsString::from("/d"),
+            OsString::from("/v:off"),
+            OsString::from("/s"),
+            OsString::from("/c"),
+            tail,
+        ];
         Ok((lookup.system32.join("cmd.exe"), args))
     } else {
         Ok((exe, rest))
     }
+}
+
+/// Refuses what cannot be passed to a batch file through `cmd.exe` safely.
+fn check_batch_arg(arg: &OsStr) -> Result<()> {
+    let text = arg.to_string_lossy();
+    if text.contains(['"', '%', '\r', '\n', '\0']) {
+        return Err(ForgeError::InvalidInput(format!(
+            "{text:?} cannot be passed to a batch file (quote, percent sign or line break)"
+        )));
+    }
+    Ok(())
 }
 
 /// A file or folder to open in an editor at an optional position (1-based).
@@ -733,7 +766,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.exe, PathBuf::from(r"C:\Windows\System32\cmd.exe"));
-        assert_eq!(args(&r)[..2], ["/d", "/c"]);
+        assert_eq!(args(&r)[..4], ["/d", "/v:off", "/s", "/c"]);
     }
 
     #[cfg(windows)]
@@ -766,7 +799,10 @@ mod tests {
         // Bare names are found in PATH (.exe, .cmd, .bat); a batch runs through cmd.exe.
         let r = editor(Some("sub {path}"), &files, r"C:\Tools", r"C:\x", None, None).unwrap();
         assert_eq!(r.exe, PathBuf::from(r"C:\Windows\System32\cmd.exe"));
-        assert_eq!(args(&r), ["/d", "/c", r"C:\Tools\sub.cmd", r"C:\x"]);
+        assert_eq!(
+            args(&r),
+            ["/d", "/v:off", "/s", "/c", r#"""C:\Tools\sub.cmd" "C:\x"""#]
+        );
         // A configured program that is missing is not_found, never a silent fallback.
         let err = editor(
             Some("nope {path}"),
@@ -818,6 +854,52 @@ mod tests {
         assert!(!r.new_console);
         let r = term(Some("pwsh -NoExit"), &all, r"C:\p").unwrap();
         assert!(r.new_console, "a configured console shell gets its window");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn batch_editors_get_every_argument_quoted() {
+        let files = [r"C:\Tools\sub.cmd", r"C:\Program Files\x\ed.cmd"];
+        // `&` stays inside quotes: never split.
+        let r = editor(
+            Some("sub {path}"),
+            &files,
+            r"C:\Tools",
+            r"C:\www\a&b.php",
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            args(&r),
+            [
+                "/d",
+                "/v:off",
+                "/s",
+                "/c",
+                r#"""C:\Tools\sub.cmd" "C:\www\a&b.php"""#
+            ]
+        );
+        // Spaces in both the batch and the path: one outer pair for /s to strip.
+        let template = r#""C:\Program Files\x\ed.cmd" -g {path}:{line}"#;
+        let r = editor(
+            Some(template),
+            &files,
+            r"C:\Tools",
+            r"C:\my dir\f.php",
+            Some(4),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            args(&r)[4],
+            r#"""C:\Program Files\x\ed.cmd" "-g" "C:\my dir\f.php:4"""#
+        );
+        // `%` expands inside quotes and `"` cannot be escaped: both refused.
+        for bad in [r"C:\x\%PATH%.php", "C:\\x\\a\"b.php", "C:\\x\\a\nb.php"] {
+            let err = editor(Some("sub {path}"), &files, r"C:\Tools", bad, None, None).unwrap_err();
+            assert_eq!(err.code(), "invalid_input", "{bad}");
+        }
     }
 
     #[test]

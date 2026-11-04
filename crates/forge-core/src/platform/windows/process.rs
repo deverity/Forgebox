@@ -674,6 +674,12 @@ fn append_arg(line: &mut Vec<u16>, arg: &OsStr, force_quotes: bool) -> Result<()
     Ok(())
 }
 
+fn is_cmd_exe(exe: &Path) -> bool {
+    exe.file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|n| n.eq_ignore_ascii_case("cmd.exe"))
+}
+
 /// Full command line: quoted exe followed by the arguments. NUL-terminated.
 pub(crate) fn command_line(exe: &Path, args: &[OsString]) -> Result<Vec<u16>> {
     let mut line = Vec::new();
@@ -684,9 +690,27 @@ pub(crate) fn command_line(exe: &Path, args: &[OsString]) -> Result<Vec<u16>> {
         )));
     }
     append_arg(&mut line, exe.as_os_str(), true)?;
-    for arg in args {
+    // `cmd.exe /d /v:off /s /c <line>` for a batch file (shell_open::resolve_program): the
+    // last argument is a complete, already quoted command line that cmd parses itself, so
+    // it goes through verbatim (CommandLineToArgvW quoting would break `/s`).
+    let raw_tail = is_cmd_exe(exe)
+        && args.len() == 5
+        && ["/d", "/v:off", "/s", "/c"]
+            .iter()
+            .zip(args)
+            .all(|(want, got)| got == OsStr::new(want));
+    for (i, arg) in args.iter().enumerate() {
         line.push(u16::from(b' '));
-        append_arg(&mut line, arg, false)?;
+        if raw_tail && i == 4 {
+            if arg.encode_wide().any(|c| c == 0) {
+                return Err(ForgeError::InvalidInput(
+                    "batch command line contains a NUL character".into(),
+                ));
+            }
+            line.extend(arg.encode_wide());
+        } else {
+            append_arg(&mut line, arg, false)?;
+        }
     }
     line.push(0);
     Ok(line)
@@ -1288,6 +1312,22 @@ mod tests {
         let args = vec![OsString::from("bad\0arg")];
         assert!(command_line(Path::new(r"C:\x.exe"), &args).is_err());
         assert!(command_line(Path::new("C:\\x\".exe"), &[]).is_err());
+    }
+
+    #[test]
+    fn cmd_batch_tail_is_passed_verbatim() {
+        let tail = r#""C:\Program Files\x\ed.cmd" "C:\a&b dir\f.php""#;
+        let got = line(
+            r"C:\Windows\System32\cmd.exe",
+            &["/d", "/v:off", "/s", "/c", tail],
+        );
+        assert_eq!(
+            got,
+            format!(r#""C:\Windows\System32\cmd.exe" /d /v:off /s /c {tail}"#)
+        );
+        // Any other cmd.exe use keeps the regular quoting.
+        let got = line(r"C:\Windows\System32\cmd.exe", &["/k", "a b"]);
+        assert_eq!(got, r#""C:\Windows\System32\cmd.exe" /k "a b""#);
     }
 
     #[test]
