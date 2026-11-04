@@ -55,6 +55,7 @@ const SERVICES: readonly MethodName[] = [
   "services.config_files",
   "sites.ps",
   "mail.status",
+  "db.list",
 ];
 const POOLS: readonly MethodName[] = ["php.pool_status", "php.list", "services.status"];
 const JOBS: readonly MethodName[] = ["jobs.list", "jobs.get"];

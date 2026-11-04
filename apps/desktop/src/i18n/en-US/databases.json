@@ -1,0 +1,154 @@
+{
+  "title": "Databases",
+  "instances": "Database instances",
+  "instanceCount_one": "{count} instance",
+  "instanceCount_other": "{count} instances",
+  "empty": {
+    "title": "No database installed",
+    "description": "Install MySQL, MariaDB or PostgreSQL to create databases for your sites.",
+    "action": "Open the catalog"
+  },
+  "instance": {
+    "version": "Version {version}",
+    "port": "Port {port}",
+    "size": "Data {size}",
+    "sizePending": "≈ calculating…",
+    "select": "Show databases of {name}",
+    "start": "Start",
+    "starting": "Starting…",
+    "state": {
+      "running": "Running",
+      "starting": "Starting",
+      "stopped": "Stopped",
+      "stopping": "Stopping",
+      "failed": "Failed",
+      "crashed": "Crashed",
+      "maintenance": "Updating"
+    }
+  },
+  "stopped": {
+    "title": "{name} is stopped",
+    "description": "Start the instance to list, create and back up its databases."
+  },
+  "table": {
+    "title": "Databases of {name}",
+    "name": "Name",
+    "charset": "Charset / collation",
+    "size": "Size",
+    "tables": "Tables",
+    "actions": "Actions",
+    "none": "No databases yet. Create the first one above.",
+    "unknown": "—"
+  },
+  "create": {
+    "title": "New database",
+    "name": "Name",
+    "hint": "Letters, digits and underscore, up to 64 characters.",
+    "charset": "Charset",
+    "submit": "Create",
+    "creating": "Creating…",
+    "done": "Database created",
+    "invalid": "Use only letters, digits and underscore (A-Z, a-z, 0-9, _), up to 64 characters.",
+    "required": "Type a name for the database.",
+    "exists": "A database with this exact name already exists (names are case-sensitive)."
+  },
+  "drop": {
+    "action": "Drop",
+    "title": "Drop {name}?",
+    "description": "This deletes the database and everything in it. Export it first if you may need it again.",
+    "confirmLabel": "Type {name} to confirm",
+    "confirm": "Drop database",
+    "dropping": "Dropping…",
+    "cancel": "Cancel",
+    "done": "{name} dropped"
+  },
+  "export": {
+    "action": "Export",
+    "label": "Export of {name}",
+    "starting": "Starting…",
+    "bytes": "{size} written",
+    "speed": "{speed}/s",
+    "cancel": "Cancel",
+    "cancelling": "Cancelling…",
+    "cancelled": "Export cancelled.",
+    "done": "Exported to {path} ({size})",
+    "reveal": "Show in folder",
+    "retry": "Try again",
+    "dismiss": "Dismiss",
+    "failedTitle": "The export failed",
+    "stderr": "Last lines of the client output"
+  },
+  "import": {
+    "action": "Import",
+    "title": "Import into {name}",
+    "description": "Pick a .sql, .sql.gz or .sql.zst file. Existing tables with the same names may be replaced.",
+    "file": "Dump file",
+    "remoteNote": "This daemon runs on another machine, so it only reads files inside its www/ folder. Copy the dump there first and type the path as it exists on that machine.",
+    "remoteOutside": "On a remote daemon the file must be inside www/.",
+    "badExtension": "Use a .sql, .sql.gz or .sql.zst file.",
+    "required": "Choose the dump file.",
+    "submit": "Import",
+    "label": "Import into {name}",
+    "cancel": "Cancel",
+    "cancelling": "Cancelling…",
+    "cancelled": "Import cancelled.",
+    "done": "Import finished.",
+    "retry": "Try again",
+    "dismiss": "Dismiss",
+    "failedTitle": "The import failed",
+    "stderr": "Last lines of the client output",
+    "starting": "Starting…"
+  },
+  "jobs": {
+    "title": "Transfers"
+  },
+  "connect": {
+    "action": "Connection",
+    "label": "Connection strings of {name}",
+    "loading": "Loading…",
+    "dsn": "DSN",
+    "url": "URL",
+    "env": ".env",
+    "masked": "Hidden until revealed",
+    "reveal": "Reveal",
+    "hide": "Hide",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyNeedsReveal": "Reveal the value to copy it.",
+    "failed": "Could not load the connection strings."
+  },
+  "shell": {
+    "action": "Open shell",
+    "loading": "Opening…",
+    "title": "{name} shell"
+  },
+  "openWith": {
+    "action": "Open in",
+    "disabled": "Open in · soon",
+    "reason": "Opening in HeidiSQL, DBeaver and other clients arrives in milestone M3."
+  },
+  "cli": {
+    "title": "Equivalent commands",
+    "create": "Create",
+    "drop": "Drop",
+    "export": "Export",
+    "import": "Import",
+    "url": "Connection string",
+    "shell": "Shell"
+  },
+  "siteTab": {
+    "label": "Database",
+    "title": "Database of {host}",
+    "description": "A database for this site, on the instance below.",
+    "instance": "Instance",
+    "noInstance": "No database instance is installed yet.",
+    "noInstanceAction": "Open the catalog",
+    "stopped": "{name} is stopped. Start it to create the database.",
+    "start": "Start",
+    "create": "Create database {name}",
+    "exists": "Database {name} exists.",
+    "name": "Database name",
+    "open": "Open in Databases",
+    "connection": "Connection strings"
+  }
+}
