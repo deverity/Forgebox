@@ -22,11 +22,15 @@ describe("registry url validation", () => {
 });
 
 describe("registry trust badge", () => {
-  const base = { official: false, url: "https://example.org/index.yaml", kind: "http" as const };
+  const base = { official: false, trusted_unsigned: false, verified: true };
   it("tells official, third-party and unverified apart", () => {
     expect(registryTrust({ ...base, official: true })).toBe("official");
     expect(registryTrust(base)).toBe("third-party");
-    expect(registryTrust({ ...base, url: "http://example.org/index.yaml" })).toBe("unverified");
-    expect(registryTrust({ ...base, kind: "dir", url: "C:/reg" })).toBe("unverified");
+    expect(registryTrust({ ...base, trusted_unsigned: true, verified: false })).toBe("unverified");
+    expect(registryTrust({ ...base, verified: false })).toBe("unverified");
+  });
+  it("does not guess from the URL or the kind (a signed dir mirror is verified)", () => {
+    // The input has no url/kind at all: only the signature state counts.
+    expect(registryTrust(base)).toBe("third-party");
   });
 });

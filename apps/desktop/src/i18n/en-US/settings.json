@@ -454,6 +454,7 @@
     "neverRefreshed": "never refreshed",
     "refreshed": "refreshed {when}",
     "noRefresh": "This registry was never refreshed. Update the registries to load it.",
+    "lastError": "Last refresh failed: {error}",
     "update": "Update registries",
     "updating": "Updating the registries",
     "empty": "No registry configured",

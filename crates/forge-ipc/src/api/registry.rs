@@ -25,6 +25,18 @@ pub struct RegistryDto {
     pub priority: i32,
     pub tools: u32,
     pub last_refresh_at: Option<Timestamp>,
+    /// Loaded without a valid signature because the user trusts it (docs/04 section 5).
+    #[serde(default)]
+    pub trusted_unsigned: bool,
+    /// The last load verified the index signature.
+    #[serde(default)]
+    pub verified: bool,
+    /// `key_id` of the signing key when verified.
+    #[serde(default)]
+    pub key_id: Option<String>,
+    /// Error of the last refresh, if it failed.
+    #[serde(default)]
+    pub last_error: Option<String>,
 }
 
 /// Result of `registry.list`.

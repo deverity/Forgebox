@@ -31,7 +31,14 @@ export function fixableCount(issues: readonly CaseIssueDto[]): number {
   return issues.filter((issue) => issue.fixes.length > 0).length;
 }
 
-/** A revert that stopped because two names differ only by case (`conflict` from the daemon). */
-export function isRevertConflict(code: string | undefined, revert: boolean): boolean {
-  return revert && code === "conflict";
+/**
+ * A revert that stopped because two names differ only by case: the daemon marks it with
+ * `details.reason = "case_collisions"` (ADR-0039). Other conflicts (a file held open, a
+ * conversion already running) fall through to the normal error notice.
+ */
+export function isRevertConflict(
+  failure: { code: string; reason?: string | undefined } | null | undefined,
+  revert: boolean,
+): boolean {
+  return revert && failure?.code === "conflict" && failure.reason === "case_collisions";
 }

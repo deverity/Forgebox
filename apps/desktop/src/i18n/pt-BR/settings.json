@@ -454,6 +454,7 @@
     "neverRefreshed": "nunca atualizado",
     "refreshed": "atualizado {when}",
     "noRefresh": "Este registry nunca foi atualizado. Atualize os registries para carregá-lo.",
+    "lastError": "A última atualização falhou: {error}",
     "update": "Atualizar registries",
     "updating": "Atualizando os registries",
     "empty": "Nenhum registry configurado",

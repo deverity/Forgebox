@@ -50,7 +50,7 @@ export function Converter({ root }: { root: string }) {
   };
   const running = job.phase === "running";
   const cancelled = job.phase === "failed" && job.failure?.code === "cancelled";
-  const conflict = job.phase === "failed" && isRevertConflict(job.failure?.code, revert);
+  const conflict = job.phase === "failed" && isRevertConflict(job.failure, revert);
 
   return (
     <RowFrame

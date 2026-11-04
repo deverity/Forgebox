@@ -38,8 +38,11 @@ describe("filesystem model", () => {
   });
 
   it("recognises a revert conflict only on revert", () => {
-    expect(isRevertConflict("conflict", true)).toBe(true);
-    expect(isRevertConflict("conflict", false)).toBe(false);
-    expect(isRevertConflict("io", true)).toBe(false);
+    const collisions = { code: "conflict", reason: "case_collisions" };
+    expect(isRevertConflict(collisions, true)).toBe(true);
+    expect(isRevertConflict(collisions, false)).toBe(false);
+    expect(isRevertConflict({ code: "conflict" }, true)).toBe(false);
+    expect(isRevertConflict({ code: "io", reason: "case_collisions" }, true)).toBe(false);
+    expect(isRevertConflict(null, true)).toBe(false);
   });
 });

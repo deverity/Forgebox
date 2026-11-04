@@ -712,10 +712,11 @@ pub fn convert_tree(
             .cloned()
             .collect::<Vec<_>>()
             .join("; ");
-        return Err(ForgeError::Conflict(messages::case_collisions(
-            &examples,
-            before.collisions.len(),
-        )));
+        return Err(ForgeError::CaseCollisions {
+            message: messages::case_collisions(&examples, before.collisions.len()),
+            examples,
+            count: before.collisions.len(),
+        });
     }
     if before.in_state == before.stats.directories {
         tracing::info!(dir = %dir.display(), enable, "case sensitivity already in place");

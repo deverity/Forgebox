@@ -110,7 +110,15 @@ function RegistryRow({ registry }: { registry: RegistryDto }) {
               })}
         </span>
       </p>
-      {registry.last_refresh_at === null && registry.enabled ? (
+      {registry.last_error !== null ? (
+        <p
+          data-testid={`registry-error-${registry.name}`}
+          role="alert"
+          className="text-callout text-danger"
+        >
+          {t("registries.lastError", { error: registry.last_error })}
+        </p>
+      ) : registry.last_refresh_at === null && registry.enabled ? (
         <p
           data-testid={`registry-error-${registry.name}`}
           role="alert"

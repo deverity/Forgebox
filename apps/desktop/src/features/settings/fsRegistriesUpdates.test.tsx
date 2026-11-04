@@ -125,6 +125,22 @@ describe("Sistema de arquivos", () => {
     expect(calls(h, "fs_parity.case_convert")[0]?.params).toMatchObject({ revert: true });
   });
 
+  it("does not blame case duplicates when the revert conflicts because a file is in use", async () => {
+    const qa = createFilesystemQa({ convert: "in_use" });
+    const { user } = await open("filesystem", { qa });
+    const card = await screen.findByTestId("setting-fs-convert");
+    await user.click(within(card).getByTestId("fs-convert-revert"));
+    await user.click(
+      within(await screen.findByTestId("fs-revert-dialog")).getByRole("button", {
+        name: "Revert to insensitive",
+      }),
+    );
+    await waitFor(() => {
+      expect(within(card).getByTestId("fs-convert-status")).toHaveAttribute("data-phase", "failed");
+    });
+    expect(within(card).queryByTestId("fs-convert-conflict")).toBeNull();
+  });
+
   it("scans as a dry run, opens the editor at file:line and applies only after confirm", async () => {
     const { h, user } = await open("filesystem");
     const card = await screen.findByTestId("setting-fs-finder");
@@ -194,6 +210,13 @@ describe("Registries", () => {
     expect(lab).toHaveAttribute("data-trust", "unverified");
     expect(within(lab).getByTestId("registry-refresh-lab")).toHaveTextContent("never refreshed");
     expect(within(lab).getByTestId("registry-error-lab")).toBeInTheDocument();
+    // A signed dir mirror is not "unverified" just because it is a folder.
+    expect(screen.getByTestId("registry-mirror")).toHaveAttribute("data-trust", "third-party");
+    // Refreshed once and failing since: the error shows next to the last refresh.
+    const flaky = screen.getByTestId("registry-flaky");
+    expect(within(flaky).getByTestId("registry-refresh-flaky")).toHaveTextContent(/refreshed/);
+    expect(within(flaky).getByRole("alert")).toHaveTextContent(/HTTP 503/);
+    expect(within(screen.getByTestId("registry-acme")).queryByRole("alert")).toBeNull();
   });
 
   it("refuses an invalid URL inline without calling the daemon", async () => {

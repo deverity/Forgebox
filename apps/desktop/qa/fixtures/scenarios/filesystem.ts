@@ -14,7 +14,7 @@ const HOUR_MS = 3_600_000;
 export const QA_LINT_ROOT = "C:/Forgebox/www/loja";
 
 /** How the convert job ends. `hold`: runs until the test cancels it or completes it. */
-export type ConvertMode = "ok" | "conflict" | "hold";
+export type ConvertMode = "ok" | "conflict" | "in_use" | "hold";
 
 export interface FilesystemState {
   /** Case state per folder name (`www`...). `null` = unsupported. */
@@ -42,6 +42,10 @@ function registry(patch: Partial<T.RegistryDto> & { name: string }): T.RegistryD
     priority: 10,
     tools: 5,
     last_refresh_at: new Date(Date.now() - 3 * HOUR_MS).toISOString(),
+    trusted_unsigned: false,
+    verified: true,
+    key_id: "FB01",
+    last_error: null,
     ...patch,
   };
 }
@@ -165,7 +169,14 @@ export function createFilesystemQa(initial: { convert?: ConvertMode } = {}): Fil
         url: "http://192.168.0.5/index.yaml",
         tools: 0,
         last_refresh_at: null,
+        trusted_unsigned: true,
+        verified: false,
+        key_id: null,
       }),
+      // A signed internal mirror (docs/05): a dir registry that is NOT unverified.
+      registry({ name: "mirror", url: "file:///C:/mirror", kind: "dir", tools: 9 }),
+      // Refreshed once, failing since.
+      registry({ name: "flaky", tools: 3, last_error: "index.yaml: HTTP 503" }),
     ],
     policies: { php: "notify", nginx: "auto-patch", mysql: "manual" },
     updates: [{ tool: "php", from: "8.4.26", to: "8.4.27", automatic: false }],
@@ -248,6 +259,22 @@ export function createFilesystemQa(initial: { convert?: ConvertMode } = {}): Fil
             failed: {
               code: "conflict",
               message: "names differ only by case: Readme.md and readme.md",
+              details: {
+                reason: "case_collisions",
+                args: { examples: "Readme.md; readme.md", count: 1 },
+              },
+            },
+          },
+        });
+      }
+      if (revert && state.convert === "in_use") {
+        return fakeJob({
+          stepMs: STEP_MS,
+          steps,
+          outcome: {
+            failed: {
+              code: "conflict",
+              message: "C:/Forgebox/www/a.php is in use by another process",
             },
           },
         });

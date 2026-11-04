@@ -30,16 +30,14 @@ export function urlProblem(input: string): UrlProblem | undefined {
 }
 
 /**
- * Badge of a registry. The daemon marks only `official`; a registry read over plain HTTP or
- * from a folder carries no transport guarantee, so it shows as unverified (the index signature
- * is still checked by the loader, docs/04 section 5).
+ * Badge of a registry (docs/04 section 5). "Unverified" is exactly an index loaded without a
+ * valid signature: marked `trusted_unsigned`, or not verified by the last load. The URL and the
+ * kind say nothing about the signature (a signed `file://` mirror is verified).
  */
 export function registryTrust(
-  registry: Pick<RegistryDto, "official" | "url" | "kind">,
+  registry: Pick<RegistryDto, "official" | "trusted_unsigned" | "verified">,
 ): RegistryTrust {
   if (registry.official) return "official";
-  if (registry.kind === "dir" || registry.url.toLowerCase().startsWith("http://")) {
-    return "unverified";
-  }
+  if (registry.trusted_unsigned || !registry.verified) return "unverified";
   return "third-party";
 }

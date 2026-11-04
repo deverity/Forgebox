@@ -332,6 +332,10 @@ fn fakes() -> Fakes {
                 priority: 100,
                 tools: 26,
                 last_refresh_at: None,
+                trusted_unsigned: false,
+                verified: true,
+                key_id: Some("ABCD1234".into()),
+                last_error: Some("index unreachable".into()),
             }],
         },
         terminal: TerminalDto {
