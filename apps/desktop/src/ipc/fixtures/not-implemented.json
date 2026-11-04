@@ -35,16 +35,6 @@
     "what": "LAN QR codes"
   },
   {
-    "method": "shell.open",
-    "task": "M2-E3-T9",
-    "what": "external terminal launcher"
-  },
-  {
-    "method": "shell.open_editor",
-    "task": "M2-E3-T9",
-    "what": "editor launcher"
-  },
-  {
     "method": "sites.pool_mode",
     "task": "M2-E5-T11",
     "what": "dedicated PHP pool per site"

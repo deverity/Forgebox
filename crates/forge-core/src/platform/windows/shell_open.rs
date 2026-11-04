@@ -17,8 +17,8 @@ use ::windows::core::PCWSTR;
 use super::elevation::Com;
 use super::process::{os_error, wide};
 use crate::error::{ForgeError, Result};
-use crate::platform::ShellOpener;
 use crate::platform::shell_open::{validate_path, validate_url};
+use crate::platform::{LaunchSpec, ShellOpener};
 
 /// [`ShellOpener`] through `ShellExecuteExW`.
 #[derive(Debug, Clone, Copy, Default)]
@@ -49,6 +49,23 @@ impl ShellOpener for WindowsShellOpener {
     fn open_path(&self, path: &Path) -> Result<()> {
         validate_path(path)?;
         execute(path.as_os_str(), &path.display().to_string())
+    }
+
+    fn launch(&self, spec: &LaunchSpec) -> Result<u32> {
+        if !spec.exe.is_absolute() || !spec.cwd.is_absolute() {
+            return Err(ForgeError::InvalidInput(format!(
+                "{} and its folder {} must be absolute paths",
+                spec.exe.display(),
+                spec.cwd.display()
+            )));
+        }
+        super::process::create_launched(
+            &spec.exe,
+            &spec.args,
+            &spec.cwd,
+            spec.env.as_deref(),
+            spec.new_console,
+        )
     }
 }
 

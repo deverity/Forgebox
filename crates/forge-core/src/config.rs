@@ -409,7 +409,9 @@ pub enum MeteredPolicy {
     Allow,
 }
 
-/// `[editor]`: command used by "open in editor". `None`: auto-detect.
+/// `[editor]`: command used by "open in editor", with `{path}`, `{line}` and `{column}`
+/// placeholders (quotes group words, e.g. `"C:/Tools/ed.exe" -g {path}:{line}`); without
+/// `{path}` the path is appended. `None`: auto-detect VS Code, PhpStorm, Notepad.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
@@ -429,7 +431,8 @@ pub const DEFAULT_TERMINAL_MAX_SESSIONS: u32 = 16;
 /// reader thread and a 1 MiB output ring.
 pub const TERMINAL_MAX_SESSIONS_LIMIT: u32 = 256;
 
-/// `[terminal]`: the external terminal command (`command`, `None`: auto-detect) and the
+/// `[terminal]`: the external terminal command (`command` with an optional `{dir}`
+/// placeholder; `None`: auto-detect Windows Terminal, `pwsh`, `powershell`) and the
 /// integrated terminal hosted by the daemon (docs/07 §5.10, docs/03 §7.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -598,6 +601,16 @@ impl ForgeConfig {
                 ));
             }
         }
+        for (key, command) in [
+            ("editor.command", &self.editor.command),
+            ("terminal.command", &self.terminal.command),
+        ] {
+            if let Some(text) = command.as_deref().filter(|t| !t.trim().is_empty()) {
+                if let Err(err) = crate::platform::split_command(text) {
+                    return invalid(format!("{key}: {err}"));
+                }
+            }
+        }
         if !(1..=TERMINAL_MAX_SESSIONS_LIMIT).contains(&self.terminal.max_sessions) {
             return invalid(format!(
                 "terminal.max_sessions must be between 1 and {TERMINAL_MAX_SESSIONS_LIMIT}, got {}",
@@ -725,6 +738,10 @@ integrated_shell = \"PWSH\"",
 max_sessions = 0",
             "[terminal]
 max_sessions = 257",
+            "[editor]
+command = \"\\\"unclosed {path}\"",
+            "[terminal]
+command = \"\\\"\\\" {dir}\"",
         ] {
             let err = ForgeConfig::from_toml(bad).unwrap_err();
             assert_eq!(err.code(), "config_invalid", "{bad}: {err}");

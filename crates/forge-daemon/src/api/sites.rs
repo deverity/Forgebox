@@ -68,12 +68,12 @@ const CERT_WARN_DAYS: i64 = 30;
 const ENV_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 
 /// Budget of the shell call of `sites.open`.
-const OPEN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+const OPEN_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// `sites.open` (local only): the site in the default browser, or its folder in the file
 /// manager, of the daemon's machine, through the platform's [`ShellOpener`]
-/// (`ShellExecuteExW`, in `spawn_blocking`). The editor and the terminal belong to
-/// M2-E3-T9 and answer `not_implemented` naming it.
+/// (`ShellExecuteExW`, in `spawn_blocking`); or the folder in the editor / an external
+/// terminal with the site's PHP first on `PATH` (`shell.open_editor` / `shell.open`, M2-E3-T9).
 ///
 /// [`ShellOpener`]: forge_core::platform::ShellOpener
 async fn open(daemon: Daemon, params: SiteOpenParams, _ctx: Ctx) -> Result<Ack> {
@@ -106,16 +106,17 @@ async fn open(daemon: Daemon, params: SiteOpenParams, _ctx: Ctx) -> Result<Ack> 
             .await?;
         }
         SiteOpenTarget::Editor | SiteOpenTarget::Terminal => {
-            let what = if params.with == SiteOpenTarget::Editor {
-                "opening a site in the editor"
+            // The project folder (the site root may be its `public/`).
+            let (_, dir, php) = super::terminal::site_context(&daemon, &params.site).await?;
+            let dir = dir.ok_or_else(|| {
+                ForgeError::InvalidInput(format!("{} has no folder (it is a proxy)", site.host))
+            })?;
+            if params.with == SiteOpenTarget::Editor {
+                super::shell::launch_editor(&daemon, &dir, None, None).await?;
             } else {
-                "opening a site in the terminal"
-            };
-            return Err(ForgeError::NotImplementedYet {
-                method: "sites.open".into(),
-                task: super::not_implemented::SITES_OPEN_EDITOR_TERMINAL_TASK.into(),
-                what: what.into(),
-            });
+                let versions = php.into_iter().collect();
+                super::shell::launch_terminal(&daemon, dir, versions).await?;
+            }
         }
     }
     Ok(Ack::ok())
@@ -781,7 +782,7 @@ pub(super) fn days_left(not_after: jiff::Timestamp) -> i64 {
         .div_euclid(86_400)
 }
 
-fn parked_path(daemon: &Daemon, dir: &str) -> PathBuf {
+pub(super) fn parked_path(daemon: &Daemon, dir: &str) -> PathBuf {
     let path = Path::new(dir);
     if path.is_absolute() {
         path.to_path_buf()

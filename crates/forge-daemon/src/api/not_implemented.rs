@@ -33,8 +33,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "LAN exposure with firewall rules",
     ),
     ("net.lan_qr", "M3-E3", "LAN QR codes"),
-    ("shell.open", "M2-E3-T9", "external terminal launcher"),
-    ("shell.open_editor", "M2-E3-T9", "editor launcher"),
     (
         "sites.pool_mode",
         "M2-E5-T11",
@@ -55,10 +53,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "signed self-update of the app",
     ),
 ];
-
-/// Roadmap task of the editor and terminal targets of `sites.open` (the browser and the
-/// file manager already work; this is a partial method, so it is not in the table).
-pub const SITES_OPEN_EDITOR_TERMINAL_TASK: &str = "M2-E3-T9";
 
 /// The method names of the table, in table order: what `system.hello` reports as
 /// `not_implemented` (API 1.1) so clients can disable the matching controls.
@@ -127,7 +121,7 @@ mod tests {
         for (method, _, _) in NOT_IMPLEMENTED {
             assert!(reported.iter().any(|m| m == method), "{method}");
         }
-        // sites.open works for the browser and the file manager: not "not implemented".
+        // sites.open works for every target: not "not implemented".
         assert!(!reported.iter().any(|m| m == "sites.open"));
         // Sorted names would hide a duplicated row.
         let mut sorted = reported.clone();
@@ -139,18 +133,17 @@ mod tests {
     #[test]
     fn e3_methods_name_their_task() {
         // The E3 contract (ADR-0040): each backend task owns its methods.
-        for (method, task) in [
-            ("db.open", "M3-E1"),
-            ("shell.open", "M2-E3-T9"),
-            ("shell.open_editor", "M2-E3-T9"),
-        ] {
-            let err = error(method);
-            assert_eq!(err.code(), "not_implemented", "{method}");
-            assert!(
-                err.to_string().contains(&format!("(roadmap {task})")),
-                "{method}: {err}"
-            );
-            assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+        let (method, task) = ("db.open", "M3-E1");
+        let err = error(method);
+        assert_eq!(err.code(), "not_implemented", "{method}");
+        assert!(
+            err.to_string().contains(&format!("(roadmap {task})")),
+            "{method}: {err}"
+        );
+        assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+        // The local launchers exist (M2-E3-T9).
+        for method in ["shell.open", "shell.open_editor"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
         }
         // The security extras exist (M2-E3-T11).
         for method in ["tls.ca_uninstall", "services.kill_port_holder", "sites.env"] {
