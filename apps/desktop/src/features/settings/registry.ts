@@ -8,7 +8,14 @@ export interface SectionProps {
   doc: ConfigDocumentDto | undefined;
 }
 
-export type SectionId = "general" | "editor" | "shortcuts" | "advanced";
+export type SectionId = "general" | "network" | "security" | "editor" | "shortcuts" | "advanced";
 
-/** Order of the sub-navigation. M2-E3-T17/T18 add Network, Security... between these. */
-export const SECTION_IDS: readonly SectionId[] = ["general", "editor", "shortcuts", "advanced"];
+/** Order of the sub-navigation. M2-E3-T18 adds File system, Updates, Registries... between these. */
+export const SECTION_IDS: readonly SectionId[] = [
+  "general",
+  "network",
+  "security",
+  "editor",
+  "shortcuts",
+  "advanced",
+];

@@ -1,8 +1,12 @@
 {
   "title": "Settings",
-  "nav": { "label": "Settings sections" },
+  "nav": {
+    "label": "Settings sections"
+  },
   "sections": {
     "general": "General",
+    "network": "Network",
+    "security": "Security",
     "editor": "Editor and terminal",
     "shortcuts": "Shortcuts",
     "advanced": "Advanced"
@@ -89,7 +93,9 @@
       "label": "Close to tray",
       "description": "Closing the window keeps Forgebox in the system tray."
     },
-    "autostart": { "label": "Start with Windows" },
+    "autostart": {
+      "label": "Start with Windows"
+    },
     "onboarding": {
       "label": "Welcome",
       "description": "Runs the first-steps assistant again.",
@@ -122,6 +128,164 @@
       "label": "Diagnostics",
       "description": "Checks PATH, DNS, CA, ports and versions, and exports a report.",
       "open": "Open diagnostics"
+    }
+  },
+  "job": {
+    "uac": "Windows is asking for administrator permission (UAC). Confirm the prompt to continue; this window stays usable.",
+    "done": "Done",
+    "running": "Working…"
+  },
+  "confirm": {
+    "cancel": "Cancel"
+  },
+  "network": {
+    "tld": {
+      "label": "Local TLD",
+      "description": "Ending of local site names (.test). Reserved for local use, so it never reaches the internet.",
+      "invalid": "Use a dot and lowercase letters or digits, like .test.",
+      "confirmTitle": "Change the TLD to {tld}?",
+      "confirmBody": "Moving from {from} to {to} changes the name of every site and reissues all certificates: the local CA has to be rotated afterwards and the DNS enabled again. Cancel keeps {from}.",
+      "confirm": "Change TLD",
+      "needsRotate": "Rotate the local CA so certificates cover the new TLD.",
+      "needsDns": "Enable the local DNS again for the new TLD."
+    },
+    "dns": {
+      "label": "Local DNS",
+      "description": "Answers any name under the TLD with 127.0.0.1, so sites open without editing hosts.",
+      "server": "Server",
+      "running": "Running",
+      "stopped": "Stopped",
+      "listen": "Listens on",
+      "mode": "Routing",
+      "off": "Off",
+      "reason": "Why not NRPT",
+      "modes": {
+        "nrpt": "NRPT rule (Windows follows it)",
+        "hosts": "hosts file fallback",
+        "none": "Not routed"
+      },
+      "reasons": {
+        "group_policy_table_present": "A Group Policy NRPT table exists, so Windows ignores local rules.",
+        "resolver_probe_failed": "The rule exists, but the Windows resolver did not answer a test name (VPN or security agent intercepting DNS).",
+        "resolver_not_on_port53": "The Forgebox resolver is not on port 53, which NRPT requires.",
+        "nrpt_unsupported": "This Windows has no NRPT.",
+        "nrpt_points_elsewhere": "Another rule sends the TLD to a different server."
+      },
+      "enable": "Enable DNS",
+      "disable": "Disable DNS",
+      "enabling": "Enabling the local DNS",
+      "disabling": "Disabling the local DNS",
+      "uacNote": "Enabling or disabling asks Windows for administrator permission (UAC).",
+      "host": "Host to test",
+      "testHost": "Test host",
+      "testing": "Testing…",
+      "test": {
+        "ok": "Resolves as expected",
+        "fail": "Does not resolve as expected",
+        "via": "answered by {via}",
+        "resolved": "Resolved",
+        "expected": "Expected",
+        "none": "nothing"
+      }
+    },
+    "ports": {
+      "label": "Port ranges",
+      "description": "Where Forgebox picks ports for web servers, databases and pools. Use ports and spans separated by commas.",
+      "probe": "Check a port",
+      "invalid": "Use ports from 1 to 65535 or spans like 3306-3399, separated by commas.",
+      "none": "The daemon did not list any range."
+    },
+    "portMap": {
+      "label": "Ports in use",
+      "description": "Read-only: ports Forgebox reserved and other programs sitting on its ranges.",
+      "empty": "No port is reserved yet.",
+      "port": "Port",
+      "owner": "Owner",
+      "state": "State",
+      "states": {
+        "reserved": "Reserved",
+        "bound": "Listening",
+        "conflict": "Conflict"
+      },
+      "externalTitle": "Held by other programs",
+      "noExternal": "No outside program holds a Forgebox port.",
+      "conflict": "Conflict",
+      "heldBy": "held by {exe} (pid {pid})"
+    },
+    "lan": {
+      "label": "Access from the local network",
+      "description": "Open a site to phones and other computers on the same network.",
+      "soon": "Coming soon"
+    }
+  },
+  "security": {
+    "ca": {
+      "label": "Local CA",
+      "description": "Certificate authority that signs the HTTPS of your sites. Browsers must trust it once.",
+      "state": "State",
+      "exists": "Created",
+      "missing": "Not created yet",
+      "subject": "Name",
+      "thumbprint": "SHA-256",
+      "expires": "Expires",
+      "trust": "Trusted by",
+      "trustedUser": "Current user",
+      "notTrustedUser": "Current user: no",
+      "trustedMachine": "Whole machine",
+      "notTrustedMachine": "Whole machine: no",
+      "constraints": "Only signs for",
+      "installTitle": "Trust the CA",
+      "scope": "Where to trust",
+      "scopeUser": "Current user",
+      "scopeMachine": "Whole machine",
+      "installUserNote": "Windows shows a security dialog asking to add the certificate to your account. Confirm it.",
+      "installMachineNote": "Needs administrator permission: Windows shows the UAC prompt and then the certificate dialog.",
+      "install": "Install CA",
+      "installing": "Installing the CA",
+      "exportTitle": "Export",
+      "exportNote": "Saves the public certificate (never the key) to import into another browser or machine.",
+      "export": "Export CA…",
+      "exporting": "Exporting…",
+      "exported": "CA saved to {path}",
+      "rotateTitle": "Rotate the CA",
+      "rotateNote": "Creates a new CA and reissues every certificate.",
+      "rotate": "Rotate CA",
+      "rotating": "Rotating the CA",
+      "rotateBody": "This replaces the local CA and reissues every site certificate. Browsers must trust the new CA, and the old one stops working. This cannot be undone.",
+      "rotateConfirm": "Rotate now",
+      "uninstallTitle": "Remove from trust",
+      "uninstallNote": "Browsers stop trusting the HTTPS of your sites until the CA is installed again.",
+      "uninstallUser": "Remove from user",
+      "uninstallMachine": "Remove from machine",
+      "notInstalledUser": "Not trusted by the current user.",
+      "notInstalledMachine": "Not trusted by the machine.",
+      "uninstalling": "Removing the CA"
+    },
+    "certs": {
+      "label": "Certificates",
+      "description": "One per site, issued by the local CA.",
+      "empty": "No certificate issued yet.",
+      "daysLeft_one": "{count} day left",
+      "daysLeft_other": "{count} days left",
+      "states": {
+        "ok": "Valid",
+        "expiring": "Expiring",
+        "untrusted": "Not trusted",
+        "expired": "Expired"
+      },
+      "renew": "Renew",
+      "renewAll": "Renew all",
+      "renewing": "Renewing {host}",
+      "renewingAll": "Renewing every certificate"
+    },
+    "helper": {
+      "label": "Helper log",
+      "description": "Everything the elevated helper did, newest last. Administrators only.",
+      "empty": "The helper has not logged anything yet.",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing…",
+      "ok": "ok",
+      "failed": "failed"
     }
   }
 }
