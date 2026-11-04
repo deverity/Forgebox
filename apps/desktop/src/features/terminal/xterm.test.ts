@@ -39,11 +39,6 @@ function luminance(hex: string): number {
   return 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2);
 }
 
-function contrast(a: string, b: string): number {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
-  return (hi + 0.05) / (lo + 0.05);
-}
-
 afterEach(() => {
   document.documentElement.removeAttribute("style");
 });
@@ -58,14 +53,14 @@ describe("xterm theme from tokens", () => {
       for (const name of ANSI) expect(theme[name], `${mode} ${name}`).toBeDefined();
     });
 
-    it(`${mode}: ANSI black and white are neutral text colours, readable on the surface`, () => {
+    it(`${mode}: ANSI black is darker than white and brightWhite is lighter than white`, () => {
       applyTokens(mode);
       const theme = themeFromTokens();
-      const surface = theme.background ?? "";
-      // The pair that vanished with xterm's literal palette (white on white, black on black).
-      for (const name of ["black", "white", "brightBlack", "brightWhite"] as const) {
-        expect(contrast(theme[name] ?? "", surface), `${mode} ${name}`).toBeGreaterThanOrEqual(4.5);
-      }
+      const lum = (name: (typeof ANSI)[number]) => luminance(theme[name] ?? "");
+      expect(lum("black")).toBeLessThan(lum("white"));
+      expect(lum("brightBlack")).toBeLessThan(lum("white"));
+      expect(lum("brightWhite")).toBeGreaterThan(lum("white"));
+      expect(lum("black")).toBeLessThan(lum("brightBlack"));
     });
   }
 

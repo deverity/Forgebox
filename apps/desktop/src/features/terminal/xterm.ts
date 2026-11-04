@@ -6,6 +6,7 @@ import type { Terminal, ITheme } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { SearchAddon } from "@xterm/addon-search";
 import { openUrl } from "../../ipc/native";
+import { colors } from "../../design/tokens";
 
 export type Renderer = "webgl" | "dom";
 
@@ -50,17 +51,19 @@ export function themeFromTokens(): ITheme {
   put("cursorAccent", token("--bg-surface"));
   // 33% alpha over the surface; only a #RRGGBB accent can take the alpha suffix.
   if (accent !== undefined && HEX6.test(accent)) theme.selectionBackground = `${accent}55`;
-  // The ANSI "black" and "white" are neutral text colours, not literal black and white: a
-  // literal pair vanishes on one of the two surfaces (white on white in the light theme).
-  put("black", token("--fg-secondary"));
+  // ANSI black stays dark and white stays light in both themes (a black background such as
+  // `\e[40m` or reverse video must remain distinguishable from white); readability of the text
+  // on top is left to `minimumContrastRatio`, which only adjusts foregrounds. The values are the
+  // extremes of the two token sets, identical in both themes.
+  put("black", colors.light["fg-primary"]);
   put("red", token("--state-failed"));
   put("green", token("--state-running"));
   put("yellow", token("--state-starting"));
   put("blue", accent);
   put("magenta", token("--accent-remote"));
   put("cyan", token("--state-updating"));
-  put("white", token("--fg-secondary"));
-  put("brightBlack", token("--fg-tertiary"));
+  put("white", colors.dark["fg-secondary"]);
+  put("brightBlack", colors.light["fg-tertiary"]);
   // The bright variants keep the hue of the token: xterm's own bright palette is pastel and
   // misses AA on the light surface (`minimumContrastRatio` only nudges what it must).
   put("brightRed", token("--state-failed"));
@@ -69,7 +72,7 @@ export function themeFromTokens(): ITheme {
   put("brightBlue", accent);
   put("brightMagenta", token("--accent-remote"));
   put("brightCyan", token("--state-updating"));
-  put("brightWhite", token("--fg-primary"));
+  put("brightWhite", colors.dark["fg-primary"]);
   return theme;
 }
 
