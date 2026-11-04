@@ -10,6 +10,8 @@
 //!   reactions to site/TLS events;
 //! * [`mail`]: the captured e-mail of `spec.mail` instances and the `mail.changed` watcher;
 //! * [`terminal`]: terminal sessions hosted by the daemon (the GUI's integrated terminal);
+//! * [`metrics`]: feeds the per-site metrics service (`forge_metrics::service`) with the
+//!   access logs of the running web servers, the sites and the pool samples;
 //! * [`shutdown`]: graceful stop in cascade with a global budget;
 //! * [`logging`]: `logs/forgeboxd.log.<date>` (JSON lines) and stdout in `--foreground`;
 //! * [`instance_lock`]: the single-instance mutex and `state/locks/forgeboxd.lock`.
@@ -32,6 +34,7 @@ pub mod log_format;
 pub mod logging;
 pub mod mail;
 pub mod messages;
+pub mod metrics;
 pub mod php_ext;
 pub mod pools;
 pub mod render;

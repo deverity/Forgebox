@@ -7,7 +7,7 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-11-03T23:27:38Z
+  updated_at: 2026-11-04T00:32:07Z
   tools:
   - id: apache
     path: tools/apache.yaml
@@ -92,7 +92,7 @@ spec:
       sha256: 61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c
   - id: php
     path: tools/php.yaml
-    sha256: b4bfe9b05700e3a54e014c71895484f42f03940ed9547831f1ca8df4b206cb09
+    sha256: 338e739575a938d77251ec6dbd862dd88a0cd0282a0d51e5ef060d01326bc0dc
     categories:
     - runtime
     icon:

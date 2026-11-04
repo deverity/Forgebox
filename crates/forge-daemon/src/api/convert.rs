@@ -504,3 +504,63 @@ pub fn xdebug_mode(state: Option<&crate::php_ext::DebuggerState>) -> XdebugMode 
         _ => XdebugMode::Off,
     }
 }
+
+/// Milliseconds of a microsecond value (percentiles of the metrics histograms).
+fn us_to_ms(us: u64) -> f64 {
+    us as f64 / 1000.0
+}
+
+/// One site's metrics sample (`stats.get`, `metrics.site`). `window` labels the span; the
+/// covered span is `[sample.summary.from, sample.summary.to)` (docs/14 §3.6, ADR-0044).
+pub fn site_stats(
+    sample: &forge_metrics::SiteSample,
+    window: forge_ipc::api::StatsWindow,
+) -> forge_ipc::api::SiteStatsDto {
+    let s = &sample.summary;
+    let c = &s.counters;
+    let seconds = s.to.duration_since(s.from).as_secs_f64();
+    let rps = if seconds > 0.0 {
+        c.requests as f64 / seconds
+    } else {
+        0.0
+    };
+    let error_pct = if c.requests > 0 {
+        (c.err4xx() + c.err5xx()) as f64 * 100.0 / c.requests as f64
+    } else {
+        0.0
+    };
+    let rt = s.rt.unwrap_or_default();
+    let res = sample.resources.as_ref();
+    forge_ipc::api::SiteStatsDto {
+        site_id: sample.site,
+        host: sample.host.clone(),
+        window,
+        at: s.to,
+        requests: c.requests,
+        rps,
+        p50_ms: us_to_ms(rt.p50_us),
+        p90_ms: us_to_ms(rt.p90_us),
+        p99_ms: us_to_ms(rt.p99_us),
+        error_pct,
+        cpu_pct: res.map(|r| r.cpu_pct),
+        mem_bytes: res.map(|r| r.mem_bytes),
+        approx: res.is_some_and(|r| r.approx),
+        sampled: s.sampled,
+        from: Some(s.from),
+        bytes: c.bytes,
+        status_1xx: c.status[0],
+        status_2xx: c.status[1],
+        status_3xx: c.status[2],
+        status_4xx: c.status[3],
+        status_5xx: c.status[4],
+        php_p50_ms: s.ut.map(|p| us_to_ms(p.p50_us)),
+        php_p90_ms: s.ut.map(|p| us_to_ms(p.p90_us)),
+        php_p99_ms: s.ut.map(|p| us_to_ms(p.p99_us)),
+        workers_active: res.map(|r| r.workers_active),
+        // Exact processes (apps, dedicated pool) arrive with the app samples and
+        // `sites.pool_mode` (M2-E5-T11).
+        processes: None,
+        last_request_at: sample.last_request_at,
+        metrics_enabled: sample.metrics_enabled,
+    }
+}

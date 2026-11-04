@@ -334,11 +334,13 @@ fn table() -> Vec<Case> {
         case(&["jobs", "watch", "{JOB}"], OK),
         case(&["jobs", "cancel", "{JOB}"], OK),
         case(&["jobs", "watch", "not-a-job"], E("invalid_input")),
-        // stats / remote
-        case(&["stats"], NI),
-        case(&["stats", "demo.test", "--window", "1h"], NI),
-        // ADR-0044: exact ranges (M2-E5-T8), series and routes (M2-E5-T9).
-        case(&["stats", "demo.test", "--from", "2h", "--to", "1h"], NI),
+        // stats / remote. ADR-0044: windows and exact ranges (M2-E5-T8, real; the root is
+        // portable, so the samples say metrics are off), series and routes (M2-E5-T9).
+        case(&["site", "add", "{WWW}/demo", "--host", "stats.test"], OK),
+        case(&["stats"], OK),
+        case(&["stats", "stats.test", "--window", "1h"], OK),
+        case(&["stats", "stats.test", "--from", "2h", "--to", "1h"], OK),
+        case(&["stats", "nope.test", "--window", "5m"], E("not_found")),
         case(&["stats", "--from", "1h", "--to", "2h"], E("invalid_input")),
         case(&["stats", "--series", "demo.test", "--window", "24h"], NI),
         case(&["stats", "--series", "--window", "1h"], E("invalid_input")),
@@ -351,6 +353,7 @@ fn table() -> Vec<Case> {
             &["stats", "export", "demo.test", "--from", "24h", "-o", "csv"],
             NI,
         ),
+        case(&["site", "remove", "stats.test", "--yes"], OK),
         case(&["top"], NI),
         case(
             &[

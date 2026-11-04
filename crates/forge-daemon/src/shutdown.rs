@@ -4,7 +4,8 @@
 //! 2. terminal sessions close (their Jobs terminated, consoles closed); pools, site
 //!    processes and instances stop **in parallel** (each with its stop
 //!    cascade), all within one global budget (`--shutdown-timeout`, 30 s); whatever is
-//!    still alive in the root Job Object is then terminated (and awaited);
+//!    still alive in the root Job Object is then terminated (and awaited); meanwhile the
+//!    metrics service stops its tailers and flushes (at most [`METRICS_STOP`]);
 //! 3. the DNS, TLS, download and update actors stop;
 //! 4. `daemon.shutdown` is published, the API stops accepting and closes its
 //!    connections (the named pipe disappears with its last handle);
@@ -22,6 +23,9 @@ use forge_ipc::api::DaemonShutdownPayload;
 use crate::boot::Booted;
 use crate::daemon::ShutdownRequest;
 use crate::instance_lock::InstanceLock;
+
+/// Budget of the metrics service's stop (tailers, last batches, final flush).
+pub const METRICS_STOP: Duration = Duration::from_secs(5);
 
 /// What happened.
 #[derive(Debug, Clone)]
@@ -74,6 +78,12 @@ pub async fn run(booted: Booted, lock: InstanceLock) -> ShutdownReport {
             daemon.services.stop_all(budget),
             async {
                 let _ = tokio::time::timeout(budget, daemon.apps.shutdown()).await;
+            },
+            async {
+                match daemon.metrics.stop(METRICS_STOP.min(budget)).await {
+                    Ok(report) => tracing::info!(?report, "metrics flushed"),
+                    Err(err) => tracing::warn!(%err, "metrics service did not stop cleanly"),
+                }
             },
         );
     };

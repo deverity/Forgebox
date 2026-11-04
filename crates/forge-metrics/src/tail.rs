@@ -166,6 +166,12 @@ pub struct Checkpoint {
 }
 
 impl Checkpoint {
+    /// The start of the file created at `creation_time` (nothing read yet): a resume there
+    /// reads the whole file again.
+    pub fn start_of(creation_time: u64) -> Self {
+        Self::of(creation_time, 0, &[])
+    }
+
     fn of(creation_time: u64, offset: u64, head: &[u8]) -> Self {
         let len = head
             .len()

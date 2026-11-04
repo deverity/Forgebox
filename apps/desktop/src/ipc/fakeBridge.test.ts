@@ -253,9 +253,10 @@ describe("fakeBridge daemon semantics", () => {
     });
     const state = await fake.state(LOCAL_CONTEXT);
     expect(state.hello?.not_implemented).toEqual(NOT_IMPLEMENTED.map((row) => row.method));
-    // Streams too.
+    // Streams too (metrics.subscribe has a backend since M2-E5-T8: listed here only).
+    const streams = createFakeBridge({ notImplemented: ["metrics.subscribe"] });
     const stream = await rejection(
-      fake.subscribe(LOCAL_CONTEXT, "metrics.subscribe", {}, () => undefined),
+      streams.subscribe(LOCAL_CONTEXT, "metrics.subscribe", {}, () => undefined),
     );
     expect(stream.code).toBe("not_implemented");
     // A scenario decides its own list.

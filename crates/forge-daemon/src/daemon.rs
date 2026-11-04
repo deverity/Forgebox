@@ -149,6 +149,8 @@ pub struct Inner {
     pub db_sizes: crate::databases::SizeCache,
     /// Last counts of the mail instances and `mail.changed` publication.
     pub mail: crate::mail::MailHub,
+    /// Per-site metrics (`stats.get`, `metrics.subscribe`; fed by [`crate::metrics`]).
+    pub metrics: forge_metrics::MetricsHandle,
 }
 
 /// Handle on the composed daemon. Cheap to clone.

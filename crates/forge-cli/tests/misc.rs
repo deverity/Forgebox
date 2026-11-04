@@ -59,11 +59,36 @@ fn status_watch_prints_snapshots_and_keeps_running() {
 }
 
 #[test]
-fn stats_watch_says_it_is_not_implemented_instead_of_hanging() {
+fn stats_watch_prints_the_snapshot_and_keeps_running() {
     let fx = Fixture::new();
-    let run = fx.root.run(&["--json", "stats", "--watch"]);
-    assert_eq!(run.code, 1, "{run:?}");
-    assert_eq!(run.error_code(), "not_implemented");
+    let dir = fx.root.www("watched");
+    std::fs::write(dir.join("index.html"), "<h1>w</h1>").unwrap();
+    fx.root.json(&[
+        "site",
+        "add",
+        &dir.display().to_string(),
+        "--host",
+        "watched.test",
+    ]);
+    let mut stream = fx.root.forge().spawn(&["--json", "stats", "--watch"]);
+    let line = stream
+        .next_line(Duration::from_secs(15))
+        .expect("the snapshot of metrics.subscribe");
+    let sample: serde_json::Value = serde_json::from_str(&line).expect("a JSON line");
+    assert_eq!(sample["host"], "watched.test", "{sample}");
+    assert_eq!(sample["window"], "5m");
+    // A portable root collects no metrics until `metrics.enabled` is set (docs/14 §3):
+    // only the snapshot, no periodic samples.
+    assert_eq!(sample["metrics_enabled"], false, "{sample}");
+    assert_eq!(sample["requests"], 0);
+    assert!(
+        stream.next_line(Duration::from_millis(2500)).is_none(),
+        "metrics are off: nothing after the snapshot"
+    );
+    assert!(
+        stream.kill(),
+        "the watcher keeps running until it is stopped"
+    );
 }
 
 #[test]

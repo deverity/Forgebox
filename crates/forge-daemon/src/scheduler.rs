@@ -9,6 +9,7 @@
 //! | `tmp/` cleanup | 24 h ± 10 % | `tmp/stage/*` older than 24 h, `tmp/downloads/*` older than 7 days |
 //! | port conflicts | 60 s ± 10 % | `port.conflict` once per new intruder |
 //! | update list | on events | `tool.updated|rollback` → the applied update leaves the list at once, a re-check follows, and `tool.updates_available` is published (ADR-0039) |
+//! | metrics feed | 10 s and on events | `site.*`, `service.*`, `config.changed` (`metrics.*`) → routes, access log sources and the global switch of the metrics service (debounced 300 ms); pool samples every 10 s ([`crate::metrics`]) |
 //! | site/TLS reactions | on events | `site.*`, `tool.updated|rollback|current_changed`, `tls.renewed|leaf_issued` → pools + web servers re-rendered (debounced 300 ms); while a TLD is in `hosts` mode, the `hosts` block follows the sites and aliases (single flight, ADR-0033) |
 //!
 //! Certificate renewal (`tls` actor), health probes and process metrics (instance
@@ -118,6 +119,7 @@ impl Scheduler {
             tokio::spawn(port_loop(daemon.clone(), stop.clone())),
             tokio::spawn(react_loop(daemon.clone(), stop.clone())),
             tokio::spawn(crate::mail::watch_loop(daemon.clone(), stop.clone())),
+            tokio::spawn(crate::metrics::feed_loop(daemon.clone(), stop.clone())),
         ];
         Self { stop, tasks }
     }
