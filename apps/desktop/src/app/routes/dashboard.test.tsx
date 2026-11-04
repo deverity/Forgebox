@@ -1,6 +1,6 @@
 // The Dashboard is the default route, so it is what the window shows on first paint. Its texts
 // must load with its chunk: a page that suspends on a missing namespace would replace the whole
-// shell (titlebar, sidebar, status bar) with the route pending fallback until they arrive.
+// shell (sidebar, content toolbar) with the route pending fallback until they arrive.
 // This must be the first `renderApp()` of the file, before anything loads the namespaces.
 import { screen } from "@testing-library/react";
 import i18n from "i18next";

@@ -29,6 +29,7 @@
     "qa:perf:once": "playwright test -c playwright.perf.config.ts",
     "qa:shots": "playwright test -c qa/playwright.config.ts",
     "e2e:real": "playwright test -c playwright.real.config.ts",
+    "e2e:live": "playwright test -c playwright.live.config.ts",
     "perf:startup": "node scripts/perf-startup.mjs",
     "size": "node scripts/bundle-size.mjs",
     "tauri": "tauri"

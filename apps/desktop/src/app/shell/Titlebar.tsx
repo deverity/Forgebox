@@ -1,20 +1,30 @@
 import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { FOCUS_RING } from "../../design/primitives/shared";
+import { FOCUS_RING, cx } from "../../design/primitives/shared";
 import { WindowControls } from "./WindowControls";
 import { defaultWindowApi, type WindowApi } from "./windowApi";
 
-// The custom titlebar (docs/07 section 4, ADR-0035): 32 px, a drag region over everything that
-// is not a control (`data-tauri-drag-region="deep"`; Tauri's drag script also maximizes on
-// double-click), the Ctrl+K search slot and the window controls. Transparent: the window
-// material (data-vibrancy="on") or the opaque canvas shows through.
+// The toolbar of the content pane (docs/07 section 4, ADR-0035 and its M2-E1-T23 addendum):
+// there is no full-width titlebar any more, the sidebar runs the full window height and this
+// 44 px row sits on top of the (opaque) content only. Left: the page title; right: the Ctrl+K
+// search slot, the page's optional primary action and the window controls (coloured dots).
+// Everything that is not a control is the drag region (`data-tauri-drag-region="deep"`;
+// Tauri's drag script skips interactive elements and maximizes/restores on double-click).
+// The test id stays `titlebar`: it is still the window's caption row for the content.
 
-const SEARCH_BUTTON = `mr-2 inline-flex h-6 items-center gap-2 rounded-control border border-stroke-strong px-2 text-callout text-fg-secondary hover:bg-stroke ${FOCUS_RING}`;
+const SEARCH_BUTTON = cx(
+  "inline-flex h-7 min-w-36 items-center gap-2 rounded-control border border-stroke-control bg-fill px-2.5 text-callout text-fg-secondary hover:bg-fill-hover active:bg-fill-pressed",
+  FOCUS_RING,
+);
 
 /** DOM event the default search slot dispatches until the command palette (M2-E1-T14) exists. */
 export const OPEN_PALETTE_EVENT = "forgebox:open-palette";
 
 export interface TitlebarProps {
+  /** Page title on the left (the section name); plain text, not a heading. */
+  title?: string | undefined;
+  /** The page's primary action (a solid accent button), left of the window controls. */
+  primaryAction?: ReactNode;
   /** Opens the command palette; the default dispatches {@link OPEN_PALETTE_EVENT}. */
   onOpenPalette?: () => void;
   /** Replaces the default search button (the palette task owns the real one). */
@@ -46,7 +56,13 @@ function openPaletteDefault() {
   window.dispatchEvent(new CustomEvent(OPEN_PALETTE_EVENT));
 }
 
-export function Titlebar({ onOpenPalette, searchSlot, windowApi }: TitlebarProps) {
+export function Titlebar({
+  title,
+  primaryAction,
+  onOpenPalette,
+  searchSlot,
+  windowApi,
+}: TitlebarProps) {
   const { t } = useTranslation("shell");
   const api = useMemo(() => windowApi ?? defaultWindowApi(), [windowApi]);
   const open = onOpenPalette ?? openPaletteDefault;
@@ -55,9 +71,11 @@ export function Titlebar({ onOpenPalette, searchSlot, windowApi }: TitlebarProps
     <header
       data-tauri-drag-region="deep"
       data-testid="titlebar"
-      className="flex h-8 shrink-0 select-none items-center bg-transparent"
+      className="flex h-11 shrink-0 select-none items-center gap-2 border-b border-stroke bg-(--bg-canvas-solid) pr-2 pl-4"
     >
-      <span className="pl-3 text-callout font-semibold text-fg-primary">Forgebox</span>
+      <span data-testid="toolbar-title" className="min-w-0 truncate text-headline text-fg-primary">
+        {title}
+      </span>
       <div className="min-w-4 flex-1 self-stretch" />
       {searchSlot ?? (
         <button
@@ -70,10 +88,15 @@ export function Titlebar({ onOpenPalette, searchSlot, windowApi }: TitlebarProps
           <SearchGlyph />
           <span>{t("titlebar.search")}</span>
           {/* Announced through aria-keyshortcuts, not as part of the name. */}
-          <kbd aria-hidden="true" className="font-sans text-caption text-fg-tertiary">
+          <kbd aria-hidden="true" className="ml-auto font-sans text-caption text-fg-tertiary">
             {t("titlebar.shortcut")}
           </kbd>
         </button>
+      )}
+      {primaryAction === undefined ? null : (
+        <div data-testid="toolbar-action" className="flex shrink-0 items-center">
+          {primaryAction}
+        </div>
       )}
       <WindowControls api={api} />
     </header>

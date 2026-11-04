@@ -38,23 +38,68 @@ export interface FeatureDef {
   path: string;
   /** Roadmap task that delivers the real screen (shown by the placeholder). */
   task: string;
-  /** Sidebar group: `main`, `footer` (below the separator) or `none` (not in the sidebar). */
+  /** Sidebar place: `main`, `footer` (bottom of the sidebar) or `none` (not in the sidebar). */
   nav: "main" | "footer" | "none";
+  /**
+   * Finder-like group of a `main` row (M2-E1-T23): `core` has no heading, `data` and `tools`
+   * get a small grey heading (`shell:sidebar.groups.*`). Rows of a group must be adjacent.
+   */
+  group?: NavGroup;
   icon: IconName | null;
 }
 
+export type NavGroup = "core" | "data" | "tools";
+
+/** Display order of the sidebar groups. */
+export const NAV_GROUPS: readonly NavGroup[] = ["core", "data", "tools"];
+
 export const FEATURES: readonly FeatureDef[] = [
-  { id: "dashboard", path: "/dashboard", task: "M2-E2-T14", nav: "main", icon: "dashboard" },
-  { id: "services", path: "/services", task: "M2-E2-T12", nav: "main", icon: "services" },
-  { id: "sites", path: "/sites", task: "M2-E2-T15", nav: "main", icon: "sites" },
-  { id: "php", path: "/php", task: "M2-E2-T17", nav: "main", icon: "php" },
-  { id: "databases", path: "/databases", task: "M2-E3-T14", nav: "main", icon: "databases" },
-  { id: "mail", path: "/mail", task: "M2-E3-T13", nav: "main", icon: "mail" },
-  { id: "logs", path: "/logs", task: "M2-E3-T12", nav: "main", icon: "logs" },
-  { id: "catalog", path: "/catalog", task: "M2-E2-T18", nav: "main", icon: "catalog" },
-  { id: "terminal", path: "/terminal", task: "M2-E3-T15", nav: "main", icon: "terminal" },
+  {
+    id: "dashboard",
+    path: "/dashboard",
+    task: "M2-E2-T14",
+    nav: "main",
+    group: "core",
+    icon: "dashboard",
+  },
+  {
+    id: "services",
+    path: "/services",
+    task: "M2-E2-T12",
+    nav: "main",
+    group: "core",
+    icon: "services",
+  },
+  { id: "sites", path: "/sites", task: "M2-E2-T15", nav: "main", group: "core", icon: "sites" },
+  { id: "php", path: "/php", task: "M2-E2-T17", nav: "main", group: "core", icon: "php" },
+  {
+    id: "databases",
+    path: "/databases",
+    task: "M2-E3-T14",
+    nav: "main",
+    group: "data",
+    icon: "databases",
+  },
+  { id: "mail", path: "/mail", task: "M2-E3-T13", nav: "main", group: "data", icon: "mail" },
+  { id: "logs", path: "/logs", task: "M2-E3-T12", nav: "main", group: "data", icon: "logs" },
+  {
+    id: "catalog",
+    path: "/catalog",
+    task: "M2-E2-T18",
+    nav: "main",
+    group: "tools",
+    icon: "catalog",
+  },
+  {
+    id: "terminal",
+    path: "/terminal",
+    task: "M2-E3-T15",
+    nav: "main",
+    group: "tools",
+    icon: "terminal",
+  },
   { id: "settings", path: "/settings", task: "M2-E3-T16", nav: "footer", icon: "settings" },
-  // Reached from the palette, Settings > Advanced and the status bar chips, not the sidebar.
+  // Reached from the palette, Settings > Advanced and the sidebar status chips, not the nav.
   { id: "diagnostics", path: "/diagnostics", task: "M2-E3-T19", nav: "none", icon: null },
   { id: "onboarding", path: "/onboarding", task: "M2-E2-T19", nav: "none", icon: null },
 ];

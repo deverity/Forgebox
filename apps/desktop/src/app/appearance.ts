@@ -5,7 +5,8 @@
 //      the attributes are in place before the first paint (the window is still hidden);
 //   2. the `forge://appearance` event on every change (theme, focus, preferences);
 //   3. the `appearance_get` command, asked once the listener is attached (no lost update).
-// Outside Tauri (vite preview, Playwright, vitest) `?theme=light|dark&vibrancy=on|off` stand in.
+// Outside Tauri (vite preview, Playwright, vitest) `?theme=light|dark&vibrancy=on|off` (and
+// `&effect=mica|acrylic|blur|none`) stand in.
 // Without anything the CSS defaults hold: system theme, opaque.
 
 export const APPEARANCE_EVENT = "forge://appearance";
@@ -13,7 +14,8 @@ export const APPEARANCE_COMMAND = "appearance_get";
 
 export type ThemeName = "light" | "dark";
 export type VibrancyState = "on" | "off";
-export type WindowEffect = "mica" | "acrylic" | "none";
+/** `blur` is the Windows 10 DWM blur; the sidebar paints `--bg-sidebar-glass` over it. */
+export type WindowEffect = "mica" | "acrylic" | "blur" | "none";
 
 /** `AppearanceState` of src-tauri/src/window.rs. */
 export interface ShellAppearance {
@@ -21,7 +23,7 @@ export interface ShellAppearance {
   /** `on` exactly when a material is in effect; `off` paints the opaque fallback. */
   vibrancy: VibrancyState;
   effect: WindowEffect;
-  /** Why (`win11`, `win10_default`, `remote_session`, `transparency_off`, `user_off`...). */
+  /** Why (`win11`, `win11_acrylic`, `win10_default`, `remote_session`, `user_off`...). */
   reason: string;
   contrast: "high" | "normal";
   /** Windows accent `#RRGGBB`, exposed as `--system-accent`. */
@@ -42,7 +44,7 @@ declare global {
   }
 }
 
-/** The part of the appearance that can be applied (URL params carry only theme/vibrancy). */
+/** The part of the appearance that can be applied (URL params carry theme/vibrancy/effect). */
 export type AppearancePatch = Partial<
   Pick<ShellAppearance, "theme" | "vibrancy" | "effect" | "contrast" | "accent">
 >;
@@ -144,6 +146,10 @@ function isVibrancy(value: string | null): value is VibrancyState {
   return value === "on" || value === "off";
 }
 
+function isEffect(value: string | null): value is WindowEffect {
+  return value === "mica" || value === "acrylic" || value === "blur" || value === "none";
+}
+
 /** The appearance known before the first paint: the shell's, else the URL's, else none. */
 export function readBootAppearance(win: Window = window): AppearancePatch | null {
   const boot = win.__FORGEBOX_SHELL__;
@@ -151,9 +157,11 @@ export function readBootAppearance(win: Window = window): AppearancePatch | null
   const params = new URLSearchParams(win.location.search);
   const theme = params.get("theme");
   const vibrancy = params.get("vibrancy");
+  const effect = params.get("effect");
   const patch: AppearancePatch = {};
   if (isTheme(theme)) patch.theme = theme;
   if (isVibrancy(vibrancy)) patch.vibrancy = vibrancy;
+  if (isEffect(effect)) patch.effect = effect;
   return Object.keys(patch).length > 0 ? patch : null;
 }
 

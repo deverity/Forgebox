@@ -3,6 +3,7 @@
 //
 //   node scripts/window-qa.mjs [--exe <path>] [--runs N] [--checks perf,startup,single,
 //                              placement,minimized,flash,pacing]   (default: all but pacing)
+//                              [--effects none,blur]   (pacing; default none,acrylic)
 //
 // * perf    `Forgebox.exe --perf-startup` N times: valid JSON on stdout, exit 0 (informative
 //           numbers; the formal cold start is the quiet-slot gate, ADR-0036).
@@ -11,13 +12,13 @@
 //           visible time is compared with `ready_unix_ms` (perf_startup); data-theme/vibrancy
 //           are read over CDP.
 // * single  a second launch exits 0 and restores + shows the first window (minimized first).
-// * placement double-click on the titlebar maximizes; close (without a tray the GUI exits);
+// * placement double-click on the content toolbar maximizes; close (without a tray the GUI exits);
 //           reopen: comes back maximized.
 // * minimized `--minimized` stays hidden (6 s, well past `ready` and the watchdog); a plain
 //           second launch shows it.
 // * flash   N launches alternating the system and the dark theme: how the first visible frame
 //           looks (none / black / white / empty-canvas) and 100 ms later.
-// * pacing  frame pacing with FORGE_GUI_EFFECT=none and =acrylic: rAF intervals in the webview
+// * pacing  frame pacing per FORGE_GUI_EFFECT (--effects): rAF intervals in the webview
 //           (CDP) plus SetWindowPos latency and DWM counters while the probe drags/resizes it.
 //
 // Every run uses a temp FORGE_GUI_DATA_DIR and checks that Tauri's default folders
@@ -52,6 +53,8 @@ function arg(name, fallback) {
 const exe = resolve(arg("exe", join(repo, "target", "release", "Forgebox.exe")));
 const checks = new Set(arg("checks", "perf,startup,single,placement,minimized,flash").split(","));
 const runs = Number(arg("runs", "5"));
+// M2-E1-T23 measured `none,blur` (the Windows 10 default became the DWM blur, ADR-0035 addendum).
+const effects = arg("effects", "none,acrylic").split(",");
 const pids = new Set();
 const temps = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -358,14 +361,25 @@ async function checkStartupAndSingle() {
 }
 
 /**
- * Double-click on the titlebar's drag region (maximizes), close (no tray yet: the GUI exits),
+ * Double-click on the content toolbar's drag region (maximizes), close (no tray: the GUI exits),
  * reopen with the same data dir: maximized again.
  */
 async function checkPlacement() {
-    const first = await launchWithProbe("placement");
-    // An empty spot of the titlebar (x=300 is past the product name, y=16 mid-height).
-    await first.page.doubleClick(300, 16);
-    await sleep(700);
+    // close_to_tray off: with the tray (M2-E1-T15) closing would only hide the window.
+    const first = await launchWithProbe("placement", {}, { close_to_tray: false });
+    // The content toolbar (M2-E1-T23): x=300 is past the 220 px sidebar, y=16 inside the 44 px row.
+    // The first synthetic double-click after launch is eaten: its press starts the native move
+    // loop (start_dragging) with no physical button down. Measured in M2-E1-T23 on the toolbar
+    // spacer, title and sidebar brand, with and without a material; the next one maximizes.
+    for (let attempt = 0; attempt < 3; attempt++) {
+        await first.page.doubleClick(300, 16);
+        await sleep(900);
+        const max = await first.page.evaluate(
+            `window.__TAURI_INTERNALS__.invoke("plugin:window|is_maximized", { label: "main" })`,
+        );
+        report.placement_attempts = attempt + 1;
+        if (max) break;
+    }
     const maximized = runProbe(
         ["-Action", "Info", "-ProcessId", String(first.res.pid)],
         first.childEnv,
@@ -474,7 +488,7 @@ async function checkFlash() {
 
 async function checkPacing() {
     report.pacing = {};
-    for (const effect of ["none", "acrylic"]) {
+    for (const effect of effects) {
         const { res, page, childEnv } = await launchWithProbe(`pacing-${effect}`, {
             FORGE_GUI_EFFECT: effect,
         });

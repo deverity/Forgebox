@@ -11,13 +11,18 @@ export const BUTTON_VARIANTS: readonly ButtonVariant[] = [
   "destructive",
 ];
 
+// Lighter visual (M2-E1-T23, approved glass mockup): primary is the solid accent; secondary is
+// a soft low-alpha fill with no outline (the default); ghost is transparent until hovered;
+// destructive keeps red text without the red outline. `border-stroke-control` is transparent
+// except in high contrast, where soft controls need a visible edge (forced colours draw it too).
 export const BUTTON_VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-fg-on-accent border-transparent hover:bg-accent-hover active:bg-accent-pressed",
+  primary:
+    "bg-accent text-fg-on-accent border-transparent hover:bg-accent-hover active:bg-accent-pressed",
   secondary:
-    "bg-surface text-fg-primary border-stroke-strong hover:bg-surface-2 active:bg-surface-2",
-  ghost: "bg-transparent text-fg-primary border-transparent hover:bg-surface-2 active:bg-surface-2",
+    "bg-fill text-fg-primary border-stroke-control hover:bg-fill-hover active:bg-fill-pressed",
+  ghost: "bg-transparent text-fg-primary border-stroke-control hover:bg-fill active:bg-fill-hover",
   destructive:
-    "bg-transparent text-state-failed border-state-failed hover:bg-surface-2 active:bg-surface-2",
+    "bg-transparent text-state-failed border-stroke-control hover:bg-surface-2 active:bg-surface-2",
 };
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className"> {

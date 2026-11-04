@@ -15,6 +15,10 @@ export interface WindowApi {
   isMaximized(): Promise<boolean>;
   /** Calls `onChange` after every resize with the maximized state; returns the unsubscribe. */
   onMaximizedChange(onChange: (maximized: boolean) => void): Promise<() => void>;
+  /** Whether the window has the keyboard focus (the dots turn grey without it). */
+  isFocused(): Promise<boolean>;
+  /** Calls `onChange` on every focus change (Tauri focus events); returns the unsubscribe. */
+  onFocusChange(onChange: (focused: boolean) => void): Promise<() => void>;
 }
 
 async function current() {
@@ -41,6 +45,15 @@ export const tauriWindowApi: WindowApi = {
       void win.isMaximized().then(onChange, () => undefined);
     });
   },
+  async isFocused() {
+    return (await current()).isFocused();
+  },
+  async onFocusChange(onChange) {
+    const win = await current();
+    return win.onFocusChanged(({ payload }) => {
+      onChange(payload);
+    });
+  },
 };
 
 /** Inert window (browser, tests). */
@@ -50,6 +63,8 @@ export const inertWindowApi: WindowApi = {
   close: () => Promise.resolve(),
   isMaximized: () => Promise.resolve(false),
   onMaximizedChange: () => Promise.resolve(() => undefined),
+  isFocused: () => Promise.resolve(true),
+  onFocusChange: () => Promise.resolve(() => undefined),
 };
 
 export function defaultWindowApi(): WindowApi {

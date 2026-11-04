@@ -99,7 +99,7 @@ function NotFound() {
 
 export const rootRoute = createRootRoute({ component: RootLayout, notFoundComponent: NotFound });
 
-/** Pathless layout: titlebar, sidebar, content and status bar around the feature routes. */
+/** Pathless layout: full-height sidebar and the content pane with its toolbar (M2-E1-T23). */
 export const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "shell",

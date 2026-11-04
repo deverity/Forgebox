@@ -8,7 +8,9 @@ const src = resolve(import.meta.dirname, "..");
 const palette =
   "slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|white|black";
 const banned: RegExp[] = [
-  new RegExp(String.raw`(?<![\w-])(?:[a-z-]+:)*(?:bg|text|border|ring|fill|stroke|outline|divide|from|to|via)-(?:${palette})(?:-\d{2,3})?(?![\w-])`),
+  new RegExp(
+    String.raw`(?<![\w-])(?:[a-z-]+:)*(?:bg|text|border|ring|fill|stroke|outline|divide|from|to|via)-(?:${palette})(?:-\d{2,3})?(?![\w-])`,
+  ),
   /(?<![\w-])(?:[a-z-]+:)*text-(?:xs|sm|base|lg|[2-9]xl)(?![\w-])/,
   /(?<![\w-])(?:[a-z-]+:)*shadow-(?:sm|md|lg|xl|2xl)(?![\w-])/,
   /(?<![\w-])(?:[a-z-]+:)*rounded(?:-[a-z]+)?-(?:sm|md|lg|xl|2xl|3xl)(?![\w-])/,
@@ -34,11 +36,17 @@ function offenders(text: string): string[] {
 
 describe("tailwind default utilities are not used", () => {
   it("detects banned classes (self-check)", () => {
-    expect(offenders(`<p className="bg-neutral-50 dark:text-white text-sm shadow-md rounded-lg">`)).toHaveLength(5);
-    expect(offenders(`<p className="bg-canvas text-body text-fg-primary rounded-card">`)).toEqual([]);
+    expect(
+      offenders(`<p className="bg-neutral-50 dark:text-white text-sm shadow-md rounded-lg">`),
+    ).toHaveLength(5);
+    expect(offenders(`<p className="bg-canvas text-body text-fg-primary rounded-card">`)).toEqual(
+      [],
+    );
   });
   it("src/**/*.tsx uses only token utilities", () => {
-    const found = files(src).flatMap((f) => offenders(readFileSync(f, "utf8")).map((c) => `${f}: ${c}`));
+    const found = files(src).flatMap((f) =>
+      offenders(readFileSync(f, "utf8")).map((c) => `${f}: ${c}`),
+    );
     expect(found).toEqual([]);
   });
 });
@@ -46,11 +54,8 @@ describe("tailwind default utilities are not used", () => {
 // Tailwind 4: `outline-hidden`/`outline-none` set --tw-outline-style: none, so
 // `focus-visible:outline-2` alone draws nothing. A focus ring needs `focus-visible:outline-solid`
 // (use FOCUS_RING from design/primitives/shared.ts).
-const NO_RING_ALLOWLIST = [
-  // TODO M2-E4-T6 / M2-E4-T8: T7 chrome controls still compute outline none on focus.
-  "app/shell/Titlebar.tsx",
-  "app/shell/WindowControls.tsx",
-];
+// M2-E1-T23: the toolbar and the window dots use FOCUS_RING; nothing is exempt any more.
+const NO_RING_ALLOWLIST: readonly string[] = [];
 
 function invisibleFocusRings(text: string): string[] {
   const out: string[] = [];
@@ -65,8 +70,12 @@ function invisibleFocusRings(text: string): string[] {
 
 describe("focus rings are visible", () => {
   it("detects an invisible ring (self-check)", () => {
-    expect(invisibleFocusRings(`"outline-hidden focus-visible:outline-2 focus-visible:outline-accent"`)).toHaveLength(1);
-    expect(invisibleFocusRings(`"outline-none focus-visible:outline-solid focus-visible:outline-2"`)).toEqual([]);
+    expect(
+      invisibleFocusRings(`"outline-hidden focus-visible:outline-2 focus-visible:outline-accent"`),
+    ).toHaveLength(1);
+    expect(
+      invisibleFocusRings(`"outline-none focus-visible:outline-solid focus-visible:outline-2"`),
+    ).toEqual([]);
   });
   it("src/**/*.tsx never pairs outline-hidden/none with focus-visible:outline-2 alone", () => {
     const found = files(src)
@@ -74,9 +83,20 @@ describe("focus rings are visible", () => {
       .flatMap((f) => invisibleFocusRings(readFileSync(f, "utf8")).map((c) => `${f}: ${c}`));
     expect(found).toEqual([]);
   });
-  it("shell nav links and status chips use FOCUS_RING", () => {
-    for (const f of ["app/shell/Sidebar.tsx", "app/shell/StatusBar.tsx", "app/hosts.tsx"]) {
-      expect(readFileSync(join(src, f), "utf8")).toContain("${FOCUS_RING}");
+  it("shell nav links, status chips and window controls use FOCUS_RING", () => {
+    for (const f of [
+      "app/shell/Sidebar.tsx",
+      "app/shell/SidebarStatus.tsx",
+      "app/shell/Titlebar.tsx",
+      "app/shell/WindowControls.tsx",
+      "app/hosts.tsx",
+    ]) {
+      // Used in a class string (`${FOCUS_RING}` or cx(..., FOCUS_RING)), not only imported.
+      const code = readFileSync(join(src, f), "utf8")
+        .split(String.fromCharCode(10))
+        .filter((line) => !line.startsWith("import "))
+        .join(" ");
+      expect(code, f).toMatch(/\$\{FOCUS_RING\}|[(,]\s*FOCUS_RING\s*[,)]/);
     }
   });
 });

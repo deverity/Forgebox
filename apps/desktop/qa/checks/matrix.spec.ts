@@ -111,7 +111,9 @@ for (const size of WORK_AREAS) {
             bodyOverflowY: document.body.scrollHeight - window.innerHeight,
             sidebar: rect("sidebar"),
             titlebar: rect("titlebar"),
-            status: rect("status-bar"),
+            pane: rect("content-pane"),
+            sidebarStatus: rect("sidebar-status"),
+            statusBar: rect("status-bar"),
             innerHeight: window.innerHeight,
           };
         });
@@ -121,9 +123,20 @@ for (const size of WORK_AREAS) {
         // The gallery is a standalone page (no shell): only the shell screens have these parts.
         if (screen !== "/__gallery") {
           expect(layout.sidebar?.width ?? 999).toBeLessThan(80);
+          // M2-E1-T23: the sidebar runs the full height from the top edge; the toolbar sits on
+          // top of the content pane only (no full-width titlebar), and there is no status bar.
+          expect(layout.sidebar?.top).toBe(0);
+          expect(Math.round(layout.sidebar?.bottom ?? 0)).toBe(layout.innerHeight);
           expect(layout.titlebar?.top).toBe(0);
-          // The status bar stays visible at the bottom edge.
-          expect(Math.round(layout.status?.bottom ?? 0)).toBe(layout.innerHeight);
+          expect(Math.round(layout.titlebar?.left ?? 0)).toBe(
+            Math.round(layout.sidebar?.right ?? -1),
+          );
+          expect(Math.round(layout.titlebar?.right ?? 0)).toBe(
+            Math.round(layout.pane?.right ?? -1),
+          );
+          expect(layout.statusBar).toBeNull();
+          // Its functions (daemon, CPU/RAM, DNS, CA) stay visible in the sidebar footer.
+          expect(layout.sidebarStatus?.bottom ?? 999).toBeLessThanOrEqual(layout.innerHeight);
         }
         expect(await axeViolations(page)).toEqual([]);
       });
