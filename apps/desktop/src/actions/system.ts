@@ -16,6 +16,14 @@ export const restartDaemon = defineAction({
   toParams: () => ({}),
 });
 
+/** `forge shell <dir>`: "Testar terminal" opens the saved `terminal.command` in `dir` (the
+ * daemon's machine; `local_only`, so the screen hides the button on a remote context). */
+export const testTerminal = defineAction({
+  id: "settings.terminal_test",
+  method: "shell.open",
+  toParams: ({ dir }: { dir: string }) => ({ dir }),
+});
+
 /** `forge tls ca rotate`: a `requires: ["tls.ca_rotate"]` follow-up (TLD change). Destructive:
  * the screen asks first, then this sends `confirm: true`. */
 export const rotateCa = defineAction({

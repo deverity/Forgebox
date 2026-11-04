@@ -45,6 +45,8 @@ cli_only:
     reason: "No unpark screen in the M2 plan (onboarding M2-E2-T19 only parks); folders are unparked from the CLI."
   - method: sites.alias
     reason: "Aliases are shown read-only in the site detail Geral tab (M2-E2-T16); editing them is CLI/manifest only in M2."
+  - method: shell.path_remove
+    reason: "No M2 screen takes Forgebox out of the user PATH: onboarding (M2-E2-T19) and the Diagnostics 'Corrigir' (M2-E3-T19) only add it; `forge path remove` undoes it."
   - method: jobs.cancel
     reason: "The GUI cancels through the job abort in InstallProgressList (catalog and PHP switch), not through a registry action; no screen needs a separate action."
 query:
@@ -168,14 +170,13 @@ pending:
   # PHP screen gap left by M2-E2-T17 (pool card 'Recarregar' for php@<series>).
   - method: services.reload
     task: M2-E4-T9
-  - method: shell.path_remove
-    task: M2-E3-T16
   - method: sites.down
     task: M2-E4-T9
   - method: sites.up
     task: M2-E4-T9
+  # API/CLI shipped by M2-E5-T11; the 'Pool dedicado' toggle lives in the Desempenho tab.
   - method: sites.pool_mode
-    task: M2-E5-T11
+    task: M2-E5-T16
   - method: sites.metrics
     task: M2-E5-T16
   - method: sites.secure
@@ -207,5 +208,3 @@ pending:
   # PHP screen gap left by M2-E2-T17 ('Abrir php.ini', local only).
   - method: php.ini_open
     task: M2-E4-T9
-  - method: shell.open
-    task: M2-E3-T16

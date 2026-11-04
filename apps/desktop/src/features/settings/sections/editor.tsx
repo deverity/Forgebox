@@ -1,10 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { runAction } from "../../../actions/registry";
+import { testTerminal } from "../../../actions/system";
 import { Button } from "../../../design/primitives/Button";
 import { ErrorNotice } from "../../../design/primitives/ErrorNotice";
 import { Skeleton } from "../../../design/primitives/Skeleton";
 import { toForgeApiError, type ForgeApiError } from "../../../ipc/errors";
-import { useCapability, useForgeApi } from "../../../state";
+import { useCapability, useForgeApi, useRuntime } from "../../../state";
 import { loose, useRoot } from "../looseT";
 import { matchesSearch, PRESETS_BY_KEY, valueAt } from "../model";
 import type { SectionProps } from "../registry";
@@ -15,11 +17,13 @@ type TestKind = "editor" | "terminal";
 
 /**
  * "Testar": runs the SAVED command on the daemon's machine (`shell.open_editor` on the root,
- * `shell.open` in it). Not rendered on a remote context (both are `local_only`).
+ * `shell.open` in it, through the `settings.terminal_test` action so it is in the GUI/CLI parity
+ * gate as `forge shell <dir>`). Not rendered on a remote context (both are `local_only`).
  */
 function TestButton({ kind, dirty }: { kind: TestKind; dirty: boolean }) {
   const { t } = useTranslation("settings");
   const api = useForgeApi();
+  const runtime = useRuntime();
   const method = kind === "editor" ? "shell.open_editor" : "shell.open";
   const capability = useCapability(method);
   const root = useRoot();
@@ -33,7 +37,7 @@ function TestButton({ kind, dirty }: { kind: TestKind; dirty: boolean }) {
     const call =
       kind === "editor"
         ? api.call("shell.open_editor", { path: root })
-        : api.call("shell.open", { dir: root });
+        : runAction(runtime.queue, testTerminal, { dir: root });
     call.then(
       () => {
         setPhase("ok");

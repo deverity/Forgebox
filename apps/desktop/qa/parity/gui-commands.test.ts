@@ -40,6 +40,7 @@ const SAMPLES: Record<string, unknown[]> = {
   ],
   "settings.daemon_restart": [undefined],
   "settings.ca_rotate": [undefined],
+  "settings.terminal_test": [{ dir: SPACED }],
   "services.start": [undefined],
   "services.stop": [undefined],
   "services.start_instance": ["mysql/default"],
