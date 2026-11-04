@@ -322,7 +322,11 @@ Forgebox/
 │       │   │                     #   WindowControls.tsx, windowApi.ts = janela Tauri lazy + `ready` após duplo rAF);
 │       │   │                     #   (M2-E1-T10) roteamento (tanstack-router), sidebar, command palette
 │       │   ├── design/           # (M2-E1-T6, T11) tokens.css, themes (light/dark/vibrancy), primitives/ (Button, Card, Switch...)
-│       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, mail/, logs/, catalog/, terminal/, settings/
+│       │   ├── features/         # (M2-E2/E3) dashboard/, services/, sites/, php/, databases/, diagnostics/, mail/, logs/, catalog/, terminal/, settings/
+│       │   │                     #   (M2-E3-T19) diagnostics/: DiagnosticsPage (doctor como job com progresso, grupos por prefixo do id), CheckRow
+│       │   │                     #   (Corrigir só para `fix_method` da allowlist de `actions/diagnostics.ts`; senão Copiar comando), KillDialog (Encerrar),
+│       │   │                     #   DnsTest, ExportButton, model.ts (agrupar, mesclar re-execução, `SupportBundle` = `forge doctor --export`) e
+│       │   │                     #   support-bundle.golden.json (lido também por um teste de forge-cli); fixtures QA em qa/fixtures/scenarios/diagnostics.ts
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`;
 │       │   │                     #   ponte (ADR-0034): bridge.ts (interface Bridge, ContextStateDto, StreamFrame), tauriBridge.ts
 │       │   │                     #   (comandos ipc_* + forge://connection, ack por quadro), api.ts (ForgeApi: call<M>, job<M> →
@@ -356,7 +360,7 @@ Forgebox/
 │       │   └── src/
 │       │       ├── main.rs / lib.rs  # lib.rs: Builder (Bridge gerenciado, on_page_load fecha streams da página) +
 │       │       │                     #   teste que exige `async` em todo #[tauri::command]
-│       │       ├── commands.rs   # app_info (fatos do build); nunca lógica de domínio aqui
+│       │       ├── commands.rs   # app_info (fatos do build) e save_text_file (abre o diálogo "Salvar como" no lado Rust, grava o relatório só no caminho escolhido: `.json` absoluto, atômico; devolve `None` ao cancelar); nunca lógica de domínio aqui
 │       │       ├── bridge/       # ponte IPC (ADR-0034): mod.rs (Bridge: call/subscribe/state/start, validação contra METHODS),
 │       │       │                 #   commands.rs (ipc_state|call|subscribe|ack|unsubscribe|start, evento forge://connection),
 │       │       │                 #   contexts.rs (ator Contexts: um Client por contexto, LocalConnector = discover +

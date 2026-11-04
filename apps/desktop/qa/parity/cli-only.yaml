@@ -60,6 +60,8 @@ query:
     reason: "Query shown by: Databases screen (M2-E3-T14)."
   - method: fs_parity.case_status
     reason: "Query shown by: Settings Sistema de arquivos (M2-E3-T18)."
+  - method: daemon.doctor
+    reason: "Query shown by: Diagnostics screen, run as a job with progress (M2-E3-T19)."
   - method: logs.targets
     reason: "Query shown by: Logs screen target picker (M2-E3-T12)."
   - method: mail.attachment
@@ -161,8 +163,6 @@ pending:
     task: M2-E3-T18
   - method: net.dns_disable
     task: M2-E3-T17
-  - method: net.dns_enable
-    task: M2-E3-T17
   - method: registry.add
     task: M2-E3-T18
   - method: registry.remove
@@ -172,8 +172,6 @@ pending:
   # PHP screen gap left by M2-E2-T17 (pool card 'Recarregar' for php@<series>).
   - method: services.reload
     task: M2-E4-T9
-  - method: shell.path_add
-    task: M2-E3-T16
   - method: shell.path_remove
     task: M2-E3-T16
   - method: sites.down
@@ -190,8 +188,6 @@ pending:
     task: M2-E4-T9
   - method: system.config_set
     task: M2-E3-T16
-  - method: tls.ca_install
-    task: M2-E3-T17
   - method: tls.ca_rotate
     task: M2-E3-T17
   - method: tls.ca_uninstall
@@ -212,8 +208,6 @@ pending:
     task: M2-E3-T16
   - method: sites.park
     task: M2-E2-T19
-  - method: daemon.doctor
-    task: M2-E3-T19
   - method: tls.ca_export
     task: M2-E3-T17
   - method: tls.export

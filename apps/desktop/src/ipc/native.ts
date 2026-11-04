@@ -107,6 +107,32 @@ export async function onPathsDropped(
   }
 }
 
+/** Result of {@link saveTextFile}: where it went, or that the user cancelled. */
+export type SaveOutcome = { saved: string } | { cancelled: true };
+
+/**
+ * Saves `contents` through the native "Save as" dialog and the `save_text_file` command
+ * (Rust opens the dialog and writes; the webview never picks the path). Outside Tauri
+ * (QA builds in a plain browser) it downloads the file instead. Rejects when the write fails.
+ */
+export async function saveTextFile(defaultName: string, contents: string): Promise<SaveOutcome> {
+  if (inTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const path = await invoke<string | null>("save_text_file", { defaultName, contents });
+    if (path === null) return { cancelled: true };
+    return { saved: path };
+  }
+  const url = URL.createObjectURL(new Blob([contents], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = defaultName;
+  link.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
+  return { saved: defaultName };
+}
+
 export type SaveResult = { status: "saved"; path: string | null } | { status: "cancelled" };
 
 /**

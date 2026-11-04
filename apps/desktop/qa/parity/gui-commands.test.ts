@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // Importing the modules registers their actions.
+import "../../src/actions/diagnostics";
 import "../../src/actions/mail";
 import "../../src/actions/php";
 import "../../src/actions/services";
@@ -29,6 +30,9 @@ const SPACED = String.raw`C:\Meus Projetos\loja virtual`;
 
 /** Sample screen inputs per action id (the input type of `defineAction`). */
 const SAMPLES: Record<string, unknown[]> = {
+  "diagnostics.dns_enable": [undefined],
+  "diagnostics.ca_install": [{ scope: "current_user" }, { scope: "local_machine" }],
+  "diagnostics.path_add": [undefined],
   "services.start": [undefined],
   "services.stop": [undefined],
   "services.start_instance": ["mysql/default"],

@@ -3,6 +3,7 @@ import type catalog from "./en-US/catalog.json";
 import type common from "./en-US/common.json";
 import type dashboard from "./en-US/dashboard.json";
 import type databases from "./en-US/databases.json";
+import type diagnostics from "./en-US/diagnostics.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
 import type mail from "./en-US/mail.json";
@@ -37,6 +38,7 @@ export interface Resources {
   mail: typeof mail;
   php: typeof php;
   databases: typeof databases;
+  diagnostics: typeof diagnostics;
 }
 
 declare module "i18next" {
