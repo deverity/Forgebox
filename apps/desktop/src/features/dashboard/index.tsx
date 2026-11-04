@@ -14,7 +14,7 @@ import {
   useMetricsPoll,
   usePools,
   useRuntime,
-  useSyncState,
+  useSliceError,
 } from "../../state";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttentionSection } from "./AttentionSection";
@@ -40,7 +40,7 @@ function Tiles() {
   const instances = useInstances();
   const pools = usePools();
   const loaded = useStore(runtime.stores.services, (state) => state.loaded);
-  const syncError = useSyncState((state) => state.errors.services ?? null);
+  const syncError = useSliceError("services");
   const tiles = useMemo(
     () => tilesOf(Object.values(instances), Object.values(pools)),
     [instances, pools],

@@ -3,7 +3,13 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../../design/primitives/Button";
 import { AsyncView } from "../../design/primitives/AsyncView";
 import { FOCUS_RING } from "../../design/primitives/shared";
-import { useConnectionStatus, useForgeQuery, useRuntime } from "../../state";
+import {
+  NOT_IMPLEMENTED_ERROR,
+  useCapability,
+  useConnectionStatus,
+  useForgeQuery,
+  useRuntime,
+} from "../../state";
 import { seriesColumns } from "./model";
 import { SeriesColumn } from "./SeriesColumn";
 
@@ -23,6 +29,8 @@ export function PhpPage() {
   const navigate = useNavigate();
   const status = useConnectionStatus();
   const list = useForgeQuery("php.list", {});
+  // A daemon without `php.list` leaves the query disabled (pending for ever): say so (R-16).
+  const unavailable = useCapability("php.list").reason === "not_implemented";
   const columns = seriesColumns(list.data?.versions ?? []);
   const away = AWAY.has(status);
   const installOther = () => {
@@ -60,12 +68,16 @@ export function PhpPage() {
         <div className="px-3">
           <AsyncView
             height={STATE_HEIGHT}
-            loading={!away && list.isPending}
+            loading={!away && !unavailable && list.isPending}
             disconnected={away}
             onStartDaemon={() => {
               void runtime.api.start();
             }}
-            {...(list.isError ? { error: list.error } : {})}
+            {...(list.isError
+              ? { error: list.error }
+              : unavailable
+                ? { error: NOT_IMPLEMENTED_ERROR }
+                : {})}
             errorContext={LIST_CONTEXT}
             onRetry={() => {
               void list.refetch();

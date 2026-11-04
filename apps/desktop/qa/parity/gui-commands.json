@@ -332,6 +332,17 @@
     ]
   },
   {
+    "action": "php.ini_open",
+    "method": "php.ini_open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "8.4",
+        "command": "forge php ini 8.4 --open"
+      }
+    ]
+  },
+  {
     "action": "php.xdebug",
     "method": "php.xdebug",
     "kind": "job",
@@ -515,6 +526,21 @@
       {
         "input": "nginx",
         "command": "forge service config nginx"
+      }
+    ]
+  },
+  {
+    "action": "services.reload",
+    "method": "services.reload",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php@8.4",
+        "command": "forge reload php@8.4"
+      },
+      {
+        "input": "nginx",
+        "command": "forge reload nginx"
       }
     ]
   },
@@ -732,6 +758,17 @@
     ]
   },
   {
+    "action": "sites.down",
+    "method": "sites.down",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "C:\\Meus Projetos\\loja virtual",
+        "command": "forge down \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
     "action": "sites.open",
     "method": "sites.open",
     "kind": "call",
@@ -805,6 +842,41 @@
           "action": "restart"
         },
         "command": "forge run loja.test queue restart"
+      }
+    ]
+  },
+  {
+    "action": "sites.secure",
+    "method": "sites.secure",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "secure": true
+        },
+        "command": "forge site secure loja.test"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "secure": false
+        },
+        "command": "forge site unsecure loja.test"
+      }
+    ]
+  },
+  {
+    "action": "sites.server",
+    "method": "sites.server",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "server": "nginx"
+        },
+        "command": "forge site server loja.test nginx"
       }
     ]
   },
@@ -886,6 +958,17 @@
     ]
   },
   {
+    "action": "sites.up",
+    "method": "sites.up",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "C:\\Meus Projetos\\loja virtual",
+        "command": "forge up \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
     "action": "terminal.close",
     "method": "terminal.close",
     "kind": "call",
@@ -917,6 +1000,17 @@
       {
         "input": "php",
         "command": "forge tool update php --check"
+      }
+    ]
+  },
+  {
+    "action": "tools.discover",
+    "method": "tools.discover",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tool discover"
       }
     ]
   },
@@ -996,6 +1090,17 @@
           "policy": "auto-patch"
         },
         "command": "forge tool policy php auto-patch"
+      }
+    ]
+  },
+  {
+    "action": "tools.update",
+    "method": "tools.update",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php",
+        "command": "forge tool update php"
       }
     ]
   },

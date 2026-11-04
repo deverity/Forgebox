@@ -36,12 +36,7 @@ export function Menu({ entries, children, className }: MenuProps) {
           role="group"
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- focus-return target
           tabIndex={0}
-          className={[
-            FOCUS_RING,
-            className,
-          ]
-            .filter(Boolean)
-            .join(" ")}
+          className={[FOCUS_RING, className].filter(Boolean).join(" ")}
         >
           {children}
         </div>

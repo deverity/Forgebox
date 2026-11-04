@@ -10,8 +10,9 @@ import { SegmentedControl } from "../../design/primitives/SegmentedControl";
 import { Skeleton } from "../../design/primitives/Skeleton";
 import { VirtualList } from "../../design/primitives/VirtualList";
 import type * as T from "../../ipc/generated";
-import { useConnectionStatus, useRuntime, useSites } from "../../state";
+import { useRuntime, useSites } from "../../state";
 import { useStore } from "zustand";
+import { NoDataState } from "../common/NoDataState";
 import { CreateSiteSheet } from "./CreateSiteSheet";
 import { filterSites, indexSites } from "./model";
 import { RemoveSiteDialog } from "./RemoveSiteDialog";
@@ -19,6 +20,7 @@ import { CARD_HEIGHT, ROW_HEIGHT, SiteCard, type SitesLayout } from "./SiteCard"
 
 const EMPTY_KEY = "empty";
 const SITES_PATH = "/sites";
+const SITES_CONTEXT = { method: "sites.list", params: {} } as const;
 const LAYOUT_GRID: SitesLayout = "grid";
 const LAYOUT_LIST: SitesLayout = "list";
 const NEW_CHORD = "Ctrl+N";
@@ -77,7 +79,6 @@ export function SitesPage() {
   const runtime = useRuntime();
   const sites = useSites();
   const loaded = useStore(runtime.stores.sites, (state) => state.loaded);
-  const connection = useConnectionStatus();
 
   const [query, setQuery] = useState("");
   // `/sites?php=8.4` (the PHP screen's sites count) keeps only the sites of that series.
@@ -132,15 +133,19 @@ export function SitesPage() {
   const total = index.length;
   const trimmed = query.trim();
   let body;
-  if (!loaded && connection !== "connected") {
-    body = <EmptyState title={t("empty.title")} description={t("empty.description")} />;
-  } else if (!loaded) {
+  if (!loaded) {
     body = (
-      <div className="flex flex-col gap-2 p-4" aria-busy="true">
-        <Skeleton height={ROW_HEIGHT} />
-        <Skeleton height={ROW_HEIGHT} />
-        <Skeleton height={ROW_HEIGHT} />
-      </div>
+      <NoDataState
+        slice="sites"
+        context={SITES_CONTEXT}
+        loading={
+          <div className="flex flex-col gap-2 p-4" aria-busy="true">
+            <Skeleton height={ROW_HEIGHT} />
+            <Skeleton height={ROW_HEIGHT} />
+            <Skeleton height={ROW_HEIGHT} />
+          </div>
+        }
+      />
     );
   } else if (total === 0) {
     body = (

@@ -64,9 +64,11 @@ describe("series columns and the CLI radio", () => {
       expect.stringMatching(/^\/sites\?php=/),
     );
     expect(within(column("8.3")).getByTestId("series-sites")).toHaveTextContent("1 site");
-    // The region scrolls sideways instead of squeezing the columns.
+    // The columns share the width between 256 and 320 px (R-21) and the region scrolls sideways
+    // only when even the minimum does not fit.
     expect(screen.getByTestId("php-columns").className).toContain("overflow-x-auto");
-    expect(column("8.4").className).toContain("shrink-0");
+    expect(column("8.4").className).toContain("min-w-64");
+    expect(column("8.4").className).toContain("max-w-80");
   });
 
   it("calls tools.use and moves the radio when tool.current_changed arrives", async () => {

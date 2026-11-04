@@ -98,6 +98,17 @@ const SAMPLES: Record<string, unknown[]> = {
     { site: "loja.test", with: "terminal" },
     { site: "loja.test", with: "explorer" },
   ],
+  "sites.up": [SPACED],
+  "sites.down": [SPACED],
+  "sites.secure": [
+    { site: "loja.test", secure: true },
+    { site: "loja.test", secure: false },
+  ],
+  "sites.server": [{ site: "loja.test", server: "nginx" }],
+  "services.reload": ["php@8.4", "nginx"],
+  "php.ini_open": ["8.4"],
+  "tools.discover": [undefined],
+  "tools.update": ["php"],
   "sites.run_process": [{ site: "loja.test", process: "queue", action: "restart" }],
   "sites.set_driver": [
     { site: "loja.test", driver: "laravel" },

@@ -118,5 +118,10 @@
     "done": "Installed",
     "working": "Working",
     "bytesOf": "{done} of {total}"
+  },
+  "discover": {
+    "label": "Scan bin/ folders",
+    "running": "Scanning…",
+    "done": "Done"
   }
 }

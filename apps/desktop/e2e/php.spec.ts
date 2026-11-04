@@ -16,7 +16,9 @@ function column(page: Page, series: string) {
   return page.locator(`[data-php-series="${series}"]`);
 }
 
-test("three series scroll sideways at 960 px and fit at 1440 px", async ({ page }) => {
+test("three series share the width at 960 px and at 1440 px, with none cut (R-21)", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 960, height: 600 });
   await page.goto(phpUrl());
   await expect(page.locator("[data-php-series]")).toHaveCount(3);
@@ -25,8 +27,14 @@ test("three series scroll sideways at 960 px and fit at 1440 px", async ({ page 
   });
   const region = page.getByTestId("php-columns");
   await expect(column(page, "8.3").getByTestId("pool-card")).toContainText("Running");
-  const scrolls = await region.evaluate((el) => el.scrollWidth > el.clientWidth);
-  expect(scrolls).toBe(true);
+  // The columns shrink (256-320 px) instead of running past the edge: no sideways scroll, and
+  // the last column ends inside the region.
+  await expect.poll(() => region.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  const last = await column(page, "8.4").boundingBox();
+  const box = await region.boundingBox();
+  expect((last?.x ?? 0) + (last?.width ?? 0)).toBeLessThanOrEqual(
+    (box?.x ?? 0) + (box?.width ?? 0) + 1,
+  );
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOT_DIR}/php-960x600.png` });
 

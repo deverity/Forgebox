@@ -6,7 +6,6 @@ import { Popover } from "./Popover";
 import { Sheet } from "./Sheet";
 import { mockReducedMotion } from "../../test/matchMedia";
 
-
 describe("Sheet", () => {
   function setup() {
     return render(

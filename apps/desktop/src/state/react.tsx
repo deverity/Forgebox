@@ -19,6 +19,7 @@ import type * as T from "../ipc/generated";
 import { capabilityOf, type Capability } from "./capabilities";
 import { cancelJob, isTerminal, jobError, watchJob } from "./jobs";
 import type { StateLayer } from "./layer";
+import { SNAPSHOTS } from "./snapshots";
 import type { MetricsConsumer } from "./metrics";
 import { forgeQuery } from "./queries";
 import type { ContextRuntime } from "./runtime";
@@ -27,6 +28,7 @@ import type {
   ConnectionSlice,
   InstanceSample,
   PoolSample,
+  SliceName,
   StatusTotals,
   SyncSlice,
   SystemSlice,
@@ -131,6 +133,28 @@ export function useAttention<R>(selector: (state: AttentionSlice) => R): R {
 
 export function useSyncState<R>(selector: (state: SyncSlice) => R): R {
   return useStore(useRuntime().stores.sync, selector);
+}
+
+/**
+ * Why a snapshot slice has no data: the failure of its last load, or `not_implemented` when the
+ * daemon does not offer the method (the loader skips it, so there is no recorded error). `null`
+ * while it loads or when it is fine. Screens turn this into an `ErrorNotice` instead of an
+ * endless skeleton (docs/07 section 1.2: cause + action).
+ */
+export const NOT_IMPLEMENTED_ERROR: T.ApiError = {
+  code: "not_implemented",
+  message: "not implemented",
+  details: null,
+};
+
+export function useSliceError(slice: SliceName): T.ApiError | null {
+  const recorded = useSyncState((state) => state.errors[slice] ?? null);
+  const capability = useCapability(SNAPSHOTS[slice].method);
+  if (recorded !== null) return recorded;
+  if (capability.reason === "not_implemented") {
+    return NOT_IMPLEMENTED_ERROR;
+  }
+  return null;
 }
 
 // --- queries -----------------------------------------------------------------------------

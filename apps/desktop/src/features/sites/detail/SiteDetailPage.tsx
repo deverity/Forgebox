@@ -9,10 +9,12 @@ import { ActionButton } from "../../../design/primitives/ActionButton";
 import { Button } from "../../../design/primitives/Button";
 import { EmptyState } from "../../../design/primitives/EmptyState";
 import { Skeleton } from "../../../design/primitives/Skeleton";
+import { NoDataState } from "../../common/NoDataState";
 import { openUrl } from "../../../ipc/native";
 import { useRuntime, useSite } from "../../../state";
 
 const SITES_ROUTE = "/sites";
+const SITES_CONTEXT = { method: "sites.list", params: {} } as const;
 
 /** Route `/sites/:id`: header with the quick opens and the tabs from the site-tab slot registry. */
 export function SiteDetailPage() {
@@ -45,10 +47,16 @@ export function SiteDetailPage() {
             }
           />
         ) : (
-          <div aria-busy="true" className="p-4">
-            <span className="sr-only">{t("detail.loading")}</span>
-            <Skeleton height={64} />
-          </div>
+          <NoDataState
+            slice="sites"
+            context={SITES_CONTEXT}
+            loading={
+              <div aria-busy="true" className="p-4">
+                <span className="sr-only">{t("detail.loading")}</span>
+                <Skeleton height={64} />
+              </div>
+            }
+          />
         )}
       </div>
     );

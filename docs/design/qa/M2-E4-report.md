@@ -179,3 +179,23 @@ Todos os achados do bucket E4-T8 do §2 (R-01 a R-08, E2-02, E2-05). Nenhum P0/P
 | E2-05 | P3 | `e2e/real/app.spec.ts` procurava `connection-status` | usa `status-connection`, que ganhou `data-status` | (o próprio spec real) |
 
 Estados transversais, paleta, atalhos do §8, "reconectando", fallback sem vibrancy, reduced motion de transições compartilhadas e truncamento i18n: a revisão do §2 não registrou achado nesses itens além dos acima; a rede de testes existente (`qa:check` axe com vibrancy off, `layout-shift`, `motion`, `keyboard`, `shortcuts`, `qa:perf` "reconectando") continua verde na execução final abaixo.
+
+## §3 Correções das telas núcleo (M2-E4-T9)
+
+Bucket E4-T9: Onboarding, Painel, Serviços, Sites e detalhe, PHP, Catálogo. Regressões medidas em `apps/desktop/qa/checks/core-screens.spec.ts` (15 casos) e em `src/features/common/coreScreens.test.tsx` (vitest).
+
+| ID | Sev. | Antes | Depois | Teste |
+|---|---|---|---|---|
+| R-09, R-10 | P1 | Sites e detalhe do site em esqueleto eterno com `errors`, `not-implemented` e `daemon-down` | `features/common/NoDataState` (`useSliceError`): causa, "Tentar de novo" e, com o daemon parado, "Iniciar daemon"; nenhum `aria-busy` depois de assentar | `core-screens.spec.ts` (`no endless skeleton`, `daemon down`), `coreScreens.test.tsx` |
+| R-16 | P2 | Serviços, PHP e página da ferramenta em esqueleto quando o método da lista é `not_implemented` | `errors:code.not_implemented` com botão de nova tentativa (a página da ferramenta passa `onRetry`, exigido pelo contrato `offers no action`) | `core-screens.spec.ts`, `contracts: /catalog/* scenario not-implemented` |
+| R-11 | P2 | long task de 98-152 ms ao abrir `/php` | lista de extensões monta 12 linhas e o resto em blocos de 16 por tarefa; `qa:perf` `interaction.longTaskMaxMs` média 73 ms (3 execuções), abaixo das medições anteriores, ainda acima de 50 ms em execução com outro worktree compilando (registrado como informativo, CV 36 %) | `qa:perf` |
+| R-12 | P2 | 8 métodos `pending` | `pending: []`: "Recarregar pool", "Abrir php.ini", "Aplicar atualização" (PHP), `sites.up/down`, `sites.secure`, `sites.server` (detalhe do site) e `tools.discover` (Catálogo); amostras e `gui-commands.json` regenerados | `FORGE_PARITY_STRICT=1 cargo nextest run -p forge-cli --test gui_parity` 6/6 |
+| R-13, R-17 | P2 | sparkline abaixo do card; porta truncada | gráfico contido no card, porta (`tile-port`) sempre visível | `core-screens.spec.ts` |
+| R-18 | P2 | "porta 3240 em uso por ?" | `holderName`: nome curto do exe, ou "outro programa" quando o dono é desconhecido | `attention.test.ts` |
+| R-19 | P2 | colunas de Serviços desalinhadas | coluna de ações de largura fixa (13 rem) | `core-screens.spec.ts` |
+| R-20 | P3 | selo `Aa` sem nome acessível | texto completo para leitores de tela e linha "Maiúsculas e minúsculas" no detalhe | `coreScreens.test.tsx` |
+| R-21, R-22 | P2 | PHP a 960 px cortava a 3ª coluna; o documento rolava 601 px | colunas de 256 a 320 px que dividem a largura; coluna e lista de extensões `relative` (o `sr-only` do `ActionButton` e do `Skeleton` escapava do contêiner) | `core-screens.spec.ts` (960x600 e 1280x800) |
+
+Medição final: `qa:check` completo 497 passados e 3 falhas na primeira rodada; as duas dos contratos de Catálogo (`not_implemented` sem ação) foram corrigidas e os `contracts` (133) passam; a terceira é R-14. `qa:perf`: 7 passados e 1 falha, `charts-update-latency` (R-24, bucket E4-T10, fora desta tarefa).
+
+**Não corrigidos aqui.** R-14 (Tab não alcança as últimas linhas do Painel): reaparece em 1 de 13 execuções do `matrix.spec.ts › DPR 1 › tab order… light` e passa na repetição; a regra `keyboardViolations` (`qa/checks/lib.ts`, E4-T8) conta os alvos uma vez antes de pressionar Tab enquanto o Painel ainda renderiza, então o contador pode ficar defasado (hipótese não provada; devolvido ao dono do `qa:check`). R-23 (rótulos do manifesto do PHP sem tradução) pede extensão do schema (docs/04): devolvido ao dono do E2/registry. E2-06 (texto duplicado no botão em `loading`) fica com a verificação humana de NVDA (2.6); o primitive `Button` não muda aqui.

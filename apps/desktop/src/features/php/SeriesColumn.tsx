@@ -1,8 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { openPhpIni } from "../../actions/php";
 import { runAction } from "../../actions/registry";
 import { setCliVersion } from "../../actions/tools";
+import { ActionButton } from "../../design/primitives/ActionButton";
 import { Badge } from "../../design/primitives/Badge";
 import { Card } from "../../design/primitives/Card";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
@@ -103,7 +105,9 @@ export function SeriesColumn({ version }: { version: PhpVersionDto }) {
       data-php-series={version.series}
       data-cli={cli ? "true" : undefined}
       aria-label={t("column", { series: version.series })}
-      className="flex min-h-0 w-80 shrink-0 flex-col gap-4 overflow-y-auto pr-1"
+      // 256-320 px: the columns share the width (3 series fit in 904 px) and only scroll
+      // horizontally past that, so no column is cut at 960 px (R-21).
+      className="relative flex min-h-0 min-w-64 max-w-80 flex-1 basis-72 flex-col gap-4 overflow-y-auto pr-1"
     >
       <Card className="flex flex-col gap-3">
         <header className="flex flex-col gap-1">
@@ -128,6 +132,16 @@ export function SeriesColumn({ version }: { version: PhpVersionDto }) {
           <span className="sr-only">{t("sites.forSeries", { series: version.series })}</span>
         </Link>
         <CliRadio version={version} checked={cli} />
+        <div>
+          <ActionButton
+            action={openPhpIni}
+            input={version.series}
+            loadingLabel={t("ini.opening")}
+            successLabel={t("ini.opened")}
+          >
+            {t("ini.open")}
+          </ActionButton>
+        </div>
       </Card>
       <Card className="flex flex-col gap-3">
         <QuickSettings series={version.series} />

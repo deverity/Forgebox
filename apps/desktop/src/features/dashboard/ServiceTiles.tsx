@@ -146,8 +146,15 @@ export const InstanceTile = memo(function InstanceTile({ instance }: { instance:
         </span>
         <span className="min-w-0 flex-1 truncate text-callout text-fg-secondary">
           {ts(`state.${instance.state}`)}
-          {port === null ? "" : ` · :${String(port)}`}
         </span>
+        {port === null ? null : (
+          <span
+            data-testid="tile-port"
+            className={`shrink-0 text-callout text-fg-secondary ${TNUM_CLASS}`}
+          >
+            {`:${String(port)}`}
+          </span>
+        )}
         {isActive(instance.state) ? (
           <ActionButton
             action={stopInstance}
@@ -218,8 +225,15 @@ export const PoolTile = memo(function PoolTile({ pool }: { pool: PoolDto }) {
         </span>
         <span className="min-w-0 flex-1 truncate text-callout text-fg-secondary">
           {ts(`state.${pool.state}`)}
-          {pool.ports[0] === undefined ? "" : ` · :${String(pool.ports[0])}`}
         </span>
+        {pool.ports[0] === undefined ? null : (
+          <span
+            data-testid="tile-port"
+            className={`shrink-0 text-callout text-fg-secondary ${TNUM_CLASS}`}
+          >
+            {`:${String(pool.ports[0])}`}
+          </span>
+        )}
         <span className={`text-caption text-fg-secondary ${TNUM_CLASS}`}>
           {t("tiles.workers", { busy: pool.busy_workers, total: pool.workers })}
         </span>

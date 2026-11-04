@@ -12,9 +12,13 @@ import { useInstanceMetrics, usePoolMetrics } from "../../state";
 import { PHP_TOOL, dotState, isActive, mainPort, poolName, targetOf, uptimeMs } from "./model";
 import { ToolIcon } from "./ToolIcon";
 
-/** Row grid shared by the header-less list: icon, name, state, ports, resources, actions. */
+/**
+ * Row grid shared by the header-less list: icon, name, state, ports, resources, actions. Every
+ * column has a size that does not depend on the row's content (the actions column is fixed), so the
+ * columns line up between rows and between groups (R-19).
+ */
 const GRID =
-  "grid min-h-14 grid-cols-[24px_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,0.9fr)_auto] items-center gap-3 px-3";
+  "grid min-h-14 grid-cols-[24px_minmax(0,1.3fr)_minmax(0,1.1fr)_minmax(0,0.7fr)_minmax(0,0.9fr)_13rem] items-center gap-3 px-3";
 
 const CELL = "min-w-0 truncate";
 
