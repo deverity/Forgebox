@@ -134,3 +134,7 @@ Movimento: `Sheet`, `Popover`, `Menu`, `Tooltip` e `Toast` usam `surfaceMotion(k
 
 ### Skeleton
 - `Skeleton` tem altura fixa obrigatória; `SkeletonSlot` reserva a altura nos dois estados (`aria-busy`), então carregar → conteúdo não muda o layout. Pulso CSS só com `motion-safe`.
+
+## Cobertura da galeria (M2-E4-T6)
+
+Toda primitive da lista de [docs/07 §6](../07-ui-ux.md) aparece em `/__gallery`, marcada com `data-gallery` (helper `shows(P.Nome)` em `src/design/gallery/marker.ts`); `Gallery.test.tsx` lê a lista do doc e falha se faltar ou sobrar um nome. `PathField`, `PortField` e `CommandPalette` ganharam seções na M2-E4-T6. Seleção e foco não dependem só do accent: a linha selecionada da paleta usa também `font-medium` e o campo de busca tem anel interno `--accent`; texto sobre fundo `--accent` usa sempre `--fg-on-accent` (token runtime, preto ou branco pelo contraste WCAG).

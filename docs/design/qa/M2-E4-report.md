@@ -1,0 +1,37 @@
+# Relatório de QA do M2-E4
+
+Relatório vivo da tarefa M2-E4: cada passe de QA acrescenta uma seção. Procedimento e matriz em [docs/07 §12](../../07-ui-ux.md); regras automatizadas em `apps/desktop/qa/checks/`.
+
+## §1 Passe inicial: shell e primitivas (M2-E4-T6)
+
+**Escopo.** Shell (titlebar, sidebar expandida e recolhida, barra de status, banners), galeria `/__gallery` (toda primitive de [docs/07 §6](../../07-ui-ux.md), 25 de 25), paleta de comandos.
+**Método.** `pnpm -C apps/desktop qa:check` com o novo `qa/checks/matrix.spec.ts` (claro/escuro x vibrancy desligado x reduced-motion x DPR 1/1,25/1,5 reais do contexto, axe WCAG 2.1 AA, contraste dos tokens `fg-*` sobre a sidebar sólida, ordem de Tab e anel de foco, paleta aberta, banner `daemon-down`, sidebar recolhida, 960x540 e 1093x574). Células: 104 testes. As capturas "antes" são as imagens de falha do Playwright (`apps/desktop/qa/out/check-results/<teste>/test-failed-1.png`, ignoradas pelo git, geradas a cada execução); "depois" é a mesma célula verde.
+
+Severidade: P0 bloqueia uso, P1 viola WCAG AA ou impede uso por teclado, P2 degrada layout ou deixa regra frágil, P3 higiene.
+
+### Achados
+
+| ID | Sev. | Célula da matriz | Evidência (antes) | Referência | Estado |
+|---|---|---|---|---|---|
+| F-01 | P1 | paleta aberta, claro, vibrancy off, DPR 1/1,25/1,5 | `matrix-DPR-1-5-command-palette-open-light/test-failed-1.png`; axe `color-contrast`: `forge start all` `#cce3f9` sobre `#0071e3` = **3,56:1** (< 4,5:1) | docs/07 §2.3, §9, §11 | Corrigido: o comando da linha selecionada tinha `opacity-80` sobre `--accent`; removido, o texto usa `--fg-on-accent` cheio. Depois: 0 violações axe nos 6 DPR x tema. |
+| F-02 | P1 | paleta aberta, escuro (e claro), DPR 1/1,25/1,5 | `matrix-DPR-1-5-command-palette-open-dark/test-failed-1.png`; `keyboardViolations`: "no visible --accent focus ring on input[combobox]" | docs/07 §9, §11 | Corrigido: o campo da paleta usava `outline-none` sem anel; agora anel interno `--accent` 2 px (`-outline-offset-2`, `focus-visible`). |
+| F-03 | P2 | menu de contexto (Menu), item destacado, qualquer accent do Windows | revisão de código contra `accent.spec.ts`: `data-[highlighted]:text-surface` sobre `bg-accent` (texto de superfície, não o token); com accent amarelo `#FFB900` o texto claro cai abaixo de 4,5:1 | docs/07 §2.3 (`--fg-on-accent`) | Corrigido: `text-fg-on-accent`. Sem teste novo de pixel (o Menu só abre por clique direito); coberto pelo guard de classes e pela revisão. |
+| F-04 | P2 | `/__gallery` 960x540 e 1093x574, claro/escuro | `matrix-layout-at-960x540-gallery-light/test-failed-1.png`; `documentElement.scrollHeight` **2540** px para uma janela de 540: o `sr-only` absoluto dentro do `main` rolável tinha como bloco de contenção o viewport e escapava do `overflow-auto`, então o documento inteiro rolava | docs/07 §4 | Corrigido: `main` da galeria `relative`. Depois: `scrollHeight` = `innerHeight`. Regra registrada em docs/07 §4. |
+| F-05 | P3 | qualquer rota, 960x540, `/services` heavy (intermitente) | axe `color-contrast` do botão "Restart": `#b8b8b9` sobre `#509dec` = 1,43:1, lido no meio da transição de cor (falso positivo; 1 de 3 execuções) | docs/07 §11 | Corrigido na ferramenta: `axeViolations` congela transições antes de medir (como já fazia o teste de teclado). |
+| F-06 | P3 | paleta, linha selecionada | seleção só por cor `--accent` | decisão "foco e seleção não dependem só do accent" | Corrigido: a linha selecionada também fica em `font-medium`; o anel de foco do campo (F-02) não depende do preenchimento. |
+| F-07 | P2 | galeria x §6 | `PathField`, `PortField` e `CommandPalette` (docs/07 §6) não apareciam em `/__gallery` (22 de 25) | docs/07 §6, critério 1 | Corrigido: três seções novas; cada bloco leva `data-gallery`, e `Gallery.test.tsx` compara com a lista lida de docs/07 §6 (falha em qualquer diferença nos dois sentidos). |
+| F-08 | P2 | janela real, mudança de monitor | o mínimo só era recalculado em `ScaleFactorChanged`; mover para monitor com outra área de trabalho e a mesma escala mantinha o mínimo antigo | docs/07 §4 | Corrigido: `Moved` também recalcula (`update_min_size`, SO só quando o valor muda); testes `needs_min_size_update` e `small_work_areas_give_the_qa_window_sizes`. |
+
+### Itens verificados sem achado
+
+| Item | Medição | Resultado |
+|---|---|---|
+| Contraste de `--fg-tertiary` | claro `#636366`: 4,90:1 (sidebar `#E8E8ED`), 5,50:1 (canvas), 5,99:1 (surface); escuro `#A8A8AD`: 5,89:1 (sidebar/surface), 7,19:1 (canvas), 4,79:1 (surface-2). `sidebarContrastViolations` + axe em 5 telas x 2 temas x 2 modos x 3 DPR | >= 4,5:1 em todos os fundos, sem mudança de token (nada a alterar em `tokens.json`) |
+| Anel de foco | `keyboardViolations` (Tab alcança tudo, anel `--accent` visível) no shell e na galeria, claro/escuro, 3 DPR | verde (exceto F-02) |
+| Texto sobre accent | `--fg-on-accent` já é runtime desde o M2-E4-T3 (`appearance.ts`: preto ou branco pelo contraste WCAG, ausente em alto contraste); `accent.spec.ts` mede os 4 accents do sistema nos dois temas. Mantido o nome `--fg-on-accent` (o texto da tarefa chama de `--on-accent`) para não duplicar token | verde |
+| Sidebar recolhida em DPR > 1 | o colapso usa `window.innerWidth` em px CSS (`useSidebarCollapsed`), independente do DPR; teste a 1000x700 em DPR 1/1,25/1,5: largura < 80 px, axe e teclado verdes | sem achado |
+| Layout 960x540 e 1093x574 | 5 telas x 2 temas x 2 tamanhos: sem rolagem horizontal nem vertical do documento, sidebar recolhida, titlebar em y=0, barra de status colada na base | verde |
+
+### Resultado
+
+`pnpm qa:check` sobre a matriz nova: 104 de 104 verdes (execução final; as falhas dos achados acima foram observadas antes das correções). Nenhum P0/P1 do shell e das primitivas segue aberto. Ficam para os passes seguintes (E4-T7+): telas das outras épicas, janela nativa real (`scripts/qa/capture-window.ps1`) e fps.
