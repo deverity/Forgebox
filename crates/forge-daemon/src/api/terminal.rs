@@ -52,7 +52,7 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
 
 /// Native form of a stored path (`C:/www/loja` → `C:\www\loja` on Windows), without the
 /// `\\?\` prefix (a shell would show it in its prompt; `cmd` refuses it as a cwd).
-fn native(path: &str) -> PathBuf {
+pub(super) fn native(path: &str) -> PathBuf {
     let path = if cfg!(windows) {
         PathBuf::from(path.replace('/', "\\"))
     } else {
@@ -62,7 +62,7 @@ fn native(path: &str) -> PathBuf {
 }
 
 /// The site's project folder and its PHP (`tool id → exact version`).
-async fn site_context(
+pub(super) async fn site_context(
     daemon: &Daemon,
     site: &forge_ipc::api::SiteRef,
 ) -> Result<(

@@ -114,7 +114,9 @@ pub use runtime_deps::{
 };
 pub use secure_file::{NoFollow, NoFollowFile, final_path, open_no_follow};
 pub use shell_open::{
-    RecordingShellOpener, ShellOpen, ShellOpener, is_executable_extension, shell_opener,
+    EditorTarget, LaunchSpec, ProgramLookup, RecordingShellOpener, Resolved, ShellOpen,
+    ShellOpener, is_executable_extension, resolve_editor, resolve_terminal, shell_opener,
+    split_command,
 };
 pub use system_stats::{
     FakeSystemStats, MachineSample, SYSTEM_STATS_TIMEOUT, SystemStats, UnsupportedSystemStats,

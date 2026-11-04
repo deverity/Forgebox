@@ -226,8 +226,11 @@ fn table() -> Vec<Case> {
         case(&["site", "driver", "demo.test", "laravel"], OK),
         case(&["site", "driver", "demo.test", "auto"], OK),
         case(&["site", "alias", "demo.test", "add", "www.demo.test"], OK),
-        // Plain `site open` would launch a real browser; the editor target stays not_implemented.
-        case(&["site", "open", "demo.test", "--editor"], NI),
+        // Plain `site open` and the editor/terminal targets would launch real programs (M2-E3-T9).
+        case(
+            &["site", "open", "missing.test", "--editor"],
+            E("not_found"),
+        ),
         // The per-site switches (ADR-0044 §7, M2-E5-T11); demo.test is a static site, so
         // it has no PHP pool to choose (the PHP path: `site_pool_and_metrics_commands`).
         case(
@@ -332,7 +335,7 @@ fn table() -> Vec<Case> {
         case(&["mail", "clear", "--yes"], E("not_found")),
         case(&["mail", "env"], E("not_found")),
         // shell / env
-        case(&["shell"], NI),
+        case(&["shell", r"C:\forgebox-test-missing-dir"], E("not_found")),
         case(&["env"], OK),
         raw(&["env", "--cmd"], OK),
         raw(&["env", "--bash"], OK),

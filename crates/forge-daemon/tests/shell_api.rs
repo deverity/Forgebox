@@ -467,17 +467,16 @@ async fn hello_status_port_check_and_sites_open() {
     );
     assert_eq!(site.url, "https://loja.test");
 
-    // The editor and the terminal belong to M2-E3-T9.
+    // The editor and the terminal go through the launchers (M2-E3-T9; tests/shell_open.rs).
     for with in [SiteOpenTarget::Editor, SiteOpenTarget::Terminal] {
-        let err = open(with).await.unwrap_err();
-        assert_eq!(err.code(), "not_implemented");
-        let api = err.api().unwrap();
-        assert_eq!(api.reason(), Some("not_implemented"));
-        assert_eq!(api.args().unwrap()["task"], "M2-E3-T9");
-        assert_eq!(api.args().unwrap()["method"], "sites.open");
-        assert!(err.to_string().contains("M2-E3-T9"), "{err}");
+        assert!(open(with).await.unwrap().ok, "{with:?}");
     }
-    assert_eq!(opener.calls().len(), 2, "nothing else was opened");
+    let calls = opener.calls();
+    assert_eq!(calls.len(), 4, "{calls:?}");
+    assert!(
+        calls[2..].iter().all(|c| matches!(c, ShellOpen::Launch(_))),
+        "{calls:?}"
+    );
 
     // not_found carries reason and args.
     let err = client

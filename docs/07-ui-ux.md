@@ -11,7 +11,7 @@ Este documento é normativo para `apps/desktop/`. Exemplos de telas (wireframes)
 4. **Teclado em primeiro lugar.** Command palette (`Ctrl+K`), atalhos globais, navegação por Tab com foco visível.
 5. **Motion com significado.** Animações informam origem/destino; springs (não ease-in-out lineares); respeitam `prefers-reduced-motion`.
 6. **Nativo onde importa.** Titlebar custom integrada, Mica/Acrylic, menu de contexto nativo, notificações do Windows, snap layouts funcionando (Aero Snap e `Win+setas` já; o menu do Windows 11 no hover do maximizar fica para o gate M2, [ADR-0035](adr/0035-window-chrome-materials.md) §6), DPI por monitor.
-7. **Paridade GUI = CLI.** Toda ação mostra o comando `forge` equivalente no tooltip/rodapé ("Copiar comando"). O texto vem do `cli_template` da linha do método em `methods.ts` ([ADR-0037](adr/0037-cli-equivalent-templates.md)), nunca de string escrita à mão na tela.
+7. **Paridade GUI = CLI.** Toda ação mostra o comando `forge` equivalente no tooltip/rodapé ("Copiar comando"). O texto vem do `cli_template` da linha do método em `methods.ts` ([ADR-0037](adr/0037-cli-equivalent-templates.md)), nunca de string escrita à mão na tela. **Exceção (M2-E3-T9):** abrir no editor, no navegador e na pasta (`sites.open` com `editor`/`browser`/`explorer`, `shell.open_editor`) mostra o comando do programa subjacente (o editor configurado ou detectado com o caminho e a linha, o URL no navegador, `explorer <pasta>`), não um `forge`: a CLI não tem esses lançadores como verbo próprio (`forge site open --editor` existe, mas é só atalho para o mesmo método); o rodapé mostra o que o daemon vai executar. O terminal externo (`shell.open`) mantém `forge shell`.
 
 ## 2. Fundamentos visuais
 

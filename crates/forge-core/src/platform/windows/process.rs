@@ -61,15 +61,15 @@ use ::windows::Win32::System::JobObjects::{
 };
 use ::windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 use ::windows::Win32::System::Threading::{
-    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_SUSPENDED,
-    CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DETACHED_PROCESS, DeleteProcThreadAttributeList,
-    EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList,
-    LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-    PROCESS_ACCESS_RIGHTS, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
-    RegisterWaitForSingleObject, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOEXW,
-    TerminateProcess, UnregisterWaitEx, UpdateProcThreadAttribute, WORKER_THREAD_FLAGS,
-    WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE, WaitForSingleObject,
+    CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_CONSOLE, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
+    CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DETACHED_PROCESS,
+    DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess, INFINITE,
+    InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST, OpenProcess,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_ACCESS_RIGHTS, PROCESS_CREATION_FLAGS,
+    PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE,
+    PROCESS_TERMINATE, RegisterWaitForSingleObject, ResumeThread, STARTF_USESTDHANDLES,
+    STARTUPINFOEXW, STARTUPINFOW, TerminateProcess, UnregisterWaitEx, UpdateProcThreadAttribute,
+    WORKER_THREAD_FLAGS, WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE, WaitForSingleObject,
 };
 use ::windows::core::{PCWSTR, PWSTR};
 use tokio::net::windows::named_pipe::{NamedPipeServer, PipeMode, ServerOptions};
@@ -674,6 +674,12 @@ fn append_arg(line: &mut Vec<u16>, arg: &OsStr, force_quotes: bool) -> Result<()
     Ok(())
 }
 
+fn is_cmd_exe(exe: &Path) -> bool {
+    exe.file_name()
+        .and_then(OsStr::to_str)
+        .is_some_and(|n| n.eq_ignore_ascii_case("cmd.exe"))
+}
+
 /// Full command line: quoted exe followed by the arguments. NUL-terminated.
 pub(crate) fn command_line(exe: &Path, args: &[OsString]) -> Result<Vec<u16>> {
     let mut line = Vec::new();
@@ -684,9 +690,27 @@ pub(crate) fn command_line(exe: &Path, args: &[OsString]) -> Result<Vec<u16>> {
         )));
     }
     append_arg(&mut line, exe.as_os_str(), true)?;
-    for arg in args {
+    // `cmd.exe /d /v:off /s /c <line>` for a batch file (shell_open::resolve_program): the
+    // last argument is a complete, already quoted command line that cmd parses itself, so
+    // it goes through verbatim (CommandLineToArgvW quoting would break `/s`).
+    let raw_tail = is_cmd_exe(exe)
+        && args.len() == 5
+        && ["/d", "/v:off", "/s", "/c"]
+            .iter()
+            .zip(args)
+            .all(|(want, got)| got == OsStr::new(want));
+    for (i, arg) in args.iter().enumerate() {
         line.push(u16::from(b' '));
-        append_arg(&mut line, arg, false)?;
+        if raw_tail && i == 4 {
+            if arg.encode_wide().any(|c| c == 0) {
+                return Err(ForgeError::InvalidInput(
+                    "batch command line contains a NUL character".into(),
+                ));
+            }
+            line.extend(arg.encode_wide());
+        } else {
+            append_arg(&mut line, arg, false)?;
+        }
     }
     line.push(0);
     Ok(line)
@@ -941,9 +965,35 @@ pub(crate) fn create_detached_watched(
 }
 
 fn create_detached_handle(exe: &Path, args: &[OsString], cwd: &Path) -> Result<(u32, OwnedHandle)> {
+    create_with(exe, args, cwd, None, false)
+}
+
+/// Starts a program for the user to see (an external terminal or editor, M2-E3-T9), outside
+/// the caller's console, process group and, when its job allows it, job: `env` is the
+/// complete environment (the caller's when `None`); `new_console` gives a console program a
+/// console window of its own (a GUI program has none to give). Standard handles of a
+/// program without a console window go to `NUL`. Returns the pid.
+pub(crate) fn create_launched(
+    exe: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    env: Option<&[(OsString, OsString)]>,
+    new_console: bool,
+) -> Result<u32> {
+    create_with(exe, args, cwd, env, new_console).map(|(pid, _process)| pid)
+}
+
+fn create_with(
+    exe: &Path,
+    args: &[OsString],
+    cwd: &Path,
+    env: Option<&[(OsString, OsString)]>,
+    new_console: bool,
+) -> Result<(u32, OwnedHandle)> {
     let app = wide(exe.as_os_str());
     let mut line = command_line(exe, args)?;
     let cwd_wide = wide(cwd.as_os_str());
+    let env_block = env.map(environment_block).transpose()?;
     let stdin = open_null(false)?;
     let stdout = open_null(true)?;
     let inherit = [raw(&stdin), raw(&stdout)];
@@ -962,30 +1012,42 @@ fn create_detached_handle(exe: &Path, args: &[OsString], cwd: &Path) -> Result<(
     }
     .map_err(|e| win_err("restricting inherited handles", &e))?;
     let mut info = STARTUPINFOEXW::default();
-    info.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
-    info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    info.StartupInfo.hStdInput = raw(&stdin);
-    info.StartupInfo.hStdOutput = raw(&stdout);
-    info.StartupInfo.hStdError = raw(&stdout);
-    info.lpAttributeList = attributes.ptr();
+    let mut base = CREATE_NEW_PROCESS_GROUP.0;
+    if new_console {
+        // A console window of its own: the standard handles are the new console's.
+        info.StartupInfo.cb = size_of::<STARTUPINFOW>() as u32;
+        base |= CREATE_NEW_CONSOLE.0;
+    } else {
+        info.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+        info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+        info.StartupInfo.hStdInput = raw(&stdin);
+        info.StartupInfo.hStdOutput = raw(&stdout);
+        info.StartupInfo.hStdError = raw(&stdout);
+        info.lpAttributeList = attributes.ptr();
+        base |= DETACHED_PROCESS.0 | EXTENDED_STARTUPINFO_PRESENT.0;
+    }
+    if env_block.is_some() {
+        base |= CREATE_UNICODE_ENVIRONMENT.0;
+    }
+    let env_ptr = env_block.as_ref().map(|b| b.as_ptr().cast::<c_void>());
 
-    let base = DETACHED_PROCESS.0 | CREATE_NEW_PROCESS_GROUP.0 | EXTENDED_STARTUPINFO_PRESENT.0;
     let mut last = None;
     // First outside the caller's job; a job that forbids breakaway gets the child inside.
     for flags in [base | CREATE_BREAKAWAY_FROM_JOB.0, base] {
         let mut pi = PROCESS_INFORMATION::default();
         // SAFETY: `app`, `cwd_wide` are NUL-terminated; `line` is writable and
-        // NUL-terminated; `info` is a STARTUPINFOEXW (EXTENDED_STARTUPINFO_PRESENT) whose
-        // attribute list and handles outlive the call; a null environment inherits ours.
+        // NUL-terminated; `info` is a STARTUPINFOEXW (EXTENDED_STARTUPINFO_PRESENT only when
+        // its attribute list is set) whose handles outlive the call; `env_ptr` is a
+        // double-NUL-terminated UNICODE block kept alive by `env_block`, or null to inherit.
         let created = unsafe {
             CreateProcessW(
                 PCWSTR(app.as_ptr()),
                 Some(PWSTR(line.as_mut_ptr())),
                 None,
                 None,
-                true,
+                !new_console,
                 PROCESS_CREATION_FLAGS(flags),
-                None,
+                env_ptr,
                 PCWSTR(cwd_wide.as_ptr()),
                 (&raw const info).cast(),
                 &mut pi,
@@ -1250,6 +1312,22 @@ mod tests {
         let args = vec![OsString::from("bad\0arg")];
         assert!(command_line(Path::new(r"C:\x.exe"), &args).is_err());
         assert!(command_line(Path::new("C:\\x\".exe"), &[]).is_err());
+    }
+
+    #[test]
+    fn cmd_batch_tail_is_passed_verbatim() {
+        let tail = r#""C:\Program Files\x\ed.cmd" "C:\a&b dir\f.php""#;
+        let got = line(
+            r"C:\Windows\System32\cmd.exe",
+            &["/d", "/v:off", "/s", "/c", tail],
+        );
+        assert_eq!(
+            got,
+            format!(r#""C:\Windows\System32\cmd.exe" /d /v:off /s /c {tail}"#)
+        );
+        // Any other cmd.exe use keeps the regular quoting.
+        let got = line(r"C:\Windows\System32\cmd.exe", &["/k", "a b"]);
+        assert_eq!(got, r#""C:\Windows\System32\cmd.exe" /k "a b""#);
     }
 
     #[test]
