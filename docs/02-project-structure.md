@@ -331,7 +331,7 @@ Forgebox/
 │       │   │                     #   StackStep (cards de `tools.search` com a tag `onboarding` + "Vazio", `tools.plan`, versões por `tools.releases`), OptionsStep,
 │       │   │                     #   RunStep (lista de instalação, PATH/DNS/CA/inicialização com repetir e pular, "primeiro site", Comandos equivalentes),
 │       │   │                     #   useWizard (estado + persistência por `onboarding_set`), useSetupRun, native.ts (comandos do T11 + autostart do E1 atrás de
-│       │   │                     #   uma interface; fake em memória fora do Tauri), model.ts/commands.ts (lógica pura), RerunSection + slots.ts (Configurações);
+│       │   │                     #   uma interface; fake em memória fora do Tauri), model.ts/commands.ts (lógica pura); o refazer é a linha `onboarding` de Configurações → Geral (M2-E3-T16);
 │       │   │                     #   ações em actions/onboarding.ts; fixtures QA em qa/fixtures/scenarios/onboarding.ts
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`;
 │       │   │                     #   ponte (ADR-0034): bridge.ts (interface Bridge, ContextStateDto, StreamFrame), tauriBridge.ts
