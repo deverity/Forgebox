@@ -155,6 +155,11 @@ export class MetricsPoller {
     };
   }
 
+  /** Number of registered consumers (read-only; used by tests to prove a screen released its own). */
+  consumerCount(): number {
+    return this.consumers.size;
+  }
+
   isActive(): boolean {
     const { page, connection } = this.options;
     return (

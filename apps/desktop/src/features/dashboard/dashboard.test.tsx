@@ -38,6 +38,7 @@ function data(): ScenarioData {
 interface Mounted {
   fake: ReturnType<typeof createFakeBridge>;
   layer: StateLayer;
+  page: ReturnType<typeof manualPageActivity>;
   router: ReturnType<typeof createTestRouter>;
   unmount: () => void;
 }
@@ -54,8 +55,9 @@ async function mount(
       handlers: { ...HEALTHY, ...extra.handlers },
     }),
   );
+  const page = manualPageActivity();
   const layer = new StateLayer(fake, {
-    page: manualPageActivity(),
+    page,
     frame: timerFrameClock(),
     rttIntervalMs: 0,
     snapshotDebounceMs: 0,
@@ -66,11 +68,13 @@ async function mount(
   });
   const router = createTestRouter(options.path ?? "/dashboard");
   const view = render(<App layer={layer} router={router} />);
-  await screen.findByTestId("page-dashboard");
+  if ((options.path ?? "/dashboard") === "/dashboard") {
+    await screen.findByTestId("page-dashboard");
+  }
   await act(async () => {
     await layer.runtime("local").settled();
   });
-  return { fake, layer, router, unmount: view.unmount };
+  return { fake, layer, page, router, unmount: view.unmount };
 }
 
 async function publish(m: Mounted, kind: string, payload: unknown) {
@@ -372,6 +376,39 @@ describe("sparklines and polling", () => {
         expect(points()).toBe(30);
       },
       { timeout: 10_000 },
+    );
+  });
+
+  it("navigating away releases every Dashboard consumer; hidden window then makes 0 calls", async () => {
+    const m = await mount({}, { metricsIntervalMs: 20, path: "/dashboard" });
+    const poller = m.layer.runtime("local").metrics;
+    const calls = () => m.fake.calls.filter((call) => call.method === "services.status").length;
+    await waitFor(() => {
+      expect(calls()).toBeGreaterThan(2);
+    });
+    const onDashboard = poller.consumerCount();
+    await act(async () => {
+      await m.router.navigate({ to: "/settings" });
+    });
+    await screen.findByTestId("page-settings");
+    const onSettings = poller.consumerCount();
+    // The status bar stays a consumer, so the Dashboard's own consumers must be gone.
+    expect(onSettings).toBeGreaterThan(0);
+    expect(onDashboard).toBeGreaterThan(onSettings);
+    // Same count as a fresh mount straight on /settings.
+    m.unmount();
+    const fresh = await mount({}, { metricsIntervalMs: 20, path: "/settings" });
+    await screen.findByTestId("page-settings");
+    expect(fresh.layer.runtime("local").metrics.consumerCount()).toBe(onSettings);
+    // Window hidden: nothing polls, even with the status bar mounted.
+    await act(async () => {
+      fresh.page.set({ visible: false });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    const before = fresh.fake.calls.filter((call) => call.method === "services.status").length;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(fresh.fake.calls.filter((call) => call.method === "services.status").length).toBe(
+      before,
     );
   });
 
