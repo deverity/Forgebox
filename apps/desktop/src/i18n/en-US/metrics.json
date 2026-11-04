@@ -1,0 +1,59 @@
+{
+  "title": "Performance",
+  "windows": {
+    "1m": "1 min",
+    "5m": "5 min",
+    "1h": "1 h",
+    "24h": "24 h",
+    "7d": "7 days"
+  },
+  "windowLabel": "Window",
+  "state": {
+    "pending": "Waiting for the first sample…",
+    "live": "Live",
+    "failed": "Could not follow the metrics.",
+    "off": "Metrics are off for this site.",
+    "idle": "Metrics are not available on this daemon."
+  },
+  "stat": {
+    "requests": "Requests",
+    "rps": "Rate",
+    "p50": "Median (p50)",
+    "p90": "p90",
+    "p99": "p99",
+    "php": "PHP time",
+    "errors": "Errors",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "bytes": "Data sent",
+    "workers": "Busy workers",
+    "processes": "Processes",
+    "lastRequest": "Last request"
+  },
+  "approx": "Estimate: the pool is shared with other sites, so CPU and memory are apportioned by PHP time.",
+  "lagged_one": "{count} sample was dropped; the chart refills on reconnect.",
+  "lagged_other": "{count} samples were dropped; the chart refills on reconnect.",
+  "poolMode": {
+    "label": "PHP pool",
+    "shared": "Shared",
+    "dedicated": "Dedicated",
+    "hint": "A dedicated pool gives this site exact CPU and memory, and uses more memory."
+  },
+  "toggle": {
+    "label": "Collect metrics",
+    "on": "On",
+    "off": "Off"
+  },
+  "top": {
+    "title": "Top processes",
+    "empty": "No processes in use."
+  },
+  "routes": {
+    "title": "Slowest routes",
+    "errors": "Recent errors",
+    "empty": "No requests recorded yet."
+  },
+  "cli": {
+    "label": "Same thing in the terminal"
+  }
+}

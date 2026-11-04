@@ -1,0 +1,59 @@
+{
+  "title": "Desempenho",
+  "windows": {
+    "1m": "1 min",
+    "5m": "5 min",
+    "1h": "1 h",
+    "24h": "24 h",
+    "7d": "7 dias"
+  },
+  "windowLabel": "Janela",
+  "state": {
+    "pending": "Aguardando a primeira amostra…",
+    "live": "Ao vivo",
+    "failed": "Não foi possível acompanhar as métricas.",
+    "off": "As métricas estão desligadas para este site.",
+    "idle": "Este daemon não oferece métricas."
+  },
+  "stat": {
+    "requests": "Requisições",
+    "rps": "Taxa",
+    "p50": "Mediana (p50)",
+    "p90": "p90",
+    "p99": "p99",
+    "php": "Tempo do PHP",
+    "errors": "Erros",
+    "cpu": "CPU",
+    "memory": "Memória",
+    "bytes": "Dados enviados",
+    "workers": "Workers ocupados",
+    "processes": "Processos",
+    "lastRequest": "Última requisição"
+  },
+  "approx": "Estimativa: o pool é compartilhado com outros sites, então CPU e memória são divididas pelo tempo de PHP.",
+  "lagged_one": "{count} amostra foi descartada; o gráfico se completa ao reconectar.",
+  "lagged_other": "{count} amostras foram descartadas; o gráfico se completa ao reconectar.",
+  "poolMode": {
+    "label": "Pool do PHP",
+    "shared": "Compartilhado",
+    "dedicated": "Dedicado",
+    "hint": "Um pool dedicado dá a este site CPU e memória exatas, e usa mais memória."
+  },
+  "toggle": {
+    "label": "Coletar métricas",
+    "on": "Ligado",
+    "off": "Desligado"
+  },
+  "top": {
+    "title": "Processos que mais consomem",
+    "empty": "Nenhum processo em uso."
+  },
+  "routes": {
+    "title": "Rotas mais lentas",
+    "errors": "Erros recentes",
+    "empty": "Ainda não há requisições registradas."
+  },
+  "cli": {
+    "label": "O mesmo no terminal"
+  }
+}
