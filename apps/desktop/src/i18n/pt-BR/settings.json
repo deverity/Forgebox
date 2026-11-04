@@ -1,8 +1,12 @@
 {
   "title": "Configurações",
-  "nav": { "label": "Seções das configurações" },
+  "nav": {
+    "label": "Seções das configurações"
+  },
   "sections": {
     "general": "Geral",
+    "network": "Rede",
+    "security": "Segurança",
     "editor": "Editor e terminal",
     "shortcuts": "Atalhos",
     "advanced": "Avançado"
@@ -89,7 +93,9 @@
       "label": "Fechar para a bandeja",
       "description": "Fechar a janela mantém o Forgebox na bandeja do sistema."
     },
-    "autostart": { "label": "Iniciar com o Windows" },
+    "autostart": {
+      "label": "Iniciar com o Windows"
+    },
     "onboarding": {
       "label": "Boas-vindas",
       "description": "Refaz o assistente de primeiros passos.",
@@ -122,6 +128,164 @@
       "label": "Diagnóstico",
       "description": "Verifica PATH, DNS, CA, portas e versões, e exporta um relatório.",
       "open": "Abrir diagnóstico"
+    }
+  },
+  "job": {
+    "uac": "O Windows está pedindo permissão de administrador (UAC). Confirme a janela para continuar; esta janela continua utilizável.",
+    "done": "Concluído",
+    "running": "Trabalhando…"
+  },
+  "confirm": {
+    "cancel": "Cancelar"
+  },
+  "network": {
+    "tld": {
+      "label": "TLD local",
+      "description": "Final dos nomes dos sites locais (.test). Reservado para uso local, nunca chega à internet.",
+      "invalid": "Use um ponto e letras minúsculas ou números, como .test.",
+      "confirmTitle": "Trocar o TLD para {tld}?",
+      "confirmBody": "Passar de {from} para {to} muda o nome de todos os sites e reemite todos os certificados: depois é preciso rotacionar a CA local e ativar o DNS de novo. Cancelar mantém {from}.",
+      "confirm": "Trocar TLD",
+      "needsRotate": "Rotacione a CA local para os certificados cobrirem o novo TLD.",
+      "needsDns": "Ative o DNS local de novo para o novo TLD."
+    },
+    "dns": {
+      "label": "DNS local",
+      "description": "Responde qualquer nome do TLD com 127.0.0.1, e os sites abrem sem editar o hosts.",
+      "server": "Servidor",
+      "running": "Em execução",
+      "stopped": "Parado",
+      "listen": "Escuta em",
+      "mode": "Roteamento",
+      "off": "Desligado",
+      "reason": "Por que não NRPT",
+      "modes": {
+        "nrpt": "Regra NRPT (o Windows segue)",
+        "hosts": "Plano B no arquivo hosts",
+        "none": "Sem roteamento"
+      },
+      "reasons": {
+        "group_policy_table_present": "Existe uma tabela NRPT de Política de Grupo, então o Windows ignora regras locais.",
+        "resolver_probe_failed": "A regra existe, mas o resolvedor do Windows não respondeu a um nome de teste (VPN ou agente de segurança interceptando o DNS).",
+        "resolver_not_on_port53": "O resolvedor do Forgebox não está na porta 53, que o NRPT exige.",
+        "nrpt_unsupported": "Este Windows não tem NRPT.",
+        "nrpt_points_elsewhere": "Outra regra manda o TLD para um servidor diferente."
+      },
+      "enable": "Ativar DNS",
+      "disable": "Desativar DNS",
+      "enabling": "Ativando o DNS local",
+      "disabling": "Desativando o DNS local",
+      "uacNote": "Ativar ou desativar pede permissão de administrador ao Windows (UAC).",
+      "host": "Host para testar",
+      "testHost": "Testar host",
+      "testing": "Testando…",
+      "test": {
+        "ok": "Resolve como esperado",
+        "fail": "Não resolve como esperado",
+        "via": "respondido por {via}",
+        "resolved": "Resolvido",
+        "expected": "Esperado",
+        "none": "nada"
+      }
+    },
+    "ports": {
+      "label": "Faixas de portas",
+      "description": "De onde o Forgebox escolhe portas para servidores web, bancos e pools. Use portas e faixas separadas por vírgula.",
+      "probe": "Verificar uma porta",
+      "invalid": "Use portas de 1 a 65535 ou faixas como 3306-3399, separadas por vírgula.",
+      "none": "O daemon não listou nenhuma faixa."
+    },
+    "portMap": {
+      "label": "Portas em uso",
+      "description": "Somente leitura: portas reservadas pelo Forgebox e outros programas nas faixas dele.",
+      "empty": "Nenhuma porta reservada ainda.",
+      "port": "Porta",
+      "owner": "Dono",
+      "state": "Estado",
+      "states": {
+        "reserved": "Reservada",
+        "bound": "Escutando",
+        "conflict": "Conflito"
+      },
+      "externalTitle": "Ocupadas por outros programas",
+      "noExternal": "Nenhum programa de fora ocupa uma porta do Forgebox.",
+      "conflict": "Conflito",
+      "heldBy": "ocupada por {exe} (pid {pid})"
+    },
+    "lan": {
+      "label": "Acesso pela rede local",
+      "description": "Abre um site para celulares e outros computadores da mesma rede.",
+      "soon": "Em breve"
+    }
+  },
+  "security": {
+    "ca": {
+      "label": "CA local",
+      "description": "Autoridade que assina o HTTPS dos seus sites. Os navegadores precisam confiar nela uma vez.",
+      "state": "Situação",
+      "exists": "Criada",
+      "missing": "Ainda não criada",
+      "subject": "Nome",
+      "thumbprint": "SHA-256",
+      "expires": "Expira em",
+      "trust": "Confiada por",
+      "trustedUser": "Usuário atual",
+      "notTrustedUser": "Usuário atual: não",
+      "trustedMachine": "Máquina inteira",
+      "notTrustedMachine": "Máquina inteira: não",
+      "constraints": "Só assina para",
+      "installTitle": "Confiar na CA",
+      "scope": "Onde confiar",
+      "scopeUser": "Usuário atual",
+      "scopeMachine": "Máquina inteira",
+      "installUserNote": "O Windows mostra uma caixa de segurança pedindo para adicionar o certificado à sua conta. Confirme.",
+      "installMachineNote": "Precisa de permissão de administrador: o Windows mostra o UAC e depois a caixa do certificado.",
+      "install": "Instalar CA",
+      "installing": "Instalando a CA",
+      "exportTitle": "Exportar",
+      "exportNote": "Salva o certificado público (nunca a chave) para importar em outro navegador ou máquina.",
+      "export": "Exportar CA…",
+      "exporting": "Exportando…",
+      "exported": "CA salva em {path}",
+      "rotateTitle": "Rotacionar a CA",
+      "rotateNote": "Cria uma CA nova e reemite todos os certificados.",
+      "rotate": "Rotacionar CA",
+      "rotating": "Rotacionando a CA",
+      "rotateBody": "Isso substitui a CA local e reemite o certificado de todos os sites. Os navegadores precisam confiar na CA nova, e a antiga deixa de valer. Não dá para desfazer.",
+      "rotateConfirm": "Rotacionar agora",
+      "uninstallTitle": "Remover da confiança",
+      "uninstallNote": "Os navegadores deixam de confiar no HTTPS dos sites até a CA ser instalada de novo.",
+      "uninstallUser": "Remover do usuário",
+      "uninstallMachine": "Remover da máquina",
+      "notInstalledUser": "Não confiada pelo usuário atual.",
+      "notInstalledMachine": "Não confiada pela máquina.",
+      "uninstalling": "Removendo a CA"
+    },
+    "certs": {
+      "label": "Certificados",
+      "description": "Um por site, emitido pela CA local.",
+      "empty": "Nenhum certificado emitido ainda.",
+      "daysLeft_one": "falta {count} dia",
+      "daysLeft_other": "faltam {count} dias",
+      "states": {
+        "ok": "Válido",
+        "expiring": "Vencendo",
+        "untrusted": "Sem confiança",
+        "expired": "Vencido"
+      },
+      "renew": "Renovar",
+      "renewAll": "Renovar todos",
+      "renewing": "Renovando {host}",
+      "renewingAll": "Renovando todos os certificados"
+    },
+    "helper": {
+      "label": "Log do helper",
+      "description": "Tudo que o helper elevado fez, o mais novo por último. Só para administradores.",
+      "empty": "O helper ainda não registrou nada.",
+      "refresh": "Atualizar",
+      "refreshing": "Atualizando…",
+      "ok": "ok",
+      "failed": "falhou"
     }
   }
 }

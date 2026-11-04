@@ -17,12 +17,20 @@ export const QA_CONFIG_SCHEMA = {
     tld: { description: "TLD of local sites, with the leading dot.", type: "string" },
     case_sensitive: { description: "Case-sensitive directories by default.", type: "boolean" },
     parked_dirs: { type: "array", items: { type: "string" } },
+    ports: { $ref: "#/$defs/PortsConfig" },
     dns: { $ref: "#/$defs/DnsConfig" },
     updates: { $ref: "#/$defs/UpdatesConfig" },
     editor: { $ref: "#/$defs/EditorConfig" },
     terminal: { $ref: "#/$defs/TerminalConfig" },
   },
   $defs: {
+    PortsConfig: {
+      type: "object",
+      properties: {
+        reserved: { type: "array", items: { type: "integer", format: "uint16", minimum: 0 } },
+        ranges: { type: "object", additionalProperties: { type: "array" } },
+      },
+    },
     DnsConfig: {
       type: "object",
       properties: {
@@ -60,6 +68,14 @@ const DEFAULT_VALUES = {
   tld: ".test",
   case_sensitive: true,
   parked_dirs: ["www"],
+  ports: {
+    reserved: [9003],
+    ranges: {
+      web: [80, 443],
+      "web-alt": [8080, 8443],
+      databases: ["3306-3399", "5432-5499"],
+    } as Record<string, (number | string)[]>,
+  },
   dns: { enabled: true, extra_tlds: [] as string[] },
   updates: { metered: "notify" },
   editor: { command: null as string | null },
@@ -115,6 +131,9 @@ export function settingsHandlers(initial: Partial<Values> = {}): SettingsFake {
     "tld",
     "case_sensitive",
     "parked_dirs",
+    "ports.ranges.web",
+    "ports.ranges.web-alt",
+    "ports.ranges.databases",
     "dns.enabled",
     "dns.extra_tlds",
     "updates.metered",
