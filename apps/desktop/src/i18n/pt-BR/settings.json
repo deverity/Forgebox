@@ -9,7 +9,10 @@
     "security": "Segurança",
     "editor": "Editor e terminal",
     "shortcuts": "Atalhos",
-    "advanced": "Avançado"
+    "advanced": "Avançado",
+    "filesystem": "Sistema de arquivos",
+    "updates": "Atualizações",
+    "registries": "Registries"
   },
   "search": {
     "label": "Buscar configurações",
@@ -286,6 +289,179 @@
       "refreshing": "Atualizando…",
       "ok": "ok",
       "failed": "falhou"
+    }
+  },
+  "filesystem": {
+    "global": {
+      "label": "Case-sensitive por padrão",
+      "description": "As pastas novas do Forgebox (www, etc, data, logs, tmp) recebem a marca case-sensitive, como no Linux. bin/ continua insensível."
+    },
+    "table": {
+      "label": "Estado das pastas",
+      "description": "Se cada pasta diferencia maiúsculas de minúsculas neste volume.",
+      "noRoot": "A pasta raiz ainda não é conhecida.",
+      "dir": "Pasta",
+      "state": "Estado",
+      "fs": "Sistema de arquivos",
+      "actions": "Ações",
+      "enable": "Ativar",
+      "disable": "Desativar",
+      "states": {
+        "enabled": "Case-sensitive",
+        "disabled": "Case-insensitive",
+        "unsupported": "Sem suporte"
+      }
+    },
+    "convert": {
+      "label": "Converter uma pasta",
+      "description": "Move uma pasta existente para uma case-sensitive (ou de volta). Nada mais muda, mas pare os servidores antes: arquivos em uso não podem ser movidos.",
+      "dir": "Pasta a converter",
+      "run": "Converter para case-sensitive",
+      "revert": "Reverter para insensível",
+      "cancel": "Cancelar",
+      "cancelling": "Cancelando…",
+      "cancelled": "A conversão foi cancelada. A pasta ficou como estava.",
+      "again": "Tentar de novo",
+      "converting": "Convertendo {dir}/",
+      "reverting": "Revertendo {dir}/",
+      "revertConflict": "A pasta não pôde voltar a ser case-insensitive porque dois nomes diferem só por maiúsculas (por exemplo Readme.md e readme.md). O Windows os juntaria e perderia um. Renomeie ou remova um de cada par e tente de novo.",
+      "already": "A pasta já estava nesse estado; nada foi movido.",
+      "report": "Pronto: {files} arquivos em {directories} pastas ({size}).",
+      "hint": "Uma conversão longa continua se você sair desta tela; acompanhe no indicador de tarefas.",
+      "revertTitle": "Reverter {dir}/ para case-insensitive?",
+      "revertBody": "Nomes que diferem só por maiúsculas não existem numa pasta insensível. Se houver algum, a reversão para e explica qual."
+    },
+    "finder": {
+      "label": "Case Mismatch Finder",
+      "description": "Acha referências cuja caixa difere do arquivo em disco (funcionam no Windows e quebram no Linux).",
+      "site": "Site",
+      "strategy": "Estratégia de correção",
+      "noSites": "Nenhum site ainda",
+      "scan": "Verificar (simulação)",
+      "scanning": "Verificando o site",
+      "clean_one": "Nenhuma diferença de caixa em {count} arquivo.",
+      "clean_other": "Nenhuma diferença de caixa em {count} arquivos.",
+      "appliedClean": "Nada mais a corrigir.",
+      "summary_one": "{count} ocorrência, {fixable} corrigível. Nada foi alterado ainda.",
+      "summary_other": "{count} ocorrências, {fixable} corrigíveis. Nada foi alterado ainda.",
+      "appliedSummary": "Correções aplicadas. Restam {remaining} diferenças.",
+      "dryRunNote": "É uma prévia: as linhas acima mostram o que mudaria.",
+      "apply_one": "Aplicar {count} correção…",
+      "apply_other": "Aplicar {count} correções…",
+      "applying": "Aplicando as correções",
+      "hint": "Renomear muda o arquivo em disco; editar reescreve a referência. Automático renomeia quando só o nome do arquivo difere.",
+      "confirmTitle": "Aplicar as correções em {site}?",
+      "confirmBody_one": "{count} correção vai renomear arquivos ou reescrever referências no projeto. Faça commit ou backup antes.",
+      "confirmBody_other": "{count} correções vão renomear arquivos ou reescrever referências no projeto. Faça commit ou backup antes.",
+      "confirmApply": "Aplicar",
+      "categories": {
+        "mismatch": "Diferença de caixa",
+        "case_duplicate": "Nomes que diferem só pela caixa",
+        "reserved_name": "Nome reservado",
+        "env_case_duplicate": "Chaves do .env que diferem só pela caixa",
+        "crlf_shebang": "Shebang com CRLF"
+      },
+      "strategies": {
+        "auto": "Automática",
+        "rename": "Renomear arquivo",
+        "edit": "Editar referência"
+      }
+    }
+  },
+  "updates": {
+    "app": {
+      "label": "Atualizações do Forgebox",
+      "description": "Canal e autoatualização do aplicativo.",
+      "channel": "Canal",
+      "stable": "Estável",
+      "beta": "Beta",
+      "selfUpdate": "Atualizar o Forgebox",
+      "inactive": "As atualizações do aplicativo chegam na 1.0. Até lá, instale novas versões pela página de lançamentos."
+    },
+    "check": {
+      "label": "Verificar atualizações das ferramentas",
+      "description": "Procura agora versões novas de todas as ferramentas instaladas.",
+      "now": "Verificar agora",
+      "checking": "Verificando atualizações",
+      "none": "Todas as ferramentas estão em dia.",
+      "found_one": "{count} ferramenta tem atualização.",
+      "found_other": "{count} ferramentas têm atualização."
+    },
+    "quiet": {
+      "label": "Horário silencioso",
+      "description": "Verificações e downloads em segundo plano esperam fora desta janela (24 h, hora local; pode passar da meia-noite). Deixe os dois vazios para não ter.",
+      "start": "De",
+      "end": "Até",
+      "unchanged": "Nada a salvar",
+      "problem": {
+        "format": "Use HH:MM, 24 horas (por exemplo 22:00).",
+        "incomplete": "Preencha os dois horários ou deixe os dois vazios.",
+        "same": "Os dois horários são iguais."
+      }
+    },
+    "metered": {
+      "label": "Conexão medida",
+      "description": "O que as atualizações em segundo plano fazem quando o Windows diz que a conexão é medida.",
+      "values": {
+        "pause": "Pausar downloads",
+        "allow": "Baixar mesmo assim"
+      }
+    },
+    "policy": {
+      "label": "Política por ferramenta",
+      "description": "Como cada ferramenta instalada é atualizada.",
+      "tool": "Ferramenta",
+      "installed": "Versões",
+      "policy": "Política",
+      "select": "Política de atualização de {tool}",
+      "empty": "Nenhuma ferramenta instalada ainda.",
+      "available": "{version} disponível",
+      "values": {
+        "manual": "Manual",
+        "notify": "Avisar",
+        "auto-patch": "Patch automático",
+        "auto-minor": "Minor automático",
+        "auto": "Tudo automático"
+      }
+    }
+  },
+  "registries": {
+    "list": {
+      "label": "Registries",
+      "description": "De onde o catálogo lê os manifestos das ferramentas. O oficial não pode ser removido."
+    },
+    "add": {
+      "label": "Adicionar um registry",
+      "description": "Registries de terceiros recebem um selo e não podem rodar scripts de instalação.",
+      "url": "URL do registry",
+      "name": "Nome (opcional)",
+      "nameHint": "Padrão: derivado da URL.",
+      "adding": "Adicionando…",
+      "submit": "Adicionar registry"
+    },
+    "trust": {
+      "official": "Oficial",
+      "third-party": "Terceiro",
+      "unverified": "Não verificado"
+    },
+    "disabled": "Desativado",
+    "removing": "Removendo…",
+    "remove": "Remover",
+    "removeTitle": "Remover o registry {name}?",
+    "removeBody": "As ferramentas dele somem do catálogo. As versões já instaladas ficam.",
+    "tools_one": "{count} ferramenta",
+    "tools_other": "{count} ferramentas",
+    "neverRefreshed": "nunca atualizado",
+    "refreshed": "atualizado {when}",
+    "noRefresh": "Este registry nunca foi atualizado. Atualize os registries para carregá-lo.",
+    "lastError": "A última atualização falhou: {error}",
+    "update": "Atualizar registries",
+    "updating": "Atualizando os registries",
+    "empty": "Nenhum registry configurado",
+    "problem": {
+      "empty": "Informe uma URL ou uma pasta.",
+      "scheme": "Use uma URL https://, git+https://, file:/// ou o caminho de uma pasta.",
+      "invalid": "Esta não é uma URL válida."
     }
   }
 }

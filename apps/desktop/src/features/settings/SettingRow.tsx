@@ -36,6 +36,8 @@ export interface SettingRowProps {
   presets?: readonly Preset[];
   /** Localized names of the presets by id. */
   presetLabel?: (id: string) => string;
+  /** Localized name of a `select` option (default: the raw schema value). */
+  optionLabel?: (option: string) => string;
   /** Extra controls on the right (the "Test" button). */
   extra?: ReactNode;
   /** Tells the section whether the field has unsaved changes. */
@@ -102,6 +104,7 @@ export function SettingRow({
   value,
   presets,
   presetLabel,
+  optionLabel,
   extra,
   onDirtyChange,
 }: SettingRowProps) {
@@ -209,7 +212,7 @@ export function SettingRow({
   } else if (spec.control === "select") {
     const options = spec.options.map((option) => ({
       value: option === "" ? UNSET : option,
-      label: option === "" ? t("auto") : option,
+      label: option === "" ? t("auto") : (optionLabel?.(option) ?? option),
     }));
     control = (
       <Select

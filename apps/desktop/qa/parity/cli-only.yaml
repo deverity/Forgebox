@@ -53,6 +53,8 @@ cli_only:
     reason: "Certificates are issued by site creation and by 'sites.secure' (M2-E4-T9); the Settings Seguranca list renews them (tls.renew) but a manual issue is `forge tls issue`."
   - method: tls.export
     reason: "Exporting a site certificate with its key (PFX) is a CLI-only admin export; Settings Seguranca exports only the public CA certificate (tls.ca_export)."
+  - method: fs_parity.site_case
+    reason: "The per-site switch stays `forge site case-sensitive` (the Settings screen has no site-level toggle); Settings > Sistema de arquivos converts folders and runs the Case Mismatch Finder (M2-E3-T18)."
 query:
   - method: daemon.status
     reason: "Query shown by: Shell status footer and Settings (M2-E1, M2-E3-T16)."
@@ -153,22 +155,6 @@ query:
   - method: tools.plan
     reason: "Query shown by: Catalog tool page install plan and the site PHP switch confirmation (M2-E2-T18, M2-E2-T16)."
 pending:
-  - method: fs_parity.case_convert
-    task: M2-E3-T18
-  - method: fs_parity.case_disable
-    task: M2-E3-T18
-  - method: fs_parity.case_enable
-    task: M2-E3-T18
-  - method: fs_parity.lint_case
-    task: M2-E3-T18
-  - method: fs_parity.site_case
-    task: M2-E3-T18
-  - method: registry.add
-    task: M2-E3-T18
-  - method: registry.remove
-    task: M2-E3-T18
-  - method: registry.update
-    task: M2-E3-T18
   # PHP screen gap left by M2-E2-T17 (pool card 'Recarregar' for php@<series>).
   - method: services.reload
     task: M2-E4-T9

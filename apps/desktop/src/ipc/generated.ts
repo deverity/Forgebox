@@ -2168,6 +2168,14 @@ export type RegistryDto = {
 	priority: number,
 	tools: number,
 	last_refresh_at: string | null,
+	/**  Loaded without a valid signature because the user trusts it (docs/04 section 5). */
+	trusted_unsigned?: boolean,
+	/**  The last load verified the index signature. */
+	verified?: boolean,
+	/**  `key_id` of the signing key when verified. */
+	key_id?: string | null,
+	/**  Error of the last refresh, if it failed. */
+	last_error?: string | null,
 };
 
 /**  Kind of registry source (`registries.kind`). */

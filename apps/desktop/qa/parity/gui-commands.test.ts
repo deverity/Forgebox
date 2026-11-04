@@ -109,7 +109,24 @@ const SAMPLES: Record<string, unknown[]> = {
   "tools.remove_version": ["php@8.3.36"],
   "tools.rollback_series": ["php@8.3"],
   "tools.check_updates_one": ["php"],
-  "tools.set_policy": [{ tool: "php", policy: "notify" }],
+  "tools.set_policy": [
+    { tool: "php", policy: "notify" },
+    { tool: "php", policy: "auto-patch" },
+  ],
+  "filesystem.case_enable": ["C:/forgebox/www"],
+  "filesystem.case_disable": ["C:/forgebox/www"],
+  "filesystem.case_convert": [
+    { dir: "C:/forgebox/www", revert: false },
+    { dir: "C:/forgebox/www", revert: true },
+  ],
+  "filesystem.lint_case": [
+    { site: "loja.test", strategy: "auto", dryRun: true },
+    { site: "loja.test", strategy: "rename", dryRun: false },
+  ],
+  "registries.add": [{ url: "https://example.org/registry/index.yaml", name: "acme" }],
+  "registries.remove": ["acme"],
+  "registries.update": [undefined],
+  "updates.check_all": [undefined],
   "php.ext_enable": [{ version: "8.4", extension: "intl" }],
   "php.ext_disable": [{ version: "8.4", extension: "intl" }],
   "php.xdebug": [
