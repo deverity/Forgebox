@@ -1,17 +1,46 @@
-import { render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { screen } from "@testing-library/react";
 import i18n from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
 import { renderApp } from "../testApp";
 import { GALLERY_PATH } from "../routes/root";
-import Gallery from "./Gallery";
 
 describe("/__gallery", () => {
   beforeAll(async () => {
     await i18n.loadNamespaces("gallery");
   });
 
-  it("shows every control primitive with its states", () => {
-    render(<Gallery />);
+  /** The primitives named by docs/07 section 6, normalised to their component names. */
+  function section6Primitives(): string[] {
+    const doc = readFileSync(resolve(__dirname, "../../../../../docs/07-ui-ux.md"), "utf8");
+    const body = /^## 6\. Componentes[^\n]*\n([^\n]+)/m.exec(doc)?.[1] ?? "";
+    // "Toast (empilhado, ação de desfazer), Progress (linear/circular)": drop the parentheses first.
+    const names = body
+      .replace(/\([^)]*\)/g, "")
+      .split(",")
+      .map((name) => name.replace(/[\s.]+/g, ""))
+      .filter(Boolean);
+    return names.map((name) => name.replace(/^Segmentedcontrol$/i, "SegmentedControl"));
+  }
+
+  it("covers 100% of the docs/07 section 6 list (M2-E4-T6)", async () => {
+    const expected = section6Primitives();
+    expect(expected.length).toBeGreaterThanOrEqual(25);
+    await renderApp({ path: GALLERY_PATH });
+    await screen.findByRole("heading", { level: 1, name: "Component gallery" });
+    const shown = new Set(
+      [...document.body.querySelectorAll("[data-gallery]")].flatMap((el) =>
+        (el.getAttribute("data-gallery") ?? "").split(/\s+/),
+      ),
+    );
+    expect(expected.filter((name) => !shown.has(name))).toEqual([]);
+    expect([...shown].filter((name) => !expected.includes(name))).toEqual([]);
+  });
+
+  it("shows every control primitive with its states", async () => {
+    await renderApp({ path: GALLERY_PATH });
+    await screen.findByRole("heading", { level: 1, name: "Component gallery" });
     for (const name of [
       "Button",
       "IconButton",
