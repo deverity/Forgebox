@@ -19,7 +19,7 @@ import {
 import { ActivityFeed } from "./ActivityFeed";
 import { AttentionSection } from "./AttentionSection";
 import { TILE_HEIGHT, TILE_WIDTH, tilesOf } from "./model";
-import { PROJECTS_SECTION, ProjectsSection } from "./ProjectsSection";
+import { MACHINE_SECTION, PROJECTS_SECTION, ProjectsSection } from "./ProjectsSection";
 import { RecentSites } from "./RecentSites";
 import { InstanceTile, PoolTile } from "./ServiceTiles";
 
@@ -125,7 +125,7 @@ export function DashboardPage() {
           <RecentSites height={CARD_HEIGHT} />
           <ActivityFeed height={CARD_HEIGHT} />
         </div>
-        <DashboardSectionsHost except={[PROJECTS_SECTION]} />
+        <DashboardSectionsHost except={[PROJECTS_SECTION, MACHINE_SECTION]} />
       </div>
     </div>
   );

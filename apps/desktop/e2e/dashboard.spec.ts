@@ -26,12 +26,11 @@ const INSTALLED = {
   error: null,
 };
 
-test("healthy: tiles, no Atenção, Projetos empty state", async ({ page }) => {
+test("healthy: tiles, no Atenção, Projetos ranking", async ({ page }) => {
   await page.goto(url("dashboard"));
   await expect(page.locator("[data-tile]")).toHaveCount(4);
-  await expect(page.getByTestId("dashboard-projects")).toContainText(
-    "Project ranking is not available yet",
-  );
+  await expect(page.getByTestId("dashboard-projects").locator("[data-project-row]")).toHaveCount(3);
+  await expect(page.getByTestId("machine-cpu")).toBeVisible();
   await expect(page.getByTestId("dashboard-activity").locator("li")).toHaveCount(4);
   await expect(page.getByTestId("dashboard-recent").locator("[data-recent-site]")).toHaveCount(3);
   await expect(page.getByTestId("dashboard-attention")).toHaveCount(0);

@@ -46,7 +46,13 @@ export function DashboardSectionsHost({
     <>
       {sections.map((section) => (
         <SlotBoundary key={section.id} id={section.id}>
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              section.reserveHeight === undefined ? null : (
+                <div aria-hidden="true" style={{ height: section.reserveHeight }} />
+              )
+            }
+          >
             <div data-testid={`dashboard-section-${section.id}`}>
               <section.component />
             </div>
@@ -58,7 +64,7 @@ export function DashboardSectionsHost({
 }
 
 /** Tab strip and panels of the site detail from the registered tabs. */
-export function SiteTabsHost({ siteId }: { siteId: string }) {
+export function SiteTabsHost({ siteId, initialTab }: { siteId: string; initialTab?: string }) {
   const { t } = useTranslation("shell");
   const tabs = useSlot(siteTabs);
   const first = tabs[0];
@@ -66,7 +72,10 @@ export function SiteTabsHost({ siteId }: { siteId: string }) {
     return <p className="px-4 text-callout text-fg-secondary">{t("placeholder.noTabs")}</p>;
   }
   return (
-    <Tabs.Root defaultValue={first.id} className="flex min-h-0 flex-1 flex-col">
+    <Tabs.Root
+      defaultValue={tabs.some((tab) => tab.id === initialTab) ? initialTab : first.id}
+      className="flex min-h-0 flex-1 flex-col"
+    >
       <Tabs.List
         aria-label={t("placeholder.siteTabs")}
         className="flex gap-1 border-b border-stroke px-4"

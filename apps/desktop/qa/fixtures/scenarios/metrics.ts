@@ -4,6 +4,11 @@
 //
 // Variants through the URL (`?metrics=`): `global-off`, `site-off` (every site), `no-traffic`,
 // `pool-fails` (sites.pool_mode ends in job.failed), `slow-pool` (the job takes 1.2 s).
+//
+// The same module answers the Dashboard "Projetos" ranking and machine monitor (M2-E5-T17):
+// `stats.get` of all sites (the 24h window varies per site so a ranking has an order),
+// `stats.top` with the machine, and `StatsOptions` overrides that trip the docs/14 section 5
+// rules in the `dashboard-projects` scenario. Without overrides every rule stays quiet.
 import { fakeError, fakeJob, type FakeHandlers } from "../../../src/ipc/fakeBridge";
 import type * as T from "../../../src/ipc/generated";
 import type { QaData } from "./data";
@@ -105,27 +110,66 @@ function series(site: T.SiteDto, range: T.StatsWindow, quiet: boolean): T.Series
   };
 }
 
-function stats(site: T.SiteDto, window: T.StatsWindow, quiet: boolean): T.SiteStatsDto {
+const MIB = 1024 ** 2;
+const GIB = 1024 ** 3;
+
+export interface StatsOptions {
+  /** Per-host overrides of the `stats.get` entry (every window). */
+  sites?: Readonly<Record<string, Partial<T.SiteStatsDto>>>;
+  machine?: Partial<T.MachineStatsDto>;
+}
+
+export function healthyMachine(
+  patch: Partial<T.MachineStatsDto> = {},
+  now = Date.now(),
+): T.MachineStatsDto {
+  return {
+    at: new Date(now).toISOString(),
+    cpu_pct: 22,
+    logical_cpus: 8,
+    mem_total: 16 * GIB,
+    mem_available: 9 * GIB,
+    forgebox_cpu_pct: 4,
+    forgebox_rss: 900 * MIB,
+    disks: [{ role: "root", total: 500 * GIB, free: 220 * GIB, available: 220 * GIB }],
+    ...patch,
+  };
+}
+
+function stats(
+  site: T.SiteDto,
+  window: T.StatsWindow,
+  quiet: boolean,
+  index = 0,
+  patch: Partial<T.SiteStatsDto> = {},
+  now = Date.now(),
+): T.SiteStatsDto {
   const php = site.kind === "php";
   const seconds = SPAN_MS[window] / 1000;
   const rate = quiet ? 0 : window === "1m" ? 16.4 : 14.2;
+  // The 24h window is the Dashboard ranking: a little variation per site gives it an order
+  // (all healthy: p99 < 420 ms, errors < 0.4 %, memory < 130 MiB). Other windows are the tab's.
+  const ranked = window === "24h" && !quiet;
   return {
     site_id: site.id,
     host: site.host,
     window,
-    at: new Date().toISOString(),
+    at: new Date(now).toISOString(),
     requests: Math.round(rate * seconds),
     rps: quiet ? null : rate,
     p50_ms: quiet ? null : 31,
     p90_ms: quiet ? null : 58,
-    p99_ms: quiet ? null : 142,
-    error_pct: quiet ? null : 1.8,
-    cpu_pct: php ? 21.5 : null,
-    mem_bytes: php ? 214 * 1024 * 1024 : null,
+    p99_ms: quiet ? null : ranked ? 120 + ((index * 7) % 300) : 142,
+    error_pct: quiet ? null : ranked ? (index % 4) / 10 : 1.8,
+    cpu_pct: php ? (ranked ? 1 + (index % 13) / 2 : 21.5) : null,
+    mem_bytes: php ? (ranked ? 40 + ((index * 3) % 90) : 214) * MIB : null,
     approx: (site.pool_mode ?? "shared") === "shared",
     sampled: false,
     workers_active: php ? 3 : null,
     metrics_enabled: site.metrics_enabled ?? true,
+    processes: 1,
+    last_request_at: quiet ? null : new Date(now - 60_000).toISOString(),
+    ...patch,
   };
 }
 
@@ -194,8 +238,11 @@ export interface MetricsQa {
 }
 
 /** The Performance tab's handlers over `data` (they edit the site rows like the daemon). */
-export function metricsHandlers(data: QaData): MetricsQa {
+export function metricsHandlers(data: QaData, options: StatsOptions = {}): MetricsQa {
   const mode = variant();
+  // One clock per scenario: a poll that changes nothing answers equal objects, so only the rows
+  // whose numbers changed re-render.
+  const now = Date.now();
   let globalEnabled = mode !== "global-off";
   if (mode === "site-off") for (const s of data.sites) s.metrics_enabled = false;
   const quiet = mode === "no-traffic";
@@ -217,8 +264,14 @@ export function metricsHandlers(data: QaData): MetricsQa {
           ref === undefined || ref === null
             ? data.sites
             : [findSite(data, typeof ref === "string" ? ref : "")];
-        return { window, sites: sites.map((s) => stats(s, window, quiet)) };
+        return {
+          window,
+          sites: sites.map((s) =>
+            stats(s, window, quiet, data.sites.indexOf(s), options.sites?.[s.host], now),
+          ),
+        };
       },
+      "stats.top": () => ({ processes: [], machine: healthyMachine(options.machine, now) }),
       "stats.series": (params) => series(findSite(data, params.site), params.range ?? "1h", quiet),
       "stats.routes": (params) => routes(findSite(data, params.site), quiet),
       "sites.metrics": (params, ctx) => {

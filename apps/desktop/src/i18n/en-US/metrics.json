@@ -166,5 +166,82 @@
         "hint": "When off, this site's requests no longer feed the metrics; the history stays."
       }
     }
+  },
+  "projects": {
+    "title": "Projects",
+    "listLabel": "Projects ranked over the last 24 hours",
+    "sortBy": "Sort the ranking by",
+    "sort": "Sort by {column}",
+    "open": "Open the Performance tab of {host}",
+    "columns": {
+      "site": "Site",
+      "cpu": "CPU",
+      "mem": "RAM",
+      "p99": "p99",
+      "errors": "Errors",
+      "trend": "24 h"
+    },
+    "approx": "≈ marks CPU and RAM apportioned from a shared PHP pool; give the site a dedicated pool for exact values.",
+    "empty": {
+      "title": "No traffic recorded yet",
+      "description": "Sites show up here ranked once they get requests."
+    },
+    "unavailable": {
+      "title": "Project ranking is not available",
+      "description": "This daemon does not answer stats.get yet."
+    },
+    "idle": {
+      "title": "Idle for more than {days} days",
+      "hint": "These sites still have running processes but no requests. Stopping them frees CPU and memory.",
+      "days_one": "{count} day idle",
+      "days_other": "{count} days idle",
+      "never": "No request recorded",
+      "processes_one": "{count} process",
+      "processes_other": "{count} processes",
+      "more_one": "and {count} more idle site",
+      "more_other": "and {count} more idle sites"
+    }
+  },
+  "machine": {
+    "title": "Machine",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "disk": "Disk ({role})",
+    "roles": {
+      "root": "Forgebox folder",
+      "data": "data"
+    },
+    "forgebox": "Forgebox: {value}",
+    "ofTotal": "{used} of {total}",
+    "free": "{value} free",
+    "diskTotal": "{total} total",
+    "loading": "Reading the machine...",
+    "unavailable": "The daemon does not report the machine yet."
+  },
+  "attention": {
+    "action": {
+      "performance": "Open Performance",
+      "php": "Open PHP",
+      "settings": "Open settings"
+    },
+    "p99": {
+      "title": "{host} is slow",
+      "cause": "p99 is {value} ms over the last {minutes} minutes (limit {limit} ms)."
+    },
+    "errors": {
+      "title": "{host} is returning errors",
+      "cause": "{value}% of the requests failed in the last 5 minutes (limit {limit}%)."
+    },
+    "poolRam": {
+      "title": "PHP {series} pool uses a lot of memory",
+      "cause": "Its workers hold {gb} GB (limit {limit} GB). Lower the worker limit or restart the pool."
+    },
+    "disk": {
+      "title": {
+        "root": "Little disk space left on the Forgebox folder volume",
+        "data": "Little disk space left on the data volume"
+      },
+      "cause": "Only {gb} GB are free (limit {limit} GB). Downloads, logs and databases may start to fail."
+    }
   }
 }

@@ -3,7 +3,8 @@
 // Atividade. The built-in `empty` scenario covers the empty state.
 import type { FakeScenario } from "../../../src/ipc/fakeBridge";
 import type * as T from "../../../src/ipc/generated";
-import { CA_STATUS, fakeId, populatedData, type QaData } from "./data";
+import { CA_STATUS, fakeId, heavyData, populatedData, type QaData } from "./data";
+import { metricsHandlers } from "./metrics";
 
 const DAY = 24 * 60 * 60 * 1000;
 const inDays = (days: number) => new Date(Date.now() + days * DAY).toISOString();
@@ -143,6 +144,44 @@ export function attentionDashboard(): { data: QaData; extra: FakeScenario } {
           policy: "hosts_fallback",
           mode: "hosts",
           reason: "resolver_probe_failed",
+        }),
+      },
+    },
+  };
+}
+
+/** Sites of `dashboard-projects`: the ones the e2e spec and the unit fixtures look for. */
+export const PROJECTS_SITES = 200;
+
+/**
+ * `dashboard-projects` (M2-E5-T17): 200 sites ranked, one slow, one failing, one idle for 8 days
+ * (a 6 day one stays out), a PHP pool above 1 GB and a nearly full disk: every performance rule
+ * of docs/14 section 5 trips once.
+ */
+export function projectsDashboard(): { data: QaData; extra: FakeScenario } {
+  const data = heavyData(PROJECTS_SITES, 4);
+  const day = (days: number) => new Date(Date.now() - days * DAY).toISOString();
+  const handlers = metricsHandlers(data, {
+    sites: {
+      "site1.test": { p99_ms: 950, requests: 400 },
+      "site2.test": { error_pct: 9.2, requests: 400 },
+      "site3.test": { last_request_at: day(8), processes: 2, requests: 0, rps: 0 },
+      "site4.test": { last_request_at: day(6), processes: 1, requests: 0, rps: 0 },
+    },
+    machine: {
+      disks: [
+        { role: "root", total: 500 * 1024 ** 3, free: 1.2 * 1024 ** 3, available: 1.2 * 1024 ** 3 },
+      ],
+    },
+  });
+  return {
+    data,
+    extra: {
+      handlers: {
+        ...handlers.handlers,
+        "services.status": () => ({
+          instances: data.instances,
+          pools: [{ ...pool(), rss_bytes: 1.5 * 1024 ** 3 }],
         }),
       },
     },
