@@ -26,6 +26,7 @@
     "e2e",
     "playwright.config.ts",
     "playwright.real.config.ts",
+    "playwright.live.config.ts",
     "playwright.qa.config.ts",
     "playwright.perf.config.ts",
     "vite.config.ts",
