@@ -9,7 +9,9 @@
 //!   mapping converted to an `AccessFormat`. Nothing here knows a tool by id;
 //! * **routes**: every site with its host, aliases and `metrics_enabled`;
 //! * **pools**: every 10 s the latest sample of each PHP pool (its `subscribe_metrics`
-//!   watch, read without holding it across an `.await`) and the sites it serves;
+//!   watch, read without holding it across an `.await`) and the sites it serves; a
+//!   site's dedicated pool (`pool_mode: dedicated`) goes as `PoolMode::Dedicated`, so its
+//!   CPU/RAM are exact (`approx = false`);
 //! * **switch**: `[metrics] enabled`, off by default in a portable root unless the user set
 //!   it ([`enabled_for`]).
 //!
@@ -23,7 +25,9 @@ use std::time::Duration;
 
 use forge_core::config::ForgeConfig;
 use forge_core::event::{EventKind, StreamItem};
+use forge_core::ids::SiteId;
 use forge_core::paths::ForgeRoot;
+use forge_fcgi::PoolMetrics;
 use forge_ipc::api::ConfigChangedPayload;
 use forge_manifest::schema::tool::{AccessMulti, AccessSpec, AccessUnit};
 use forge_metrics::{
@@ -34,6 +38,7 @@ use forge_supervisor::InstanceState;
 use tokio_util::sync::CancellationToken;
 
 use crate::daemon::Daemon;
+use crate::pools::PoolKey;
 
 /// Pool samples are refreshed (and the sources and routes checked again) this often.
 pub const FEED_INTERVAL: Duration = Duration::from_secs(10);
@@ -145,11 +150,12 @@ pub async fn routes(daemon: &Daemon) -> forge_core::error::Result<Vec<SiteRoute>
         .collect())
 }
 
-/// The latest sample of every pool and the sites it serves (shared pools: the dedicated
-/// mode arrives with `sites.pool_mode`, M2-E5-T11).
+/// The latest sample of every pool and the sites it serves: a shared pool serves the
+/// sites of its version in shared mode (CPU/RAM apportioned, `approx`), a dedicated pool
+/// its own site (exact, ADR-0044 §5).
 pub async fn pools(daemon: &Daemon) -> Vec<PoolFeed> {
-    let handles = daemon.pools.handles();
-    if handles.is_empty() {
+    let entries = daemon.pools.entries();
+    if entries.is_empty() {
         return Vec::new();
     }
     let sites = match daemon.sites.list().await {
@@ -166,28 +172,41 @@ pub async fn pools(daemon: &Daemon) -> Vec<PoolFeed> {
             return Vec::new();
         }
     };
-    handles
+    let samples: Vec<(PoolKey, PoolMetrics)> = entries
         .into_iter()
-        .map(|handle| {
-            let version = handle.version_id();
-            // A copy of the watch value: the borrow never crosses an `.await`.
-            let metrics = handle.subscribe_metrics().borrow().clone();
-            PoolFeed {
-                sample: PoolSample {
-                    pool: version.to_string(),
-                    mode: PoolMode::Shared,
-                    cpu_pct: metrics.cpu_pct.unwrap_or(0.0),
-                    mem_bytes: metrics.rss_bytes,
-                    workers_active: metrics.workers_active,
-                    from_ms: 0,
-                    to_ms: 0,
+        // A copy of the watch value: the borrow never crosses an `.await`.
+        .map(|(key, handle)| (key, handle.subscribe_metrics().borrow().clone()))
+        .collect();
+    let served: Vec<(SiteId, PoolKey)> = plan.iter().map(|(site, php)| (*site, php.pool)).collect();
+    pool_feeds(&samples, &served)
+}
+
+/// [`pools`] without the daemon: each pool's sample (`pool` = its port owner id, mode
+/// from its key) and the sites the plan routes to it (`served`: site → pool).
+pub fn pool_feeds(
+    samples: &[(PoolKey, PoolMetrics)],
+    served: &[(SiteId, PoolKey)],
+) -> Vec<PoolFeed> {
+    samples
+        .iter()
+        .map(|(key, metrics)| PoolFeed {
+            sample: PoolSample {
+                pool: key.owner_id(),
+                mode: match key.site {
+                    None => PoolMode::Shared,
+                    Some(site) => PoolMode::Dedicated(site.to_string()),
                 },
-                sites: plan
-                    .iter()
-                    .filter(|(_, php)| php.version.id == version)
-                    .map(|(site, _)| *site)
-                    .collect(),
-            }
+                cpu_pct: metrics.cpu_pct.unwrap_or(0.0),
+                mem_bytes: metrics.rss_bytes,
+                workers_active: metrics.workers_active,
+                from_ms: 0,
+                to_ms: 0,
+            },
+            sites: served
+                .iter()
+                .filter(|(_, pool)| pool == key)
+                .map(|(site, _)| *site)
+                .collect(),
         })
         .collect()
 }
@@ -344,6 +363,86 @@ pub async fn feed_loop(daemon: Daemon, stop: CancellationToken) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dedicated_pool_is_attributed_exactly_to_its_site() {
+        use forge_core::ids::VersionId;
+        use forge_metrics::attribution::{Bucket, PoolRoute, SiteLoad, attribute};
+
+        let version = VersionId::new();
+        let (loja, blog, news) = (SiteId::new(), SiteId::new(), SiteId::new());
+        let shared = PoolKey::shared(version);
+        let dedicated = PoolKey::dedicated(version, loja);
+        let sample = |cpu: f64, mem: u64, workers: u32| PoolMetrics {
+            cpu_pct: Some(cpu),
+            rss_bytes: mem,
+            workers_active: workers,
+            ..PoolMetrics::default()
+        };
+        let feeds = pool_feeds(
+            &[
+                (shared, sample(4.0, 200, 2)),
+                (dedicated, sample(3.0, 100, 2)),
+            ],
+            &[(loja, dedicated), (blog, shared), (news, shared)],
+        );
+        assert_eq!(feeds.len(), 2);
+        assert_eq!(feeds[0].sample.mode, PoolMode::Shared);
+        assert_eq!(feeds[0].sample.pool, version.to_string());
+        assert_eq!(feeds[0].sites, vec![blog, news]);
+        assert_eq!(feeds[1].sample.mode, PoolMode::Dedicated(loja.to_string()));
+        assert_eq!(feeds[1].sample.pool, format!("{version}~{loja}"));
+        assert_eq!(feeds[1].sites, vec![loja]);
+
+        // Through the attribution of the metrics service (one 10 s bucket, as its tick).
+        let length_ms = 10_000;
+        let mut routes = Vec::new();
+        let mut pools = Vec::new();
+        for feed in &feeds {
+            let mut sample = feed.sample.clone();
+            sample.to_ms = length_ms;
+            for site in &feed.sites {
+                routes.push(PoolRoute {
+                    site: site.to_string(),
+                    pool: sample.pool.clone(),
+                    from_ms: 0,
+                    to_ms: length_ms,
+                });
+            }
+            pools.push(sample);
+        }
+        let load = |ut: u64| SiteLoad {
+            ut_sum_us: ut,
+            ..SiteLoad::default()
+        };
+        let bucket = Bucket {
+            length_ms,
+            pools,
+            apps: Vec::new(),
+            routes,
+            loads: [
+                (loja.to_string(), load(1_000)),
+                (blog.to_string(), load(3_000)),
+                (news.to_string(), load(1_000)),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let out = attribute(&bucket);
+        let exact = &out.sites[&loja.to_string()];
+        assert!(!exact.approx, "a dedicated site is exact");
+        assert!(
+            (exact.cpu_pct - 3.0).abs() < 1e-9,
+            "the pool's CPU: {exact:?}"
+        );
+        assert_eq!(exact.mem_bytes, 100);
+        let apportioned = &out.sites[&blog.to_string()];
+        assert!(apportioned.approx, "a shared site is apportioned");
+        assert!(
+            (apportioned.cpu_pct - 3.0).abs() < 1e-9,
+            "3/4 of 4 %: {apportioned:?}"
+        );
+    }
 
     #[test]
     fn the_nginx_mapping_of_the_registry_becomes_a_parser_format() {

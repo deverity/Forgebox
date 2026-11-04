@@ -172,13 +172,15 @@ async fn list(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<PhpVersion
         .map(|c| c.canonical_name);
     let sites = daemon.sites.list().await?;
     let plan = daemon.web.php_plan(&sites).await.unwrap_or_default();
-    let statuses = daemon.pools.statuses().await;
+    let statuses = daemon.pools.keyed_statuses().await;
     let states = debugger_states(&daemon).await;
     let versions = rows
         .iter()
         .map(|row| {
             let count = plan.values().filter(|p| p.version.id == row.id).count();
             let count = u32::try_from(count).unwrap_or(u32::MAX);
+            let shared = crate::pools::PoolKey::shared(row.id);
+            let shared_sites = plan.values().filter(|p| p.pool == shared).count();
             PhpVersionDto {
                 version_id: row.id,
                 version: row.version.clone(),
@@ -191,10 +193,14 @@ async fn list(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<PhpVersion
                     .cloned()
                     .unwrap_or_else(|| "x64".into()),
                 is_current_cli: current.as_deref() == Some(row.canonical_name.as_str()),
-                pool: statuses
-                    .iter()
-                    .find(|s| s.version_id == row.id)
-                    .map(|s| convert::pool(s, count, xdebug_on(&states, row.id))),
+                // The version's shared pool (dedicated ones are in `services.status`).
+                pool: statuses.iter().find(|(k, _)| *k == shared).map(|(_, s)| {
+                    convert::pool(
+                        s,
+                        u32::try_from(shared_sites).unwrap_or(u32::MAX),
+                        xdebug_on(&states, row.id),
+                    )
+                }),
                 sites: count,
                 xdebug: convert::xdebug_mode(states.get(&row.id)),
             }
@@ -217,15 +223,13 @@ async fn pool_status(
     let states = debugger_states(&daemon).await;
     let pools = daemon
         .pools
-        .statuses()
+        .keyed_statuses()
         .await
         .iter()
-        .filter(|s| filter.is_none_or(|id| id == s.version_id))
-        .map(|s| {
-            let count = plan
-                .values()
-                .filter(|p| p.version.id == s.version_id)
-                .count();
+        .filter(|(_, s)| filter.is_none_or(|id| id == s.version_id))
+        .map(|(key, s)| {
+            // Shared pool: the shared sites of its version; dedicated: its site.
+            let count = plan.values().filter(|p| p.pool == *key).count();
             convert::pool(
                 s,
                 u32::try_from(count).unwrap_or(u32::MAX),
@@ -554,7 +558,8 @@ async fn pool_of(
 ) -> Result<PoolDto> {
     let sites = d.sites.list().await.unwrap_or_default();
     let plan = d.web.php_plan(&sites).await.unwrap_or_default();
-    let count = plan.values().filter(|p| p.version.id == row.id).count();
+    let shared = crate::pools::PoolKey::shared(row.id);
+    let count = plan.values().filter(|p| p.pool == shared).count();
     let count = u32::try_from(count).unwrap_or(u32::MAX);
     if let Some(handle) = d.pools.get(row.id) {
         if let Ok(status) = handle.status(crate::pools::POOL_QUICK).await {

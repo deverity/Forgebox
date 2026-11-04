@@ -152,7 +152,7 @@ async fn snapshot(daemon: &Daemon, only: Option<&Targets>) -> Result<ServiceStat
     }
     let sites = daemon.sites.list().await.unwrap_or_default();
     let plan = daemon.web.php_plan(&sites).await.unwrap_or_default();
-    let statuses = daemon.pools.statuses().await;
+    let statuses = daemon.pools.keyed_statuses().await;
     // Only with pools to describe: the state reads the store.
     let debugger = if statuses.is_empty() {
         BTreeMap::new()
@@ -160,16 +160,14 @@ async fn snapshot(daemon: &Daemon, only: Option<&Targets>) -> Result<ServiceStat
         super::php::debugger_states(daemon).await
     };
     let mut pools: Vec<PoolDto> = Vec::new();
-    for status in statuses {
+    for (key, status) in statuses {
         if let Some(only) = only {
             if !only.pools.contains(&status.version_id) {
                 continue;
             }
         }
-        let count = plan
-            .values()
-            .filter(|p| p.version.id == status.version_id)
-            .count();
+        // A shared pool counts the shared sites of its version; a dedicated one, its site.
+        let count = plan.values().filter(|p| p.pool == key).count();
         pools.push(convert::pool(
             &status,
             u32::try_from(count).unwrap_or(u32::MAX),
@@ -244,9 +242,18 @@ async fn act(
                 let result = match action {
                     Action::Start => d.pools.ensure_started(*version).await.map(|_| ()),
                     Action::Stop => d.pools.stop(*version).await,
-                    Action::Restart => match d.pools.get(*version) {
-                        Some(handle) => handle.reload(Duration::from_secs(5)).await.map(|_| ()),
-                        None => d.pools.ensure_started(*version).await.map(|_| ()),
+                    // Every pool of the version recycles (dedicated ones included).
+                    Action::Restart => match d.pools.of_version(*version).as_slice() {
+                        [] => d.pools.ensure_started(*version).await.map(|_| ()),
+                        pools => {
+                            let mut result = Ok(());
+                            for (_, handle) in pools {
+                                if let Err(err) = handle.reload(Duration::from_secs(5)).await {
+                                    result = Err(err);
+                                }
+                            }
+                            result
+                        }
                     },
                 };
                 if let Err(err) = result {
@@ -289,7 +296,7 @@ async fn reload(daemon: Daemon, params: ServiceTargetParams, ctx: Ctx) -> Result
                 d.services.reload(entry.row.id).await?;
             }
             for version in &resolved.pools {
-                if let Some(handle) = d.pools.get(*version) {
+                for (_, handle) in d.pools.of_version(*version) {
                     handle.reload(Duration::from_secs(5)).await?;
                 }
             }

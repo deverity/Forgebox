@@ -47,12 +47,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "per-site metric series and markers",
     ),
     ("stats.routes", "M2-E5-T9", "top routes and recent errors"),
-    (
-        "sites.pool_mode",
-        "M2-E5-T11",
-        "dedicated PHP pool per site",
-    ),
-    ("sites.metrics", "M2-E5-T11", "per-site metrics switch"),
     ("remote.pair", "M6-E3", "remote mode pairing"),
     ("remote.listen", "M6-E3", "remote mode listener"),
     ("remote.clients", "M6-E3", "remote mode clients"),
@@ -213,8 +207,6 @@ mod tests {
             ("stats.export", "M2-E5-T9"),
             ("stats.series", "M2-E5-T9"),
             ("stats.routes", "M2-E5-T9"),
-            ("sites.pool_mode", "M2-E5-T11"),
-            ("sites.metrics", "M2-E5-T11"),
         ] {
             let err = error(method);
             assert_eq!(err.code(), "not_implemented", "{method}");
@@ -226,8 +218,14 @@ mod tests {
             assert_eq!(details["args"]["task"], task, "{method}");
             assert_eq!(details["args"]["method"], method);
         }
-        // The metrics backend exists (M2-E5-T8); metrics.unsubscribe is a server built-in.
-        for method in ["stats.get", "metrics.subscribe"] {
+        // The metrics backend exists (M2-E5-T8) and so do the per-site switches
+        // (M2-E5-T11); metrics.unsubscribe is a server built-in.
+        for method in [
+            "stats.get",
+            "metrics.subscribe",
+            "sites.pool_mode",
+            "sites.metrics",
+        ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
         assert!(crate::api::SERVER_BUILTINS.contains(&"metrics.unsubscribe"));

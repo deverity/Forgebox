@@ -11,6 +11,7 @@
 //!   gap. The connection's drop-oldest queue reports drops as `metrics.lagged`
 //!   (ADR-0015): a client that stops reading never slows the service down.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use forge_core::error::{ForgeError, Result};
@@ -18,8 +19,8 @@ use forge_core::ids::SiteId;
 use forge_core::store::Site;
 use forge_ipc::api::methods::{metrics_subscribe, stats_get};
 use forge_ipc::api::{
-    MetricsEnvelope, MetricsSubscribeParams, SiteRef, StatsDto, StatsParams, StatsWindow,
-    SubscriptionDto,
+    MetricsEnvelope, MetricsSubscribeParams, SiteRef, SiteStatsDto, StatsDto, StatsParams,
+    StatsWindow, SubscriptionDto,
 };
 use forge_ipc::server::{Ctx, Router, StreamSender};
 use forge_metrics::{SiteRoute, Sites, Snapshot, Span};
@@ -83,6 +84,33 @@ pub fn span_of(params: &StatsParams) -> Result<Span> {
     }
 }
 
+/// Workers of each site's dedicated pool, charged to the site exactly
+/// (`SiteStatsDto.processes`, M2-E5-T11). Read from the pools' metric watches: no ask.
+fn dedicated_workers(daemon: &Daemon) -> BTreeMap<SiteId, u32> {
+    daemon
+        .pools
+        .entries()
+        .into_iter()
+        .filter_map(|(key, handle)| {
+            let workers = handle.subscribe_metrics().borrow().workers_active;
+            key.site.map(|site| (site, workers))
+        })
+        .collect()
+}
+
+/// [`convert::site_stats`] plus the site's exact processes.
+fn site_stats(
+    sample: &forge_metrics::SiteSample,
+    window: StatsWindow,
+    exact: &BTreeMap<SiteId, u32>,
+) -> SiteStatsDto {
+    let mut dto = convert::site_stats(sample, window);
+    if let Some(workers) = exact.get(&sample.site) {
+        dto.processes = Some(dto.processes.unwrap_or(0) + workers);
+    }
+    dto
+}
+
 async fn get(daemon: Daemon, params: StatsParams, _ctx: Ctx) -> Result<StatsDto> {
     let span = span_of(&params)?;
     let sites = sites_of(&daemon, params.site.as_ref()).await?;
@@ -90,12 +118,13 @@ async fn get(daemon: Daemon, params: StatsParams, _ctx: Ctx) -> Result<StatsDto>
         .metrics
         .query(span, Sites::These(sites), ASK_TIMEOUT)
         .await?;
+    let exact = dedicated_workers(&daemon);
     Ok(StatsDto {
         window: params.window,
         sites: snapshot
             .samples
             .iter()
-            .map(|s| convert::site_stats(s, params.window))
+            .map(|s| site_stats(s, params.window, &exact))
             .collect(),
     })
 }
@@ -109,6 +138,7 @@ fn send_samples(
     site: Option<SiteId>,
     window: StatsWindow,
     only_enabled: bool,
+    exact: &BTreeMap<SiteId, u32>,
 ) -> bool {
     for sample in &snapshot.samples {
         if site.is_some_and(|id| id != sample.site) || (only_enabled && !sample.metrics_enabled) {
@@ -118,7 +148,7 @@ fn send_samples(
         let envelope = MetricsEnvelope {
             subscription_id: sender.id(),
             seq: *seq,
-            sample: convert::site_stats(sample, window),
+            sample: site_stats(sample, window, exact),
         };
         if !sender.send(&envelope) {
             return false;
@@ -151,7 +181,8 @@ async fn subscribe(
     let last_seq = params.resume_from.unwrap_or(0);
     let mut seq = last_seq;
     // Queued now, delivered right after the answer (the stream starts inactive).
-    if send_samples(&sender, &mut seq, &snapshot, site, window, false) {
+    let exact = dedicated_workers(&daemon);
+    if send_samples(&sender, &mut seq, &snapshot, site, window, false, &exact) {
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -167,7 +198,8 @@ async fn subscribe(
                 // A clone of the `Arc`: the watch's read guard never crosses an `.await`.
                 let latest = updates.borrow_and_update().clone();
                 if let Some(snapshot) = latest {
-                    if !send_samples(&sender, &mut seq, &snapshot, site, window, true) {
+                    let exact = dedicated_workers(&daemon);
+                    if !send_samples(&sender, &mut seq, &snapshot, site, window, true, &exact) {
                         return;
                     }
                 }

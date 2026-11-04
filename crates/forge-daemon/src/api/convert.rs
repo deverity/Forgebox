@@ -3,8 +3,8 @@
 
 use forge_core::model::port::{OwnerKind, PortReservation, PortState as DomainPortState};
 use forge_core::store::{
-    Site, SiteKind as DomainSiteKind, SiteXdebug as DomainXdebug, ToolVersionRow, UpdateHistoryRow,
-    UpdateStatus, UpdateTrigger, VersionSource, VersionState,
+    Site, SiteKind as DomainSiteKind, SitePoolMode as DomainPoolMode, SiteXdebug as DomainXdebug,
+    ToolVersionRow, UpdateHistoryRow, UpdateStatus, UpdateTrigger, VersionSource, VersionState,
 };
 use forge_fcgi::{PoolState, PoolStatus, WorkerPhase};
 use forge_ipc::api::{
@@ -354,6 +354,22 @@ pub fn pool(status: &PoolStatus, sites: u32, xdebug: bool) -> PoolDto {
     }
 }
 
+/// Shared or dedicated pool of a site (`sites.pool_mode`, ADR-0044 §7).
+pub fn site_pool_mode(mode: DomainPoolMode) -> SitePoolMode {
+    match mode {
+        DomainPoolMode::Shared => SitePoolMode::Shared,
+        DomainPoolMode::Dedicated => SitePoolMode::Dedicated,
+    }
+}
+
+/// [`site_pool_mode`] the other way.
+pub fn domain_pool_mode(mode: SitePoolMode) -> DomainPoolMode {
+    match mode {
+        SitePoolMode::Shared => DomainPoolMode::Shared,
+        SitePoolMode::Dedicated => DomainPoolMode::Dedicated,
+    }
+}
+
 pub fn site_kind(kind: DomainSiteKind) -> SiteKind {
     match kind {
         DomainSiteKind::Php => SiteKind::Php,
@@ -412,10 +428,8 @@ pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto
         processes: Vec::new(),
         created_at: site.created_at,
         updated_at: site.updated_at,
-        // The site columns (and the portable-root default of the metrics switch) arrive
-        // with M2-E5-T11 (ADR-0044); until then every site uses the shared pool.
-        pool_mode: SitePoolMode::Shared,
-        metrics_enabled: true,
+        pool_mode: site_pool_mode(site.pool_mode),
+        metrics_enabled: site.metrics_enabled,
     }
 }
 
@@ -557,8 +571,8 @@ pub fn site_stats(
         php_p90_ms: s.ut.map(|p| us_to_ms(p.p90_us)),
         php_p99_ms: s.ut.map(|p| us_to_ms(p.p99_us)),
         workers_active: res.map(|r| r.workers_active),
-        // Exact processes (apps, dedicated pool) arrive with the app samples and
-        // `sites.pool_mode` (M2-E5-T11).
+        // The dedicated pool's workers are added by the stats handler (it knows the pool
+        // table); the app processes arrive with the app samples.
         processes: None,
         last_request_at: sample.last_request_at,
         metrics_enabled: sample.metrics_enabled,

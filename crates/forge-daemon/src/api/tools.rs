@@ -647,10 +647,8 @@ async fn remove(daemon: Daemon, params: ToolRemoveParams, ctx: Ctx) -> Result<Jo
         format!("tools.remove {}", params.spec),
         move |_job| async move {
             for row in targets {
-                if let Some(pool) = d.pools.get(row.id) {
-                    let _ = pool.stop(crate::pools::POOL_STOP_TIMEOUT).await;
-                    d.pools.stop(row.id).await?;
-                }
+                // Every pool of the version, its sites' dedicated ones included.
+                d.pools.stop(row.id).await?;
                 d.layout
                     .remove_version(Arc::clone(&tool.manifest), row.id)
                     .await?;
