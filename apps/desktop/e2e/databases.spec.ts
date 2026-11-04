@@ -25,9 +25,21 @@ test("lists the instances and the databases of the running one", async ({ page }
     "≈ calculating…",
   );
   await expect(page.locator("[data-database]")).toHaveCount(3);
+  await expect(page.locator('[data-instance="mysql/default"]')).toBeInViewport();
+  await expect(page.locator('[data-instance="postgresql/default"]')).toBeInViewport();
+  for (const name of ["blog", "loja"]) await expect(row(page, name)).toBeInViewport();
   await expect(page.getByRole("button", { name: /Open in/ })).toBeDisabled();
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOT_DIR}/databases-1280x800.png` });
+});
+
+test("dark theme keeps the cards and rows visible", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(url("/databases", { theme: "dark", vibrancy: "off" }));
+  await expect(row(page, "loja")).toBeInViewport();
+  await expect(page.locator('[data-instance="mysql/default"]')).toBeInViewport();
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${SHOT_DIR}/databases-dark.png` });
 });
 
 test("an invalid name shows an inline error and Create stays disabled", async ({ page }) => {
@@ -75,6 +87,7 @@ test("an export finishes with its path and a failing one shows the client output
   await page.goto(url("/databases"));
   await row(page, "blog").getByRole("button", { name: "Export" }).click();
   await expect(page.getByTestId("transfers")).toContainText("Exported to");
+  await expect(page.getByTestId("transfers")).toBeInViewport();
   await page.screenshot({ path: `${SHOT_DIR}/export-done.png` });
 });
 
@@ -97,6 +110,13 @@ test("the site Banco tab is registered and shows the create form", async ({ page
   // loja.test already has its database in the QA data: the strings are one click away.
   await expect(tab).toContainText("Database loja exists.");
   await expect(tab.getByTestId("connection-url")).toContainText("••••••••");
+  await expect(tab.getByTestId("connection-url")).toBeInViewport();
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${SHOT_DIR}/site-tab.png` });
+  // The tab is longer than the window: the link is reachable by scrolling the page, not
+  // trapped in a clipped nested box.
+  const link = tab.getByRole("link", { name: /Open in Databases/ });
+  await link.scrollIntoViewIfNeeded();
+  await expect(link).toBeInViewport();
+  await page.screenshot({ path: `${SHOT_DIR}/site-tab-bottom.png` });
 });

@@ -36,85 +36,88 @@ export function DatabaseTab({ siteId }: { siteId: string }) {
   const databases =
     current === undefined ? [] : databasesOf(list.data?.databases ?? [], current.instance);
   const exists = wanted !== "" && databases.some((db) => db.name === wanted);
+  const ready = !away && !list.isPending && !list.isError && instances.length > 0;
   return (
     <div data-testid="site-database-tab" className="flex flex-col gap-4">
       <header className="flex flex-col gap-1">
         <h2 className="text-headline">{t("siteTab.title", { host: site?.host ?? "" })}</h2>
         <p className="text-callout text-fg-secondary">{t("siteTab.description")}</p>
       </header>
-      <AsyncView
-        height={STATE_HEIGHT}
-        loading={!away && list.isPending}
-        disconnected={away}
-        onStartDaemon={() => {
-          void runtime.api.start();
-        }}
-        {...(list.isError ? { error: list.error } : {})}
-        errorContext={LIST_CONTEXT}
-        onRetry={() => {
-          void list.refetch();
-        }}
-        empty={instances.length === 0}
-        emptyTitle={t("siteTab.noInstance")}
-        emptyAction={
-          <Link to={CATALOG_PATH} className="text-accent underline">
-            {t("siteTab.noInstanceAction")}
-          </Link>
-        }
-      >
-        {current === undefined ? null : (
-          <div className="flex flex-col gap-4">
-            {instances.length > 1 ? (
-              <Select
-                label={t("siteTab.instance")}
-                options={instances.map((i) => ({ value: i.instance, label: i.instance }))}
-                value={current.instance}
-                onValueChange={setChosen}
-              />
-            ) : null}
-            {current.state !== "running" ? (
-              <div className="flex flex-col items-start gap-2">
-                <p className="text-callout text-fg-secondary">
-                  {t("siteTab.stopped", { name: current.instance })}
-                </p>
-                <ActionButton
-                  action={startInstance}
-                  input={current.instance}
-                  variant="primary"
-                  loadingLabel={t("instance.starting")}
-                >
-                  {t("siteTab.start")}
-                </ActionButton>
-              </div>
-            ) : exists ? (
-              <section aria-label={t("siteTab.connection")} className="flex flex-col gap-2">
-                <p role="status" className="text-callout">
-                  {t("siteTab.exists", { name: wanted })}
-                </p>
-                <ConnectionStrings
-                  target={{
-                    instance: current.instance,
-                    protocol: current.protocol,
-                    database: wanted,
-                  }}
-                />
-              </section>
-            ) : (
-              <CreateForm
-                key={`${current.instance}:${wanted}`}
-                instance={current.instance}
-                protocol={current.protocol}
-                existing={databases.map((db) => db.name)}
-                initialName={wanted}
-              />
-            )}
-            <TransferList instance={current.instance} />
-            <Link to={DATABASES_PATH} className="text-callout text-accent underline">
-              {t("siteTab.open")}
+      {!ready || current === undefined ? (
+        <AsyncView
+          height={STATE_HEIGHT}
+          loading={!away && list.isPending}
+          disconnected={away}
+          onStartDaemon={() => {
+            void runtime.api.start();
+          }}
+          {...(list.isError ? { error: list.error } : {})}
+          errorContext={LIST_CONTEXT}
+          onRetry={() => {
+            void list.refetch();
+          }}
+          empty={instances.length === 0}
+          emptyTitle={t("siteTab.noInstance")}
+          emptyAction={
+            <Link to={CATALOG_PATH} className="text-accent underline">
+              {t("siteTab.noInstanceAction")}
             </Link>
-          </div>
-        )}
-      </AsyncView>
+          }
+        >
+          <span />
+        </AsyncView>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {instances.length > 1 ? (
+            <Select
+              label={t("siteTab.instance")}
+              options={instances.map((i) => ({ value: i.instance, label: i.instance }))}
+              value={current.instance}
+              onValueChange={setChosen}
+            />
+          ) : null}
+          {current.state !== "running" ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-callout text-fg-secondary">
+                {t("siteTab.stopped", { name: current.instance })}
+              </p>
+              <ActionButton
+                action={startInstance}
+                input={current.instance}
+                variant="primary"
+                loadingLabel={t("instance.starting")}
+              >
+                {t("siteTab.start")}
+              </ActionButton>
+            </div>
+          ) : exists ? (
+            <section aria-label={t("siteTab.connection")} className="flex flex-col gap-2">
+              <p role="status" className="text-callout">
+                {t("siteTab.exists", { name: wanted })}
+              </p>
+              <ConnectionStrings
+                target={{
+                  instance: current.instance,
+                  protocol: current.protocol,
+                  database: wanted,
+                }}
+              />
+            </section>
+          ) : (
+            <CreateForm
+              key={`${current.instance}:${wanted}`}
+              instance={current.instance}
+              protocol={current.protocol}
+              existing={databases.map((db) => db.name)}
+              initialName={wanted}
+            />
+          )}
+          <TransferList instance={current.instance} />
+          <Link to={DATABASES_PATH} className="text-callout text-accent underline">
+            {t("siteTab.open")}
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

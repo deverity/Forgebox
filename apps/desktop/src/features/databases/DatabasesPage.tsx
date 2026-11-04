@@ -16,7 +16,7 @@ import { TransferList } from "./TransferList";
 const AWAY: ReadonlySet<string> = new Set(["stopped", "closed", "uninitialized"]);
 const LIST_CONTEXT = { method: "db.list", params: {} };
 const CATALOG_PATH = "/catalog";
-/** Height AsyncView reserves while loading or empty. */
+/** Height AsyncView reserves for loading, error, empty and disconnected only. */
 const STATE_HEIGHT = 320;
 
 /**
@@ -38,6 +38,7 @@ export function DatabasesPage() {
   const databases =
     current === undefined ? [] : databasesOf(list.data?.databases ?? [], current.instance);
   const caps = current?.capabilities ?? {};
+  const ready = !away && !list.isPending && !list.isError && instances.length > 0;
   return (
     <div
       data-testid="page-databases"
@@ -51,32 +52,7 @@ export function DatabasesPage() {
           </p>
         )}
       </header>
-      <AsyncView
-        height={STATE_HEIGHT}
-        loading={!away && list.isPending}
-        disconnected={away}
-        onStartDaemon={() => {
-          void runtime.api.start();
-        }}
-        {...(list.isError ? { error: list.error } : {})}
-        errorContext={LIST_CONTEXT}
-        onRetry={() => {
-          void list.refetch();
-        }}
-        empty={instances.length === 0}
-        emptyTitle={t("empty.title")}
-        emptyDescription={t("empty.description")}
-        emptyAction={
-          <Button
-            variant="primary"
-            onClick={() => {
-              void navigate({ to: CATALOG_PATH });
-            }}
-          >
-            {t("empty.action")}
-          </Button>
-        }
-      >
+      {ready ? (
         <div className="flex flex-col gap-4">
           <div
             role="radiogroup"
@@ -116,7 +92,36 @@ export function DatabasesPage() {
           )}
           <TransferList />
         </div>
-      </AsyncView>
+      ) : (
+        <AsyncView
+          height={STATE_HEIGHT}
+          loading={!away && list.isPending}
+          disconnected={away}
+          onStartDaemon={() => {
+            void runtime.api.start();
+          }}
+          {...(list.isError ? { error: list.error } : {})}
+          errorContext={LIST_CONTEXT}
+          onRetry={() => {
+            void list.refetch();
+          }}
+          empty={instances.length === 0}
+          emptyTitle={t("empty.title")}
+          emptyDescription={t("empty.description")}
+          emptyAction={
+            <Button
+              variant="primary"
+              onClick={() => {
+                void navigate({ to: CATALOG_PATH });
+              }}
+            >
+              {t("empty.action")}
+            </Button>
+          }
+        >
+          <span />
+        </AsyncView>
+      )}
     </div>
   );
 }
