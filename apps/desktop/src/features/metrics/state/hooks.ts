@@ -15,6 +15,8 @@ import { EMPTY_METRICS, type SiteMetricsState } from "./types";
 
 /** `stats.top` refresh period while the window is visible. */
 export const TOP_POLL_MS = 5000;
+/** `stats.get` (all sites) refresh period of the Dashboard ranking and alerts. */
+export const PROJECTS_POLL_MS = 15_000;
 /** Default window of the live panels. */
 export const DEFAULT_WINDOW: T.StatsWindow = "5m";
 
@@ -75,6 +77,26 @@ export function useSiteStats(
     ...forgeQuery(api, "stats.get", { site, window }),
     enabled: site !== null && capability.available,
     refetchInterval: visible && options.refetchMs !== undefined ? options.refetchMs : false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/**
+ * `stats.get` for every site over `window`, refreshed only while the page is visible. Unchanged
+ * sites keep their object identity between polls (TanStack structural sharing), so memoized
+ * rows re-render only when their own numbers change.
+ */
+export function useAllSiteStats(
+  window: T.StatsWindow,
+  options: { enabled?: boolean; intervalMs?: number } = {},
+): UseQueryResult<ResultOf<"stats.get">, ForgeApiError> {
+  const api = useForgeApi();
+  const capability = useCapability("stats.get");
+  const visible = usePageVisible();
+  return useQuery({
+    ...forgeQuery(api, "stats.get", { window }),
+    enabled: (options.enabled ?? true) && capability.available,
+    refetchInterval: visible ? (options.intervalMs ?? PROJECTS_POLL_MS) : false,
     refetchIntervalInBackground: false,
   });
 }

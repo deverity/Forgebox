@@ -1,4 +1,4 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { FOCUS_RING } from "../../../design/primitives/shared";
@@ -20,6 +20,10 @@ export function SiteDetailPage() {
   const id = useParams({
     strict: false,
     select: (params: Record<string, unknown>) => (typeof params.id === "string" ? params.id : ""),
+  });
+  const tab = useSearch({
+    strict: false,
+    select: (search: Record<string, unknown>) => (typeof search.tab === "string" ? search.tab : ""),
   });
   const site = useSite(id);
   const loaded = useStore(runtime.stores.sites, (state) => state.loaded);
@@ -57,7 +61,9 @@ export function SiteDetailPage() {
         >
           {t("detail.header.back")}
         </Link>
-        <h1 className="text-title-1">{site.host}</h1>
+        <h1 className="text-title-1" style={{ viewTransitionName: `site-host-${site.id}` }}>
+          {site.host}
+        </h1>
         <Button
           variant="ghost"
           title={t("detail.header.openUrl", { url: site.url })}
@@ -83,7 +89,7 @@ export function SiteDetailPage() {
           </ActionButton>
         </div>
       </div>
-      <SiteTabsHost siteId={site.id} />
+      <SiteTabsHost siteId={site.id} {...(tab === "" ? {} : { initialTab: tab })} />
     </div>
   );
 }

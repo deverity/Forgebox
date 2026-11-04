@@ -17,8 +17,15 @@ export const sitesRoute = createRoute({
   component: lazyRouteComponent(() => import("../../features/sites"), "SitesPage"),
 });
 
+/** `/sites/:id?tab=performance` opens that tab (the Dashboard ranking links to Desempenho). */
+export interface SiteDetailSearch {
+  tab?: string;
+}
+
 export const siteDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/sites/$id",
+  validateSearch: (search: Record<string, unknown>): SiteDetailSearch =>
+    typeof search.tab === "string" && search.tab !== "" ? { tab: search.tab } : {},
   component: lazyRouteComponent(() => import("../../features/sites"), "SiteDetailPage"),
 });

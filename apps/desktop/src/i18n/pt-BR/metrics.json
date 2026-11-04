@@ -166,5 +166,82 @@
         "hint": "Desligado, as requisições deste site deixam de entrar nas métricas; o histórico fica."
       }
     }
+  },
+  "projects": {
+    "title": "Projetos",
+    "listLabel": "Projetos ordenados pelas últimas 24 horas",
+    "sortBy": "Ordenar o ranking por",
+    "sort": "Ordenar por {column}",
+    "open": "Abrir a aba Desempenho de {host}",
+    "columns": {
+      "site": "Site",
+      "cpu": "CPU",
+      "mem": "RAM",
+      "p99": "p99",
+      "errors": "Erros",
+      "trend": "24 h"
+    },
+    "approx": "≈ indica CPU e RAM rateadas de um pool PHP compartilhado; dê um pool dedicado ao site para valores exatos.",
+    "empty": {
+      "title": "Nenhum tráfego registrado ainda",
+      "description": "Os sites aparecem aqui, ordenados, assim que receberem requisições."
+    },
+    "unavailable": {
+      "title": "O ranking de projetos não está disponível",
+      "description": "Este daemon ainda não responde stats.get."
+    },
+    "idle": {
+      "title": "Ociosos há mais de {days} dias",
+      "hint": "Estes sites ainda têm processos rodando, mas nenhuma requisição. Pará-los libera CPU e memória.",
+      "days_one": "{count} dia ocioso",
+      "days_other": "{count} dias ocioso",
+      "never": "Nenhuma requisição registrada",
+      "processes_one": "{count} processo",
+      "processes_other": "{count} processos",
+      "more_one": "e mais {count} site ocioso",
+      "more_other": "e mais {count} sites ociosos"
+    }
+  },
+  "machine": {
+    "title": "Máquina",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "disk": "Disco ({role})",
+    "roles": {
+      "root": "pasta do Forgebox",
+      "data": "data"
+    },
+    "forgebox": "Forgebox: {value}",
+    "ofTotal": "{used} de {total}",
+    "free": "{value} livres",
+    "diskTotal": "{total} no total",
+    "loading": "Lendo a máquina...",
+    "unavailable": "O daemon ainda não informa a máquina."
+  },
+  "attention": {
+    "action": {
+      "performance": "Abrir Desempenho",
+      "php": "Abrir PHP",
+      "settings": "Abrir configurações"
+    },
+    "p99": {
+      "title": "{host} está lento",
+      "cause": "O p99 está em {value} ms nos últimos {minutes} minutos (limite {limit} ms)."
+    },
+    "errors": {
+      "title": "{host} está devolvendo erros",
+      "cause": "{value}% das requisições falharam nos últimos 5 minutos (limite {limit}%)."
+    },
+    "poolRam": {
+      "title": "O pool PHP {series} usa muita memória",
+      "cause": "Seus workers ocupam {gb} GB (limite {limit} GB). Reduza o limite de workers ou reinicie o pool."
+    },
+    "disk": {
+      "title": {
+        "root": "Pouco espaço em disco no volume da pasta do Forgebox",
+        "data": "Pouco espaço em disco no volume de dados"
+      },
+      "cause": "Só {gb} GB livres (limite {limit} GB). Downloads, logs e bancos podem começar a falhar."
+    }
   }
 }

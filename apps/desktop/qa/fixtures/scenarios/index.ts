@@ -14,7 +14,7 @@ import {
   type FakeScenario,
 } from "../../../src/ipc/fakeBridge";
 import { catalogHandlers } from "./catalog";
-import { attentionDashboard, healthyDashboard } from "./dashboard";
+import { attentionDashboard, healthyDashboard, projectsDashboard } from "./dashboard";
 import { configHandlers } from "./config";
 import { databasesHandlers } from "./databases";
 import { createFilesystemQa } from "./filesystem";
@@ -289,6 +289,9 @@ export function registerQaScenarios(): void {
   define("dashboard", healthy.data, healthy.extra);
   const attention = attentionDashboard();
   define("dashboard-attention", attention.data, attention.extra);
+  // The Projetos ranking, idle sites and every performance alert (M2-E5-T17).
+  const projects = projectsDashboard();
+  define("dashboard-projects", projects.data, projects.extra);
   // The onboarding wizard (M2-E2-T19): all green, a refused UAC, and one failed download.
   const onboarding = (name: string, options: Parameters<typeof createOnboardingQa>[1]) => {
     const data = populatedData();

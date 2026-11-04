@@ -5,7 +5,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import i18next from "i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../../App";
-import { registerDashboardSection } from "../../app/slots";
+import { dashboardSections, registerDashboardSection } from "../../app/slots";
 import { createTestRouter } from "../../app/router";
 import { warmAppModules } from "../../app/testApp";
 import { createFakeBridge, type FakeScenario } from "../../ipc/fakeBridge";
@@ -281,11 +281,18 @@ describe("Atenção", () => {
 });
 
 describe("Projetos", () => {
-  it("shows an empty state, not an error, until E5 registers the section", async () => {
-    await mount();
-    const section = await screen.findByTestId("dashboard-projects");
-    expect(within(section).getByText("Project ranking is not available yet")).toBeInTheDocument();
-    expect(within(section).queryByRole("alert")).toBeNull();
+  it("shows an empty state, not an error, while nothing registers the section", async () => {
+    // The metrics feature registers it on load: take it out for this test.
+    const saved = dashboardSections.list();
+    dashboardSections.clear();
+    try {
+      await mount();
+      const section = await screen.findByTestId("dashboard-projects");
+      expect(within(section).getByText("Project ranking is not available yet")).toBeInTheDocument();
+      expect(within(section).queryByRole("alert")).toBeNull();
+    } finally {
+      for (const entry of saved) registerDashboardSection(entry);
+    }
   });
 
   it("renders the registered section instead", async () => {
