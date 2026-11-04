@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { build } from "vite";
 import { afterAll, describe, expect, it } from "vitest";
 import { QA_SENTINEL } from "./bootstrap";
+import { RENDER_COUNTER_SENTINEL } from "./render-counter";
 
 const out = mkdtempSync(join(tmpdir(), "forgebox-sentinel-"));
 afterAll(() => {
@@ -35,10 +36,14 @@ describe("qa code and production builds", () => {
     expect(scan(dir, QA_SENTINEL)).toEqual([]);
     expect(scan(dir, "__FORGEBOX_QA__")).toEqual([]);
     expect(scan(dir, "QA_SCENARIO_NAMES")).toEqual([]);
+    // The render counter and the event ledger (M2-E4-T4) are qa-only too.
+    expect(scan(dir, RENDER_COUNTER_SENTINEL)).toEqual([]);
+    expect(scan(dir, "__FORGEBOX_RENDERS__")).toEqual([]);
   }, 180_000);
 
   it("the qa bundle does contain it (the scan is not vacuous)", async () => {
     const dir = await emit("qa");
     expect(scan(dir, QA_SENTINEL).length).toBeGreaterThan(0);
+    expect(scan(dir, RENDER_COUNTER_SENTINEL).length).toBeGreaterThan(0);
   }, 180_000);
 });

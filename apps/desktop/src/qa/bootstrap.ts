@@ -8,8 +8,10 @@
 //   motion     reduced | full           (reduced = prefers-reduced-motion matches)
 //   locale     pt-BR | en-US | pseudo
 //   latency    ms added to every call of the scenario
+//   live       off = skip the scenario's live behaviour (the `heavy` event storm), for qa:perf
 // The fake bridge is published on `window.__FORGEBOX_QA__` for Playwright (`page.evaluate`).
 import { registerQaScenarios, liveBehaviourOf } from "../../qa/fixtures/scenarios";
+import type { QaData } from "../../qa/fixtures/scenarios/data";
 import { applyAppearance } from "../app/appearance";
 import { createFakeBridge, scenarioFromSearch, type FakeBridge } from "../ipc/fakeBridge";
 import type { AnyLocale } from "../i18n";
@@ -22,6 +24,8 @@ export interface QaHandle {
   sentinel: string;
   scenario: string;
   bridge: FakeBridge;
+  /** The scenario's snapshot data (qa:perf builds event payloads from it). */
+  data: QaData;
   locale: AnyLocale | null;
   /** Applies a Windows accent (`#RRGGBB`) the way the shell does (qa:check accent contrast). */
   setAccent: (hex: string) => void;
@@ -72,12 +76,13 @@ export function bootQa(search: string = window.location.search, win: Window = wi
   }
   const bridge = createFakeBridge(scenario);
   const { live, data } = liveBehaviourOf(name);
-  const stopLive = live?.(bridge, data);
+  const stopLive = params.get("live") === "off" ? undefined : live?.(bridge, data);
 
   const handle: QaHandle = {
     sentinel: QA_SENTINEL,
     scenario: scenario.name ?? name,
     bridge,
+    data,
     locale: qaLocaleOverride(params.get("locale")),
     setAccent: (hex) => {
       applyAppearance({ accent: hex });
