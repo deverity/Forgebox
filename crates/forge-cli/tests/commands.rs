@@ -69,15 +69,34 @@ fn table() -> Vec<Case> {
         case(&["tool", "list", "--installed", "--updates"], OK),
         case(&["tool", "info", "php"], OK),
         case(&["tool", "info", "nonexistent"], E("not_found")),
-        // The E2 contract (ADR-0041): releases and plans are M2-E2-T5; history (M2-E2-T4) answers.
-        case(&["tool", "info", "--versions", "php"], NI),
+        // Releases and plans are jobs that ask the providers (M2-E2-T5): only the errors
+        // that need no network are in this table (the listing itself is tested against a
+        // fake provider in forge-daemon/tests/releases_plan.rs).
         case(
-            &["tool", "info", "--versions", "php", "--channel", "preview"],
-            NI,
+            &["tool", "info", "--versions", "nonexistent"],
+            E("not_found"),
+        ),
+        case(
+            &[
+                "tool",
+                "info",
+                "--versions",
+                "nonexistent",
+                "--channel",
+                "preview",
+            ],
+            E("not_found"),
         ),
         case(&["tool", "info", "--history", "php"], OK),
         case(&["tool", "info", "--history", "php", "--series", "8.3"], OK),
-        case(&["tool", "install", "--dry-run", "php@8.4", "nginx"], NI),
+        case(
+            &["tool", "install", "--dry-run", "nonexistent"],
+            E("not_found"),
+        ),
+        case(
+            &["tool", "install", "--dry-run", "xdebug", "--variant", "nts"],
+            E("invalid_input"),
+        ),
         // Extensions (ADR-0043): no PHP in this root.
         case(
             &["tool", "install", "xdebug", "--for", "php@8.4", "--yes"],

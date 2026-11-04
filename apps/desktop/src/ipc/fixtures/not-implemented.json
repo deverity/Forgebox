@@ -5,16 +5,6 @@
     "what": "installing a local zip or folder as a tool version"
   },
   {
-    "method": "tools.releases",
-    "task": "M2-E2-T5",
-    "what": "listing provider releases"
-  },
-  {
-    "method": "tools.plan",
-    "task": "M2-E2-T5",
-    "what": "install plans"
-  },
-  {
     "method": "sites.share",
     "task": "M3-E3",
     "what": "public tunnels (cloudflared, ngrok, expose)"
