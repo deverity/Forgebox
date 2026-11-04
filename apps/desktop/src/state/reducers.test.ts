@@ -474,4 +474,30 @@ describe("tool, site and system reducers", () => {
     expect(stores.system.getState().dnsPolicies.test?.policy).toBe("applied");
     expect(refreshed).toContain("dns");
   });
+
+  it("keeps the mailbox counts of the last mail.changed for the badge", () => {
+    const { apply, stores } = setup();
+    expect(stores.mail.getState().counts).toBeNull();
+    apply([
+      event("mail.changed", {
+        v: 1,
+        instance_id: IDS.mysql,
+        messages: 9,
+        unread: 4,
+        new_messages: 2,
+      } satisfies T.MailChangedPayload),
+      event("mail.changed", {
+        v: 1,
+        instance_id: IDS.mysql,
+        messages: 9,
+        unread: 3,
+        new_messages: 0,
+      } satisfies T.MailChangedPayload),
+    ]);
+    expect(stores.mail.getState().counts).toMatchObject({
+      messages: 9,
+      unread: 3,
+      newMessages: 0,
+    });
+  });
 });
