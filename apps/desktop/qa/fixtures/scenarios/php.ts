@@ -300,8 +300,16 @@ export function phpHandlers(data: QaData, config: FakeHandlers): FakeHandlers {
               { pct: 95, message: "installing" },
             ]
           : [{ pct: 50, message: "rendering" }];
-      setTimeout(
-        () => {
+      return fakeJob({
+        steps,
+        stepMs: xdebugStepMs,
+        outcome: {
+          done: poolOf(states.indexOf(s) + 1, s.series, s.version, "running", 0),
+        },
+        // The mode lands with the job's end (never before `php.list` can see it): a separate
+        // timer would race the job's own timers, and a held job (tests) would never set it.
+        onFinish: (outcome) => {
+          if (!("done" in outcome)) return;
           if (missing) {
             s.extensions.push({ name: "xdebug", enabled: false, bundled: false, zend: true });
           }
@@ -314,14 +322,6 @@ export function phpHandlers(data: QaData, config: FakeHandlers): FakeHandlers {
             series: s.series,
             unknown: [],
           });
-        },
-        xdebugStepMs * (steps.length + 0.5),
-      );
-      return fakeJob({
-        steps,
-        stepMs: xdebugStepMs,
-        outcome: {
-          done: poolOf(states.indexOf(s) + 1, s.series, s.version, "running", 0),
         },
       });
     },

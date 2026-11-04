@@ -1,9 +1,10 @@
 //! Sites → pools → web servers (docs/01 §5.1 steps 7-8, docs/06 §2, docs/03 §2.2):
 //!
 //! * [`WebManager::reconcile`]: resolves the PHP version of every enabled `php` site
-//!   (exact pin, series, or the newest installed series), makes sure each needed pool
+//!   (exact pin, series, or the newest installed series) and its pool (the version's
+//!   shared pool, or the site's dedicated one, [`PoolKey`]), makes sure each needed pool
 //!   runs, renders the web servers' configuration and reloads the running ones, then
-//!   stops pools no site uses any more.
+//!   drains pools no site uses any more.
 //! * [`WebManager::apply_web`]: only the render + reload part. It is also the
 //!   [`UpstreamListener`] of every pool (scaling, recycle, blue/green), so the web
 //!   server always lists the warm workers.
@@ -23,7 +24,7 @@
 //! of a server that refuses to initialize); for an initialized one, the value recorded
 //! when it was initialized, whatever the flag reads now.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,7 +35,9 @@ use forge_core::event::{EventBus, EventKind};
 use forge_core::ids::{SiteId, VersionId};
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::CaseSensitiveFs;
-use forge_core::store::{CASE_SENSITIVE_KEY, Site, SiteKind, StoreReader, ToolVersionRow};
+use forge_core::store::{
+    CASE_SENSITIVE_KEY, Site, SiteKind, SitePoolMode, StoreReader, ToolVersionRow,
+};
 use forge_fcgi::{PoolState, UpstreamChange, UpstreamFuture, UpstreamListener};
 use forge_registry::Registry;
 use forge_render::{
@@ -47,7 +50,7 @@ use tokio::sync::Semaphore;
 
 use crate::catalog;
 use crate::instance_case::{self, DataDirProbe};
-use crate::pools::PoolManager;
+use crate::pools::{PoolHold, PoolKey, PoolManager};
 use crate::render;
 use crate::services::{ConfigRenderer, Entry, ServiceManager};
 use crate::settings;
@@ -60,8 +63,21 @@ const TLS_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone)]
 pub struct SitePhp {
     pub version: ToolVersionRow,
-    /// `php_8_3` (series) or `php_8_3_36` (exact pin).
+    /// What the vhost points at: `php_8_3` (series), `php_8_3_36` (exact pin), or the
+    /// site's dedicated pool `php_8_3__loja-test` (`pool_mode: dedicated`).
     pub upstream: String,
+    /// The version's shared name (`php_8_3` or `php_8_3_36`), whatever the pool mode.
+    pub shared_upstream: String,
+    /// The pool that serves the site: the version's shared pool, or its own.
+    pub pool: PoolKey,
+}
+
+impl SitePhp {
+    /// Upstream name the pool of [`SitePhp::pool`] is spawned with: `None` for the shared
+    /// pool (its spec names it after the series), the dedicated name otherwise.
+    pub fn pool_upstream(&self) -> Option<&str> {
+        self.pool.is_dedicated().then_some(self.upstream.as_str())
+    }
 }
 
 struct Inner {
@@ -225,14 +241,20 @@ impl WebManager {
             };
             match chosen {
                 Some(row) => {
+                    let pool = match site.pool_mode {
+                        SitePoolMode::Shared => PoolKey::shared(row.id),
+                        SitePoolMode::Dedicated => PoolKey::dedicated(row.id, site.id),
+                    };
                     out.insert(
                         site.id,
                         SitePhp {
                             version: row.clone(),
-                            upstream: forge_sites::vhost::php_upstream_name(
+                            upstream: forge_sites::vhost::site_upstream_name(site, &default_series),
+                            shared_upstream: forge_sites::vhost::php_upstream_name(
                                 &site.php,
                                 &default_series,
                             ),
+                            pool,
                         },
                     );
                 }
@@ -277,21 +299,38 @@ impl WebManager {
     /// switch (docs/06 §2.2): it runs *before* the row is written, so a bad target never
     /// emits `site.updated`, never triggers a concurrent reconcile and never drains the
     /// pool that keeps serving the site. A disabled or non-PHP site needs no pool.
-    pub async fn ensure_pool_for(&self, candidate: &Site) -> Result<()> {
+    ///
+    /// The returned hold keeps the target pool from being retired by a reconcile that
+    /// runs before the row is written (it does not see the pool as needed yet); keep it
+    /// until the switch re-rendered ([`WebManager::reconcile_for`]).
+    pub async fn ensure_pool_for(&self, candidate: &Site) -> Result<Option<PoolHold>> {
         let plan = self.php_plan(std::slice::from_ref(candidate)).await?;
-        let Some(version) = plan.get(&candidate.id).map(|p| p.version.id) else {
+        let Some(php) = plan.get(&candidate.id) else {
             if candidate.enabled && candidate.kind == SiteKind::Php {
                 return Err(ForgeError::NotFound(format!(
                     "no installed PHP serves {}",
                     candidate.host
                 )));
             }
-            return Ok(());
+            return Ok(None);
         };
-        if let Some(pools) = self.pools() {
-            pools.ensure_started(version).await?;
-        }
-        Ok(())
+        let Some(pools) = self.pools() else {
+            return Ok(None);
+        };
+        let hold = pools.hold(php.pool);
+        pools
+            .ensure_started_key(php.pool, php.pool_upstream())
+            .await?;
+        Ok(Some(hold))
+    }
+
+    /// The pool `candidate` (a not yet stored row) would be served by, with its upstream
+    /// name: `None` for a disabled or non-PHP site, or when no installed PHP serves it.
+    pub async fn pool_for(&self, candidate: &Site) -> Result<Option<(PoolKey, String)>> {
+        let plan = self.php_plan(std::slice::from_ref(candidate)).await?;
+        Ok(plan
+            .get(&candidate.id)
+            .map(|p| (p.pool, p.upstream.clone())))
     }
 
     /// Steps 7-8 of the boot, and the reaction to site changes: pools for the sites,
@@ -326,11 +365,15 @@ impl WebManager {
         let check_pool = scope.is_some_and(|(_, check)| check);
         let sites = self.inner.sites.list().await?;
         let plan = self.php_plan(&sites).await?;
-        let needed: BTreeSet<VersionId> = plan.values().map(|p| p.version.id).collect();
-        let target_version = target.and_then(|t| plan.get(&t.id)).map(|p| p.version.id);
+        // Each pool once, with the upstream name it is spawned with.
+        let needed: BTreeMap<PoolKey, Option<String>> = plan
+            .values()
+            .map(|p| (p.pool, p.pool_upstream().map(str::to_owned)))
+            .collect();
+        let target_pool = target.and_then(|t| plan.get(&t.id)).map(|p| p.pool);
         let mut target_failure: Option<ForgeError> = None;
         if let Some(t) = target.filter(|_| check_pool) {
-            if t.enabled && t.kind == SiteKind::Php && target_version.is_none() {
+            if t.enabled && t.kind == SiteKind::Php && target_pool.is_none() {
                 target_failure = Some(ForgeError::NotFound(format!(
                     "no installed PHP serves {} (php {})",
                     t.host,
@@ -343,13 +386,16 @@ impl WebManager {
             }
         }
         if let Some(pools) = self.pools() {
-            let starts = needed
-                .iter()
-                .map(|id| async move { (*id, pools.ensure_started(*id).await) });
-            for (id, result) in futures::future::join_all(starts).await {
+            let starts = needed.iter().map(|(key, upstream)| async move {
+                (
+                    *key,
+                    pools.ensure_started_key(*key, upstream.as_deref()).await,
+                )
+            });
+            for (key, result) in futures::future::join_all(starts).await {
                 if let Err(err) = result {
-                    tracing::warn!(version = %id, %err, "PHP pool did not start");
-                    if target_version == Some(id) && target_failure.is_none() {
+                    tracing::warn!(pool = %key, %err, "PHP pool did not start");
+                    if target_pool == Some(key) && target_failure.is_none() {
                         target_failure = Some(err);
                     }
                 }
@@ -364,11 +410,18 @@ impl WebManager {
         }
         let report = self.apply_web(reason).await?;
         if let Some(pools) = self.pools() {
-            for handle in pools.handles() {
-                if !needed.contains(&handle.version_id()) {
+            // The sites again, right before retiring: a switch may have written its row
+            // while this pass rendered (its pool is needed now even if it was not when
+            // the pass began). Nothing awaits between this plan and the retirements.
+            let fresh: BTreeMap<SiteId, SitePhp> = match self.inner.sites.list().await {
+                Ok(sites) => self.php_plan(&sites).await.unwrap_or_default(),
+                Err(_) => BTreeMap::new(),
+            };
+            for (key, handle) in pools.entries() {
+                if !needed.contains_key(&key) && !fresh.values().any(|p| p.pool == key) {
                     // The web servers no longer route to it (rendered above): drain.
                     tracing::info!(pool = %handle.upstream_name(), version = %handle.spec().version, "no site uses this pool; draining");
-                    pools.retire(handle.version_id());
+                    pools.retire(key);
                 }
             }
         }
@@ -406,9 +459,10 @@ impl WebManager {
     }
 
     /// Upstreams of the running pools, plus an alias per exact pin (`php_8_3_36` →
-    /// the servers of its version's pool). Two pools of one series share its name
+    /// the servers of its version's shared pool). Two pools of one series share its name
     /// during a blue/green switch: the one serving wins, and `pinned` (the model a pool
-    /// just handed to the listener) wins over both.
+    /// just handed to the listener) wins over both. A dedicated pool carries its own name
+    /// (`php_8_3__loja-test`), so it never stands in for the shared one.
     async fn upstreams(
         &self,
         plan: &BTreeMap<SiteId, SitePhp>,
@@ -419,9 +473,9 @@ impl WebManager {
         };
         let mut by_version: BTreeMap<VersionId, Vec<UpstreamServer>> = BTreeMap::new();
         let mut names: BTreeMap<String, Vec<UpstreamServer>> = BTreeMap::new();
-        let mut statuses = pools.statuses().await;
-        statuses.sort_by_key(|s| s.serving);
-        for status in statuses {
+        let mut statuses = pools.keyed_statuses().await;
+        statuses.sort_by_key(|(_, s)| s.serving);
+        for (key, status) in statuses {
             if !matches!(status.state, PoolState::Running | PoolState::Starting) {
                 continue;
             }
@@ -434,7 +488,9 @@ impl WebManager {
             if servers.is_empty() {
                 continue;
             }
-            by_version.insert(status.version_id, servers.clone());
+            if !key.is_dedicated() {
+                by_version.insert(status.version_id, servers.clone());
+            }
             names.insert(status.upstream.name.clone(), servers);
         }
         if let Some(model) = pinned.filter(|m| !m.is_empty()) {
@@ -445,7 +501,7 @@ impl WebManager {
                 .collect();
             names.insert(model.name.clone(), servers);
         }
-        for php in plan.values() {
+        for php in plan.values().filter(|p| !p.pool.is_dedicated()) {
             if let Some(servers) = by_version.get(&php.version.id) {
                 names
                     .entry(php.upstream.clone())
@@ -506,7 +562,11 @@ impl WebManager {
         let default_series = plan
             .values()
             .next()
-            .map(|p| p.upstream.trim_start_matches("php_").replace('_', "."))
+            .map(|p| {
+                p.shared_upstream
+                    .trim_start_matches("php_")
+                    .replace('_', ".")
+            })
             .unwrap_or_else(|| "8.4".to_owned());
         let ctx = VhostContext {
             certs_sites: self.inner.root.certs_sites(),
@@ -563,8 +623,11 @@ impl WebManager {
                 }
                 // Render against the exact upstream the plan resolved.
                 if site.php.exact.is_none() && site.php.series.is_none() {
-                    site.php.series =
-                        Some(php.upstream.trim_start_matches("php_").replace('_', "."));
+                    site.php.series = Some(
+                        php.shared_upstream
+                            .trim_start_matches("php_")
+                            .replace('_', "."),
+                    );
                 }
             }
             if site.secure && !self.ensure_cert(&site).await {

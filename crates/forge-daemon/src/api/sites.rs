@@ -11,16 +11,18 @@ use forge_core::ids::SiteId;
 use forge_core::store::{Site, SiteKind, SitePhp};
 use forge_ipc::api::methods::{
     sites_add, sites_alias, sites_down, sites_driver, sites_env, sites_info, sites_list,
-    sites_open, sites_park, sites_parked, sites_php, sites_proxy_add, sites_ps, sites_remove,
-    sites_run, sites_secure, sites_server, sites_unpark, sites_up,
+    sites_metrics, sites_open, sites_park, sites_parked, sites_php, sites_pool_mode,
+    sites_proxy_add, sites_ps, sites_remove, sites_run, sites_secure, sites_server, sites_unpark,
+    sites_up,
 };
 use forge_ipc::api::{
     Ack, CheckDto, CheckStatus, DotenvFileDto, DotenvVarDto, JobDto, ListAction, NoParams,
     ParkParams, ParkedDirDto, ParkedListDto, ProcessAction, ProjectParams, ProjectUpDto,
     ProxyAddParams, Role, SiteAddParams, SiteAliasParams, SiteDriverParams, SiteDto, SiteEnvDto,
-    SiteEnvParams, SiteInfoDto, SiteKey, SiteListDto, SiteOpenParams, SiteOpenTarget, SiteParams,
-    SitePhpParams, SiteProcessDto, SiteProcessListDto, SitePsParams, SiteRef, SiteRemoveParams,
-    SiteRunParams, SiteSecureParams, SiteServerParams,
+    SiteEnvParams, SiteInfoDto, SiteKey, SiteListDto, SiteMetricsParams, SiteOpenParams,
+    SiteOpenTarget, SiteParams, SitePhpParams, SitePoolModeParams, SiteProcessDto,
+    SiteProcessListDto, SitePsParams, SiteRef, SiteRemoveParams, SiteRunParams, SiteSecureParams,
+    SiteServerParams,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_sites::apps::AppSite;
@@ -50,7 +52,11 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, sites_run, run);
     route!(router, daemon, sites_open, open);
     route!(router, daemon, sites_env, env);
+    route!(router, daemon, sites_pool_mode, pool_mode);
+    route!(router, daemon, sites_metrics, metrics);
     router.timeout::<sites_env>(ENV_BUDGET);
+    // One row written through the store's writer, then the site resolved again.
+    router.timeout::<sites_metrics>(METRICS_BUDGET);
     // The shell may load the browser before it answers; more than the 1 s default.
     router.timeout::<sites_open>(OPEN_BUDGET);
     // `sites.info` runs the DNS, certificate, pool and folder checks side by side.
@@ -63,6 +69,9 @@ const INFO_BUDGET: std::time::Duration = std::time::Duration::from_secs(8);
 const CHECK_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
 /// `site.certificate` warns below this many days left.
 const CERT_WARN_DAYS: i64 = 30;
+
+/// Budget of `sites.metrics` (a row update and the site's DTO).
+const METRICS_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Budget of `sites.env` (two small files, read in `spawn_blocking`).
 const ENV_BUDGET: std::time::Duration = std::time::Duration::from_secs(4);
@@ -410,9 +419,15 @@ async fn php(daemon: Daemon, params: SitePhpParams, ctx: Ctx) -> Result<JobDto> 
             // Blue/green step 1 (docs/06 §2.2): the target pool must be up before the
             // row is written. On failure nothing was stored, so no `site.updated`, no
             // concurrent reconcile and the old pool is never drained.
-            d.web.ensure_pool_for(&next).await?;
+            let hold = d.web.ensure_pool_for(&next).await?;
             let updated = d.sites.update(next).await?;
-            apply_or_restore(&d, &previous, &updated, "site php changed", true).await?;
+            let applied = apply_or_restore(&d, &previous, &updated, "site php changed", true).await;
+            drop(hold);
+            if applied.is_err() {
+                // Restored: the target pool, no longer held, goes with this reconcile.
+                reconcile_quietly(&d, "site php restored").await;
+            }
+            applied?;
             let to = d.web.resolved_php(&updated).await.unwrap_or(requested);
             if from.as_deref() != Some(to.as_str()) {
                 d.sites.publish_php_changed(&updated, from.as_deref(), &to);
@@ -441,6 +456,92 @@ async fn apply_or_restore(
     }
     reconcile_quietly(daemon, "site restored").await;
     Err(err)
+}
+
+/// `sites.pool_mode`: moves a PHP site between the shared pool of its version and a pool
+/// of its own (`php_8_4__loja-test`; docs/06 §2.1, ADR-0044 §7), blue/green like
+/// `sites.php`: the target pool is started and warm before the row is written (failure:
+/// nothing stored, the old pool keeps serving; a dedicated pool that could not start is
+/// stopped so its ports go back), then the row is written (`site.updated`), the web
+/// servers re-rendered and reloaded, and the old pool drained once no site uses it. A
+/// render/reload failure restores the row. A PHP port range without room for the new
+/// pool's workers answers `conflict` naming the range. Same mode: nothing to do.
+async fn pool_mode(daemon: Daemon, params: SitePoolModeParams, ctx: Ctx) -> Result<JobDto> {
+    let previous = find(&daemon, &params.site).await?;
+    if previous.kind != SiteKind::Php {
+        return Err(ForgeError::InvalidInput(format!(
+            "{} is not a PHP site: only PHP sites have a pool",
+            previous.host
+        )));
+    }
+    let mode = convert::domain_pool_mode(params.mode);
+    let d = daemon.clone();
+    daemon.job(
+        &ctx,
+        format!("sites.pool_mode {}", previous.host),
+        move |_job| async move {
+            if previous.pool_mode == mode {
+                return Ok(dto(&d, &previous).await);
+            }
+            let mut next = previous.clone();
+            next.pool_mode = mode;
+            let hold = match d.web.ensure_pool_for(&next).await {
+                Ok(hold) => hold,
+                Err(err) => {
+                    if let Ok(Some((key, _))) = d.web.pool_for(&next).await {
+                        if key.is_dedicated() {
+                            if let Err(stop) = d.pools.stop_key(&key).await {
+                                tracing::warn!(site = %next.host, %stop, "stopping a dedicated pool that did not start");
+                            }
+                        }
+                    }
+                    return Err(pool_start_error(err, &next));
+                }
+            };
+            let updated = d.sites.update(next).await?;
+            let applied =
+                apply_or_restore(&d, &previous, &updated, "site pool mode changed", true).await;
+            drop(hold);
+            if applied.is_err() {
+                // Restored to `previous`: the pool started for nothing goes with the next
+                // reconcile (no longer held).
+                reconcile_quietly(&d, "site pool mode restored").await;
+            }
+            applied?;
+            tracing::info!(site = %updated.host, mode = updated.pool_mode.as_str(), "site pool mode changed");
+            Ok(dto(&d, &updated).await)
+        },
+    )
+}
+
+/// A pool start that found no free port in its range (`conflict` from the port
+/// allocator) becomes a `conflict` that says what to do; anything else is unchanged.
+fn pool_start_error(err: ForgeError, site: &Site) -> ForgeError {
+    match err {
+        ForgeError::Conflict(message) if message.contains("no free port") => {
+            ForgeError::Conflict(format!(
+                "{}: no room for its PHP pool ({message}); widen the PHP range under [ports.ranges] in forgebox.toml, or move another site back to the shared pool (forge site pool <host> shared)",
+                site.host
+            ))
+        }
+        other => other,
+    }
+}
+
+/// `sites.metrics`: turns the collection of a site's metrics on or off (ADR-0044 §7).
+/// Off, its access log lines no longer reach the aggregator (the metrics service gets
+/// the routes again on `site.updated`); the stored history stays. Same value: nothing
+/// written, no event.
+async fn metrics(daemon: Daemon, params: SiteMetricsParams, _ctx: Ctx) -> Result<SiteDto> {
+    let site = find(&daemon, &params.site).await?;
+    if site.metrics_enabled == params.enabled {
+        return Ok(dto(&daemon, &site).await);
+    }
+    let mut next = site;
+    next.metrics_enabled = params.enabled;
+    let updated = daemon.sites.update(next).await?;
+    tracing::info!(site = %updated.host, enabled = updated.metrics_enabled, "site metrics switched");
+    Ok(dto(&daemon, &updated).await)
 }
 
 /// `sites.driver`: overrides the framework driver of a site, or detects it again
@@ -948,6 +1049,9 @@ async fn upsert(daemon: &Daemon, draft: SiteDraft) -> Result<Site> {
             site.id = existing.id;
             site.slug = existing.slug;
             site.created_at = existing.created_at;
+            // Not in `forgebox.yaml`: what the user chose for the site stays.
+            site.pool_mode = existing.pool_mode;
+            site.metrics_enabled = existing.metrics_enabled;
             daemon.sites.update(site).await
         }
         None => Ok(daemon.sites.create(draft).await?.site),

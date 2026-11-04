@@ -33,12 +33,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "LAN exposure with firewall rules",
     ),
     ("net.lan_qr", "M3-E3", "LAN QR codes"),
-    (
-        "sites.pool_mode",
-        "M2-E5-T11",
-        "dedicated PHP pool per site",
-    ),
-    ("sites.metrics", "M2-E5-T11", "per-site metrics switch"),
     ("remote.pair", "M6-E3", "remote mode pairing"),
     ("remote.listen", "M6-E3", "remote mode listener"),
     ("remote.clients", "M6-E3", "remote mode clients"),
@@ -188,22 +182,15 @@ mod tests {
 
     #[test]
     fn e5_methods_name_their_task() {
-        // The metrics contract (ADR-0044): each backend task owns its methods.
-        for (method, task) in [
-            ("sites.pool_mode", "M2-E5-T11"),
-            ("sites.metrics", "M2-E5-T11"),
-        ] {
-            let err = error(method);
-            assert_eq!(err.code(), "not_implemented", "{method}");
-            assert!(
-                err.to_string().contains(&format!("(roadmap {task})")),
-                "{method}: {err}"
-            );
-            let details = err.details().unwrap();
-            assert_eq!(details["args"]["task"], task, "{method}");
-            assert_eq!(details["args"]["method"], method);
-        }
-        // The metrics backend exists (M2-E5-T8, T9); metrics.unsubscribe is a server built-in.
+        // The metrics contract (ADR-0044): every E5 backend method shipped (T8 stats.get and
+        // metrics.subscribe, T9 stats.*, T11 per-site switches), so no E5 row is left.
+        assert!(
+            !NOT_IMPLEMENTED
+                .iter()
+                .any(|(_, task, _)| task.starts_with("M2-E5")),
+            "an M2-E5 method is still listed as not implemented"
+        );
+        // metrics.unsubscribe is a server built-in.
         for method in [
             "stats.get",
             "metrics.subscribe",
@@ -211,16 +198,12 @@ mod tests {
             "stats.routes",
             "stats.export",
             "stats.top",
+            "sites.pool_mode",
+            "sites.metrics",
         ] {
             assert!(!methods().iter().any(|m| m == method), "{method}");
         }
         assert!(crate::api::SERVER_BUILTINS.contains(&"metrics.unsubscribe"));
-        // Every E5 row names its task, not only the epic.
-        for (method, task, _) in NOT_IMPLEMENTED {
-            if task.starts_with("M2-E5") {
-                assert!(task.starts_with("M2-E5-T"), "{method}: {task}");
-            }
-        }
     }
 
     #[test]
