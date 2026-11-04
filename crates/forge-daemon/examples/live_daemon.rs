@@ -1,6 +1,6 @@
 //! `forgeboxd` with fake system backends, for the E3 live suite (`scripts/gui-e2e.ps1 -Suite e3`,
 //! M2-E3-T21): the same boot as `src/main.rs`, but the certificate store is a
-//! `MemoryTrustStore` and the UAC prompt a `FakeElevation`, so the doctor "Fix" flow
+//! `MemoryTrustStore`, the user PATH a `MemoryUserEnv` and the UAC prompt a `FakeElevation`, so the doctor "Fix" flow
 //! (`tls.ca_install`) runs end to end without ever writing a Windows certificate store, NRPT or
 //! HKCU. The GUI starts it through `FORGE_DAEMON_EXE`. Development only: nothing here ships.
 //!
@@ -13,7 +13,7 @@ use clap::Parser;
 use forge_core::config::ForgeConfig;
 use forge_core::helper::FakeElevation;
 use forge_core::paths::{ForgeRoot, InitOptions};
-use forge_core::platform::{self, MemoryTrustStore, TrustStore};
+use forge_core::platform::{self, MemoryTrustStore, MemoryUserEnv, TrustStore};
 use forge_core::runtime::{RuntimeConfig, build_runtime};
 use forge_daemon::args::Args;
 use forge_daemon::boot::{self, BootOptions};
@@ -75,7 +75,10 @@ fn run(args: Args) -> i32 {
     let code = runtime.block_on(async move {
         let options = BootOptions {
             platform: Some(
-                platform::current().with_elevation(Arc::new(FakeElevation::accepting())),
+                platform::current()
+                    .with_elevation(Arc::new(FakeElevation::accepting()))
+                    // In-memory user environment: `shell.path_add` never reaches HKCU.
+                    .with_user_env(Arc::new(MemoryUserEnv::default())),
             ),
             trust_store: Some(Arc::new(|helper| {
                 Arc::new(MemoryTrustStore::new(Some(helper))) as Arc<dyn TrustStore>

@@ -15,7 +15,7 @@ Seis telas do E3: **Logs**, **Mail**, **Bancos**, **Terminal**, **Configuraçõe
 
 ## Suíte live do E3
 
-`apps/desktop/e2e/live/e3/e3.live.spec.ts`, sobre o mesmo fixture do E2 (`e2e/live/fixture.mjs`, agora com o cliente de banco falso `fake_db_client` como `mysql.exe`/`mysqldump.exe` e um projeto `queue` para o Logs) e sobre `crates/forge-daemon/examples/live_daemon.rs`: o mesmo boot do `forgeboxd`, mas com `MemoryTrustStore` e `FakeElevation`, para que o fluxo "Corrigir" do doctor rode de ponta a ponta sem escrever em nenhum repositório de certificados, NRPT ou HKCU. A raiz do E3 não tem `portable.flag` (o modo portátil recusa instalar a CA e pula a checagem de PATH); como o armazenamento é em memória, nada chega ao Windows.
+`apps/desktop/e2e/live/e3/e3.live.spec.ts`, sobre o mesmo fixture do E2 (`e2e/live/fixture.mjs`, agora com o cliente de banco falso `fake_db_client` como `mysql.exe`/`mysqldump.exe` e um projeto `queue` para o Logs) e sobre `crates/forge-daemon/examples/live_daemon.rs`: o mesmo boot do `forgeboxd`, mas com `MemoryTrustStore`, `MemoryUserEnv` e `FakeElevation`, para que o fluxo "Corrigir" do doctor (CA e PATH) rode de ponta a ponta sem escrever em nenhum repositório de certificados, NRPT ou HKCU. A raiz do E3 não tem `portable.flag` (o modo portátil recusa instalar a CA e pula a checagem de PATH); como o armazenamento é em memória, nada chega ao Windows.
 
 | # | Cenário | O que prova (medido) |
 |---|---|---|
@@ -57,7 +57,7 @@ Legenda: **ok** = evidência na seção "Evidência"; **ok\*** = ok com a ressal
 
 - **Mailpit e MySQL reais:** não houve notas manuais (o usuário não estava disponível durante a tarefa). Ficam para o M2-E4-T11. `fake_mailpit` e `fake_db_client` são os dublês de `crates/forge-daemon/tests/fixtures`.
 - **Eco do terminal:** o buffer do xterm não é legível no build de produção (WebGL não desenha DOM; o gancho `__FORGEBOX_TERM__` só existe no build `qa`), então o eco é provado pelo efeito no disco (o shell escreve o arquivo) e o banner de saída pela tela.
-- **Correções de DNS e PATH do doctor:** `net.dns_enable` e `shell.path_add` mexem na NRPT e no HKCU, e não há backend falso injetável no `forgeboxd` real para eles; só `tls.ca_install` (repositório em memória) roda ponta a ponta. As duas continuam cobertas pelos testes de unidade da allowlist e do daemon.
+- **Correção de DNS do doctor:** `net.dns_enable` mexe na NRPT, que não tem backend falso injetável no `forgeboxd` real; fica coberta pelos testes de unidade da allowlist e do daemon. `tls.ca_install` (repositório em memória) e `shell.path_add` (`MemoryUserEnv`) rodam ponta a ponta.
 - **`qa:check` filtrado:** rodado só nas rotas e abas do E3 (157 casos), não a suíte inteira (verificação leve; o gate de lote roda tudo).
 
 ## Pendências para o M2-E4

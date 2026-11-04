@@ -215,6 +215,12 @@ test("4 doctor: Fix installs the CA into the (memory) store and the row changes 
   // The daemon agrees (the memory store now trusts the CA).
   const status = await call<{ trusted_current_user: boolean }>(page, "tls.ca_status");
   expect(status.trusted_current_user).toBe(true);
+  // PATH fix: the daemon runs on an in-memory user environment, so `shell.path_add` is real
+  // end to end without ever touching HKCU.
+  const pathRow = page.locator('[data-check="path.user"]');
+  await expect(pathRow).toHaveAttribute("data-status", "warn");
+  await pathRow.getByRole("button", { name: "Fix" }).click();
+  await expect(pathRow).toHaveAttribute("data-status", "ok", { timeout: 30_000 });
 });
 
 test("5 settings: a config change made by another client shows in the open screen", async () => {
