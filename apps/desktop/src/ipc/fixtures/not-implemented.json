@@ -65,11 +65,6 @@
     "what": "editor launcher"
   },
   {
-    "method": "stats.get",
-    "task": "M2-E5-T8",
-    "what": "per-site metrics (forge-metrics)"
-  },
-  {
     "method": "stats.top",
     "task": "M2-E5-T9",
     "what": "Forgebox processes and machine stats"
@@ -88,11 +83,6 @@
     "method": "stats.routes",
     "task": "M2-E5-T9",
     "what": "top routes and recent errors"
-  },
-  {
-    "method": "metrics.subscribe",
-    "task": "M2-E5-T8",
-    "what": "per-site metrics stream (forge-metrics)"
   },
   {
     "method": "sites.pool_mode",
