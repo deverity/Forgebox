@@ -15,8 +15,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "M3-E1",
         "installing a local zip or folder as a tool version",
     ),
-    ("tools.releases", "M2-E2-T5", "listing provider releases"),
-    ("tools.plan", "M2-E2-T5", "install plans"),
     (
         "sites.share",
         "M3-E3",
@@ -179,20 +177,12 @@ mod tests {
     #[test]
     fn e2_methods_name_their_task() {
         // The E2 contract (ADR-0041): each backend task owns its methods.
-        for (method, task) in [("tools.releases", "M2-E2-T5"), ("tools.plan", "M2-E2-T5")] {
-            let err = error(method);
-            assert_eq!(err.code(), "not_implemented", "{method}");
-            assert!(
-                err.to_string().contains(&format!("(roadmap {task})")),
-                "{method}: {err}"
-            );
-            assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
-            assert_eq!(err.details().unwrap()["args"]["method"], method);
-        }
         // Partial methods (they work without the new parameter) stay out of the table, and
-        // so do the ones whose backend landed (M2-E2-T4: history and icons; M2-E2-T7: quick
-        // settings; M2-E2-T9: extensions and Xdebug).
+        // so do the ones whose backend landed (M2-E2-T4: history and icons; M2-E2-T5:
+        // releases and plans; M2-E2-T7: quick settings; M2-E2-T9: extensions and Xdebug).
         for method in [
+            "tools.releases",
+            "tools.plan",
             "tools.install",
             "tools.remove",
             "tools.history",

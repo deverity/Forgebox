@@ -112,6 +112,8 @@ pub struct Inner {
     pub actors: ActorSupervisor,
     pub registry: Registry,
     pub providers: Arc<ProviderRegistry>,
+    /// Release lookups of the install pipeline (`tools.install|releases|plan`).
+    pub resolver: Arc<dyn crate::install::ReleaseResolver>,
     pub downloads: DownloadManager,
     pub layout: Layout,
     pub updates: UpdateEngine,

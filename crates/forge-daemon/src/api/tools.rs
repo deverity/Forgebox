@@ -14,16 +14,17 @@ use forge_core::jobs::JobState;
 use forge_core::store::{SiteRepo, ToolVersionRepo, ToolVersionRow, UpdateHistoryRepo};
 use forge_ipc::api::methods::{
     tools_check_updates, tools_discover, tools_history, tools_icon, tools_info, tools_install,
-    tools_list, tools_policy, tools_remove, tools_rollback, tools_search, tools_update, tools_use,
-    tools_which,
+    tools_list, tools_plan, tools_policy, tools_releases, tools_remove, tools_rollback,
+    tools_search, tools_update, tools_use, tools_which,
 };
 use forge_ipc::api::{
     Ack, AvailableVersionDto, CatalogEntryDto, CatalogKind, CatalogSearchDto, IconDto, JobDto,
     NoParams, SiteUsageDto, ToolDiscoverDto, ToolDto, ToolHistoryParams, ToolInfoDto,
-    ToolInstallParams, ToolInstallResultDto, ToolListDto, ToolListParams, ToolParams,
-    ToolPolicyParams, ToolRemoveParams, ToolRollbackParams, ToolSearchParams, ToolUpdateDto,
-    ToolUpdateParams, ToolUpdatesDto, ToolUseParams, ToolVersionDto, ToolWhichParams,
-    UpdateHistoryDto, UpdatePolicy, WhichDto,
+    ToolInstallParams, ToolInstallResultDto, ToolListDto, ToolListParams, ToolParams, ToolPlanDto,
+    ToolPlanParams, ToolPlanReason, ToolPolicyParams, ToolReleasesDto, ToolReleasesParams,
+    ToolRemoveParams, ToolRollbackParams, ToolSearchParams, ToolUpdateDto, ToolUpdateParams,
+    ToolUpdatesDto, ToolUseParams, ToolVersionDto, ToolWhichParams, UpdateHistoryDto, UpdatePolicy,
+    WhichDto,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_manifest::schema::tool::ServiceKind;
@@ -42,6 +43,8 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, tools_info, info);
     route!(router, daemon, tools_history, history);
     route!(router, daemon, tools_icon, icon);
+    route!(router, daemon, tools_releases, releases);
+    route!(router, daemon, tools_plan, plan);
     route!(router, daemon, tools_install, install_tools);
     route!(router, daemon, tools_remove, remove);
     route!(router, daemon, tools_update, update);
@@ -467,21 +470,44 @@ async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> R
             .collect::<Vec<_>>()
             .join(" ")
     );
+    // The same expansion `tools.plan` shows: missing `depends_on` first, in order.
+    let requests = params
+        .specs
+        .iter()
+        .map(|s| {
+            let (tool, version) = install::parse_spec(s.as_str())?;
+            Ok(install::Request::requested(tool, version))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let steps = install::expand(
+        &daemon.registry,
+        &install::installed_ids(&daemon).await?,
+        &requests,
+    )?;
     let d = daemon.clone();
     daemon.job(&ctx, name, move |job| async move {
         let mut installed = Vec::new();
-        for (spec, kind) in params.specs.iter().zip(kinds) {
+        for step in steps {
             job.check_cancelled()?;
-            if let Installable::Extension(ext) = kind {
-                let (_, version) = install::parse_spec(spec.as_str())?;
+            if step.kind == install::StepKind::Extension {
+                let ext = catalog::extension(&d.registry, &step.tool).ok_or_else(|| {
+                    ForgeError::NotFound(format!(
+                        "no extension {} in the loaded registries",
+                        step.tool
+                    ))
+                })?;
                 let target = params.target.as_ref().map(|t| t.as_str());
                 let rows =
-                    install::install_extension(&d, &job, &ext, version.as_deref(), target).await?;
+                    install::install_extension(&d, &job, &ext, step.version.as_deref(), target)
+                        .await?;
                 installed.extend(rows.iter().map(|r| convert::tool_version(r, false)));
                 continue;
             }
-            let row =
-                install::install_one(&d, &job, spec.as_str(), params.variant.as_deref()).await?;
+            // `--variant` is for what was asked for, not for the dependencies added.
+            let variant = (step.reason == ToolPlanReason::Requested)
+                .then_some(params.variant.as_deref())
+                .flatten();
+            let row = install::install_one(&d, &job, &step.spec(), variant).await?;
             let current = d
                 .layout
                 .current_version(&row.tool_id)
@@ -492,6 +518,97 @@ async fn install_tools(daemon: Daemon, params: ToolInstallParams, ctx: Ctx) -> R
             installed.push(convert::tool_version(&row, current));
         }
         Ok(ToolInstallResultDto { installed })
+    })
+}
+
+/// `tools.releases`: what the providers publish for a tool (job; nothing is downloaded).
+async fn releases(daemon: Daemon, params: ToolReleasesParams, ctx: Ctx) -> Result<JobDto> {
+    catalog::require_installable(&daemon.registry, &params.tool)?;
+    let d = daemon.clone();
+    daemon.job(
+        &ctx,
+        format!("tools.releases {}", params.tool),
+        move |job| async move {
+            let found: ToolReleasesDto =
+                install::releases(&d, &job, &params.tool, params.channel.as_deref()).await?;
+            Ok(found)
+        },
+    )
+}
+
+/// `tools.plan`: what `tools.install` would download for `specs` or a `stack` (job;
+/// nothing is installed). It resolves with the functions `tools.install` uses.
+async fn plan(daemon: Daemon, params: ToolPlanParams, ctx: Ctx) -> Result<JobDto> {
+    let mut requests: Vec<install::Request> = Vec::new();
+    if let Some(stack_id) = &params.stack {
+        let id = ToolId::new(stack_id.trim().to_ascii_lowercase())
+            .map_err(|e| ForgeError::InvalidInput(format!("stack {stack_id:?}: {e}")))?;
+        let stack = catalog::stack(&daemon.registry, &id).ok_or_else(|| {
+            ForgeError::NotFound(format!("no stack {id} in the loaded registries"))
+        })?;
+        for item in &stack.manifest.spec.tools {
+            requests.push(install::Request {
+                tool: item.id.clone(),
+                version: item.version.clone().or_else(|| item.series.clone()),
+                reason: ToolPlanReason::Stack,
+                extensions: item.extensions.clone(),
+            });
+        }
+    } else if params.specs.is_empty() {
+        return Err(ForgeError::InvalidInput(
+            "nothing to plan: give specs or a stack".into(),
+        ));
+    }
+    // Specs replace the stack's entry of the same tool, or add to it.
+    for spec in &params.specs {
+        let (tool, version) = install::parse_spec(spec.as_str())?;
+        match requests.iter_mut().find(|r| r.tool == tool) {
+            Some(existing) => existing.version = version,
+            None => requests.push(install::Request::requested(tool, version)),
+        }
+    }
+    for request in &requests {
+        match catalog::require_installable(&daemon.registry, &request.tool)? {
+            Installable::Tool(_) if params.target.is_some() && params.stack.is_none() => {
+                return Err(target_only_for_extensions(&request.tool));
+            }
+            Installable::Extension(_)
+                if params.variant.is_some() && request.reason == ToolPlanReason::Requested =>
+            {
+                return Err(ForgeError::InvalidInput(format!(
+                    "{} is an extension: its build follows the target version (no --variant)",
+                    request.tool
+                )));
+            }
+            _ => {}
+        }
+    }
+    let steps = install::expand(
+        &daemon.registry,
+        &install::installed_ids(&daemon).await?,
+        &requests,
+    )?;
+    let name = format!(
+        "tools.plan {}",
+        params
+            .stack
+            .iter()
+            .cloned()
+            .chain(params.specs.iter().map(|s| s.to_string()))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let d = daemon.clone();
+    daemon.job(&ctx, name, move |job| async move {
+        let result: ToolPlanDto = install::plan(
+            &d,
+            &job,
+            &steps,
+            params.variant.as_deref(),
+            params.target.as_ref().map(|t| t.as_str()),
+        )
+        .await?;
+        Ok(result)
     })
 }
 

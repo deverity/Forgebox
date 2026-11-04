@@ -268,6 +268,9 @@ pub struct BootOptions {
     /// `forge_core::platform::MemoryTrustStore`, so no OS store is ever written; the
     /// helper client carries `platform.elevation()`, a `FakeElevation` in tests).
     pub trust_store: Option<TrustStoreFactory>,
+    /// Answers `tools.install`/`tools.releases`/`tools.plan` (a fake with canned releases
+    /// and no network); default: the providers of the manifests.
+    pub release_resolver: Option<Arc<dyn crate::install::ReleaseResolver>>,
 }
 
 /// See [`BootOptions::trust_store`].
@@ -374,6 +377,10 @@ pub async fn boot_with(
     let providers = Arc::new(ProviderRegistry::new(ProviderConfig::new(
         root.state_registry().join("cache"),
     ))?);
+    let resolver: Arc<dyn crate::install::ReleaseResolver> = options
+        .release_resolver
+        .clone()
+        .unwrap_or_else(|| Arc::new(crate::install::ProviderResolver::new(providers.clone())));
     let helper_policy = HelperPolicy::from_config(&root, &config)?;
     // The platform's elevation (a `FakeElevation` when a test injects one).
     let helper = HelperClient::new(
@@ -528,6 +535,7 @@ pub async fn boot_with(
         actors,
         registry,
         providers,
+        resolver,
         downloads,
         layout,
         updates,
