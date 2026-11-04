@@ -77,6 +77,13 @@ describe("states", () => {
     expect(await screen.findByText("Nothing checked yet")).toBeInTheDocument();
     expect(document.querySelector('[data-forge-cli="forge doctor"]')).not.toBeNull();
     expect(screen.getByRole("button", { name: "Export report" })).toBeDisabled();
+    // R-31: the reason is shown, on the wrapper (a disabled button gets no pointer events) and
+    // as a sentence on the idle screen.
+    expect(screen.getByRole("button", { name: "Export report" }).parentElement).toHaveAttribute(
+      "title",
+      "Run the diagnostics to export the report.",
+    );
+    expect(screen.getByText(/Export report becomes available after the first run/)).toBeVisible();
     expect(calls("daemon.doctor")).toHaveLength(0);
     expect(screen.getByTestId("page-diagnostics")).toHaveAttribute("data-phase", "idle");
   });

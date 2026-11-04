@@ -29,6 +29,7 @@ export function ShellButton({
   return (
     <ActionButton
       action={databaseShell}
+      variant="ghost"
       input={{ instance, database }}
       loadingLabel={t("shell.loading")}
       onDone={(answer) => {

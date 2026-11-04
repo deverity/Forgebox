@@ -5,6 +5,12 @@ import { useTranslation } from "react-i18next";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { initI18n, setLanguage } from "./index";
 
+/** Picks `name` in the design-system Select (Radix: open the trigger, click the option). */
+async function pick(name: string) {
+  await userEvent.click(screen.getByRole("combobox"));
+  await userEvent.click(await screen.findByRole("option", { name }));
+}
+
 /** What the old placeholder shell showed: a translated line and the picker. */
 function App() {
   const { t } = useTranslation("shell");
@@ -40,8 +46,8 @@ describe("runtime language switch", () => {
     const bridge = vi.fn(() => Promise.resolve());
     await initI18n({ override: "en-US", setLanguage: bridge });
     render(<App />);
-    await userEvent.selectOptions(screen.getByRole("combobox"), "pt-BR");
-    expect(await screen.findByText("Idioma")).toBeInTheDocument();
+    await pick("Português (Brasil)");
+    expect(await screen.findByRole("combobox", { name: "Idioma" })).toBeInTheDocument();
     expect(bridge).toHaveBeenLastCalledWith("pt-BR");
   });
 
@@ -81,7 +87,7 @@ describe("language persistence (E2-02)", () => {
     globalThis.localStorage.removeItem("forgebox.prefs");
     await initI18n({ override: "en-US", setLanguage: () => Promise.resolve() });
     render(<App />);
-    await userEvent.selectOptions(screen.getByRole("combobox"), "pt-BR");
+    await pick("Português (Brasil)");
     await vi.waitFor(() => {
       expect(JSON.parse(globalThis.localStorage.getItem("forgebox.prefs") ?? "{}")).toMatchObject({
         language: "pt-BR",

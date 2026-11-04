@@ -17,9 +17,9 @@
     "start": "Iniciar",
     "starting": "Iniciando…",
     "state": {
-      "running": "Rodando",
+      "running": "Em execução",
       "starting": "Iniciando",
-      "stopped": "Parada",
+      "stopped": "Parado",
       "stopping": "Parando",
       "failed": "Com falha",
       "crashed": "Caiu",

@@ -21,6 +21,17 @@ export function summarize(values) {
     return { mean, cv };
 }
 
+/**
+ * Nearest-rank percentile of an ascending list (`Infinity` for an empty one: it must fail).
+ * @param {readonly number[]} sorted
+ * @param {number} q
+ * @returns {number}
+ */
+export function percentile(sorted, q) {
+    if (sorted.length === 0) return Number.POSITIVE_INFINITY;
+    return sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)] ?? 0;
+}
+
 function main() {
     const runs = Number(process.env.FORGE_PERF_RUNS ?? 3);
     rmSync(out, { recursive: true, force: true });

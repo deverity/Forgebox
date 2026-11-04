@@ -337,11 +337,15 @@ export async function keyboardViolations(page: Page): Promise<string[]> {
       const shadowVisible =
         style.boxShadow !== "none" &&
         style.boxShadow.includes(`rgb(${accent.slice(0, 3).join(", ")})`);
+      // R-25: Radix leaves tabindex=0 on a tablist/radiogroup/toolbar after an item was opened by
+      // a click, so Tab can stop on the container for an instant before it hands the focus to
+      // an item. The container is a pass-through, never the stop the ring belongs to.
+      const passThrough = el.matches("[role=tablist],[role=radiogroup],[role=toolbar],[role=menu]");
       const label = `${el.tagName.toLowerCase()}${el.getAttribute("role") ? `[${el.getAttribute("role") ?? ""}]` : ""} "${(el.getAttribute("aria-label") ?? el.textContent).trim().slice(0, 30)}"`;
       // A roving group (radiogroup...) counts as reached when focus is inside it.
       return {
         tag: el.closest<HTMLElement>("[data-qa-tab]")?.dataset.qaTab ?? null,
-        ring: outlineVisible || shadowVisible,
+        ring: outlineVisible || shadowVisible || passThrough,
         label,
       };
     });

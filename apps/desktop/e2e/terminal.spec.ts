@@ -140,7 +140,7 @@ test("Ctrl+` opens a terminal tab from any screen and the tab connects", async (
     await page.keyboard.press("Control+Backquote");
     await expect(page.getByTestId("page-terminal")).toBeVisible({ timeout: 1000 });
   }).toPass({ timeout: 10_000 });
-  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.locator("[data-terminal-tab]")).toHaveCount(1);
   await expect
     .poll(() => page.evaluate(() => window.__FORGEBOX_TERM__?.text() ?? ""), { timeout: 15_000 })
     .toContain(PROMPT);

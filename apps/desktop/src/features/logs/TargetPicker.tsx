@@ -1,13 +1,16 @@
 import { useTranslation } from "react-i18next";
+import { useCapabilityReason } from "../../app/shell/useErrorText";
 import { Button } from "../../design/primitives/Button";
+import { EmptyState } from "../../design/primitives/EmptyState";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
 import { FOCUS_RING, cx } from "../../design/primitives/shared";
 import { Skeleton } from "../../design/primitives/Skeleton";
 import type { LogTargetDto } from "../../ipc/generated";
-import { useForgeQuery } from "../../state";
+import { useCapability, useConnectionStatus, useForgeQuery, useRuntime } from "../../state";
 import { MAX_TARGETS } from "./model";
 
 export const PICKER_SKELETON_HEIGHT = 240;
+const AWAY: ReadonlySet<string> = new Set(["stopped", "closed", "uninitialized"]);
 
 /** `logs.targets` grouped by `group`, in the order the daemon lists them. */
 export function groupTargets(targets: readonly LogTargetDto[]): [string, LogTargetDto[]][] {
@@ -28,8 +31,35 @@ export interface TargetPickerProps {
 /** Source picker of the Logs screen: grouped checkboxes, at most 8 at once. */
 export function TargetPicker({ selected, onChange }: TargetPickerProps) {
   const { t } = useTranslation("logs");
+  const { t: tCommon } = useTranslation("common");
+  const runtime = useRuntime();
+  const status = useConnectionStatus();
+  const capability = useCapability("logs.targets");
+  const reason = useCapabilityReason(capability);
   const query = useForgeQuery("logs.targets", {});
   const full = selected.length >= MAX_TARGETS;
+
+  // R-16: no daemon, or a daemon without `logs.targets`: say so, never an endless skeleton.
+  if (AWAY.has(status)) {
+    return (
+      <EmptyState
+        title={tCommon("ui.asyncDisconnectedTitle")}
+        description={tCommon("ui.asyncDisconnectedHint")}
+        action={
+          <Button
+            onClick={() => {
+              void runtime.api.start();
+            }}
+          >
+            {tCommon("ui.asyncRetry")}
+          </Button>
+        }
+      />
+    );
+  }
+  if (!capability.available && capability.reason !== "disconnected" && reason !== null) {
+    return <EmptyState title={reason} />;
+  }
 
   if (query.isError) {
     return (

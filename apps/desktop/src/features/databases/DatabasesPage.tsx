@@ -1,12 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useCapabilityReason } from "../../app/shell/useErrorText";
 import { AsyncView } from "../../design/primitives/AsyncView";
 import { Button } from "../../design/primitives/Button";
 import { EmptyState } from "../../design/primitives/EmptyState";
 import { ErrorNotice } from "../../design/primitives/ErrorNotice";
 import type { ForgeApiError } from "../../ipc/errors";
-import { useConnectionStatus, useForgeQuery, useRuntime } from "../../state";
+import { useCapability, useConnectionStatus, useForgeQuery, useRuntime } from "../../state";
 import { CreateForm } from "./CreateForm";
 import { DatabaseTable } from "./DatabaseTable";
 import { InstanceCard } from "./InstanceCard";
@@ -30,10 +31,15 @@ export function DatabasesPage() {
   const navigate = useNavigate();
   const status = useConnectionStatus();
   const list = useForgeQuery("db.list", {});
+  const capability = useCapability("db.list");
+  const reason = useCapabilityReason(capability);
   const [chosen, setChosen] = useState<string | null>(null);
   const [notice, setNotice] = useState<ForgeApiError | null>(null);
   const instances = list.data?.instances ?? [];
   const away = AWAY.has(status);
+  // R-16: a daemon that answers `not_implemented` never runs the query (it stays pending), so
+  // say so instead of an endless skeleton.
+  const unavailable = !capability.available && capability.reason !== "disconnected";
   const current = pickInstance(instances, chosen);
   const databases =
     current === undefined ? [] : databasesOf(list.data?.databases ?? [], current.instance);
@@ -95,7 +101,7 @@ export function DatabasesPage() {
       ) : (
         <AsyncView
           height={STATE_HEIGHT}
-          loading={!away && list.isPending}
+          loading={!away && !unavailable && list.isPending}
           disconnected={away}
           onStartDaemon={() => {
             void runtime.api.start();
@@ -105,18 +111,20 @@ export function DatabasesPage() {
           onRetry={() => {
             void list.refetch();
           }}
-          empty={instances.length === 0}
-          emptyTitle={t("empty.title")}
-          emptyDescription={t("empty.description")}
+          empty={unavailable || instances.length === 0}
+          emptyTitle={unavailable && reason !== null ? reason : t("empty.title")}
+          {...(unavailable ? {} : { emptyDescription: t("empty.description") })}
           emptyAction={
-            <Button
-              variant="primary"
-              onClick={() => {
-                void navigate({ to: CATALOG_PATH });
-              }}
-            >
-              {t("empty.action")}
-            </Button>
+            unavailable ? undefined : (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  void navigate({ to: CATALOG_PATH });
+                }}
+              >
+                {t("empty.action")}
+              </Button>
+            )
           }
         >
           <span />

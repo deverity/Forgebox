@@ -85,4 +85,31 @@ describe("Logs screen", () => {
       expect(page).toHaveFocus();
     });
   });
+
+  it("R-16: a daemon without logs.targets says so, never an endless skeleton", async () => {
+    harness = await renderApp({
+      path: "/logs",
+      extra: { handlers: logsHandlers(), notImplemented: ["logs.targets"] },
+    });
+    expect(await screen.findByText("Not available yet in this version of Forgebox.")).toBeVisible();
+    expect(document.querySelector("[data-skeleton]")).toBeNull();
+  });
+
+  it("R-16: with the daemon stopped the picker offers to start it", async () => {
+    harness = await renderApp({ path: "/logs", scenario: "daemon-down" });
+    expect(await screen.findByText("No connection to the daemon")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeVisible();
+    expect(document.querySelector("[data-skeleton]")).toBeNull();
+  });
+
+  it("R-28: with no source nothing is enabled, and each disabled button says why", async () => {
+    await open();
+    await screen.findByText("Pick a source to see its lines.");
+    for (const name of ["Pause", "Copy", "Load earlier"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button, name).toBeDisabled();
+      const reason = button.title || button.parentElement?.title;
+      expect(reason, name).toBe("Pick a source to see its lines.");
+    }
+  });
 });

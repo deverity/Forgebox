@@ -146,7 +146,11 @@ export function UpdaterPanel() {
  * "Start with Windows (minimized)" switch for Settings and onboarding. Disabled with the
  * localized reason in portable mode.
  */
-export function AutostartToggle() {
+/**
+ * The Windows autostart switch. `showLabel={false}` when the caller already shows the name
+ * beside it (the Settings row): the toggle keeps its accessible name, no duplicate text (R-30).
+ */
+export function AutostartToggle({ showLabel = true }: { showLabel?: boolean } = {}) {
   const { t } = useTranslation("updater");
   const store = getUpdaterStore();
   const [status, setStatus] = useState<AutostartStatus | null>(null);
@@ -184,7 +188,7 @@ export function AutostartToggle() {
             });
           }}
         />
-        <span className="text-body">{t("autostart.label")}</span>
+        {showLabel ? <span className="text-body">{t("autostart.label")}</span> : null}
       </div>
       {status.reason === null ? null : (
         <p data-testid="autostart-reason" className="text-caption text-fg-secondary">

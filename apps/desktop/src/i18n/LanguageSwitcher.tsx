@@ -1,29 +1,29 @@
 import { useTranslation } from "react-i18next";
+import { Select } from "../design/primitives/Select";
 import { saveLanguage } from "../features/settings/guiPrefs";
-import { FOCUS_RING } from "../design/primitives/shared";
 import { SUPPORTED_LOCALES, setLanguage, type Locale } from "./index";
 
-/** Runtime language picker: re-renders without reload and syncs Rust through `set_language`. */
+/**
+ * Runtime language picker: re-renders without reload and syncs Rust through `set_language`.
+ * The design-system Select (R-30), named for assistive technology only: the Settings row
+ * already shows the visible "Idioma", so no second label sits beside it.
+ */
 export function LanguageSwitcher() {
   const { t, i18n } = useTranslation("common");
   return (
-    <label className="flex items-center gap-2 text-body">
-      <span>{t("language.label")}</span>
-      <select
-        className={FOCUS_RING}
-        value={i18n.language}
-        onChange={(event) => {
-          const locale = event.target.value as Locale;
-          void setLanguage(locale);
-          void saveLanguage(locale);
-        }}
-      >
-        {SUPPORTED_LOCALES.map((locale) => (
-          <option key={locale} value={locale}>
-            {t(`language.${locale}`)}
-          </option>
-        ))}
-      </select>
-    </label>
+    <Select
+      label={t("language.label")}
+      width="sm"
+      value={i18n.language}
+      options={SUPPORTED_LOCALES.map((locale) => ({
+        value: locale,
+        label: t(`language.${locale}`),
+      }))}
+      onValueChange={(value) => {
+        const locale = value as Locale;
+        void setLanguage(locale);
+        void saveLanguage(locale);
+      }}
+    />
   );
 }

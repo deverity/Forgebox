@@ -3,6 +3,7 @@
 // default tab, so these cases click the tab first, then run axe in both themes, the DOM
 // contracts (every action has its `forge` command, errors have cause + action, remote rules)
 // and the keyboard rule.
+import type { Page } from "@playwright/test";
 import {
   axeViolations,
   contractViolations,
@@ -24,6 +25,15 @@ const TABS = [
   // Desempenho (M2-E5-T16).
   { name: "Performance", testId: "site-performance" },
 ] as const;
+
+/**
+ * Lets the opened tab finish loading: its controls appear after the first paint, and the Tab
+ * walk counts the stops once at the start (an Environment row arriving late shifts the count).
+ */
+async function settle(page: Page): Promise<void> {
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(500);
+}
 
 for (const tab of TABS) {
   for (const theme of ["light", "dark"] as const) {
@@ -73,6 +83,15 @@ for (const tab of TABS) {
     expect(await axeViolations(page)).toEqual([]);
   });
 
+  // R-25: a tab opened by a click leaves tabindex=0 on the tablist; it is not a stop.
+  test(`keyboard after a click: site tab ${tab.name}`, async ({ page }) => {
+    await page.goto(routeUrl(SITE, { scenario: "populated", locale: "en-US" }));
+    await ready(page);
+    await page.getByRole("tab", { name: tab.name }).click();
+    await settle(page);
+    expect(await keyboardViolations(page)).toEqual([]);
+  });
+
   test(`keyboard: site tab ${tab.name}`, async ({ page }) => {
     await page.goto(routeUrl(SITE, { scenario: "populated", locale: "en-US" }));
     await ready(page);
@@ -81,6 +100,7 @@ for (const tab of TABS) {
     await trigger.focus();
     await page.keyboard.press("Enter");
     await expect(trigger).toHaveAttribute("data-state", "active");
+    await settle(page);
     expect(await keyboardViolations(page)).toEqual([]);
   });
 }

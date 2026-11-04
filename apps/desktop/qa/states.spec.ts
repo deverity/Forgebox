@@ -32,7 +32,8 @@ const THEMES: readonly Theme[] = ["light", "dark"];
 
 async function shoot(page: Page, screen: ScreenDef, state: (typeof STATES)[number]) {
   await page.clock.setFixedTime(FIXED_TIME);
-  await page.goto(`${screen.path}?scenario=${state.scenario}&vibrancy=on&motion=full`);
+  const extra = screen.query === undefined ? "" : `&${screen.query}`;
+  await page.goto(`${screen.path}?scenario=${state.scenario}&vibrancy=on&motion=full${extra}`);
   await page.addStyleTag({ content: FREEZE_CSS });
   await page.locator("#root > *").first().waitFor();
   if (state.settle) {
