@@ -159,6 +159,13 @@ forge site pool loja.test dedicated   # pool PHP exclusivo: CPU/RAM exatos
 forge site metrics loja.test off      # para de coletar métricas do site
 ```
 
+### 4.4 Camada de dados da GUI (`apps/desktop/src/features/metrics`, M2-E5-T14)
+
+- `useSiteMetrics(siteId, window)`: um store zustand por (site, janela) alimentado por `metrics.subscribe`. Assinaturas compartilhadas por contagem de referências (dois consumidores = uma assinatura; o último desmontar cancela). Itens do stream entram numa fila e são aplicados uma vez por `requestAnimationFrame` (100 itens num quadro = 1 commit); uma amostra de outro site não notifica o store. Os pontos são deduplicados por `at` (máx. 300). Após reconexão (ou `reset`) as próximas amostras SUBSTITUEM os pontos (o daemon responde com snapshot novo e não reenvia a lacuna; os gráficos preenchem com `stats.series`).
+- TanStack Query: `useSiteStats` (`stats.get`), `useSiteSeries`, `useSiteRoutes`, `useTop` (`stats.top` a cada 5 s só com a janela visível). Métodos ausentes no daemon (`not_implemented`) não são chamados.
+- `format.ts`: `ms`, `rps`, `percent` (valor já em %), `bytes`, `count`, `approx` (prefixo `≈` + espaço sem quebra), `tnum`; ausente = "—". Textos no namespace i18n `metrics`.
+- Comandos `forge` equivalentes: ações `sites.set_pool_mode` e `sites.set_metrics` (`actions/metrics.ts`) e `statsCli`/`statsSeriesCli`/`statsRoutesCli`/`topCli`/`statsWatchCli`, todos renderizados por `renderCli` a partir de `cli_template`.
+
 ## 5. Alertas locais (opcional)
 Regras simples por site: `p99 > 800 ms por 5 min`, `err% > 5 %`, `RAM do pool > 1 GB`, `disco < 2 GB`. No v1 (M2-E5-T17) os alertas são internos à GUI (badge e destaque no dashboard); a **notificação nativa do Windows** fica para o M5 ([ADR-0044](adr/0044-metrics-v1.md) §13). Sem envio externo.
 
