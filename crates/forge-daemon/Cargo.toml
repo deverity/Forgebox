@@ -65,3 +65,5 @@ pretty_assertions = { workspace = true }
 # Checks the PHP zip of the online test (php_pool_online).
 sha2 = { workspace = true }
 tempfile = { workspace = true }
+# Builds the archive of the install-equals-plan test (releases_plan).
+zip = { workspace = true }

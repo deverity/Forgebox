@@ -43,3 +43,5 @@ toml = { workspace = true }
 serde_yaml_ng = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+# Keys of the seeded metadata cache (releases_plan).
+sha2 = { workspace = true }

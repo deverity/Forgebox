@@ -1242,7 +1242,7 @@ pub mod testing {
                 Ok(Resolved {
                     releases: kept.into_iter().map(|(_, r)| r).collect(),
                     stale,
-                    fetched_at,
+                    fetched_at: fetched_at.or_else(|| Some(Timestamp::now())),
                 })
             })
         }
