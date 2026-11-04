@@ -31,6 +31,7 @@ import {
 } from "./data";
 import { logsHandlers } from "./logs";
 import { mailHandlers } from "./mail";
+import { createOnboardingQa } from "./onboarding";
 import { phpHandlers } from "./php";
 import { createNetworkSecurityQa } from "./networkSecurity";
 import { settingsHandlers } from "./settings";
@@ -50,6 +51,12 @@ export const QA_SCENARIO_NAMES = [
 export type QaScenarioName = (typeof QA_SCENARIO_NAMES)[number];
 
 const QA_TLD = ".test";
+
+/** `<folder>.<tld>`, like the daemon when `host` is absent. */
+function defaultHost(dir: string): string {
+  const folder = dir.replaceAll("\\", "/").replace(/\/+$/, "").split("/").pop() ?? "site";
+  return `${folder.toLowerCase().replaceAll(/[^a-z0-9-]+/g, "-")}${QA_TLD}`;
+}
 
 /**
  * `sites.add` / `sites.proxy_add` / `sites.remove` over `data.sites`, publishing the `site.*`
@@ -77,10 +84,10 @@ export function siteHandlers(data: QaData): FakeHandlers {
   };
   return {
     "sites.add": (params, ctx) =>
-      create(ctx, (params.host ?? "").toLowerCase(), {
+      create(ctx, (params.host ?? defaultHost(params.dir)).toLowerCase(), {
         root: params.dir.replaceAll("\\", "/"),
         secure: params.secure ?? true,
-        url: `${params.secure === false ? "http" : "https"}://${(params.host ?? "").toLowerCase()}`,
+        url: `${params.secure === false ? "http" : "https"}://${(params.host ?? defaultHost(params.dir)).toLowerCase()}`,
         driver: params.driver ?? "generic-php",
         server: params.server ?? "nginx",
       }),
@@ -259,6 +266,19 @@ export function registerQaScenarios(): void {
   define("dashboard", healthy.data, healthy.extra);
   const attention = attentionDashboard();
   define("dashboard-attention", attention.data, attention.extra);
+  // The onboarding wizard (M2-E2-T19): all green, a refused UAC, and one failed download.
+  const onboarding = (name: string, options: Parameters<typeof createOnboardingQa>[1]) => {
+    const data = populatedData();
+    define(name, data, {
+      latencyMs: 0,
+      notImplemented: [],
+      handlers: createOnboardingQa(data, options).handlers,
+    });
+  };
+  onboarding("onboarding", {});
+  onboarding("onboarding-uac", { uac: true });
+  onboarding("onboarding-fail", { fail: true });
+  onboarding("onboarding-hosts", { hosts: true });
   // Settings > Rede and Seguranca (M2-E3-T17): DNS/CA jobs with the UAC prompt, certificates,
   // external port conflict, helper log. Its own scenario: Diagnostics answers `net.dns_enable`
   // and `tls.ca_install` differently.

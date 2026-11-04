@@ -335,6 +335,12 @@ Forgebox/
 │       │   │                     #   (Corrigir só para `fix_method` da allowlist de `actions/diagnostics.ts`; senão Copiar comando), KillDialog (Encerrar),
 │       │   │                     #   DnsTest, ExportButton, model.ts (agrupar, mesclar re-execução, `SupportBundle` = `forge doctor --export`) e
 │       │   │                     #   support-bundle.golden.json (lido também por um teste de forge-cli); fixtures QA em qa/fixtures/scenarios/diagnostics.ts
+│       │   │                     #   (M2-E2-T19) onboarding/: OnboardingPage (assistente de 4 passos; o passo 4 e o `useSetupRun` ficam na página), RootStep,
+│       │   │                     #   StackStep (cards de `tools.search` com a tag `onboarding` + "Vazio", `tools.plan`, versões por `tools.releases`), OptionsStep,
+│       │   │                     #   RunStep (lista de instalação, PATH/DNS/CA/inicialização com repetir e pular, "primeiro site", Comandos equivalentes),
+│       │   │                     #   useWizard (estado + persistência por `onboarding_set`), useSetupRun, native.ts (comandos do T11 + autostart do E1 atrás de
+│       │   │                     #   uma interface; fake em memória fora do Tauri), model.ts/commands.ts (lógica pura); o refazer é a linha `onboarding` de Configurações → Geral (M2-E3-T16);
+│       │   │                     #   ações em actions/onboarding.ts; fixtures QA em qa/fixtures/scenarios/onboarding.ts
 │       │   ├── ipc/              # generated.ts (DTOs) + methods.ts (tabela de métodos, ApiMethods), gerados por `xtask gen-ts`;
 │       │   │                     #   ponte (ADR-0034): bridge.ts (interface Bridge, ContextStateDto, StreamFrame), tauriBridge.ts
 │       │   │                     #   (comandos ipc_* + forge://connection, ack por quadro), api.ts (ForgeApi: call<M>, job<M> →

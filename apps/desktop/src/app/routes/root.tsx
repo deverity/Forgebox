@@ -6,11 +6,12 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "../../design/primitives/Button";
 import { EmptyState } from "../../design/primitives/EmptyState";
-import { useConnectionStatus } from "../../state";
+import { onboardingNative } from "../../features/onboarding/native";
+import { useConnectionStatus, useForgeApi } from "../../state";
 import { AppShell } from "../shell/AppShell";
 import { useFirstFrameReady } from "../shell/windowApi";
 
@@ -37,12 +38,41 @@ function OnboardingGate() {
   return null;
 }
 
+/**
+ * Resume (docs/07 section 5.1): a wizard closed half way (its stored step is set and it is not
+ * done) opens again where it stopped, even though the root is initialized by now. Looked up
+ * once per launch, after first paint; a failure just leaves the user where they are.
+ */
+function OnboardingResume() {
+  const api = useForgeApi();
+  const router = useRouter();
+  const checked = useRef(false);
+  useEffect(() => {
+    if (checked.current) return;
+    checked.current = true;
+    const pathname = router.state.location.pathname;
+    if (UNGATED.has(pathname)) return;
+    onboardingNative()
+      .get(api.context)
+      .then(
+        (entry) => {
+          if (!entry.done && entry.step !== "") {
+            void router.navigate({ to: ONBOARDING_PATH, replace: true });
+          }
+        },
+        () => undefined,
+      );
+  }, [api, router]);
+  return null;
+}
+
 function RootLayout() {
   // The window is shown once the first component has committed (ADR-0035).
   useFirstFrameReady();
   return (
     <>
       <OnboardingGate />
+      <OnboardingResume />
       <Outlet />
     </>
   );

@@ -15,14 +15,14 @@ const pwned = (page: Page) =>
 test("lists tools and stacks, searches with a debounce and filters", async ({ page }) => {
   await page.goto(catalogUrl());
   const cards = page.locator("[data-catalog-card]");
-  await expect(cards).toHaveCount(8);
-  await expect(page.locator('[data-catalog-card][data-kind="stack"]')).toHaveCount(1);
+  await expect(cards).toHaveCount(10);
+  await expect(page.locator('[data-catalog-card][data-kind="stack"]')).toHaveCount(3);
 
   await page.getByRole("searchbox", { name: "Search the catalog" }).fill("mailp");
   await expect(cards).toHaveCount(1);
   await expect(cards.first()).toHaveAttribute("data-catalog-card", "mailpit");
   await page.getByRole("searchbox", { name: "Search the catalog" }).fill("");
-  await expect(cards).toHaveCount(8);
+  await expect(cards).toHaveCount(10);
 
   await page.getByRole("radio", { name: "Updates available" }).click();
   await expect(cards).toHaveCount(1);

@@ -41,6 +41,8 @@ cli_only:
     reason: "LAN exposure is an M3 feature (no GUI in M2)."
   - method: sites.new
     reason: "Project scaffolding (forge new) is an M3 feature."
+  - method: tools.add_local
+    reason: "Installing a local zip or folder as a tool version is M3-E1; the daemon answers not_implemented in M2 (crates/forge-daemon/src/api/not_implemented.rs)."
   - method: sites.unpark
     reason: "No unpark screen in the M2 plan (onboarding M2-E2-T19 only parks); folders are unparked from the CLI."
   - method: sites.alias
@@ -171,18 +173,14 @@ pending:
     task: M2-E4-T9
   - method: sites.server
     task: M2-E4-T9
-  # Settings gap left by M2-E3-T18 (done without 'Adicionar versão local' / 'Descobrir tools';
-  # re-pointed by the M2-E1-T21 gate).
-  - method: tools.add_local
-    task: M2-E4-T10
+  # Left by M2-E3-T18 (Settings part 3 did not take it): 'Procurar pastas em bin/' on the
+  # Catalog screen (docs/03 §5 discover, docs/09 `forge tool discover`).
   - method: tools.discover
-    task: M2-E4-T10
+    task: M2-E4-T9
   # PHP screen gap left by M2-E2-T17 (apply the update 'Verificar agora' found; the API is
   # per tool, not per series, so the button needs a decision).
   - method: tools.update
     task: M2-E4-T9
-  - method: sites.park
-    task: M2-E2-T19
   - method: stats.export
     task: M2-E5-T16
   # PHP screen gap left by M2-E2-T17 ('Abrir php.ini', local only).
