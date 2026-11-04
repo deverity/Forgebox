@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering}
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use futures::FutureExt;
 use futures::future::BoxFuture;
+use futures::{FutureExt, StreamExt};
 use serde_json::Value;
 
 use forge_ipc::api::{HelloParams, Role};
@@ -121,13 +121,23 @@ impl Drop for TestDaemon {
 /// Client side of a daemon that can go away and come back.
 pub struct Switch {
     target: Mutex<Option<Arc<InMemoryTransport>>>,
+    /// Highest stream `seq` the client side has read off its connections.
+    read_seq: Arc<AtomicU64>,
 }
 
 impl Switch {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             target: Mutex::new(None),
+            read_seq: Arc::new(AtomicU64::new(0)),
         })
+    }
+
+    /// Highest `params.seq` of a notification the client has read from the transport: once it
+    /// reaches the last published event, nothing is left in the daemon's buffers (the client
+    /// reader has taken it), whatever the machine's speed.
+    pub fn read_seq(&self) -> u64 {
+        self.read_seq.load(Ordering::SeqCst)
     }
 
     pub fn plug(&self, daemon: &TestDaemon) {
@@ -158,7 +168,19 @@ impl Transport for Switch {
         async move {
             let target = self.target.lock().unwrap().clone();
             match target {
-                Some(transport) => transport.connect().await,
+                Some(transport) => {
+                    let mut connection = transport.connect().await?;
+                    let read_seq = Arc::clone(&self.read_seq);
+                    connection.stream = connection
+                        .stream
+                        .inspect(move |frame| {
+                            if let Some(seq) = frame.as_deref().ok().and_then(frame_seq) {
+                                read_seq.fetch_max(seq, Ordering::SeqCst);
+                            }
+                        })
+                        .boxed();
+                    Ok(connection)
+                }
                 None => Err(TransportError::Unavailable {
                     endpoint: self.endpoint(),
                     reason: "no daemon".into(),
@@ -177,6 +199,13 @@ impl Transport for Switch {
         }
         .boxed()
     }
+}
+
+/// `params.seq` of a stream notification frame (`None` for responses and `*.lagged`).
+fn frame_seq(frame: &str) -> Option<u64> {
+    let value: Value = serde_json::from_str(frame).ok()?;
+    value.get("method")?;
+    value.get("params")?.get("seq")?.as_u64()
 }
 
 /// What the fake connector's "daemon executable" does when started.

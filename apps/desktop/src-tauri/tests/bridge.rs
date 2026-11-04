@@ -293,8 +293,17 @@ async fn a_slow_consumer_gets_lagged_markers_and_the_newest_events() {
         .unwrap();
     assert_eq!(answer.resume_point, Some(0));
     publish(&daemon, 10_000);
-    // The window (4 frames) fills up and stays full.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // The window (4 frames, at most 1024 items) fills up and stays full while the client reads
+    // every event off the connection: its drop-oldest queue (4096) must overflow. Waiting for
+    // the last read instead of a fixed time keeps this true on a loaded machine, where the
+    // daemon side (bus 16 384 deep) can still hold most events after 500 ms (M2-GATE-B15).
+    assert!(
+        eventually(Duration::from_secs(30), || local.switch.read_seq()
+            == 10_000)
+        .await,
+        "the client read up to seq {}",
+        local.switch.read_seq()
+    );
     let stalled = frames.all().len();
     assert!(stalled <= 4, "{stalled} frames without acknowledgement");
     // The webview catches up.
