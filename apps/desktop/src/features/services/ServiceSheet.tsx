@@ -12,7 +12,7 @@ import { InstancesTab } from "./InstancesTab";
 import { AdvancedTab } from "./tabs/AdvancedTab";
 import { ConfigTab } from "./tabs/ConfigTab";
 import { VersionsTab } from "./tabs/VersionsTab";
-import { LogsTab } from "./LogsTab";
+import { LogsTab } from "./tabs/LogsTab";
 import { dotState, isActive, targetOf, uptimeMs } from "./model";
 import { OverviewTab } from "./OverviewTab";
 import { ToolIcon } from "./ToolIcon";

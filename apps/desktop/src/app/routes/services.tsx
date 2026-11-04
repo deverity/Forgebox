@@ -16,7 +16,7 @@ export const servicesRoute = createRoute({
       : {},
   component: lazyRouteComponent(async () => {
     // The screen's texts load with its chunk, not with the shell.
-    await i18n.loadNamespaces("services");
+    await i18n.loadNamespaces(["services", "logs"]);
     return import("../../features/services");
   }, "ServicesPage"),
 });

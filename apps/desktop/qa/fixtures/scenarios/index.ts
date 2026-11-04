@@ -28,6 +28,7 @@ import {
   site,
   type QaData,
 } from "./data";
+import { logsHandlers } from "./logs";
 import { mailHandlers } from "./mail";
 import { phpHandlers } from "./php";
 import { settingsHandlers } from "./settings";
@@ -110,6 +111,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const detail = siteDetailHandlers(data);
   const catalog = catalogHandlers(data, config);
   const terminal = terminalHandlers();
+  const logs = logsHandlers();
   const mail = mailHandlers(data).handlers;
   const php = phpHandlers(data, config);
   const databases = databasesHandlers();
@@ -119,6 +121,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
     ...detail,
     ...catalog,
     ...terminal,
+    ...logs,
     ...mail,
     ...php,
     ...databases,
@@ -147,11 +150,22 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...config,
       ...catalog,
       ...terminal,
+      ...logs,
       ...mail,
       ...php,
       ...databases,
       ...diagnostics,
       ...settings,
+      // `logs.read` without `before_seq` is the Diagnostics export of the daemon log; paging back
+      // (the Logs screen) reads the history of `logs.ts`.
+      "logs.read": (params, ctx) => {
+        const handler =
+          params.before_seq === undefined || params.before_seq === null
+            ? diagnostics["logs.read"]
+            : logs["logs.read"];
+        if (handler === undefined) return { target: params.target, lines: [], last_seq: 0 };
+        return handler(params, ctx);
+      },
       // Both answer `net.port_check`: the held port is the Diagnostics scenario's, the rest config's.
       "net.port_check": (params, ctx) => {
         const handler =

@@ -6,6 +6,7 @@ import type databases from "./en-US/databases.json";
 import type diagnostics from "./en-US/diagnostics.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
+import type logs from "./en-US/logs.json";
 import type mail from "./en-US/mail.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
@@ -41,6 +42,7 @@ export interface Resources {
   php: typeof php;
   databases: typeof databases;
   diagnostics: typeof diagnostics;
+  logs: typeof logs;
 }
 
 declare module "i18next" {
