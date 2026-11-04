@@ -105,6 +105,67 @@ describe("colour contrast (WCAG AA)", () => {
     }
   });
 
+  // M2-E1-T23: soft (filled) controls, tool tiles and the window dots.
+  it("soft fills stay low-alpha and keep control text at 4.5:1", () => {
+    const toHex = (rgba: Rgba) =>
+      `#${rgba
+        .slice(0, 3)
+        .map((c) => Math.round(c).toString(16).padStart(2, "0"))
+        .join("")}`;
+    for (const theme of ["light", "dark"] as const) {
+      const set = colors[theme];
+      const fills = ["fill", "fill-hover", "fill-pressed", "fill-selected"] as const;
+      for (const fill of fills) {
+        const alpha = parseHex(set[fill])[3];
+        expect(alpha).toBeGreaterThan(0);
+        expect(alpha).toBeLessThanOrEqual(0.2);
+        for (const bg of ["bg-canvas", "bg-surface", "bg-surface-2", "bg-sidebar"] as const) {
+          const under = toHex(over(parseHex(set[fill]), parseHex(set[bg])));
+          expect(
+            contrast(set["fg-primary"], under),
+            `${theme} fg-primary on ${fill} over ${bg}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      // Soft controls have no visible outline outside high contrast.
+      expect(parseHex(set["stroke-control"])[3]).toBe(0);
+    }
+    expect(parseHex(colors.highContrast["stroke-control"])[3]).toBe(1);
+  });
+
+  it("the sidebar glass is translucent (light .62, dark .58) and opaque in high contrast", () => {
+    expect(parseHex(colors.light["bg-sidebar-glass"])[3]).toBeCloseTo(0.62, 2);
+    expect(parseHex(colors.dark["bg-sidebar-glass"])[3]).toBeCloseTo(0.58, 2);
+    expect(parseHex(colors.highContrast["bg-sidebar-glass"])[3]).toBe(1);
+  });
+
+  it("fg-on-tool keeps 4.5:1 on every tool tile colour", () => {
+    for (const theme of ["light", "dark", "highContrast"] as const) {
+      const set = colors[theme];
+      for (const n of [1, 2, 3, 4, 5, 6, 7, 8] as const) {
+        expect(
+          contrast(set["fg-on-tool"], set[`tool-${n}`]),
+          `${theme} tool-${String(n)}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("the window dots use the macOS colours in Windows order and grey when inactive", () => {
+    for (const theme of ["light", "dark"] as const) {
+      const set = colors[theme];
+      expect([set["window-minimize"], set["window-maximize"], set["window-close"]]).toEqual([
+        "#FEBC2E",
+        "#28C840",
+        "#FF5F57",
+      ]);
+      // Neutral grey: (almost) no hue.
+      const [r, g, b] = parseHex(set["window-inactive"]);
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(10);
+      expect(parseHex(set["window-dot-stroke"])[3]).toBeLessThan(0.3);
+    }
+  });
+
   it("the decorative divider stays a low-alpha stroke", () => {
     for (const theme of ["light", "dark"] as const) {
       const alpha = parseHex(colors[theme].stroke)[3];
@@ -127,7 +188,7 @@ describe("scales", () => {
     expect(typography.display).toMatchObject({ fontSize: 28, lineHeight: 34, fontWeight: 600 });
     expect(typography.mono.tnum).toBe(true);
     expect(Object.values(space)).toEqual([4, 8, 12, 16, 20, 24, 32, 40]);
-    expect(radius).toEqual({ control: 6, card: 10, sheet: 12, window: 8 });
+    expect(radius).toEqual({ control: 6, card: 10, sheet: 12, window: 8, item: 7 });
   });
 
   it("matches docs/07 3 motion values", () => {
@@ -153,7 +214,12 @@ describe("generated css", () => {
 
   it("switches the backgrounds with data-vibrancy and has a high-contrast override", () => {
     expect(css).toMatch(
-      /\[data-vibrancy="on"\][^}]*--bg-canvas: transparent;[^}]*--bg-sidebar: transparent;/,
+      /\[data-vibrancy="on"\][^}]*--bg-canvas: transparent;[^}]*--bg-sidebar: var\(--bg-sidebar-material\);/,
+    );
+    // Mica/Acrylic: nothing painted over the material; the Windows 10 blur gets the glass tint.
+    expect(css).toMatch(/:root \{[^}]*--bg-sidebar-material: transparent;/);
+    expect(css).toMatch(
+      /\[data-effect="blur"\] \{[^}]*--bg-sidebar-material: var\(--bg-sidebar-glass\);/,
     );
     expect(css).toMatch(/\[data-vibrancy="off"\][^}]*--bg-canvas: var\(--bg-canvas-solid\)/);
     expect(css).toContain(':root[data-contrast="high"]');

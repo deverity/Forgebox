@@ -19,7 +19,28 @@ export const colors = {
     "state-starting": "#B25000",
     "state-stopped": "#6E6E73",
     "state-failed": "#D70015",
-    "state-updating": "#0071A4"
+    "state-updating": "#0071A4",
+    "bg-sidebar-glass": "#F6F4FA9E",
+    "fill": "#0000000D",
+    "fill-hover": "#00000017",
+    "fill-pressed": "#00000024",
+    "fill-selected": "#00000014",
+    "stroke-control": "#00000000",
+    "window-minimize": "#FEBC2E",
+    "window-maximize": "#28C840",
+    "window-close": "#FF5F57",
+    "window-inactive": "#D6D5DB",
+    "window-dot-stroke": "#0000002E",
+    "window-glyph": "#0000008C",
+    "fg-on-tool": "#FFFFFF",
+    "tool-1": "#1F6FD1",
+    "tool-2": "#00758F",
+    "tool-3": "#C42B1C",
+    "tool-4": "#6B4FBB",
+    "tool-5": "#2E7D32",
+    "tool-6": "#B3541E",
+    "tool-7": "#AD1457",
+    "tool-8": "#546E7A"
   },
   "dark": {
     "bg-canvas": "#1C1C1E",
@@ -39,7 +60,28 @@ export const colors = {
     "state-starting": "#FFD60A",
     "state-stopped": "#8E8E93",
     "state-failed": "#FF6259",
-    "state-updating": "#64D2FF"
+    "state-updating": "#64D2FF",
+    "bg-sidebar-glass": "#26242E94",
+    "fill": "#FFFFFF12",
+    "fill-hover": "#FFFFFF1F",
+    "fill-pressed": "#FFFFFF2E",
+    "fill-selected": "#FFFFFF1A",
+    "stroke-control": "#00000000",
+    "window-minimize": "#FEBC2E",
+    "window-maximize": "#28C840",
+    "window-close": "#FF5F57",
+    "window-inactive": "#4A4953",
+    "window-dot-stroke": "#0000002E",
+    "window-glyph": "#0000008C",
+    "fg-on-tool": "#FFFFFF",
+    "tool-1": "#1F6FD1",
+    "tool-2": "#00758F",
+    "tool-3": "#C42B1C",
+    "tool-4": "#6B4FBB",
+    "tool-5": "#2E7D32",
+    "tool-6": "#B3541E",
+    "tool-7": "#AD1457",
+    "tool-8": "#546E7A"
   },
   "highContrast": {
     "bg-canvas": "#000000",
@@ -59,7 +101,28 @@ export const colors = {
     "state-starting": "#FFFF00",
     "state-stopped": "#CCCCCC",
     "state-failed": "#FF8A80",
-    "state-updating": "#1AEBFF"
+    "state-updating": "#1AEBFF",
+    "bg-sidebar-glass": "#000000",
+    "fill": "#000000",
+    "fill-hover": "#333333",
+    "fill-pressed": "#4D4D4D",
+    "fill-selected": "#333333",
+    "stroke-control": "#FFFFFF",
+    "window-minimize": "#FEBC2E",
+    "window-maximize": "#28C840",
+    "window-close": "#FF5F57",
+    "window-inactive": "#CCCCCC",
+    "window-dot-stroke": "#FFFFFF",
+    "window-glyph": "#000000",
+    "fg-on-tool": "#FFFFFF",
+    "tool-1": "#000000",
+    "tool-2": "#000000",
+    "tool-3": "#000000",
+    "tool-4": "#000000",
+    "tool-5": "#000000",
+    "tool-6": "#000000",
+    "tool-7": "#000000",
+    "tool-8": "#000000"
   }
 } as const;
 
@@ -158,7 +221,8 @@ export const radius = {
   "control": 6,
   "card": 10,
   "sheet": 12,
-  "window": 8
+  "window": 8,
+  "item": 7
 } as const;
 
 export const shadow = {
