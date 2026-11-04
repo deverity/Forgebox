@@ -97,6 +97,11 @@ export interface DashboardSectionSlot extends SlotEntry {
   /** Accessible name of the section (a heading is the section's own business). */
   label: SlotLabel;
   component: ComponentType;
+  /**
+   * Height in px held while a lazy section loads, so it does not push the page down when it
+   * appears (docs/07 section 11, CLS < 0.01).
+   */
+  reserveHeight?: number;
 }
 
 export const dashboardSections = new SlotRegistry<DashboardSectionSlot>("dashboard-sections");

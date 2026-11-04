@@ -142,6 +142,7 @@ function stats(
   quiet: boolean,
   index = 0,
   patch: Partial<T.SiteStatsDto> = {},
+  now = Date.now(),
 ): T.SiteStatsDto {
   const php = site.kind === "php";
   const seconds = SPAN_MS[window] / 1000;
@@ -153,7 +154,7 @@ function stats(
     site_id: site.id,
     host: site.host,
     window,
-    at: new Date().toISOString(),
+    at: new Date(now).toISOString(),
     requests: Math.round(rate * seconds),
     rps: quiet ? null : rate,
     p50_ms: quiet ? null : 31,
@@ -167,7 +168,7 @@ function stats(
     workers_active: php ? 3 : null,
     metrics_enabled: site.metrics_enabled ?? true,
     processes: 1,
-    last_request_at: quiet ? null : new Date(Date.now() - 60_000).toISOString(),
+    last_request_at: quiet ? null : new Date(now - 60_000).toISOString(),
     ...patch,
   };
 }
@@ -239,6 +240,9 @@ export interface MetricsQa {
 /** The Performance tab's handlers over `data` (they edit the site rows like the daemon). */
 export function metricsHandlers(data: QaData, options: StatsOptions = {}): MetricsQa {
   const mode = variant();
+  // One clock per scenario: a poll that changes nothing answers equal objects, so only the rows
+  // whose numbers changed re-render.
+  const now = Date.now();
   let globalEnabled = mode !== "global-off";
   if (mode === "site-off") for (const s of data.sites) s.metrics_enabled = false;
   const quiet = mode === "no-traffic";
@@ -263,11 +267,11 @@ export function metricsHandlers(data: QaData, options: StatsOptions = {}): Metri
         return {
           window,
           sites: sites.map((s) =>
-            stats(s, window, quiet, data.sites.indexOf(s), options.sites?.[s.host]),
+            stats(s, window, quiet, data.sites.indexOf(s), options.sites?.[s.host], now),
           ),
         };
       },
-      "stats.top": () => ({ processes: [], machine: healthyMachine(options.machine) }),
+      "stats.top": () => ({ processes: [], machine: healthyMachine(options.machine, now) }),
       "stats.series": (params) => series(findSite(data, params.site), params.range ?? "1h", quiet),
       "stats.routes": (params) => routes(findSite(data, params.site), quiet),
       "sites.metrics": (params, ctx) => {

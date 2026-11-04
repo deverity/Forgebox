@@ -7,7 +7,11 @@
 // it is imported eagerly (the rules are tiny).
 import i18n from "i18next";
 import { lazy } from "react";
-import { registerAttentionSource, registerDashboardSection, registerSiteTab } from "../../app/slots";
+import {
+  registerAttentionSource,
+  registerDashboardSection,
+  registerSiteTab,
+} from "../../app/slots";
 import { usePerformanceItems } from "./attention";
 
 const SitePerformanceTab = lazy(async () => {
@@ -33,12 +37,14 @@ registerDashboardSection({
   order: 10,
   label: { ns: "metrics", key: "projects.title" },
   component: ProjectsSection,
+  reserveHeight: 412,
 });
 registerDashboardSection({
   id: "machine",
   order: 20,
   label: { ns: "metrics", key: "machine.title" },
   component: MachineMonitor,
+  reserveHeight: 168,
 });
 // After the Dashboard's own sources (10..70): performance is the last thing to look at.
 registerAttentionSource({ id: "performance", order: 80, useItems: usePerformanceItems });

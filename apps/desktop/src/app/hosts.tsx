@@ -46,7 +46,13 @@ export function DashboardSectionsHost({
     <>
       {sections.map((section) => (
         <SlotBoundary key={section.id} id={section.id}>
-          <Suspense fallback={null}>
+          <Suspense
+            fallback={
+              section.reserveHeight === undefined ? null : (
+                <div aria-hidden="true" style={{ height: section.reserveHeight }} />
+              )
+            }
+          >
             <div data-testid={`dashboard-section-${section.id}`}>
               <section.component />
             </div>

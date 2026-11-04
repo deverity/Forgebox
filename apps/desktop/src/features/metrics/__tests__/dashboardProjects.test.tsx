@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { projectsDashboard } from "../../../../qa/fixtures/scenarios/dashboard";
 import { metricsHandlers } from "../../../../qa/fixtures/scenarios/metrics";
 import { renderApp, type AppHarness } from "../../../app/testApp";
+import { fakeError } from "../../../ipc/fakeBridge";
 import type * as T from "../../../ipc/generated";
 import { ForgeStateProvider } from "../../../state";
 import { startHarness, populatedData, type Harness } from "../../../state/testFixtures";
@@ -210,6 +211,43 @@ describe("Machine monitor", () => {
     expect(
       within(monitor).getByTestId("machine-cpu").querySelector("[data-forgebox-share]"),
     ).not.toBeNull();
+  });
+
+  it("shows the cause and a retry when stats.top fails, never an endless loading", async () => {
+    const { data: qa, extra } = projectsDashboard();
+    const data = populatedData();
+    data.sites = qa.sites;
+    let fail = true;
+    const handlers = {
+      ...extra.handlers,
+      "stats.top": (params: unknown, ctx: unknown) => {
+        if (fail) fakeError("internal", "stats.top failed", "fake_error");
+        return (extra.handlers?.["stats.top"] as (p: unknown, c: unknown) => unknown)(params, ctx);
+      },
+    };
+    app = await renderApp({ path: "/dashboard", data, extra: { handlers } as never });
+    const monitor = await screen.findByTestId("dashboard-machine");
+    await waitFor(() => {
+      expect(monitor.querySelector('[data-async-view="error"]')).not.toBeNull();
+    });
+    expect(monitor.querySelector("[aria-busy='true']")).toBeNull();
+    expect(within(monitor).getByRole("alert")).toBeInTheDocument();
+    fail = false;
+    await userEvent
+      .setup()
+      .click(within(monitor).getByRole("button", { name: /try again|retry/i }));
+    await waitFor(() => {
+      expect(within(monitor).getByTestId("machine-cpu")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the disconnected state with the daemon away", async () => {
+    app = await renderApp({ scenario: "daemon-down", path: "/dashboard" });
+    const monitor = await screen.findByTestId("dashboard-machine");
+    await waitFor(() => {
+      expect(monitor.querySelector('[data-async-view="disconnected"]')).not.toBeNull();
+    });
+    expect(monitor.querySelector("[aria-busy='true']")).toBeNull();
   });
 });
 

@@ -2,13 +2,18 @@
 // against the Forgebox share, from `stats.top` -> `TopDto.machine`, refreshed every 5 s while
 // the window is visible (`useTop`). Disks are shown by role (root/data), never by path.
 import { useTranslation } from "react-i18next";
+import { AsyncView } from "../../design/primitives/AsyncView";
 import { CliCommand } from "../../design/primitives/CliCommand";
 import { renderCli } from "../../ipc/cli";
 import type * as T from "../../ipc/generated";
-import { useCapability } from "../../state";
+import { useCapability, useConnectionStatus, useRuntime } from "../../state";
 import { useMetricsFormatters, useTop } from "./state";
 
 const BAR_HEIGHT = 8;
+/** Fixed in every state, so swapping them never moves the Dashboard. */
+const MACHINE_HEIGHT = 128;
+const AWAY: ReadonlySet<string> = new Set(["stopped", "closed", "uninitialized"]);
+const TOP_CONTEXT = { method: "stats.top", params: {} } as const;
 const CPU_ID = "machine-cpu";
 const RAM_ID = "machine-ram";
 
@@ -106,21 +111,16 @@ function Machine({ machine }: { machine: T.MachineStatsDto }) {
 
 export function MachineMonitor() {
   const { t } = useTranslation("metrics");
+  const runtime = useRuntime();
+  const status = useConnectionStatus();
   const capability = useCapability("stats.top");
   const top = useTop();
   const machine = top.data?.machine;
-  let body;
-  if (!capability.available || (top.data !== undefined && machine == null)) {
-    body = <p className="p-3 text-callout text-fg-secondary">{t("machine.unavailable")}</p>;
-  } else if (machine == null) {
-    body = (
-      <p aria-busy="true" className="p-3 text-callout text-fg-secondary">
-        {t("machine.loading")}
-      </p>
-    );
-  } else {
-    body = <Machine machine={machine} />;
-  }
+  const away = AWAY.has(status);
+  const unavailable = !capability.available || (top.data !== undefined && machine == null);
+  // Same states as the Projetos section (docs/07 section 11): daemon away, loading, error with
+  // cause and retry, unavailable; never an endless "loading" when `stats.top` fails.
+  const loading = !away && !unavailable && top.isPending;
   return (
     <section aria-labelledby="dashboard-machine" data-testid="dashboard-machine">
       <div className="flex flex-wrap items-center gap-3 pb-2">
@@ -131,7 +131,25 @@ export function MachineMonitor() {
           <CliCommand command={renderCli("stats.top", {})} />
         </div>
       </div>
-      <div className="min-h-[96px] rounded-card border border-stroke bg-surface">{body}</div>
+      <div className="rounded-card border border-stroke bg-surface">
+        <AsyncView
+          height={MACHINE_HEIGHT}
+          loading={loading}
+          disconnected={away}
+          onStartDaemon={() => {
+            void runtime.api.start();
+          }}
+          {...(top.error === null || unavailable ? {} : { error: top.error })}
+          errorContext={TOP_CONTEXT}
+          onRetry={() => {
+            void top.refetch();
+          }}
+          empty={unavailable || machine == null}
+          emptyTitle={t("machine.unavailable")}
+        >
+          {machine == null ? null : <Machine machine={machine} />}
+        </AsyncView>
+      </div>
     </section>
   );
 }

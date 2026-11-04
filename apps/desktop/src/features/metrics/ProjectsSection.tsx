@@ -112,7 +112,9 @@ const ProjectRow = memo(function ProjectRow({ site, sortKey, reduced }: RowProps
       viewTransition={!reduced}
       data-shared-transition={String(!reduced)}
       data-project-row={site.site_id}
-      aria-label={t("projects.open", { host: site.host })}
+      // A tooltip, not an aria-label: the accessible name stays the visible text of the row
+      // (WCAG 2.5.3 label in name); the row is a link to the Desempenho tab.
+      title={t("projects.open", { host: site.host })}
       className={`grid h-full items-center gap-2 border-b border-stroke px-3 text-body hover:bg-fill-hover ${COLUMNS} ${FOCUS_RING}`}
     >
       <span
@@ -240,7 +242,7 @@ export function ProjectsSection() {
                 className={`rounded-control text-right ${active ? "font-semibold text-fg-primary" : ""} ${FOCUS_RING}`}
               >
                 {t(`projects.columns.${key}`)}
-                {active ? ARROWS[sort.direction] : ""}
+                {active ? <span aria-hidden="true">{ARROWS[sort.direction]}</span> : null}
               </button>
             );
           })}
