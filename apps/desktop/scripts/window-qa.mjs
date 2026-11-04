@@ -365,10 +365,21 @@ async function checkStartupAndSingle() {
  * reopen with the same data dir: maximized again.
  */
 async function checkPlacement() {
-    const first = await launchWithProbe("placement");
+    // close_to_tray off: with the tray (M2-E1-T15) closing would only hide the window.
+    const first = await launchWithProbe("placement", {}, { close_to_tray: false });
     // The content toolbar (M2-E1-T23): x=300 is past the 220 px sidebar, y=16 inside the 44 px row.
-    await first.page.doubleClick(300, 16);
-    await sleep(700);
+    // The first synthetic double-click after launch is eaten: its press starts the native move
+    // loop (start_dragging) with no physical button down. Measured in M2-E1-T23 on the toolbar
+    // spacer, title and sidebar brand, with and without a material; the next one maximizes.
+    for (let attempt = 0; attempt < 3; attempt++) {
+        await first.page.doubleClick(300, 16);
+        await sleep(900);
+        const max = await first.page.evaluate(
+            `window.__TAURI_INTERNALS__.invoke("plugin:window|is_maximized", { label: "main" })`,
+        );
+        report.placement_attempts = attempt + 1;
+        if (max) break;
+    }
     const maximized = runProbe(
         ["-Action", "Info", "-ProcessId", String(first.res.pid)],
         first.childEnv,

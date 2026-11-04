@@ -1,6 +1,6 @@
 # ADR-0035 — Moldura da janela, materiais e a fronteira Win32 da GUI
 
-**Status:** aceito · **Data:** 2026-10-28 · Implementa os materiais e a titlebar de [07](../07-ui-ux.md) §1.6, §2.3, §4 e [ADR-0002](0002-gui-tauri.md); detalha os dados da GUI da [ADR-0034](0034-desktop-shell-architecture.md) §5; segue o precedente de `spawn_detached` da [ADR-0030](0030-cli-contract.md) para fatos do SO. Tarefa M2-E1-T7.
+**Status:** aceito (adendo M2-E1-T23 de 2026-11-04: moldura de vidro; Windows 10 com desfoque, Windows 11 22H2+ com Acrylic) · **Data:** 2026-10-28 · Implementa os materiais e a titlebar de [07](../07-ui-ux.md) §1.6, §2.3, §4 e [ADR-0002](0002-gui-tauri.md); detalha os dados da GUI da [ADR-0034](0034-desktop-shell-architecture.md) §5; segue o precedente de `spawn_detached` da [ADR-0030](0030-cli-contract.md) para fatos do SO. Tarefa M2-E1-T7.
 
 ## Contexto
 O `Forgebox.exe` desenha a própria titlebar (janela sem decoração do Windows) e quer Mica/Acrylic onde ajudam, sem flash branco na abertura, lembrando a posição por monitor, com instância única e com os dados da GUI fora do `forgebox.toml`. Três armadilhas conhecidas guiaram as decisões:
@@ -73,3 +73,45 @@ Leitura: no RDP o quadro é limitado a ~30 Hz (rAF de 33 ms; a tela virtual anun
 - `--perf-startup` com outra GUI aberta só foca a existente e não imprime nada (a medição de partida a frio exige nenhuma GUI aberta, ADR-0036).
 - O `prefers-reduced-transparency` do WebView2 reflete o mesmo "Efeitos de transparência" lido pelo snapshot; não há segunda fonte.
 - Mica, snap layouts e o Acrylic real no console (fora do RDP) ficam na verificação humana do gate M2.
+
+## Adendo M2-E1-T23 (2026-11-04) — moldura de vidro, nova política de material
+
+**Decisão do usuário** (2026-11-04, aprovada sobre o mockup [`docs/design/reference/glass-mockup.html`](../design/reference/glass-mockup.html); não re-discutir): a GUI deve parecer um app do macOS. Substitui o §5 e as linhas Windows 10/11 da tabela do §2; o resto desta ADR continua valendo.
+
+**1. Layout.** Não há mais titlebar de largura total. A sidebar ocupa a altura toda da janela a partir da borda de cima, com a marca "Forgebox" numa faixa de 44 px que também é região de arrasto (`data-tauri-drag-region`). O painel de conteúdo tem a própria barra de ferramentas de 44 px (`Titlebar.tsx`, `data-testid="titlebar"` mantido): título da seção à esquerda, busca `Ctrl+K`, a ação primária opcional (Iniciar tudo saiu da sidebar para lá) e os controles da janela no canto direito; tudo que não é controle é `data-tauri-drag-region="deep"` e o duplo clique maximiza/restaura (script de arrasto do Tauri). O onboarding (sem sidebar) usa a mesma barra com "Forgebox" como título. A barra de status inferior foi removida; conexão, CPU · RAM e os chips DNS/CA (com o mesmo destino, `/diagnostics`) estão no rodapé da sidebar (`SidebarStatus.tsx`).
+
+**2. Controles da janela** (`WindowControls.tsx`, substitui os botões 46×32 do §5): três bolinhas de 12 px a 8 px uma da outra, na **ordem do Windows, à direita**: minimizar amarela, maximizar/restaurar verde, fechar vermelha (tokens `window-minimize|maximize|close`, traço interno `window-dot-stroke`). Glifos (`window-glyph`) aparecem com o mouse sobre o grupo ou com foco de teclado; com a janela sem foco (`WindowApi.isFocused`/`onFocusChange` → `getCurrentWindow().onFocusChanged`; `is_focused` e os eventos já estão em `core:default`) as três ficam `window-inactive` e sem glifo, como no mockup. Cada botão é um alvo de 24×24 com anel de foco `--accent` (os vizinhos se sobrepõem 4 px para manter o espaço de 8 px entre as bolinhas: com passo de 20 px não cabem três alvos de 24 px sem sobreposição), `aria-label` + `title`, Enter/Espaço; em `forced-colors` usam cores do sistema (`forced-color-adjust: none`) e mostram os glifos. Trade-off aceito: as bolinhas amarela e verde sobre o canvas claro ficam abaixo de 3:1 (como no macOS); a identificação vem do glifo, do tooltip e do nome acessível, não da cor.
+
+**3. Política de material** (`choose_effect`, nesta ordem; substitui a tabela do §2 a partir da linha "Windows 11"):
+
+| condição | efeito | motivo |
+|---|---|---|
+| preferência `vibrancy: "off"` | opaco | `user_off` |
+| alto contraste | opaco | `high_contrast` |
+| sessão remota (RDP) | opaco | `remote_session` |
+| "Efeitos de transparência" desligado | opaco | `transparency_off` |
+| Windows 11 build ≥ 22621 (22H2) | **Acrylic** (`DWMSBT_TRANSIENTWINDOW`, sem o atraso do Acrylic do Windows 10) | `win11_acrylic` |
+| Windows 11 22000–22620 | Mica | `win11` |
+| Windows 10 1809+ com `win10_acrylic: true` | Acrylic | `win10_opt_in` |
+| Windows 10 1809+ sem opt-in | **desfoque do DWM** (`window_vibrancy::apply_blur`, `WIN10_DEFAULT = Blur`) | `win10_default` |
+| mais antigo/desconhecido | opaco | `unsupported` |
+
+O desfoque é aplicado **sem tinta nativa** (`apply_blur(window, None)`): a tinta é pintada pelo CSS só na sidebar, `--bg-sidebar-glass` (claro `rgba(246,244,250,.62)`, escuro `rgba(38,36,46,.58)`, valores do mockup), via `:root[data-effect="blur"] { --bg-sidebar-material: var(--bg-sidebar-glass) }` e `:root[data-vibrancy="on"] { --bg-sidebar: var(--bg-sidebar-material) }`; com Mica/Acrylic a sidebar continua transparente (o material já tem tinta). O painel de conteúdo é sempre opaco (`--bg-canvas-solid`). `data-vibrancy="off"`, alto contraste e `forced-colors` mantêm os fallbacks sólidos. `FORGE_GUI_EFFECT` aceita `blur`. O §3 (janela transparente só quando há material na abertura) vale para o desfoque também.
+
+**Trade-offs.** *Desfoque × Acrylic no Windows 10:* o Acrylic do Windows 10 é o que atrasa arrastar/redimensionar (documentado pelo `window-vibrancy`, motivo do padrão opaco do T7); o desfoque é o `ACCENT_ENABLE_BLURBEHIND` do DWM, sem esse custo, mas o raio é fixo e pequeno — texto grande atrás da janela continua reconhecível através da tinta de 58–62 %. *Acrylic no Windows 11 22H2+ em vez de Mica:* o mockup pede vidro translúcido, e no 22H2+ o Acrylic é um backdrop do sistema; no 22000 o `apply_acrylic` do `window-vibrancy` cai no caminho do Windows 10 (com atraso), por isso Mica lá. *Tinta no CSS:* uma fonte só (tokens) para claro/escuro, sem reaplicar o efeito nativo ao trocar o tema.
+
+**4. Medição** (o mesmo método do T7: `apps/desktop/scripts/window-qa.mjs --checks pacing --effects none,blur`, release `Forgebox.exe`, `SetWindowPos` a cada 16 ms por 4 s em arrasto senoidal e redimensionamento, rAF no WebView2 por CDP). Windows 10 Enterprise 19045, **console físico** (não RDP; 60 Hz), "Efeitos de transparência" ligado, máquina quieta (nenhum `rustc`/`cargo` rodando), raiz temporária inicializada (o shell, não o onboarding). Duas rodadas:
+
+| fase | métrica | opaco (1ª · 2ª) | desfoque (1ª · 2ª) |
+|---|---|---|---|
+| parado | rAF p50 / p99 / máx (ms) | 16,7 / 16,9 / 17,0 · 16,7 / 16,9 / 17,0 | 16,7 / 16,9 / 16,9 · 16,7 / 16,9 / 17,0 |
+| arrasto | `SetWindowPos` p50 / p95 / p99 / máx (ms) | 2,05 / 5,91 / 6,38 / 6,52 · 2,41 / 5,84 / 6,61 / 6,80 | 1,26 / 2,54 / 2,99 / 4,77 · 2,34 / 5,80 / 6,31 / 7,27 |
+| arrasto | rAF p50 / p99 / máx (ms), quadros > 25 ms | 16,7 / 33,5 / 66,7, 61 · 33,3 / 50,2 / 66,7, 109 | 16,7 / 16,9 / 17,0, 0 · 16,7 / 17,0 / 17,0, 0 |
+| redimensionar | `SetWindowPos` p50 / p95 / p99 / máx (ms) | 3,74 / 6,95 / 7,45 / 9,22 · 3,95 / 7,20 / 10,64 / 18,74 | 3,60 / 6,01 / 7,26 / 8,81 · 4,97 / 7,18 / 8,61 / 23,77 |
+| redimensionar | rAF p99 / máx (ms) | 16,9 / 17,0 · 16,9 / 17,3 | 16,8 / 16,9 · 17,0 / 17,0 |
+
+Referência (uma rodada, Acrylic do Windows 10 por `FORGE_GUI_EFFECT=acrylic`): arrasto `SetWindowPos` p50/p99/máx 2,79/7,56/7,98 ms, rAF p99 16,9 ms; redimensionar 4,32/7,84/8,93 ms. Leitura: **o desfoque não degrada** arrastar nem redimensionar do lado do app (thread de UI e renderização do WebView2): latências iguais ou menores que as do opaco e rAF estável em 60 Hz; os quadros de 33–67 ms no arrasto apareceram só na janela opaca, nas duas rodadas. Os contadores de composição do DWM (`DwmGetCompositionTimingInfo`) não andam neste método, então o "atraso atrás do cursor" que o DWM impõe ao Acrylic do Windows 10 não é observável aqui — por isso o Acrylic continua só como opt-in e o padrão é o desfoque, que o `window-vibrancy` não documenta como lento no Windows 10 (só no Windows 11 22621+, onde a política usa Acrylic). **Padrão mantido: desfoque no Windows 10.** A avaliação visual do arrasto com o mouse físico fica na verificação humana do gate M2 (M2-E4-T11). Partida a frio no mesmo console (`pnpm perf:startup -- --daemon stopped`, 1 descartada + 10): mediana **572,5 ms** (p90 611, p95 620; orçamento 800 ms); A/B por `--perf-startup` alternando `FORGE_GUI_EFFECT=none|blur` (sem a primeira abertura): mediana 551 ms opaco (5) × 558,5 ms desfoque (6) — o material não pesa na abertura.
+
+**5. Duplo clique.** Medido por CDP no console: duplo clique no espaço vazio da barra, no título e na marca da sidebar maximiza (`is_maximized` e `IsZoomed` verdadeiros, janela em −8,−8 com 1936×1056). O **primeiro** duplo clique sintético depois da abertura não maximiza em nenhum ponto, com ou sem material: o `mousedown` dispara `start_dragging` e o laço modal de mover do Windows roda sem botão físico pressionado. O `window-qa.mjs --checks placement` repete o duplo clique até 3 vezes e registra as tentativas (2 nesta medição) e grava `close_to_tray: false` (com a bandeja do M2-E1-T15, fechar só escondia). Com o mouse físico a verificação fica no gate.
+
+**Consequências.** `Titlebar` continua o nome do componente (e `data-testid="titlebar"`), agora a barra do conteúdo; telas não mexem nela, só o `AppShell` passa o `primaryAction`. `StatusBar.tsx` virou `SidebarStatus.tsx`. As variantes do `Button` ficaram suaves na primitiva (secundário = preenchimento `fill` sem contorno, o padrão; primário sólido; destrutivo só com texto vermelho), e ícones de tool passam pelo `ToolTile` (SVG monocromático vira branco sobre um ladrilho `tool-N`; sem ícone, monograma colorido), o que acaba com os círculos pretos. `scripts/qa/capture-window.ps1 -Screen` captura os pixels compostos (com o desfoque atrás da sidebar), só no console físico.
