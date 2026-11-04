@@ -2130,6 +2130,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "sha2 0.11.1",
  "tabled",
  "tempfile",
  "tokio",
@@ -2201,6 +2202,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "url",
+ "zip",
  "zstd",
 ]
 
