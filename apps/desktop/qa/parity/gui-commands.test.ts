@@ -13,6 +13,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 // Importing the modules registers their actions.
 import "../../src/actions/mail";
+import "../../src/actions/php";
 import "../../src/actions/services";
 import "../../src/actions/sites";
 import "../../src/actions/terminal";
@@ -93,6 +94,13 @@ const SAMPLES: Record<string, unknown[]> = {
   "tools.rollback_series": ["php@8.3"],
   "tools.check_updates_one": ["php"],
   "tools.set_policy": [{ tool: "php", policy: "notify" }],
+  "php.ext_enable": [{ version: "8.4", extension: "intl" }],
+  "php.ext_disable": [{ version: "8.4", extension: "intl" }],
+  "php.xdebug": [
+    { version: "8.4", mode: "trigger" },
+    { version: "8.3", mode: "on", port: 9010 },
+    { version: "8.4", mode: "off" },
+  ],
   "tools.install_specs": [{ specs: ["php@8.4.27", "nginx"], variant: "nts" }, { specs: ["redis"] }],
 };
 

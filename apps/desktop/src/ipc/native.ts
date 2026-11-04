@@ -67,6 +67,18 @@ export async function openUrl(url: string): Promise<boolean> {
   }
 }
 
+/** Shows a file in Explorer (opener plugin); `false` outside Tauri or when it fails. */
+export async function revealPath(path: string): Promise<boolean> {
+  if (!inTauri()) return false;
+  try {
+    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+    await revealItemInDir(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Subscribes to files or folders dropped on the window (Tauri webview drag-drop, which gives
  * real paths; the DOM `drop` event does not). `onHover` tells when something is dragged over.

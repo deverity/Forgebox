@@ -1,6 +1,8 @@
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NEW_SITE_EVENT, takePendingNewSite } from "../../app/palette/actions";
+import { Badge } from "../../design/primitives/Badge";
 import { Button } from "../../design/primitives/Button";
 import { EmptyState } from "../../design/primitives/EmptyState";
 import { Kbd } from "../../design/primitives/Kbd";
@@ -16,6 +18,7 @@ import { RemoveSiteDialog } from "./RemoveSiteDialog";
 import { CARD_HEIGHT, ROW_HEIGHT, SiteCard, type SitesLayout } from "./SiteCard";
 
 const EMPTY_KEY = "empty";
+const SITES_PATH = "/sites";
 const LAYOUT_GRID: SitesLayout = "grid";
 const LAYOUT_LIST: SitesLayout = "list";
 const NEW_CHORD = "Ctrl+N";
@@ -77,6 +80,13 @@ export function SitesPage() {
   const connection = useConnectionStatus();
 
   const [query, setQuery] = useState("");
+  // `/sites?php=8.4` (the PHP screen's sites count) keeps only the sites of that series.
+  const navigate = useNavigate();
+  const phpFilter = useSearch({
+    strict: false,
+    select: (search: Record<string, unknown>) =>
+      typeof search.php === "string" && search.php !== "" ? search.php : undefined,
+  });
   const [layout, setLayout] = useState<SitesLayout>(loadLayout);
   // A "new site" request made before this screen mounted (lazy chunk) opens the sheet at once.
   const [creating, setCreating] = useState(takePendingNewSite);
@@ -95,7 +105,13 @@ export function SitesPage() {
     };
   }, []);
 
-  const index = useMemo(() => indexSites(sites), [sites]);
+  const index = useMemo(
+    () =>
+      indexSites(sites).filter(
+        (entry) => phpFilter === undefined || entry.site.php?.series === phpFilter,
+      ),
+    [sites, phpFilter],
+  );
   const matches = useMemo(() => filterSites(index, query), [index, query]);
   const perRow = layout === "grid" ? columns : 1;
   const rows = useMemo(
@@ -183,6 +199,19 @@ export function SitesPage() {
             ? t("count", { count: total })
             : t("countFiltered", { shown: matches.length, total })}
         </span>
+        {phpFilter === undefined ? null : (
+          <span className="inline-flex items-center gap-1" data-testid="php-filter">
+            <Badge tone="accent">{t("phpFilter.label", { series: phpFilter })}</Badge>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                void navigate({ to: SITES_PATH, search: {}, replace: true });
+              }}
+            >
+              {t("phpFilter.clear")}
+            </Button>
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <input
             type="search"

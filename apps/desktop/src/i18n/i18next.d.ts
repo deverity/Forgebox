@@ -2,11 +2,13 @@ import "i18next";
 import type catalog from "./en-US/catalog.json";
 import type common from "./en-US/common.json";
 import type dashboard from "./en-US/dashboard.json";
+import type databases from "./en-US/databases.json";
 import type errors from "./en-US/errors.json";
 import type gallery from "./en-US/gallery.json";
 import type mail from "./en-US/mail.json";
 import type notifications from "./en-US/notifications.json";
 import type palette from "./en-US/palette.json";
+import type php from "./en-US/php.json";
 import type services from "./en-US/services.json";
 import type shell from "./en-US/shell.json";
 import type sites from "./en-US/sites.json";
@@ -33,6 +35,8 @@ export interface Resources {
   dashboard: typeof dashboard;
   terminal: typeof terminal;
   mail: typeof mail;
+  php: typeof php;
+  databases: typeof databases;
 }
 
 declare module "i18next" {

@@ -57,6 +57,26 @@ async function openSheet() {
   return screen.findByRole("dialog");
 }
 
+describe("PHP series filter (?php=)", () => {
+  it("lists only the sites of that series, with a chip that clears the filter", async () => {
+    const data = scenarioData([
+      qaSite(1, "old.test", {
+        php: { series: "8.2", exact: null, resolved: "8.2.30", upstream: "php_8_2" },
+      }),
+      qaSite(2, "new.test"),
+    ]);
+    // A hand-typed `?php=8.2` arrives as the number 8.2 and still filters.
+    await open(data, { path: "/sites?php=8.2" });
+    expect(cards()).toHaveLength(1);
+    expect(screen.getByTestId("php-filter")).toHaveTextContent("PHP 8.2");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Show all" }));
+    await waitFor(() => {
+      expect(cards()).toHaveLength(2);
+    });
+    expect(screen.queryByTestId("php-filter")).not.toBeInTheDocument();
+  });
+});
+
 describe("Sites screen", () => {
   it("filters 500 sites in under 50 ms per keystroke with fewer than 60 nodes mounted", async () => {
     await open(scenarioData(heavyData(500, 0).sites));
