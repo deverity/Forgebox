@@ -17,6 +17,7 @@ import { catalogHandlers } from "./catalog";
 import { attentionDashboard, healthyDashboard } from "./dashboard";
 import { configHandlers } from "./config";
 import { databasesHandlers } from "./databases";
+import { diagnosticsHandlers, QA_HOLDER_PORT } from "./diagnostics";
 import {
   CA_STATUS,
   DNS_STATUS,
@@ -109,7 +110,8 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const terminal = terminalHandlers();
   const php = phpHandlers(data, config);
   const databases = databasesHandlers();
-  const answered = { ...detail, ...catalog, ...terminal, ...php, ...databases };
+  const diagnostics = diagnosticsHandlers();
+  const answered = { ...detail, ...catalog, ...terminal, ...php, ...databases, ...diagnostics };
   return {
     // The Site detail and the catalog answer `tools.plan` etc. before their backend tasks land.
     notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
@@ -134,6 +136,14 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...terminal,
       ...php,
       ...databases,
+      ...diagnostics,
+      // Both answer `net.port_check`: the held port is the Diagnostics scenario's, the rest config's.
+      "net.port_check": (params, ctx) => {
+        const handler =
+          params.port === QA_HOLDER_PORT ? diagnostics["net.port_check"] : config["net.port_check"];
+        if (handler === undefined) return { free: true };
+        return handler(params, ctx);
+      },
       ...extra.handlers,
     },
   } satisfies FakeScenario;

@@ -1,0 +1,70 @@
+{
+  "title": "Diagnostics",
+  "run": "Run diagnostics",
+  "runAgain": "Run again",
+  "running": "Running…",
+  "idle": {
+    "title": "Nothing checked yet",
+    "description": "Diagnostics look at PATH, DNS, the local CA, ports, Visual C++ runtime, Defender and versions. It only reads; nothing changes until you press Fix."
+  },
+  "progress": {
+    "label": "Diagnostics progress",
+    "starting": "Starting the checks…",
+    "step": "Checking: {step}"
+  },
+  "summary": "{ok} ok · {warn} warnings · {fail} failures",
+  "summarySkipped": "· {count} skipped",
+  "none": "The daemon returned no checks",
+  "rerunFailed": "Could not check again after the fix. Run the diagnostics again.",
+  "rechecking": "Checking again…",
+  "status": {
+    "ok": "OK",
+    "warn": "Attention",
+    "fail": "Failed",
+    "skipped": "Skipped"
+  },
+  "groups": {
+    "root": "Installation folder",
+    "store": "Database",
+    "dns": "DNS",
+    "tls": "Certificates",
+    "port": "Ports",
+    "runtime": "Runtime",
+    "path": "PATH",
+    "defender": "Windows Defender",
+    "versions": "Versions",
+    "registry": "Registries",
+    "service": "Services"
+  },
+  "fix": "Fix",
+  "fixing": "Fixing…",
+  "fixed": "Fixed",
+  "changePort": "Change port",
+  "kill": {
+    "action": "End process",
+    "title": "End the process on port {port}?",
+    "loading": "Looking up who holds the port…",
+    "lookupFailed": "Could not look up the process on this port.",
+    "free": "Port {port} is free now. Nothing to end.",
+    "description": "This force-ends the process below. Unsaved work in it is lost.",
+    "pid": "PID",
+    "exe": "Program",
+    "cancel": "Cancel",
+    "confirm": "End process",
+    "killing": "Ending…",
+    "done": "Process on port {port} ended"
+  },
+  "dns": {
+    "test": "Test DNS",
+    "testing": "Testing…",
+    "ok": "{host} resolves to {addresses} (via {via})",
+    "failed": "{host} did not resolve as expected (via {via}, got {addresses})",
+    "none": "nothing"
+  },
+  "export": {
+    "action": "Export report",
+    "exporting": "Exporting…",
+    "saved": "Report saved to {path}",
+    "failed": "Could not export the report: {cause}"
+  }
+}

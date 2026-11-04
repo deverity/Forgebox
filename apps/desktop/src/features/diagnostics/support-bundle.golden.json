@@ -1,0 +1,59 @@
+{
+  "v": 1,
+  "created_unix": 1793800000,
+  "forge_version": "0.2.0",
+  "api_version": "1.1",
+  "doctor": {
+    "checks": [
+      {
+        "id": "root.writable",
+        "status": "ok",
+        "message": "C:/Forgebox is writable",
+        "fix": null,
+        "fix_method": null,
+        "fix_params": null
+      },
+      {
+        "id": "dns.policy.test",
+        "status": "warn",
+        "message": ".test is not routed (not_applied)",
+        "fix": "forge dns enable",
+        "fix_method": "net.dns_enable",
+        "fix_params": null
+      },
+      {
+        "id": "tls.ca_trusted",
+        "status": "warn",
+        "message": "not trusted by Windows",
+        "fix": "forge tls ca install",
+        "fix_method": "tls.ca_install",
+        "fix_params": {
+          "scope": "current_user"
+        }
+      }
+    ]
+  },
+  "status": {
+    "version": "0.2.0",
+    "api_version": {
+      "major": 1,
+      "minor": 1
+    },
+    "platform": "windows",
+    "pid": 4242,
+    "started_at": "2026-11-04T10:00:00Z",
+    "uptime_secs": 3600,
+    "root": "C:/Forgebox",
+    "portable": false,
+    "last_event_seq": 120,
+    "active_jobs": 0,
+    "connections": 2,
+    "cpu_pct": 0.5,
+    "rss_bytes": 52428800
+  },
+  "tools": [
+    ["php", ["8.4.27", "8.3.36"]],
+    ["nginx", ["1.28.0"]]
+  ],
+  "daemon_log": ["forgeboxd started", "port 80 busy"]
+}

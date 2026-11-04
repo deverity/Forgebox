@@ -288,6 +288,7 @@ const REAL_SCREENS: ReadonlySet<string> = new Set([
   "sites",
   "catalog",
   "terminal",
+  "databases",
   "php",
 ]);
 
@@ -318,7 +319,7 @@ describe("routes", () => {
   it("routes /diagnostics from the status bar chips", async () => {
     await renderApp();
     await userEvent.click(screen.getByTestId("status-dns"));
-    expect(await screen.findByTestId("page-diagnostics")).toHaveTextContent("M2-E3-T19");
+    expect(await screen.findByTestId("page-diagnostics")).toHaveTextContent("Diagnostics");
   });
 
   it("shows a not-found page with a way home", async () => {

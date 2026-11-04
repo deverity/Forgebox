@@ -1,5 +1,46 @@
 [
   {
+    "action": "diagnostics.ca_install",
+    "method": "tls.ca_install",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "scope": "current_user"
+        },
+        "command": "forge tls ca install --scope user"
+      },
+      {
+        "input": {
+          "scope": "local_machine"
+        },
+        "command": "forge tls ca install --scope machine"
+      }
+    ]
+  },
+  {
+    "action": "diagnostics.dns_enable",
+    "method": "net.dns_enable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge dns enable"
+      }
+    ]
+  },
+  {
+    "action": "diagnostics.path_add",
+    "method": "shell.path_add",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge path add"
+      }
+    ]
+  },
+  {
     "action": "php.ext_disable",
     "method": "php.ext_disable",
     "kind": "job",

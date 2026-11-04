@@ -346,4 +346,34 @@ mod tests {
         let incompatible = version_check(&ctx, env!("CARGO_PKG_VERSION"), other_api);
         assert_eq!(incompatible.status, CheckStatus::Fail);
     }
+
+    /// The GUI builds the same bundle (`apps/desktop/src/features/diagnostics/model.ts`); the
+    /// golden file is read by both sides, so a change of shape here fails the GUI test too.
+    #[test]
+    fn support_bundle_has_the_shape_the_gui_exports() {
+        let golden: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../apps/desktop/src/features/diagnostics/support-bundle.golden.json"
+        ))
+        .unwrap();
+        let doctor: DoctorReportDto = serde_json::from_value(golden["doctor"].clone()).unwrap();
+        let status: DaemonStatusDto = serde_json::from_value(golden["status"].clone()).unwrap();
+        let tools = golden["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|pair| serde_json::from_value::<(String, Vec<String>)>(pair.clone()).unwrap())
+            .collect();
+        let daemon_log = serde_json::from_value(golden["daemon_log"].clone()).unwrap();
+        let bundle = SupportBundle {
+            v: 1,
+            created_unix: golden["created_unix"].as_u64().unwrap(),
+            forge_version: "0.2.0",
+            api_version: API_VERSION.to_string(),
+            doctor: &doctor,
+            status: &status,
+            tools,
+            daemon_log,
+        };
+        assert_eq!(serde_json::to_value(&bundle).unwrap(), golden);
+    }
 }
