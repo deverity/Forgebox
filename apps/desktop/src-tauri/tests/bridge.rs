@@ -18,7 +18,8 @@ use forge_ipc::base::ids::RequestId;
 use forge_ipc::server::{Router, ServerHandle};
 use forge_ipc::transport::InMemoryTransport;
 use forgebox_desktop::bridge::{
-    Bridge, BridgeOptions, CallArgs, ConnectionStatus, FrameSink, LOCAL_CONTEXT, StreamEntry,
+    Bridge, BridgeOptions, CallArgs, ConnectionStatus, FirstFrameGate, FrameSink, LOCAL_CONTEXT,
+    StreamEntry,
 };
 
 fn call(method: &str, params: serde_json::Value) -> CallArgs {
@@ -390,6 +391,71 @@ async fn an_uninitialized_root_is_not_started() {
     assert_eq!(local.spawned(), 0);
     // Onboarding finished: an explicit initializing start goes through.
     let state = bridge.start(LOCAL_CONTEXT, true).await.unwrap();
+    assert!(state.autostart.initialized, "{state:?}");
+    recorder.wait_status(ConnectionStatus::Connected).await;
+    assert_eq!(local.spawned(), 1);
+    bridge.shutdown().await;
+}
+
+/// M2-E1-T21 (cold start with the daemon stopped: ~1 040 ms median with the spawn during
+/// startup, ~775 ms without): the automatic start waits for the first frame.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_automatic_start_waits_for_the_first_frame() {
+    let daemon = plain_daemon().await;
+    let local = FakeLocal::new(Arc::clone(&daemon), true, false);
+    let recorder = Arc::new(Recorder::default());
+    let mut options = test_options(Duration::from_millis(100));
+    let gate = FirstFrameGate::closed(Duration::from_secs(30));
+    options.contexts.first_frame = gate.clone();
+    let bridge = bridge_over(&local, &recorder, options);
+    bridge.state(LOCAL_CONTEXT).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert_eq!(
+        local.starts.load(Ordering::SeqCst),
+        0,
+        "nothing spawned before the frame"
+    );
+    assert_eq!(
+        bridge.state(LOCAL_CONTEXT).await.unwrap().status,
+        ConnectionStatus::Starting,
+        "the UI already says starting"
+    );
+
+    gate.open();
+    recorder.wait_status(ConnectionStatus::Connected).await;
+    assert_eq!(local.spawned(), 1);
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_page_without_ready_still_gets_its_daemon_after_the_cap() {
+    let daemon = plain_daemon().await;
+    let local = FakeLocal::new(Arc::clone(&daemon), true, false);
+    let recorder = Arc::new(Recorder::default());
+    let mut options = test_options(Duration::from_millis(100));
+    options.contexts.first_frame = FirstFrameGate::closed(Duration::from_millis(300));
+    let bridge = bridge_over(&local, &recorder, options);
+    bridge.state(LOCAL_CONTEXT).await.unwrap();
+    recorder.wait_status(ConnectionStatus::Connected).await;
+    assert_eq!(local.spawned(), 1, "started once the cap ran out");
+    bridge.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_user_start_does_not_wait_for_the_first_frame() {
+    let daemon = plain_daemon().await;
+    let local = FakeLocal::new(Arc::clone(&daemon), false, false);
+    let recorder = Arc::new(Recorder::default());
+    let mut options = test_options(Duration::from_millis(100));
+    options.contexts.first_frame = FirstFrameGate::closed(Duration::from_secs(30));
+    let bridge = bridge_over(&local, &recorder, options);
+    // Uninitialized: no automatic start; the onboarding's explicit start goes at once.
+    bridge.state(LOCAL_CONTEXT).await.unwrap();
+    recorder.wait_status(ConnectionStatus::Uninitialized).await;
+    let state = tokio::time::timeout(Duration::from_secs(5), bridge.start(LOCAL_CONTEXT, true))
+        .await
+        .expect("a user start is not gated")
+        .unwrap();
     assert!(state.autostart.initialized, "{state:?}");
     recorder.wait_status(ConnectionStatus::Connected).await;
     assert_eq!(local.spawned(), 1);

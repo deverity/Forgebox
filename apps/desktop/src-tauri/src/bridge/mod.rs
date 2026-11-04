@@ -41,7 +41,8 @@ use forge_ipc::{ApiError, METHODS};
 
 pub use self::contexts::{
     AutoStartDto, ConnectionSink, ConnectionStatus, Connector, ContextStateDto, ContextsOptions,
-    Endpoint, ExitEvidence, LOCAL_CONTEXT, LocalConnector, NoSink, Opened, desktop_client_options,
+    Endpoint, ExitEvidence, FIRST_FRAME_WAIT_CAP, FirstFrameGate, LOCAL_CONTEXT, LocalConnector,
+    NoSink, Opened, desktop_client_options,
 };
 pub use self::policy::{AutoStartPolicy, Decision, PolicyConfig, StartOutcome};
 pub use self::streams::{FrameSink, PumpOptions, SinkClosed, StreamEntry, StreamFrame};

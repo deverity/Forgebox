@@ -376,6 +376,7 @@ pub fn test_options(grace: Duration) -> BridgeOptions {
                 grace,
                 ..PolicyConfig::default()
             },
+            ..ContextsOptions::default()
         },
         ..BridgeOptions::default()
     }

@@ -28,7 +28,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{Manager, RunEvent};
 
 use crate::bridge::commands::TauriConnectionSink;
-use crate::bridge::{Bridge, BridgeOptions};
+use crate::bridge::{Bridge, BridgeOptions, FIRST_FRAME_WAIT_CAP, FirstFrameGate};
 use crate::perf::StartupClock;
 use crate::window::{Boot, EFFECT_OVERRIDE_ENV, Effect, LaunchArgs, MAIN_LABEL, WindowShell};
 
@@ -88,8 +88,13 @@ pub fn run() {
             let runtime = tauri::async_runtime::handle();
             let _guard = runtime.inner().enter();
             let sink = Arc::new(TauriConnectionSink(app.handle().clone()));
-            let bridge = Bridge::new(sink, BridgeOptions::default());
+            // Automatic daemon starts wait for the first frame (`ready`, M2-E1-T21).
+            let first_frame = FirstFrameGate::closed(FIRST_FRAME_WAIT_CAP);
+            let mut options = BridgeOptions::default();
+            options.contexts.first_frame = first_frame.clone();
+            let bridge = Bridge::new(sink, options);
             app.manage(bridge.clone());
+            app.manage(first_frame);
 
             let boot = boot
                 .join()
