@@ -331,3 +331,42 @@ fn every_cli_method_is_reached_by_an_action_or_listed() {
         );
     }
 }
+
+/// Ids of the roadmap tasks whose `docs/STATUS.md` row says `done` (or `review`, already built).
+fn finished_tasks(status: &str) -> BTreeSet<String> {
+    status
+        .lines()
+        .filter_map(|line| {
+            let cells: Vec<_> = line.split('|').map(str::trim).collect();
+            let (id, state) = (cells.get(1)?, cells.get(3)?);
+            matches!(*state, "done" | "review").then(|| (*id).to_string())
+        })
+        .collect()
+}
+
+#[test]
+fn finished_task_detection_reads_status_rows() {
+    let status = "| M2-A-T1 | x | done | b | n |\n| M2-A-T2 | x | todo | — | |\n| M2-A-T3 | x | review | b | n |\n";
+    let done = finished_tasks(status);
+    assert!(done.contains("M2-A-T1") && done.contains("M2-A-T3") && !done.contains("M2-A-T2"));
+}
+
+#[test]
+fn pending_entries_name_tasks_that_are_not_finished() {
+    // A `pending` entry whose task is already done would never be removed by anyone.
+    let root = parity_dir().join("../../../../");
+    let status = std::fs::read_to_string(root.join("docs/STATUS.md")).expect("docs/STATUS.md");
+    let done = finished_tasks(&status);
+    let text = std::fs::read_to_string(parity_dir().join("cli-only.yaml")).expect("yaml");
+    let config = parse_cli_only(&text).unwrap_or_else(|e| panic!("cli-only.yaml: {e}"));
+    let stale: Vec<_> = config
+        .pending
+        .iter()
+        .filter(|p| done.contains(&p.task))
+        .map(|p| format!("{} -> {}", p.method, p.task))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "pending names a finished task; reclassify or re-point: {stale:?}"
+    );
+}

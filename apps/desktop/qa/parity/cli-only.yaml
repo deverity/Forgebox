@@ -45,6 +45,8 @@ cli_only:
     reason: "No unpark screen in the M2 plan (onboarding M2-E2-T19 only parks); folders are unparked from the CLI."
   - method: sites.alias
     reason: "Aliases are shown read-only in the site detail Geral tab (M2-E2-T16); editing them is CLI/manifest only in M2."
+  - method: jobs.cancel
+    reason: "The GUI cancels through the job abort in InstallProgressList (catalog and PHP switch), not through a registry action; no screen needs a separate action."
 query:
   - method: daemon.status
     reason: "Query shown by: Shell status footer and Settings (M2-E1, M2-E3-T16)."
@@ -134,6 +136,10 @@ query:
     reason: "Query shown by: Catalog search (M2-E2-T18)."
   - method: tools.which
     reason: "Query shown by: Settings Avancado / CLI resolution (M2-E3-T16)."
+  - method: net.dns_test
+    reason: "Query shown by: Site Diagnostico tab, 'Testar DNS' button (M2-E2-T16)."
+  - method: tools.plan
+    reason: "Query shown by: Catalog tool page install plan and the site PHP switch confirmation (M2-E2-T18, M2-E2-T16)."
 pending:
   - method: db.create
     task: M2-E3-T14
@@ -153,8 +159,6 @@ pending:
     task: M2-E3-T18
   - method: fs_parity.site_case
     task: M2-E3-T18
-  - method: jobs.cancel
-    task: M2-E4-T11
   - method: mail.clear
     task: M2-E3-T13
   - method: mail.delete
@@ -184,17 +188,17 @@ pending:
   - method: shell.path_remove
     task: M2-E3-T16
   - method: sites.down
-    task: M2-E2-T16
+    task: M2-E4-T9
   - method: sites.up
-    task: M2-E2-T16
+    task: M2-E4-T9
   - method: sites.pool_mode
     task: M2-E5-T11
   - method: sites.metrics
     task: M2-E5-T16
   - method: sites.secure
-    task: M2-E2-T16
+    task: M2-E4-T9
   - method: sites.server
-    task: M2-E2-T16
+    task: M2-E4-T9
   - method: system.config_set
     task: M2-E3-T16
   - method: tls.ca_install
@@ -223,8 +227,6 @@ pending:
     task: M2-E3-T17
   - method: tls.export
     task: M2-E3-T17
-  - method: net.dns_test
-    task: M2-E3-T17
   - method: logs.read
     task: M2-E3-T12
   - method: logs.subscribe
@@ -237,8 +239,6 @@ pending:
     task: M2-E2-T17
   - method: shell.open
     task: M2-E3-T16
-  - method: tools.plan
-    task: M2-E2-T18
   - method: db.shell
     task: M2-E3-T14
   - method: db.url
