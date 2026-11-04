@@ -2010,7 +2010,7 @@ expression: text
           "const": "self"
         },
         {
-          "description": "Not rotated (provisional for Apache until M2-E5-T12).",
+          "description": "Not rotated; the daemon only warns when the file passes 4x `max_size`.",
           "type": "string",
           "const": "none"
         }
