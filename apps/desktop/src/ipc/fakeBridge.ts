@@ -67,6 +67,12 @@ export interface FakeJobScript<R = unknown> {
   outcome?: { done: R } | { failed: ApiErrorDto } | { cancelled: true };
   /** Runs until `jobs.cancel` or `FakeBridge.completeJob` instead of ending by itself. */
   hold?: boolean;
+  /**
+   * Applies the job's effect on the scenario state when it ends, before `job.done|failed|
+   * cancelled` is published (the daemon changes its state, then reports the job). Runs however
+   * the job ends: its own timer, `completeJob` or `jobs.cancel`.
+   */
+  onFinish?: (outcome: NonNullable<FakeJobScript["outcome"]>) => void;
 }
 
 export interface FakeJob<R = unknown> extends FakeJobScript<R> {
@@ -131,6 +137,12 @@ export interface FakeScenario {
   latencyMs?: number;
   /** Delay of each job step, ms (default 0). */
   jobStepMs?: number;
+  /**
+   * Methods whose jobs run until `jobs.cancel` or `FakeBridge.completeJob`, as if their script
+   * said `hold: true`: a test that checks the UI while the job runs ends it itself instead of
+   * racing the script's timers on a loaded machine.
+   */
+  holdJobs?: readonly string[];
   /** Events already published (replayable with `resume_from`). */
   events?: readonly FakeEvent[];
   /** Items kept per stream for replays (default 4096, like the daemon's ring). */
@@ -308,6 +320,7 @@ interface JobRecord {
   dto: T.JobDto;
   timers: ReturnType<typeof setTimeout>[];
   outcome: NonNullable<FakeJobScript["outcome"]>;
+  onFinish: FakeJobScript["onFinish"];
 }
 
 function delay(ms: number): Promise<void> {
@@ -972,7 +985,12 @@ export class FakeBridge implements Bridge {
       result: null,
       error: null,
     };
-    const job: JobRecord = { dto, timers: [], outcome: script.outcome ?? { done: null } };
+    const job: JobRecord = {
+      dto,
+      timers: [],
+      outcome: script.outcome ?? { done: null },
+      onFinish: script.onFinish,
+    };
     this.jobs.set(id, job);
     // Like the JobRegistry: `job.started` is published before the answer leaves.
     this.publish("job.started", {
@@ -993,7 +1011,8 @@ export class FakeBridge implements Bridge {
         }, at),
       );
     }
-    if (script.hold !== true) {
+    const hold = script.hold === true || this.scenario.holdJobs?.includes(request.method) === true;
+    if (!hold) {
       at += stepMs;
       job.timers.push(
         setTimeout(() => {
@@ -1007,6 +1026,7 @@ export class FakeBridge implements Bridge {
   private finishJob(job: JobRecord, outcome: NonNullable<FakeJobScript["outcome"]>): void {
     if (job.dto.state !== "running") return;
     for (const timer of job.timers) clearTimeout(timer);
+    job.onFinish?.(outcome);
     const { dto } = job;
     dto.finished_at = nowIso();
     const base = { v: 1, job_id: dto.id, name: dto.name, duration_ms: 0 };
