@@ -160,7 +160,10 @@ export const JOB_EFFECTS: Readonly<Record<EffectMethod, MutationEffect>> = {
   "system.bundle_import": EVERYTHING,
   "system.backup_now": NONE,
   "system.backup_schedule": effect([], ["system.config_get"]),
-  "system.config_set": effect(["daemon"], ["system.config_get", "daemon.status"]),
+  "system.config_set": effect(
+    ["daemon"],
+    ["system.config_get", "system.config_list", "daemon.status"],
+  ),
   // The daemon restarts after an update: `daemon.ready` resyncs everything.
   "system.self_update": NONE,
 

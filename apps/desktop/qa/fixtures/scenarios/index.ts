@@ -30,6 +30,7 @@ import {
 } from "./data";
 import { mailHandlers } from "./mail";
 import { phpHandlers } from "./php";
+import { settingsHandlers } from "./settings";
 import { siteDetailHandlers } from "./siteDetail";
 import { terminalHandlers } from "./terminal";
 
@@ -113,7 +114,17 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
   const php = phpHandlers(data, config);
   const databases = databasesHandlers();
   const diagnostics = diagnosticsHandlers();
-  const answered = { ...detail, ...catalog, ...terminal, ...mail, ...php, ...databases, ...diagnostics };
+  const settings = settingsHandlers().handlers;
+  const answered = {
+    ...detail,
+    ...catalog,
+    ...terminal,
+    ...mail,
+    ...php,
+    ...databases,
+    ...diagnostics,
+    ...settings,
+  };
   return {
     // The Site detail and the catalog answer `tools.plan` etc. before their backend tasks land.
     notImplemented: NOT_IMPLEMENTED.map((row) => row.method).filter(
@@ -140,6 +151,7 @@ export function withData(name: string, data: QaData, extra: FakeScenario = {}): 
       ...php,
       ...databases,
       ...diagnostics,
+      ...settings,
       // Both answer `net.port_check`: the held port is the Diagnostics scenario's, the rest config's.
       "net.port_check": (params, ctx) => {
         const handler =

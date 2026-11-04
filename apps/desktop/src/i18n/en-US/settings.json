@@ -1,0 +1,127 @@
+{
+  "title": "Settings",
+  "nav": { "label": "Settings sections" },
+  "sections": {
+    "general": "General",
+    "editor": "Editor and terminal",
+    "shortcuts": "Shortcuts",
+    "advanced": "Advanced"
+  },
+  "search": {
+    "label": "Search settings",
+    "placeholder": "Search settings",
+    "none": "No setting found for “{query}”."
+  },
+  "save": "Save",
+  "saving": "Saving…",
+  "saved": "Saved",
+  "discard": "Discard",
+  "auto": "Automatic",
+  "presetsLabel": "Presets",
+  "presets": {
+    "auto": "Automatic",
+    "vscode": "VS Code",
+    "phpstorm": "PhpStorm",
+    "notepad": "Notepad",
+    "wt": "Windows Terminal",
+    "pwsh": "PowerShell 7",
+    "cmd": "Command Prompt"
+  },
+  "listHint": "Separate the values with commas.",
+  "problem": {
+    "number": "Enter a valid number.",
+    "range": "Use a value between {min} and {max}."
+  },
+  "requires": {
+    "daemon_restart": "This change only takes effect after the daemon restarts.",
+    "daemon_restart_action": "Restart the daemon",
+    "net_dns_enable": "Local DNS has to be enabled again.",
+    "net_dns_enable_action": "Enable DNS",
+    "tls_ca_rotate": "The local CA has to be renewed for the new TLD.",
+    "tls_ca_rotate_action": "Renew the CA",
+    "tls_ca_rotate_confirm": "This re-issues every certificate. Confirm?",
+    "other": "Another action is needed to apply this change."
+  },
+  "rows": {
+    "editor_command": {
+      "label": "Editor command",
+      "description": "Used by “Open in editor”. Use {path}, {line} and {column}. Empty: detects VS Code, PhpStorm or Notepad."
+    },
+    "terminal_command": {
+      "label": "External terminal command",
+      "description": "Used by “Open terminal”. Use {dir} for the folder. Empty: detects Windows Terminal or PowerShell."
+    },
+    "terminal_integrated_shell": {
+      "label": "Integrated terminal shell",
+      "description": "Empty: the first one found among pwsh, powershell and cmd."
+    },
+    "terminal_max_sessions": {
+      "label": "Integrated terminal sessions",
+      "description": "How many sessions can stay open at the same time."
+    }
+  },
+  "test": {
+    "editor": "Test editor",
+    "terminal": "Test terminal",
+    "running": "Testing…",
+    "sent": "Command sent to the daemon.",
+    "saveFirst": "Save before testing."
+  },
+  "general": {
+    "saveFailed": "The preference could not be saved: {message}",
+    "root": {
+      "label": "Root folder",
+      "description": "Where Forgebox keeps tools, sites and data. Read-only.",
+      "open": "Open",
+      "openFailed": "The folder could not be opened."
+    },
+    "language": {
+      "label": "Language",
+      "description": "Applies to the app and to the tray."
+    },
+    "theme": {
+      "label": "Theme",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "closeToTray": {
+      "label": "Close to tray",
+      "description": "Closing the window keeps Forgebox in the system tray."
+    },
+    "autostart": { "label": "Start with Windows" },
+    "onboarding": {
+      "label": "Welcome",
+      "description": "Runs the first-steps assistant again.",
+      "action": "Run onboarding again"
+    }
+  },
+  "shortcuts": {
+    "intro": "Click a shortcut and press the new combination. Esc cancels.",
+    "press": "Press the keys…",
+    "global": "Also works system-wide",
+    "reset": "Reset",
+    "resetAll": "Reset all",
+    "changeFor": "Change the shortcut for {name}",
+    "resetFor": "Reset the shortcut for {name}"
+  },
+  "advanced": {
+    "templates": {
+      "label": "Custom templates folder",
+      "description": "A file with the same path as a built-in template replaces it.",
+      "open": "Open",
+      "copy": "Copy path",
+      "copied": "Copied"
+    },
+    "logs": {
+      "label": "Daemon logs",
+      "description": "Messages from forgeboxd, including the rotated files.",
+      "open": "Open logs"
+    },
+    "diagnostics": {
+      "label": "Diagnostics",
+      "description": "Checks PATH, DNS, CA, ports and versions, and exports a report.",
+      "open": "Open diagnostics"
+    }
+  }
+}

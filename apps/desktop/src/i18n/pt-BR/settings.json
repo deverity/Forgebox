@@ -1,0 +1,127 @@
+{
+  "title": "Configurações",
+  "nav": { "label": "Seções das configurações" },
+  "sections": {
+    "general": "Geral",
+    "editor": "Editor e terminal",
+    "shortcuts": "Atalhos",
+    "advanced": "Avançado"
+  },
+  "search": {
+    "label": "Buscar configurações",
+    "placeholder": "Buscar configurações",
+    "none": "Nenhuma configuração encontrada para “{query}”."
+  },
+  "save": "Salvar",
+  "saving": "Salvando…",
+  "saved": "Salvo",
+  "discard": "Descartar",
+  "auto": "Automático",
+  "presetsLabel": "Predefinições",
+  "presets": {
+    "auto": "Automático",
+    "vscode": "VS Code",
+    "phpstorm": "PhpStorm",
+    "notepad": "Bloco de Notas",
+    "wt": "Windows Terminal",
+    "pwsh": "PowerShell 7",
+    "cmd": "Prompt de Comando"
+  },
+  "listHint": "Separe os valores por vírgula.",
+  "problem": {
+    "number": "Digite um número válido.",
+    "range": "Use um valor entre {min} e {max}."
+  },
+  "requires": {
+    "daemon_restart": "Esta mudança só vale depois de reiniciar o daemon.",
+    "daemon_restart_action": "Reiniciar o daemon",
+    "net_dns_enable": "O DNS local precisa ser ativado novamente.",
+    "net_dns_enable_action": "Ativar o DNS",
+    "tls_ca_rotate": "A CA local precisa ser renovada para o novo TLD.",
+    "tls_ca_rotate_action": "Renovar a CA",
+    "tls_ca_rotate_confirm": "Isso reemite todos os certificados. Confirmar?",
+    "other": "Falta uma ação para aplicar esta mudança."
+  },
+  "rows": {
+    "editor_command": {
+      "label": "Comando do editor",
+      "description": "Usado por “Abrir no editor”. Use {path}, {line} e {column}. Vazio: detecta VS Code, PhpStorm ou Bloco de Notas."
+    },
+    "terminal_command": {
+      "label": "Comando do terminal externo",
+      "description": "Usado por “Abrir terminal”. Use {dir} para a pasta. Vazio: detecta Windows Terminal ou PowerShell."
+    },
+    "terminal_integrated_shell": {
+      "label": "Shell do terminal integrado",
+      "description": "Vazio: o primeiro encontrado entre pwsh, powershell e cmd."
+    },
+    "terminal_max_sessions": {
+      "label": "Sessões do terminal integrado",
+      "description": "Quantas sessões podem ficar abertas ao mesmo tempo."
+    }
+  },
+  "test": {
+    "editor": "Testar editor",
+    "terminal": "Testar terminal",
+    "running": "Testando…",
+    "sent": "Comando enviado ao daemon.",
+    "saveFirst": "Salve antes de testar."
+  },
+  "general": {
+    "saveFailed": "Não foi possível salvar a preferência: {message}",
+    "root": {
+      "label": "Pasta raiz",
+      "description": "Onde o Forgebox guarda ferramentas, sites e dados. Somente leitura.",
+      "open": "Abrir",
+      "openFailed": "Não foi possível abrir a pasta."
+    },
+    "language": {
+      "label": "Idioma",
+      "description": "Vale para o aplicativo e para a bandeja."
+    },
+    "theme": {
+      "label": "Tema",
+      "system": "Sistema",
+      "light": "Claro",
+      "dark": "Escuro"
+    },
+    "closeToTray": {
+      "label": "Fechar para a bandeja",
+      "description": "Fechar a janela mantém o Forgebox na bandeja do sistema."
+    },
+    "autostart": { "label": "Iniciar com o Windows" },
+    "onboarding": {
+      "label": "Boas-vindas",
+      "description": "Refaz o assistente de primeiros passos.",
+      "action": "Executar onboarding novamente"
+    }
+  },
+  "shortcuts": {
+    "intro": "Clique no atalho e pressione a nova combinação. Esc cancela.",
+    "press": "Pressione as teclas…",
+    "global": "Também vale em todo o sistema",
+    "reset": "Restaurar",
+    "resetAll": "Restaurar todos",
+    "changeFor": "Alterar o atalho de {name}",
+    "resetFor": "Restaurar o atalho de {name}"
+  },
+  "advanced": {
+    "templates": {
+      "label": "Pasta de templates personalizados",
+      "description": "Um arquivo com o mesmo caminho de um template embutido o substitui.",
+      "open": "Abrir",
+      "copy": "Copiar caminho",
+      "copied": "Copiado"
+    },
+    "logs": {
+      "label": "Logs do daemon",
+      "description": "Mensagens do forgeboxd, com os arquivos rotacionados.",
+      "open": "Abrir logs"
+    },
+    "diagnostics": {
+      "label": "Diagnóstico",
+      "description": "Verifica PATH, DNS, CA, portas e versões, e exporta um relatório.",
+      "open": "Abrir diagnóstico"
+    }
+  }
+}

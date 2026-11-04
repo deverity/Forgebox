@@ -34,6 +34,12 @@ const SAMPLES: Record<string, unknown[]> = {
   "diagnostics.dns_enable": [undefined],
   "diagnostics.ca_install": [{ scope: "current_user" }, { scope: "local_machine" }],
   "diagnostics.path_add": [undefined],
+  "settings.config_set": [
+    { key: "dns.enabled", value: true },
+    { key: "editor.command", value: "code -g {path}:{line}" },
+  ],
+  "settings.daemon_restart": [undefined],
+  "settings.ca_rotate": [undefined],
   "services.start": [undefined],
   "services.stop": [undefined],
   "services.start_instance": ["mysql/default"],
