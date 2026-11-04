@@ -60,6 +60,7 @@ jobs:
         run: |
           cargo xtask schema
           cargo xtask gen-ts
+          cargo xtask qa-fixtures --only not-implemented
           git diff --exit-code
 
   desktop:

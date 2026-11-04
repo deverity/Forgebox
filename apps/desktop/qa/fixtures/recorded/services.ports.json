@@ -1,0 +1,55 @@
+{
+  "external": [
+    {
+      "holder": {
+        "exe": "?",
+        "pid": 4242
+      },
+      "port": 3240,
+      "protocol": "tcp"
+    },
+    {
+      "holder": {
+        "exe": "?",
+        "pid": 4242
+      },
+      "port": 3389,
+      "protocol": "tcp"
+    }
+  ],
+  "ports": [
+    {
+      "conflict": null,
+      "id": "01FORGEBOXFIXTURE000000002",
+      "name": "worker-1",
+      "owner_id": "01FORGEBOXFIXTURE000000001",
+      "owner_kind": "pool",
+      "owner_name": "pool/01FORGEBOXFIXTURE000000001",
+      "port": 19000,
+      "protocol": "tcp",
+      "state": "reserved"
+    },
+    {
+      "conflict": null,
+      "id": "01FORGEBOXFIXTURE000000003",
+      "name": "worker-2",
+      "owner_id": "01FORGEBOXFIXTURE000000001",
+      "owner_kind": "pool",
+      "owner_name": "pool/01FORGEBOXFIXTURE000000001",
+      "port": 19001,
+      "protocol": "tcp",
+      "state": "reserved"
+    },
+    {
+      "conflict": null,
+      "id": "01FORGEBOXFIXTURE000000004",
+      "name": "internal",
+      "owner_id": "forgeboxd",
+      "owner_kind": "daemon",
+      "owner_name": "daemon/forgeboxd",
+      "port": 58111,
+      "protocol": "tcp",
+      "state": "reserved"
+    }
+  ]
+}

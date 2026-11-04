@@ -1,6 +1,7 @@
 //! Development tasks for Forgebox, run as `cargo xtask <command>`.
 
 mod arch_guard;
+mod qa_fixtures;
 
 use std::path::{Path, PathBuf};
 use std::process::Command as Process;
@@ -57,6 +58,16 @@ enum Command {
     /// Check the workspace dependency graph: GUI/CLI/MCP depend only on forge-ipc, the GUI has no
     /// direct windows/windows-sys dependency.
     ArchGuard,
+    /// Record read-only API answers of a real forgeboxd (temporary root, fake binaries) as
+    /// normalized JSON for the GUI fakeBridge, plus not_implemented.json.
+    QaFixtures {
+        /// Output folder (default: apps/desktop/qa/fixtures/recorded).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Write only a deterministic subset (no daemon): what CI diff-checks.
+        #[arg(long, value_enum)]
+        only: Option<qa_fixtures::Only>,
+    },
     /// Run fmt-check, clippy, test, deny, arch-guard and lint-registry; stops at the first failure.
     Ci,
 }
@@ -387,6 +398,7 @@ fn main() -> Result<()> {
         Command::RegistryKeygen { secret, public } => registry_keygen(&secret, &public),
 
         Command::ArchGuard => arch_guard::run(&root),
+        Command::QaFixtures { out, only } => qa_fixtures::run(&root, out.as_deref(), only),
         Command::Ci => ci(&root),
     }
 }
@@ -403,12 +415,15 @@ mod tests {
             "lint-registry",
             "registry-index",
             "arch-guard",
+            "qa-fixtures",
             "ci",
         ] {
             assert!(Cli::try_parse_from(["xtask", arg]).is_ok(), "{arg}");
         }
         assert!(Cli::try_parse_from(["xtask", "registry-sign", "--key", "k"]).is_ok());
         assert!(Cli::try_parse_from(["xtask", "registry-sign"]).is_err());
+        assert!(Cli::try_parse_from(["xtask", "qa-fixtures", "--only", "not-implemented"]).is_ok());
+        assert!(Cli::try_parse_from(["xtask", "qa-fixtures", "--only", "all"]).is_err());
         assert!(
             Cli::try_parse_from(["xtask", "registry-keygen", "--secret", "s", "--public", "p"])
                 .is_ok()

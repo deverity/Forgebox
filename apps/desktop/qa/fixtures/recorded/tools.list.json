@@ -1,0 +1,154 @@
+{
+  "tools": [
+    {
+      "category": "webserver",
+      "current": null,
+      "description": "Apache httpd 2.4 (builds Apache Lounge)",
+      "has_service": true,
+      "id": "apache",
+      "installed": [],
+      "latest": "2.4.69",
+      "name": "Apache HTTP Server",
+      "policy": "auto-patch",
+      "update_available": null
+    },
+    {
+      "category": "webserver",
+      "current": null,
+      "description": "Servidor web Caddy 2 (HTTPS automático desativado em favor da CA do Forgebox)",
+      "has_service": true,
+      "id": "caddy",
+      "installed": [],
+      "latest": "2.11.7",
+      "name": "Caddy",
+      "policy": "auto-patch",
+      "update_available": null
+    },
+    {
+      "category": "devtool",
+      "current": null,
+      "description": "Gerenciador de dependências do PHP",
+      "has_service": false,
+      "id": "composer",
+      "installed": [],
+      "latest": "2.10.3",
+      "name": "Composer",
+      "policy": "auto-minor",
+      "update_available": null
+    },
+    {
+      "category": "mail",
+      "current": null,
+      "description": "Catcher de e-mail local (SMTP + UI web)",
+      "has_service": true,
+      "id": "mailpit",
+      "installed": [],
+      "latest": "1.32.0",
+      "name": "Mailpit",
+      "policy": "auto-minor",
+      "update_available": null
+    },
+    {
+      "category": "database",
+      "current": null,
+      "description": "MariaDB Server",
+      "has_service": true,
+      "id": "mariadb",
+      "installed": [],
+      "latest": "11.8.9",
+      "name": "MariaDB",
+      "policy": "notify",
+      "update_available": null
+    },
+    {
+      "category": "cache",
+      "current": null,
+      "description": "Redis-compatível nativo para Windows (Memurai Developer)",
+      "has_service": true,
+      "id": "memurai",
+      "installed": [],
+      "latest": "4.3.2",
+      "name": "Memurai Developer",
+      "policy": "notify",
+      "update_available": null
+    },
+    {
+      "category": "database",
+      "current": null,
+      "description": "MySQL Community Server",
+      "has_service": true,
+      "id": "mysql",
+      "installed": [],
+      "latest": "8.4.13",
+      "name": "MySQL",
+      "policy": "notify",
+      "update_available": null
+    },
+    {
+      "category": "webserver",
+      "current": null,
+      "description": "Nginx para Windows (builds nginx.org)",
+      "has_service": true,
+      "id": "nginx",
+      "installed": [],
+      "latest": "1.31.8",
+      "name": "Nginx",
+      "policy": "auto-patch",
+      "update_available": null
+    },
+    {
+      "category": "runtime",
+      "current": null,
+      "description": "Node.js (builds oficiais nodejs.org)",
+      "has_service": false,
+      "id": "nodejs",
+      "installed": [],
+      "latest": "22.23.4",
+      "name": "Node.js",
+      "policy": "auto-patch",
+      "update_available": null
+    },
+    {
+      "category": "runtime",
+      "current": null,
+      "description": "Linguagem PHP (builds oficiais Windows)",
+      "has_service": true,
+      "id": "php",
+      "installed": [
+        {
+          "canonical_name": "8.4.27-nts-vs17-x64",
+          "id": "01FORGEBOXFIXTURE000000001",
+          "installed_at": null,
+          "is_current": false,
+          "path": "C:/Forgebox/bin/php/8.4.27-nts-vs17-x64",
+          "size_bytes": null,
+          "source": "manual",
+          "state": "installed",
+          "tool": "php",
+          "variant": {
+            "arch": "x64",
+            "compiler": "vs17",
+            "ts": "nts"
+          },
+          "version": "8.4.27"
+        }
+      ],
+      "latest": null,
+      "name": "PHP",
+      "policy": "auto-patch",
+      "update_available": null
+    },
+    {
+      "category": "database",
+      "current": null,
+      "description": "PostgreSQL (binários EDB)",
+      "has_service": true,
+      "id": "postgresql",
+      "installed": [],
+      "latest": "18.6",
+      "name": "PostgreSQL",
+      "policy": "notify",
+      "update_available": null
+    }
+  ]
+}

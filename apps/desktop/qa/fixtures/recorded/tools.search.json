@@ -1,0 +1,481 @@
+{
+  "entries": [
+    {
+      "category": "webserver",
+      "color": "#D22128",
+      "description": "Apache httpd 2.4 (builds Apache Lounge)",
+      "icon_sha256": "1466286a101be0ea769dfe456997b736efaf3cbe5807702bbe39c0fec2af853a",
+      "id": "apache",
+      "installed": false,
+      "kind": "tool",
+      "latest": "2.4.69",
+      "name": "Apache HTTP Server",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 57671680,
+      "summary": "Apache httpd 2.4 (builds Apache Lounge)",
+      "tags": [
+        "apache",
+        "httpd",
+        "webserver",
+        "htaccess"
+      ],
+      "update_available": null,
+      "versions": [
+        "2.4.69"
+      ]
+    },
+    {
+      "category": "webserver",
+      "color": "#1F88C0",
+      "description": "Servidor web Caddy 2 (HTTPS automático desativado em favor da CA do Forgebox)",
+      "icon_sha256": "2092d7b60a0172dcec6ef120372b243338a808c89647e17d070b297b95be3152",
+      "id": "caddy",
+      "installed": false,
+      "kind": "tool",
+      "latest": "2.11.7",
+      "name": "Caddy",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 47185920,
+      "summary": "Servidor web Caddy 2 (HTTPS automático desativado em favor da CA do Forgebox)",
+      "tags": [
+        "caddy",
+        "webserver",
+        "proxy"
+      ],
+      "update_available": null,
+      "versions": [
+        "2.11.7"
+      ]
+    },
+    {
+      "category": "devtool",
+      "color": "#885630",
+      "description": "Gerenciador de dependências do PHP",
+      "icon_sha256": "2092d7b60a0172dcec6ef120372b243338a808c89647e17d070b297b95be3152",
+      "id": "composer",
+      "installed": false,
+      "kind": "tool",
+      "latest": "2.10.3",
+      "name": "Composer",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 4194304,
+      "summary": "Gerenciador de dependências do PHP",
+      "tags": [
+        "composer",
+        "php",
+        "packages"
+      ],
+      "update_available": null,
+      "versions": [
+        "2.10.3"
+      ]
+    },
+    {
+      "category": "mail",
+      "color": "#2F8CF5",
+      "description": "Catcher de e-mail local (SMTP + UI web)",
+      "icon_sha256": "94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3",
+      "id": "mailpit",
+      "installed": false,
+      "kind": "tool",
+      "latest": "1.32.0",
+      "name": "Mailpit",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 31457280,
+      "summary": "Catcher de e-mail local (SMTP + UI web)",
+      "tags": [
+        "mail",
+        "smtp",
+        "mailpit",
+        "testing"
+      ],
+      "update_available": null,
+      "versions": [
+        "1.32.0"
+      ]
+    },
+    {
+      "category": "database",
+      "color": "#C0765A",
+      "description": "MariaDB Server",
+      "icon_sha256": "94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3",
+      "id": "mariadb",
+      "installed": false,
+      "kind": "tool",
+      "latest": "11.8.9",
+      "name": "MariaDB",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 419430400,
+      "summary": "MariaDB Server",
+      "tags": [
+        "mariadb",
+        "mysql",
+        "sql",
+        "database"
+      ],
+      "update_available": null,
+      "versions": [
+        "11.8.9"
+      ]
+    },
+    {
+      "category": "cache",
+      "color": "#D82C20",
+      "description": "Redis-compatível nativo para Windows (Memurai Developer)",
+      "icon_sha256": "94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3",
+      "id": "memurai",
+      "installed": false,
+      "kind": "tool",
+      "latest": "4.3.2",
+      "name": "Memurai Developer",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 26214400,
+      "summary": "Redis-compatível nativo para Windows (Memurai Developer)",
+      "tags": [
+        "redis",
+        "cache",
+        "queue",
+        "memurai"
+      ],
+      "update_available": null,
+      "versions": [
+        "4.3.2"
+      ]
+    },
+    {
+      "category": "database",
+      "color": "#00758F",
+      "description": "MySQL Community Server",
+      "icon_sha256": "94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3",
+      "id": "mysql",
+      "installed": false,
+      "kind": "tool",
+      "latest": "8.4.13",
+      "name": "MySQL",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 650117120,
+      "summary": "MySQL Community Server",
+      "tags": [
+        "mysql",
+        "sql",
+        "database"
+      ],
+      "update_available": null,
+      "versions": [
+        "8.4.13"
+      ]
+    },
+    {
+      "category": "webserver",
+      "color": "#009639",
+      "description": "Nginx para Windows (builds nginx.org)",
+      "icon_sha256": "61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c",
+      "id": "nginx",
+      "installed": false,
+      "kind": "tool",
+      "latest": "1.31.8",
+      "name": "Nginx",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 6291456,
+      "summary": "Nginx para Windows (builds nginx.org)",
+      "tags": [
+        "nginx",
+        "webserver",
+        "proxy",
+        "fastcgi"
+      ],
+      "update_available": null,
+      "versions": [
+        "1.31.8"
+      ]
+    },
+    {
+      "category": "runtime",
+      "color": "#5FA04E",
+      "description": "Node.js (builds oficiais nodejs.org)",
+      "icon_sha256": "61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c",
+      "id": "nodejs",
+      "installed": false,
+      "kind": "tool",
+      "latest": "22.23.4",
+      "name": "Node.js",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 94371840,
+      "summary": "Node.js (builds oficiais nodejs.org)",
+      "tags": [
+        "node",
+        "javascript",
+        "npm"
+      ],
+      "update_available": null,
+      "versions": [
+        "22.23.4"
+      ]
+    },
+    {
+      "category": "runtime",
+      "color": "#777BB4",
+      "description": "Linguagem PHP (builds oficiais Windows)",
+      "icon_sha256": "4e00f80604d5a129006e91171ed996656d6fad1f842551ad18f5a6ea4c7dcbec",
+      "id": "php",
+      "installed": true,
+      "kind": "tool",
+      "latest": null,
+      "name": "PHP",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 36700160,
+      "summary": "Linguagem PHP (builds oficiais Windows)",
+      "tags": [
+        "php",
+        "language",
+        "fastcgi"
+      ],
+      "update_available": null,
+      "versions": []
+    },
+    {
+      "category": "database",
+      "color": "#336791",
+      "description": "PostgreSQL (binários EDB)",
+      "icon_sha256": "4e00f80604d5a129006e91171ed996656d6fad1f842551ad18f5a6ea4c7dcbec",
+      "id": "postgresql",
+      "installed": false,
+      "kind": "tool",
+      "latest": "18.6",
+      "name": "PostgreSQL",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 1048576000,
+      "summary": "PostgreSQL (binários EDB)",
+      "tags": [
+        "postgresql",
+        "postgres",
+        "sql",
+        "database"
+      ],
+      "update_available": null,
+      "versions": [
+        "18.6"
+      ]
+    },
+    {
+      "category": "devtool",
+      "color": null,
+      "description": "Depurador e profiler para PHP",
+      "icon_sha256": "f9279825372dd4eeea8de24a7efa0aecc0a8b5ebf8b0f04a7d4b901289074565",
+      "id": "xdebug",
+      "installed": false,
+      "kind": "extension",
+      "latest": "3.5.3",
+      "name": "Xdebug",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": null,
+      "summary": "Depurador e profiler para PHP",
+      "tags": [
+        "php",
+        "debug",
+        "profiler"
+      ],
+      "update_available": null,
+      "versions": [
+        "3.5.3"
+      ]
+    },
+    {
+      "category": null,
+      "color": null,
+      "description": "PHP 8.4 + Nginx + MySQL 8.4 + Memurai + Mailpit + Node 22",
+      "icon_sha256": "933015c345a901df9bdb864b40ea3cfebef79fad6023348b1f97dd31ee463ad6",
+      "id": "laravel",
+      "installed": false,
+      "kind": "stack",
+      "latest": null,
+      "name": "Laravel",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 849346560,
+      "summary": "PHP 8.4 + Nginx + MySQL 8.4 + Memurai + Mailpit + Node 22",
+      "tags": [
+        "php",
+        "laravel",
+        "mysql",
+        "redis",
+        "onboarding"
+      ],
+      "update_available": null,
+      "versions": []
+    },
+    {
+      "category": null,
+      "color": null,
+      "description": "PHP 8.3 + Apache + MariaDB 11.8 + Mailpit",
+      "icon_sha256": "5fd2e529f68b76ba46b2963cb066f78fda7587b9f996056da12d3da3545eada3",
+      "id": "wordpress",
+      "installed": false,
+      "kind": "stack",
+      "latest": null,
+      "name": "WordPress",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 549453824,
+      "summary": "PHP 8.3 + Apache + MariaDB 11.8 + Mailpit",
+      "tags": [
+        "php",
+        "wordpress",
+        "mariadb",
+        "cms",
+        "onboarding"
+      ],
+      "update_available": null,
+      "versions": []
+    },
+    {
+      "category": null,
+      "color": null,
+      "description": "PHP 8.4 + Composer + Nginx + MySQL 8.4 + Mailpit",
+      "icon_sha256": "4e00f80604d5a129006e91171ed996656d6fad1f842551ad18f5a6ea4c7dcbec",
+      "id": "php",
+      "installed": true,
+      "kind": "stack",
+      "latest": null,
+      "name": "PHP genérico",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 728760320,
+      "summary": "PHP 8.4 + Composer + Nginx + MySQL 8.4 + Mailpit",
+      "tags": [
+        "php",
+        "generic",
+        "mysql",
+        "onboarding"
+      ],
+      "update_available": null,
+      "versions": []
+    },
+    {
+      "category": null,
+      "color": null,
+      "description": "Node 22 + Nginx como proxy reverso",
+      "icon_sha256": "61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c",
+      "id": "nextjs",
+      "installed": false,
+      "kind": "stack",
+      "latest": null,
+      "name": "Next.js",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 100663296,
+      "summary": "Node 22 + Nginx como proxy reverso",
+      "tags": [
+        "node",
+        "nextjs",
+        "react",
+        "proxy",
+        "onboarding"
+      ],
+      "update_available": null,
+      "versions": []
+    },
+    {
+      "category": null,
+      "color": null,
+      "description": "PHP 8.3 + Composer + Apache + MySQL 8.4",
+      "icon_sha256": "2092d7b60a0172dcec6ef120372b243338a808c89647e17d070b297b95be3152",
+      "id": "cakephp",
+      "installed": false,
+      "kind": "stack",
+      "latest": null,
+      "name": "CakePHP",
+      "native": true,
+      "official": true,
+      "platforms": [
+        "windows-x64"
+      ],
+      "registry": "official",
+      "size_estimate_bytes": 748683264,
+      "summary": "PHP 8.3 + Composer + Apache + MySQL 8.4",
+      "tags": [
+        "php",
+        "cakephp",
+        "mysql"
+      ],
+      "update_available": null,
+      "versions": []
+    }
+  ]
+}

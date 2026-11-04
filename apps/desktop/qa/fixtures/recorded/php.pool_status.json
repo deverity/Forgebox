@@ -1,0 +1,23 @@
+{
+  "pools": [
+    {
+      "busy_workers": 0,
+      "max_workers": 12,
+      "min_workers": 2,
+      "ports": [
+        19000,
+        19001
+      ],
+      "requests_total": 6,
+      "rss_bytes": 7708672,
+      "series": "8.4",
+      "sites": 2,
+      "state": "running",
+      "upstream": "php_8_4",
+      "version": "8.4.27",
+      "version_id": "01FORGEBOXFIXTURE000000001",
+      "workers": 2,
+      "xdebug": false
+    }
+  ]
+}

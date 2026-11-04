@@ -51,5 +51,6 @@ if ($OfflineDeny) {
 }
 Invoke-Step 'cargo xtask schema' { cargo xtask schema }
 Invoke-Step 'cargo xtask gen-ts' { cargo xtask gen-ts }
+Invoke-Step 'cargo xtask qa-fixtures --only not-implemented' { cargo xtask qa-fixtures --only not-implemented }
 Invoke-Step 'generated artifacts are committed' { git diff --exit-code }
 Write-Host 'CI OK'
