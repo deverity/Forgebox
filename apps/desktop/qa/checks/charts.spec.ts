@@ -57,27 +57,40 @@ const MODES = [
   { name: "dark-vibrancy-off", theme: "dark", vibrancy: "off" },
 ] as const;
 
-for (const mode of MODES) {
-  for (const dpr of [1, 1.25, 1.5]) {
-    test(`charts render crisp at DPR ${String(dpr)}: ${mode.name}`, async ({ page }) => {
-      await emulate(page, { colorScheme: mode.theme, deviceScaleFactor: dpr });
-      await open(page, { points: "300" }, { theme: mode.theme, vibrancy: mode.vibrancy });
-      await waitDrawn(page);
-      const facts = await canvasFacts(page);
-      expect(facts.length).toBe(4);
-      for (const c of facts) {
-        expect(c.dpr).toBe(dpr);
-        expect(Math.abs(c.width - c.cssWidth * dpr)).toBeLessThanOrEqual(1);
-        expect(c.painted).toBeGreaterThan(0);
-      }
-      mkdirSync(SHOTS, { recursive: true });
-      await page.screenshot({
-        path: path.join(SHOTS, `${mode.name}-${String(dpr)}x.png`),
-        animations: "disabled",
-        fullPage: true,
+/** PNG width from the IHDR chunk. */
+function pngWidth(buf: Buffer): number {
+  return buf.readUInt32BE(16);
+}
+
+// Playwright owns the DPR (a real context deviceScaleFactor), so the screenshot is taken at
+// that DPR too; the PNG width assertion fails on any silent fallback to DPR 1.
+for (const dpr of [1, 1.25, 1.5]) {
+  test.describe(`DPR ${String(dpr)}`, () => {
+    test.use({ deviceScaleFactor: dpr });
+    for (const mode of MODES) {
+      test(`charts render crisp at DPR ${String(dpr)}: ${mode.name}`, async ({ page }) => {
+        await emulate(page, { colorScheme: mode.theme });
+        await open(page, { points: "300" }, { theme: mode.theme, vibrancy: mode.vibrancy });
+        await waitDrawn(page);
+        const facts = await canvasFacts(page);
+        expect(facts.length).toBe(4);
+        for (const c of facts) {
+          expect(c.dpr).toBe(dpr);
+          expect(Math.abs(c.width - c.cssWidth * dpr)).toBeLessThanOrEqual(1);
+          expect(c.painted).toBeGreaterThan(0);
+        }
+        mkdirSync(SHOTS, { recursive: true });
+        const buf = await page.screenshot({
+          path: path.join(SHOTS, `${mode.name}-${String(dpr)}x.png`),
+          animations: "disabled",
+          fullPage: true,
+        });
+        const viewport = page.viewportSize();
+        expect(viewport).not.toBeNull();
+        expect(pngWidth(buf)).toBe(Math.round((viewport?.width ?? 0) * dpr));
       });
-    });
-  }
+    }
+  });
 }
 
 test("re-themes in place when the theme attribute changes", async ({ page }) => {
