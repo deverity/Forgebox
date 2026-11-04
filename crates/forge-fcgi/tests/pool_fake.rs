@@ -388,6 +388,69 @@ async fn leaving_workers_serve_until_the_listener_applied_the_change() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_reload_while_a_replacement_starts_replaces_it_too() {
+    let _serial = SERIAL.lock().await;
+    let fx = fixture("php_8_3");
+    let mut events = fx.bus.subscribe();
+    let mut spec = fake_spec(fx.root.path(), "8.3.99", "8.3");
+    spec.scaling = Scaling {
+        min: 1,
+        max: 1,
+        idle_timeout: Duration::from_secs(60),
+    };
+    // Workers take a while to bind: the replacement of the first reload is still
+    // starting (and may have read the old php.ini) when the second one comes.
+    spec.env.set("FAKE_LISTEN_DELAY_MS", "1500");
+    let pool = fx.spawn(spec);
+    pool.start(ASK).await.unwrap();
+    settled(&fx, 1).await;
+    let first = pool.status(ASK).await.unwrap().workers[0].pid.unwrap();
+
+    assert_eq!(pool.reload(ASK).await.unwrap(), 1);
+    let starting = pool.status(ASK).await.unwrap();
+    assert_eq!(starting.count(WorkerPhase::Starting), 1, "{starting:?}");
+    // The old worker is already being replaced; the starting one is marked.
+    assert_eq!(pool.reload(ASK).await.unwrap(), 1);
+
+    let mut reloads = || {
+        of_kind(&drain(&mut events), EventKind::PoolWorkerRecycled)
+            .into_iter()
+            .filter(|e| e.payload["reason"] == "reload")
+            .map(|e| e.payload["pid"].as_u64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    let mut recycled = Vec::new();
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while recycled.len() < 2 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the second reload never replaced the starting worker: {recycled:?}"
+        );
+        recycled.extend(reloads());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let done = pool
+        .wait_for(
+            |s| s.workers.len() == 1 && s.count(WorkerPhase::Active) == 1,
+            WAIT,
+        )
+        .await
+        .unwrap();
+    let last = done.workers[0].pid.unwrap();
+    assert_eq!(recycled[0], u64::from(first), "{recycled:?}");
+    assert_ne!(recycled[1], u64::from(first), "{recycled:?}");
+    assert!(!recycled.contains(&u64::from(last)), "{recycled:?} {last}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    recycled.extend(reloads());
+    assert_eq!(
+        recycled.len(),
+        2,
+        "one replacement per worker: {recycled:?}"
+    );
+    pool.stop(ASK).await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn blue_green_swap_under_load_drains_the_old_pool() {
     let _serial = SERIAL.lock().await;
     let fx = fixture("php_8_3");
