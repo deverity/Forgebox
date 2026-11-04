@@ -322,7 +322,7 @@ Forgebox/
 │       │   ├── app/              # appearance.ts (M2-E1-T7: data-theme/data-vibrancy/data-effect/data-contrast em <html>,
 │       │   │                     #   boot por window.__FORGEBOX_SHELL__ + evento forge://appearance); shell/ (M2-E1-T7: Titlebar.tsx,
 │       │   │                     #   WindowControls.tsx, windowApi.ts = janela Tauri lazy + `ready` após duplo rAF);
-│       │   │                     #   router.tsx + routes/ (M2-E1-T10: rotas lazy, uma por arquivo), shell/ (AppShell, Sidebar, StatusBar,
+│       │   │                     #   router.tsx + routes/ (M2-E1-T10: rotas lazy, uma por arquivo), shell/ (AppShell, Sidebar + SidebarStatus,
 │       │   │                     #   ConnectionBanner, StartAll, ContextSelector, trayBridge), features.ts + slots.ts (abas/seções por épico),
 │       │   │                     #   palette/ (M2-E1-T14: CommandPalette em cmdk, PaletteHost, registro de entradas), shortcuts/ (registro de
 │       │   │                     #   atalhos do §8 com sobrescritas), gallery/ (`/__gallery`, só fora de produção; as 25 primitives do §6)
