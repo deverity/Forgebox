@@ -3,7 +3,7 @@
 # (apps/desktop/e2e/live/fixture.mjs), driven over WebView2's CDP port by Playwright
 # (apps/desktop/e2e/live/*.spec.ts).
 #
-#   powershell -NoProfile -File scripts/gui-e2e.ps1 [-SkipBuild] [-KeepTemp] [-Release] [-Grep <text>]
+#   powershell -NoProfile -File scripts/gui-e2e.ps1 [-Suite e2|e3] [-SkipBuild] [-KeepTemp] [-Release] [-Grep <text>]
 #
 # Scenarios (serial, one app session): onboarding with a fixture stack, services start/stop, site
 # add, live PHP switch between two fake versions, a quick setting, an extension toggle, catalog
@@ -15,6 +15,9 @@
 # WebView2 children, daemon, fake services, fixture servers) and removes the temp folder; the
 # script fails if anything is left behind.
 param(
+    # e2: the E2 screens against the stock forgeboxd (M2-E2-T20). e3: the E3 screens against
+    # examples/live_daemon (a forgeboxd with a memory trust store and a fake UAC, M2-E3-T21).
+    [ValidateSet('e2', 'e3')][string]$Suite = 'e2',
     [switch]$SkipBuild,
     [switch]$KeepTemp,
     [switch]$Release,
@@ -25,7 +28,7 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $desktop = Join-Path $repo 'apps\desktop'
 $profileDir = if ($Release) { 'release' } else { 'debug' }
 $exe = Join-Path $repo "target\$profileDir\Forgebox.exe"
-$daemon = Join-Path $repo "target\$profileDir\forgeboxd.exe"
+$daemon = if ($Suite -eq 'e3') { Join-Path $repo "target\$profileDir\examples\live_daemon.exe" } else { Join-Path $repo "target\$profileDir\forgeboxd.exe" }
 $forge = Join-Path $repo "target\$profileDir\forge.exe"
 $probe = Join-Path $repo 'scripts\qa\window-probe.ps1'
 $capture = Join-Path $repo 'scripts\qa\capture-window.ps1'
@@ -57,7 +60,7 @@ if (-not $SkipBuild) {
         Invoke-Cargo @('build', '-p', 'forgebox-desktop', '--features', 'custom-protocol', '--bin', 'Forgebox')
     }
     Invoke-Step "cargo build forgeboxd, forge, live_seed ($profileDir)" {
-        Invoke-Cargo @('build', '-p', 'forge-daemon', '--bin', 'forgeboxd', '--example', 'live_seed')
+        Invoke-Cargo @('build', '-p', 'forge-daemon', '--bin', 'forgeboxd', '--example', 'live_seed', '--example', 'live_daemon')
         if ($LASTEXITCODE -eq 0) { Invoke-Cargo @('build', '-p', 'forge-cli', '--bin', 'forge') }
         if ($LASTEXITCODE -eq 0) { Invoke-Cargo @('build', '-p', 'xtask') }
     }
@@ -66,6 +69,7 @@ foreach ($f in @($exe, $daemon, $forge)) { if (-not (Test-Path $f)) { throw "mis
 
 $fixtureArgs = @('create', '--repo', $repo)
 if ($Release) { $fixtureArgs += '--release' }
+if ($Suite -eq 'e3') { $fixtureArgs += '--no-portable' }
 $ctx = (node (Join-Path $desktop 'e2e\live\fixture.mjs') @fixtureArgs) | ConvertFrom-Json
 if (-not $ctx.base) { throw 'fixture.mjs create printed no root' }
 $base = $ctx.base
@@ -125,6 +129,8 @@ try {
     $env:FORGE_E2E_PROJECT = $ctx.project
     $env:FORGE_E2E_STALL_PORT = "$($ctx.stallPort)"
     $env:FORGE_E2E_DAEMON_EXE = $daemon
+    $env:FORGE_E2E_QUEUE = $ctx.queue
+    $env:FORGE_E2E_SUITE = $Suite
 
     Write-Host '==> playwright (live suite over CDP)'
     if ($Grep -ne '') { pnpm -C $desktop e2e:live --grep $Grep } else { pnpm -C $desktop e2e:live }
@@ -144,7 +150,7 @@ catch {
     $exit = 1
 }
 finally {
-    foreach ($v in 'FORGE_E2E_CDP_PORT', 'FORGE_E2E_EXE', 'FORGE_E2E_ROOT', 'FORGE_E2E_GUI_PID', 'FORGE_E2E_PROBE', 'FORGE_E2E_FORGE', 'FORGE_E2E_PROJECT', 'FORGE_E2E_STALL_PORT', 'FORGE_E2E_DAEMON_EXE', 'FORGEBOX_ROOT',
+    foreach ($v in 'FORGE_E2E_CDP_PORT', 'FORGE_E2E_EXE', 'FORGE_E2E_ROOT', 'FORGE_E2E_GUI_PID', 'FORGE_E2E_PROBE', 'FORGE_E2E_FORGE', 'FORGE_E2E_PROJECT', 'FORGE_E2E_STALL_PORT', 'FORGE_E2E_DAEMON_EXE', 'FORGE_E2E_QUEUE', 'FORGE_E2E_SUITE', 'FORGEBOX_ROOT',
         'FORGE_GUI_DATA_DIR', 'FORGEBOX_OFFICIAL_REGISTRY', 'FORGE_DAEMON_EXE', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS') {
         Remove-Item "Env:\$v" -ErrorAction SilentlyContinue
     }

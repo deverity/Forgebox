@@ -5,6 +5,7 @@ import { startInstance } from "../../../../actions/services";
 import { ActionButton } from "../../../../design/primitives/ActionButton";
 import { AsyncView } from "../../../../design/primitives/AsyncView";
 import { Select } from "../../../../design/primitives/Select";
+import { FOCUS_RING } from "../../../../design/primitives/shared";
 import { useConnectionStatus, useForgeQuery, useRuntime, useSite } from "../../../../state";
 import { ConnectionStrings } from "../../../databases/ConnectionPopover";
 import { CreateForm } from "../../../databases/CreateForm";
@@ -113,7 +114,7 @@ export function DatabaseTab({ siteId }: { siteId: string }) {
             />
           )}
           <TransferList instance={current.instance} />
-          <Link to={DATABASES_PATH} className="text-callout text-accent underline">
+          <Link to={DATABASES_PATH} className={`text-callout text-accent underline ${FOCUS_RING}`}>
             {t("siteTab.open")}
           </Link>
         </div>

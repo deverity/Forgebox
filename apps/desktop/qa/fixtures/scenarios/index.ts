@@ -294,6 +294,19 @@ export function registerQaScenarios(): void {
     handlers: createFilesystemQa().handlers,
   });
   define("heavy", heavyData(500, 50), {}, eventStorm(50, 10));
+  // Populated data with the three site-tab methods failing (M2-E3-T21): Banco (`db.list`),
+  // Ambiente (`sites.env`) and Processos (`sites.ps`) must show cause + action, not a blank tab.
+  define("tab-errors", populatedData(), {
+    latencyMs: 0,
+    notImplemented: NOT_IMPLEMENTED.map((row) => row.method),
+    handlers: Object.fromEntries(
+      ["db.list", "sites.env", "sites.ps"].map((method) => [
+        method,
+        () =>
+          fakeError("internal", `${method} failed (scenario tab-errors)`, "fake_error", { method }),
+      ]),
+    ),
+  });
   define("slow", populatedData(), builtin("slow"));
   define("remote", populatedData(), builtin("remote"));
 }

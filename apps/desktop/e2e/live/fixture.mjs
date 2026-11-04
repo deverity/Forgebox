@@ -45,7 +45,10 @@ function freePort() {
 }
 
 function compile(repo, name, out) {
-    const src = join(repo, "crates", "forge-daemon", "tests", "fixtures", `${name}.rs`);
+    // A single file (`name.rs`) or a small project folder (`name/main.rs`).
+    const fixtures = join(repo, "crates", "forge-daemon", "tests", "fixtures");
+    const single = join(fixtures, `${name}.rs`);
+    const src = existsSync(single) ? single : join(fixtures, name, "main.rs");
     execFileSync("rustc", ["--edition", "2024", "-O", src, "-o", out], { stdio: "pipe" });
 }
 
@@ -120,14 +123,16 @@ function regenerateIndex(repo, dir) {
     else execFileSync("cargo", ["xtask", ...args], { stdio: "pipe", cwd: repo });
 }
 
-export async function createLiveRoot({ repo = repoRoot, profile = "debug" } = {}) {
+// `portable: false` (E3 suite): a root without portable.flag, so the daemon offers the CA install
+// and the PATH checks; the live daemon's trust store is in memory, nothing reaches Windows.
+export async function createLiveRoot({ repo = repoRoot, profile = "debug", portable = true } = {}) {
     const base = mkdtempSync(join(tmpdir(), "forgebox-live-"));
     const root = join(base, "root");
     const gui = join(base, "gui");
     const registry = join(base, "registry");
     const fakes = join(base, "fakes");
     for (const d of [join(root, "etc"), join(root, "state"), gui, fakes]) mkdirSync(d, { recursive: true });
-    writeFileSync(join(root, "portable.flag"), "");
+    if (portable) writeFileSync(join(root, "portable.flag"), "");
 
     const ports = {
         tlsCrl: await freePort(),
@@ -147,7 +152,7 @@ export async function createLiveRoot({ repo = repoRoot, profile = "debug" } = {}
 
     // Fake tools.
     const exes = {};
-    for (const name of ["fake_php", "fake_nginx", "fake_mysqld", "fake_mailpit"]) {
+    for (const name of ["fake_php", "fake_nginx", "fake_mysqld", "fake_mailpit", "fake_db_client"]) {
         exes[name] = join(fakes, `${name}.exe`);
         compile(repo, name, exes[name]);
     }
@@ -166,6 +171,14 @@ export async function createLiveRoot({ repo = repoRoot, profile = "debug" } = {}
     const mysql = join(root, "bin", "mysql", "8.4.13", "bin");
     put(mysql, "mysqld.exe", exes.fake_mysqld);
     put(mysql, "mysqladmin.exe", exes.fake_mysqld);
+    // The database client doubles (E3 live suite, M2-E3-T21): `mysql.exe` answers list/create/drop
+    // from a text file, `mysqldump.exe` prints deterministic SQL sized by `dump.txt` and, with
+    // `restore.txt` present, `mysql.exe` without a statement is the import (see
+    // crates/forge-daemon/tests/fixtures/fake_db_client/main.rs).
+    put(mysql, "mysql.exe", exes.fake_db_client);
+    put(mysql, "mysqldump.exe", exes.fake_db_client);
+    writeFileSync(join(mysql, "dump.txt"), "1048576");
+    writeFileSync(join(mysql, "restore.txt"), "0");
     const mailpit = join(root, "bin", "mailpit", "1.32.0");
     put(mailpit, "mailpit.exe", exes.fake_mailpit);
     writeFileSync(join(mailpit, "fake-mode.txt"), "polite");
@@ -174,6 +187,20 @@ export async function createLiveRoot({ repo = repoRoot, profile = "debug" } = {}
     const project = join(base, "projects", "loja");
     mkdirSync(project, { recursive: true });
     writeFileSync(join(project, "index.php"), "<?php echo 'ok';\n");
+
+    // A project with a site whose access log the Logs scenario reads (E3 live suite).
+    const queue = join(base, "projects", "queue");
+    mkdirSync(queue, { recursive: true });
+    writeFileSync(join(queue, "index.php"), "<?php echo 'queue';\n");
+    const projectYaml = [
+        "apiVersion: forgebox.dev/v1",
+        "kind: Project",
+        "metadata: { name: queue }",
+        "spec:",
+        "  site: { host: queue.test, aliases: [www.queue.test], secure: false }",
+        "",
+    ].join("\n");
+    writeFileSync(join(queue, "forgebox.yaml"), projectYaml);
 
     // Fixture registry.
     cpSync(join(repo, "registry"), registry, { recursive: true });
@@ -192,6 +219,7 @@ export async function createLiveRoot({ repo = repoRoot, profile = "debug" } = {}
         registry,
         repo,
         project,
+        queue,
         stallPort,
         xdebugPort: ports.xdebug,
         indexSha: sha256(readFileSync(join(registry, "index.yaml"))),
@@ -208,6 +236,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const ctx = await createLiveRoot({
         repo: at >= 0 ? resolve(args[at + 1]) : repoRoot,
         profile: args.includes("--release") ? "release" : "debug",
+        portable: !args.includes("--no-portable"),
     });
     process.stdout.write(`${JSON.stringify(ctx)}\n`);
 }
