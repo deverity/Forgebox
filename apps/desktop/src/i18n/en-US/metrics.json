@@ -55,5 +55,39 @@
   },
   "cli": {
     "label": "Same thing in the terminal"
+  },
+  "charts": {
+    "loading": "Loading chart",
+    "empty": {
+      "title": "No data yet",
+      "description": "Traffic will show up here as soon as the site gets requests."
+    },
+    "latency": {
+      "title": "Latency"
+    },
+    "throughput": {
+      "title": "Requests and errors"
+    },
+    "resource": {
+      "title": "CPU and memory"
+    },
+    "series": {
+      "rps": "Requests/s"
+    },
+    "summary": {
+      "caption": "{title}: summary",
+      "series": "Series",
+      "latest": "Latest",
+      "peak": "Peak"
+    },
+    "markers": {
+      "php-version": "PHP version changed",
+      "restart": "Restart",
+      "config": "Config changed",
+      "update": "Update"
+    },
+    "sparkline": {
+      "label": "Last {count} samples, latest {latest}, peak {peak}"
+    }
   }
 }

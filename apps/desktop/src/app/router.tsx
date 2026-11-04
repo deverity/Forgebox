@@ -1,6 +1,6 @@
 // The route tree (ADR-0034 section 6): TanStack Router, code-based, one route file per feature
 // in `routes/`, every feature screen a lazy chunk. `/diagnostics` is routed but not in the
-// sidebar; `/onboarding` is the first-run gate; `/__gallery` exists outside production builds.
+// sidebar; `/onboarding` is the first-run gate; `/__gallery` and `/__charts` exist outside production builds.
 import { createMemoryHistory, createRouter, type RouterHistory } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { SPINNER_INLINE } from "../design/primitives/shared";
@@ -8,6 +8,7 @@ import { catalogRoute, catalogToolRoute } from "./routes/catalog";
 import { dashboardRoute } from "./routes/dashboard";
 import { databasesRoute } from "./routes/databases";
 import { diagnosticsRoute } from "./routes/diagnostics";
+import { chartsRoute } from "./routes/charts";
 import { galleryRoute } from "./routes/gallery";
 import { logsRoute } from "./routes/logs";
 import { mailRoute } from "./routes/mail";
@@ -36,6 +37,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   chromeRoute.addChildren([onboardingRoute]),
   ...(galleryRoute === null ? [] : [galleryRoute]),
+  ...(chartsRoute === null ? [] : [chartsRoute]),
   ...(qaSelftestRoute === null ? [] : [qaSelftestRoute]),
   shellRoute.addChildren([
     dashboardRoute,

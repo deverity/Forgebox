@@ -17,10 +17,11 @@ import { useFirstFrameReady } from "../shell/windowApi";
 
 export const ONBOARDING_PATH = "/onboarding";
 export const GALLERY_PATH = "/__gallery";
+export const CHARTS_PATH = "/__charts";
 export const HOME_PATH = "/dashboard";
 
 /** Paths the onboarding gate leaves alone. */
-const UNGATED = new Set([ONBOARDING_PATH, GALLERY_PATH]);
+const UNGATED = new Set([ONBOARDING_PATH, GALLERY_PATH, CHARTS_PATH]);
 
 /**
  * The first-run gate (docs/07 section 5.1): a root that was never initialized has nothing to

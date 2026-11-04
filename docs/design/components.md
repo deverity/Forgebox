@@ -38,6 +38,9 @@ Todos recebem textos já localizados do chamador (props `label`, `hint`, `emptyT
 ### Button / IconButton
 - **Anatomia:** `<button>` 32 px de altura, borda 1 px, `radius-control`; conteúdo em grade de uma célula (`grid` + `col-start-1 row-start-1`) com dois blocos empilhados: o normal e o de loading (spinner inline de 16 px à esquerda + texto). IconButton é 32x32, ícone 16 px e `label` obrigatório (`aria-label` + `title`).
 - **Variantes** (visual mais leve do mockup aprovado, M2-E1-T23): `primary` (fundo sólido `accent`, texto `fg-on-accent`), `secondary` — o padrão — (preenchimento suave `fill`/`fill-hover`/`fill-pressed`, sem contorno), `ghost` (transparente até o hover), `destructive` (texto `state-failed`, sem a borda vermelha). Todas usam `border-stroke-control`, transparente fora do alto contraste. Mudou na primitiva, não por tela.
+- **Unidade de tempo:** os gráficos recebem `t` em segundos Unix (escala de tempo do uPlot), mas `MetricsPoint.t` da camada de dados (M2-E5-T14, `features/metrics/state`) é epoch em **milissegundos**: ao montar a série, `t: points.map((p) => p.t / 1000)`. Marcadores (`ChartMarker.t`) também em segundos.
+- **Reuso (T14):** textos no namespace `metrics`, sob `charts.*` (rótulos já existentes de T14 são reaproveitados: `stat.php`, `approx`); formatação por `useMetricsFormatters` (`ms`, `rps`, `percent`, `bytes`), `APPROX` e `NO_VALUE` de `features/metrics/format.ts`. `createFormatters` agora reutiliza `Intl.NumberFormat` por conjunto de opções (custo por atualização).
+- **Legenda:** no `figcaption`, `aria-hidden` (a tabela cobre leitores de tela): bolinha com a classe de token da série (`bg-accent`, `bg-state-starting`, `bg-state-failed`, `bg-state-updating`; `SWATCH` em `palette.ts`), nome e último valor de `summary`. O cursor do uPlot e a legenda nativa seguem desligados.
 - **Estados:** `loading` desabilita cliques, define `aria-busy` e mostra spinner + texto (nunca spinner sozinho, docs/07 §1.2): `loadingLabel` (já localizado pelo chamador) troca o texto, senão o rótulo normal continua visível. O bloco inativo fica `opacity-0` + `aria-hidden`, então o nome acessível é igual ao texto visível e a largura é o máximo dos dois (sem layout shift). Em `loading` o cursor é `progress` e a opacidade 100 %; `disabled` (sem loading) usa opacidade 50 % e `not-allowed`.
 - **Teclado:** Enter e Espaço (nativo).
 
@@ -135,6 +138,29 @@ Movimento: `Sheet`, `Popover`, `Menu`, `Tooltip` e `Toast` usam `surfaceMotion(k
 
 ### Skeleton
 - `Skeleton` tem altura fixa obrigatória; `SkeletonSlot` reserva a altura nos dois estados (`aria-busy`), então carregar → conteúdo não muda o layout. Pulso CSS só com `motion-safe`.
+
+## Gráficos de métricas (M2-E5-T15)
+
+`apps/desktop/src/features/metrics/charts/` ([docs/14 §4.1](../14-observability-metrics.md)). **Escolha: uPlot 1.6 (MIT, canvas)**, ~23 kB gz medidos no chunk lazy (todo o conjunto de gráficos: ~27 kB gz, orçamento 60 kB), em vez de SVG/React: 1.800 pontos por série atualizados a cada 2 s custam ~2 ms (mediana; atualização completa, com resumo, legenda e marcadores, máx. 3,0-3,9 ms no melhor de até 3 execuções) com canvas, e o DOM não cresce com os pontos. uPlot só é alcançável pelos wrappers `React.lazy` de `index.ts` (`LatencyBandChart`, `ThroughputErrorsChart`, `ResourceChart`, `ChartSparkline`); o consumidor os envolve em `Suspense` com um `Skeleton` da mesma altura.
+
+| Componente | Dados (colunares, `t` em **segundos** Unix, `null` = lacuna) | Desenho |
+|---|---|---|
+| LatencyBandChart | `p50`, `p90`, `p99` (ms), `php?` | três linhas com bandas p50-p90 e p90-p99 (`warn`/`danger` a 16 %), linha PHP tracejada opcional |
+| ThroughputErrorsChart | `rps`, `e4xx`, `e5xx` | áreas acumuladas 5xx (por trás) e 4xx, linha `rps` por cima (uPlot não empilha: a série 5xx recebe `4xx + 5xx`) |
+| ResourceChart | `cpu` (%), `ram` (bytes) | CPU no eixo esquerdo (0-100), RAM em escala própria no eixo direito; selo `≈` (`Badge`) no título: valores atribuídos |
+| MarkersOverlay | `ChartMarker {id, t, kind, detail?}` | `php-version` (token `tool-4`, distinto da linha p50 em `accent`), `restart`, `config`, `update`: linha fina + alça; cada alça é um `<button>` (Tab), com `Tooltip` que abre no foco; fora da janela visível não é desenhado |
+| ChartSparkline | `t`, `values` | variante compacta (120x32), sem eixos, `role="img"` com resumo |
+
+- **Unidade de tempo:** os gráficos recebem `t` em segundos Unix (escala de tempo do uPlot), mas `MetricsPoint.t` da camada de dados (M2-E5-T14, `features/metrics/state`) é epoch em **milissegundos**: ao montar a série, `t: points.map((p) => p.t / 1000)`. Marcadores (`ChartMarker.t`) também em segundos.
+- **Reuso (T14):** textos no namespace `metrics`, sob `charts.*` (rótulos já existentes de T14 são reaproveitados: `stat.php`, `approx`); formatação por `useMetricsFormatters` (`ms`, `rps`, `percent`, `bytes`), `APPROX` e `NO_VALUE` de `features/metrics/format.ts`. `createFormatters` agora reutiliza `Intl.NumberFormat` por conjunto de opções (custo por atualização).
+- **Legenda:** no `figcaption`, `aria-hidden` (a tabela cobre leitores de tela): bolinha com a classe de token da série (`bg-accent`, `bg-state-starting`, `bg-state-failed`, `bg-state-updating`; `SWATCH` em `palette.ts`), nome e último valor de `summary`. O cursor do uPlot e a legenda nativa seguem desligados.
+- **Estados:** `loading` (Skeleton), vazio (`EmptyState`) e dados ocupam o mesmo `SkeletonSlot` de altura fixa (200 px padrão), sem salto de layout. Resumo acessível: `<table class="sr-only">` com último e pico de cada série (os três percentis no gráfico de latência); o canvas é `aria-hidden`.
+- **Cores:** só de tokens. `palette.ts` lê as propriedades CSS (`--accent`, `--stroke`, `--fg-tertiary`, `--state-*`) do próprio elemento com `getComputedStyle` ao criar o gráfico; `useThemeKey` observa `data-theme`/`data-vibrancy`/`data-effect`/`data-contrast`, o accent do sistema e `prefers-color-scheme`, e o gráfico é recriado quando algo muda. Preenchimentos translúcidos usam `color-mix(in srgb, <token> N%, transparent)`. Nenhum literal de cor (lint `no-restricted-syntax` + teste que varre os fontes).
+- **Atualização:** dados novos entram por `setData` (no commit, sem recriar); a instância só é recriada com troca de tema/opções. Largura segue o contêiner por `ResizeObserver` (`setSize`). Formatadores de eixo são memoizados (`memoFormat`): criar `Intl.NumberFormat` por tick era o maior custo do redesenho.
+- **DPI:** o canvas usa o `devicePixelRatio` atual; na troca de DPR (zoom, outro monitor) o uPlot redesenha sozinho por uma media query de resolução (`dppxchange`). O DPR emulado por CDP não dispara essa query, então o QA deixa o Playwright dono do DPR (`test.use({ deviceScaleFactor })` por DPR 1, 1.25, 1.5: o contexto e o screenshot nascem nesse DPR), confere `canvas.width = largura CSS x DPR` e que a largura do PNG = viewport x DPR (um retorno silencioso a DPR 1 reprova).
+- **Marcadores ao vivo:** o layout é recalculado a cada desenho (hook `draw`) e também quando só a prop `markers` muda (última instância do uPlot em ref). Se os mesmos marcadores só deslizam (faixa x mudou), o `left` é escrito direto no DOM, sem re-render do overlay; só entrada/saída de marcador ou novo objeto passa por React. `onMarkerLayoutSettled` avisa o fim de cada desenho (o harness de perf conta até ali).
+- **Movimento:** o uPlot não anima; as alças dos marcadores só usam transição sob `motion-safe`.
+- **QA:** rota `/__charts` (dev/qa, `ChartsHarness`: dados determinísticos, `?state=loading|empty`, `?only=`, `?points=`, `?markers=off`); `qa/checks/charts.spec.ts` (shots em `qa/out/charts/` em claro, escuro e vibrancy-off x DPR 1/1.25/1.5, re-tematização em runtime, Tab nos marcadores, altura dos estados) e `qa/perf/charts-update.spec.ts` (`pnpm qa:perf`: 60 anexos de 1 ponto a 1.800 pontos, cada atualização < 4 ms).
 
 ## Cobertura da galeria (M2-E4-T6)
 
