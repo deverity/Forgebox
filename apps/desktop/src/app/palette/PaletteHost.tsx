@@ -34,6 +34,10 @@ export const globalShortcutBackend: { invoke: GlobalInvoke | null } = { invoke: 
 /**
  * Owns the palette and every in-app shortcut of docs/07 section 8, and plugs the global
  * terminal shortcuts. Mounted once by the shell.
+ *
+ * The host itself never suspends on the lazy `palette` namespace, so its listeners exist from the
+ * shell's first commit: a shortcut or a click on the search button while the texts load runs when
+ * they arrive instead of being lost. Only the parts that show text sit in a boundary.
  */
 export function PaletteHost() {
   const [open, setOpen] = useState(false);
@@ -44,6 +48,7 @@ export function PaletteHost() {
     setOpen((value) => !value);
   }, []);
   const actions = usePaletteActions(toggle);
+  const { ready } = useTranslation("palette", { useSuspense: false });
 
   // The saved overrides apply from the first interaction on (a failed read keeps the defaults).
   useEffect(() => {
@@ -61,15 +66,26 @@ export function PaletteHost() {
     };
   }, []);
 
-  useShortcuts(actions.handlers());
-  useGlobalShortcuts(actions.openTerminal);
+  useShortcuts(actions.handlers(), ready);
 
-  if (!mounted) return null;
   return (
-    <Suspense fallback={null}>
-      <CommandPalette open={open} onOpenChange={setOpen} actions={actions} />
-    </Suspense>
+    <>
+      <Suspense fallback={null}>
+        <GlobalShortcuts openTerminal={actions.openTerminal} />
+      </Suspense>
+      {mounted ? (
+        <Suspense fallback={null}>
+          <CommandPalette open={open} onOpenChange={setOpen} actions={actions} />
+        </Suspense>
+      ) : null}
+    </>
   );
+}
+
+/** Its failure toasts and label need the texts, so it starts once they are loaded. */
+function GlobalShortcuts({ openTerminal }: { openTerminal: (label: string) => Promise<boolean> }) {
+  useGlobalShortcuts(openTerminal);
+  return null;
 }
 
 /**

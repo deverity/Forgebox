@@ -1,5 +1,5 @@
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { Suspense, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { useHello, useRuntime } from "../../state";
 import { featureAt } from "../features";
@@ -57,12 +57,9 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
-      {/* The shortcuts' labels live in the `palette` namespace, which is not loaded with the
-          shell: while it loads only this boundary waits. Without it the suspension reaches the
-          shell route and the pending fallback replaces the whole window on first paint. */}
-      <Suspense fallback={null}>
-        <PaletteHost />
-      </Suspense>
+      {/* Never suspends on its lazy `palette` namespace: a suspension here would reach the shell
+          route, whose pending fallback replaces the whole window (AppShell.suspense.test.tsx). */}
+      <PaletteHost />
       <LazyToasts />
     </div>
   );

@@ -1,6 +1,6 @@
 // Binds the shortcut registry to the keyboard and to the system (M2-E1-T14).
 //
-// * `useShortcuts(handlers)`: one `keydown` listener on `window`. Inputs keep their native keys:
+// * `useShortcuts(handlers, ready)`: one `keydown` listener on `window`. Inputs keep their native keys:
 //   inside a text field, textarea, select or contenteditable only shortcuts flagged
 //   `worksInInputs` (Ctrl+K) fire. AltGr (Ctrl+Alt on pt-BR keyboards) is text, see
 //   `chordFromEvent`.
@@ -53,12 +53,20 @@ export function isTextEntry(target: EventTarget | null): boolean {
 
 export type ShortcutHandlers = Partial<Record<ShortcutId, () => void>>;
 
-/** Installs the keyboard handler; `handlers` may change on every render. */
-export function useShortcuts(handlers: ShortcutHandlers): void {
+/**
+ * Installs the keyboard handler; `handlers` may change on every render. While `ready` is false
+ * (the handlers' texts are still loading) a shortcut waits, in order, and runs once it is true:
+ * it is never dropped.
+ */
+export function useShortcuts(handlers: ShortcutHandlers, ready = true): void {
   const registry = useShortcutRegistry();
   const ref = useRef(handlers);
+  const readyRef = useRef(ready);
+  const waiting = useRef<ShortcutId[]>([]);
   useEffect(() => {
     ref.current = handlers;
+    readyRef.current = ready;
+    if (ready) for (const id of waiting.current.splice(0)) ref.current[id]?.();
   });
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -71,7 +79,8 @@ export function useShortcuts(handlers: ShortcutHandlers): void {
       const handler = ref.current[id];
       if (handler === undefined) return;
       event.preventDefault();
-      handler();
+      if (readyRef.current) handler();
+      else waiting.current.push(id);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
