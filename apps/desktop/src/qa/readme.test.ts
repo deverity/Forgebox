@@ -70,5 +70,6 @@ describe("README screenshots", () => {
     expect(README).toContain("M2");
     expect(README).toContain("pnpm -C apps/desktop qa:readme-shots");
     expect(README).toContain("tauri dev");
+    expect(README).not.toContain("placeholders até");
   });
 });
