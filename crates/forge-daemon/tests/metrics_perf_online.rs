@@ -22,8 +22,8 @@
 //! 3. `stats.get {site: perf.test, from, to}` over the load: exact request count, no
 //!    sampling, only 2xx, p50/p90/p99 against oha's and against a brute force of nginx's own
 //!    access log (which tells the pipeline's error, ≤ 0.1 %, from the gap between nginx's
-//!    `$request_time` and what the client sees: on Windows the nginx proxy template opens an
-//!    upstream connection per request and its event loop stalls, see docs/14 section 3.9);
+//!    `$request_time` and what the client sees: without upstream keepalive the event loop of
+//!    the Windows nginx worker stalls and that gap broke the budget, see docs/14 section 3.9);
 //! 4. the secondary check: `a.test` and `b.test` at 3:1 for [`PHP_LOAD`]; the attributed CPU
 //!    of the shared pool (10 s points of `stats.series`) splits 75/25.
 //!
