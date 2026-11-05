@@ -1,5 +1,5 @@
 //! Acceptance gate of the metrics epic (M2-E5-T13, docs/14 section 3.6 "Orçamento de CPU"
-//! and "Aceite medido"): what the metrics pipeline costs the daemon under real traffic, and
+//! and section 3.9 "Aceite medido"): what the metrics pipeline costs the daemon under real traffic, and
 //! whether its percentiles agree with an external load generator.
 //!
 //! Each round builds a temporary root with the official nginx 1.30.6 and PHP 8.4.27 (shared
@@ -20,7 +20,10 @@
 //!    (Δcpu / Δwall / logical CPUs) and as a share of one core; `services.status` latency
 //!    every [`STATUS_EVERY`] during the whole load;
 //! 3. `stats.get {site: perf.test, from, to}` over the load: exact request count, no
-//!    sampling, only 2xx, p50/p90/p99 against oha's;
+//!    sampling, only 2xx, p50/p90/p99 against oha's and against a brute force of nginx's own
+//!    access log (which tells the pipeline's error, ≤ 0.1 %, from the gap between nginx's
+//!    `$request_time` and what the client sees: on Windows the nginx proxy template opens an
+//!    upstream connection per request and its event loop stalls, see docs/14 section 3.9);
 //! 4. the secondary check: `a.test` and `b.test` at 3:1 for [`PHP_LOAD`]; the attributed CPU
 //!    of the shared pool (10 s points of `stats.series`) splits 75/25.
 //!
