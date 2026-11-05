@@ -20,6 +20,8 @@ import {
   TextField,
   Toggle,
 } from "../../design/primitives";
+import { ToolTile } from "../../design/primitives/ToolTile";
+import { REGISTRY_ICONS } from "../../../qa/fixtures/scenarios/registryIcons";
 import { CommandPalette } from "../palette/CommandPalette";
 import type { PaletteActions } from "../palette/actions";
 import { P, shows, type GalleryMarker } from "../../design/gallery/marker";
@@ -69,6 +71,8 @@ const SAMPLE_PORT = "80";
 const SAMPLE_PATH = "C:/www/app";
 const KEY_CTRL = "Ctrl";
 const KEY_K = "K";
+// A tool of no registry: the monogram fallback next to the official logos.
+const THIRD_PARTY_TOOL = "redis";
 // Inert actions: the gallery renders the real palette (rows with/without CLI, shortcut and
 // unavailable reason come from the live capabilities, instances and sites) without side effects.
 const NOOP_PALETTE_ACTIONS: PaletteActions = {
@@ -248,6 +252,28 @@ export default function Gallery() {
       <Section title={t("kbd.title")} {...shows(P.Kbd)}>
         <span className="inline-flex items-center gap-1 text-callout text-fg-secondary">
           <Kbd>{KEY_CTRL}</Kbd>+<Kbd>{KEY_K}</Kbd> {t("kbd.palette")}
+        </span>
+      </Section>
+
+      <Section title={t("toolTile.title")} {...shows(P.ToolTile)}>
+        {[...REGISTRY_ICONS].map(([id, icon]) => (
+          <span
+            key={id}
+            data-gallery-tool={id}
+            className="flex w-20 flex-col items-center gap-1 text-caption text-fg-secondary"
+          >
+            <ToolTile tool={id} svg={icon.svg} color={icon.color} variant="grid" />
+            <ToolTile tool={id} svg={icon.svg} color={icon.color} variant="list" />
+            {id}
+          </span>
+        ))}
+        <span
+          data-gallery-tool={THIRD_PARTY_TOOL}
+          className="flex w-20 flex-col items-center gap-1 text-caption text-fg-secondary"
+        >
+          <ToolTile tool={THIRD_PARTY_TOOL} variant="grid" />
+          <ToolTile tool={THIRD_PARTY_TOOL} variant="list" />
+          {t("toolTile.fallback")}
         </span>
       </Section>
 
