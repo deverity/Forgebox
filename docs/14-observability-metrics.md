@@ -117,7 +117,7 @@ Aditivos na API 1.1. `stats.get` e `metrics.subscribe` existem desde o M2-E5-T8 
 - **`stats.export`:** job; uma linha por **minuto** (intervalos até 24 h) ou por **hora** (maiores), só passos com requisições; CSV (`timestamp,requests,rps,bytes,status_4xx,status_5xx,error_pct,p50_ms,p90_ms,p99_ms,php_p50_ms,php_p90_ms,php_p99_ms,cpu_pct,mem_bytes`) ou JSON `{site, step, from, to, rows}`; no máximo 20.000 linhas; rotas e query strings nunca entram.
 - **`stats.top`:** uma linha por processo: cada processo do job de cada instância (`InstanceMetrics`), cada worker de pool (`php@<série>`), cada processo de app (`<host>/<processo>`) e o próprio `forgeboxd` (CPU desde a chamada anterior), com o nome da imagem de `ImageNameCache`; `machine`: CPU da máquina entre duas chamadas (`None` na primeira), RAM, `forgebox_cpu_pct` = soma das CPUs dos processos limitada à da máquina, `forgebox_rss` = soma dos working sets, discos `root` e (se for outro volume) `data`.
 
-**Orçamento de CPU (gate M2-E5-T13):** 1.000 req/s, 64 conexões, 70 s, nginx na frente de um upstream com latência log-normal; CPU do `forgeboxd` num trecho estável de 60 s = Δcpu / Δparede / CPUs lógicas (como o Gerenciador de Tarefas e o sampler, [ADR-0019](adr/0019-instance-lifecycle-health-restart-metrics.md) §6) < 2 %, também em % de um núcleo; percentis do `stats.get {from, to}` a ±5 % dos do `oha` (instalado com `cargo install oha --locked --root C:/apps_src/Forgebox-wt/cache/tools`, nunca no sistema). Mediana de 3 execuções em máquina quieta, com o tipo de sessão registrado.
+**Orçamento de CPU (gate M2-E5-T13):** 1.000 req/s, 64 conexões, 70 s, nginx na frente de um upstream com latência log-normal; CPU do `forgeboxd` num trecho estável de 60 s = Δcpu / Δparede / CPUs lógicas (como o Gerenciador de Tarefas e o sampler, [ADR-0019](adr/0019-instance-lifecycle-health-restart-metrics.md) §6) < 2 %, também em % de um núcleo; percentis do `stats.get {from, to}` a ±5 % dos do `oha` (instalado com `cargo install oha --locked --root C:/apps_src/Forgebox-wt/cache/tools`, nunca no sistema). Mediana de 3 execuções em máquina quieta, com o tipo de sessão registrado. Resultado em §3.9.
 
 ### 3.7 Serviço de métricas e integração ao daemon (`forge_metrics::service`, `forge_daemon::metrics`, M2-E5-T8)
 Um ator só (`service::spawn` → `MetricsHandle`, clonável) é dono dos tailers (§3.2), do agregador (§3.4), da atribuição (§3.3) e da persistência (§3.5). Toda chamada é um *ask* com timeout (2 s nos handlers); nenhum lock é segurado através de `.await` e o ator nunca roda SQLite.
@@ -155,6 +155,38 @@ Outras conclusões do experimento:
 - Sem limite de ritmo, o nginx responde ~25.000 req/s no teste e escreve 2,4 MiB/s: com verificação a cada 200 ms e intervalo mínimo de 1 s o arquivo vivo chegou a 2,4 MiB (acima do `max_size`, mas limitado) e as 50.000 requisições foram contadas sem perda. Com 5.000/s o pico ficou em 1,07 MiB. Em produção a verificação é a cada 5 s: o tamanho passa de `max_size` em no máximo `5 s × taxa de escrita`.
 - Um servidor que não pode ser rotacionado com segurança declara `self` ou `none` no manifesto, com o motivo aqui; nenhum dos três oficiais precisa de `none`.
 - Cobertura sem servidor real: `crates/forge-metrics/tests/rotate.rs` (servidor falso a 2.000 linhas/s, 8 rotações, 9.000 linhas entregues uma vez cada e em ordem, `access.json.1` existe) e os testes de `forge_daemon::metrics` (`run_rotation`: renome e um só reopen, reopen que falha recua, `self`/`none` não são tocados).
+
+### 3.9 Aceite medido (gate do E5, M2-E5-T13)
+Reexecução (um comando, máquina quieta, nenhum outro build rodando; ~9 min mais o build release):
+
+```
+cargo test -p forge-daemon --release --test metrics_perf_online -- --ignored --nocapture
+```
+
+`oha` vem de `FORGEBOX_OHA` (padrão `C:\apps_src\Forgebox-wt\cache\tools\bin\oha.exe`); `FORGEBOX_PERF_ROUNDS` muda o número de rodadas (padrão 3). Cada rodada monta uma raiz temporária com nginx 1.30.6 e PHP 8.4.27 oficiais (cache compartilhado), três sites e a instância do nginx já no banco, e sobe o `forgeboxd` real (release). `perf.test` é um proxy para um upstream axum dentro do teste que responde depois de um atraso log-normal (mediana 20 ms, p99 120 ms; `std::thread::sleep`, que usa o temporizador de alta resolução, porque o timer do tokio arredonda para o tique de 15,6 ms: medido 31 ms para um atraso de 20 ms). Ordem: base ociosa de 20 s; `oha -q 1000 -c 64 -z 70s -w` com CPU do daemon nos 60 s do meio e `services.status` a cada 200 ms; `stats.get {from, to}` contra o `oha` e contra uma força bruta do próprio `access.json`; `a.test`/`b.test` (pool 8.4 compartilhado) a 60 + 20 req/s por 40 s, com a fatia de CPU atribuída somada nos pontos de 10 s do `stats.series`.
+
+**Medido em 2026-11-05** (commit `76d68a8`, com o keepalive de upstream do M2-E3-T22; build release; i5-1135G7 com 4 núcleos e 8 lógicos, 16 GiB, Windows 10 Enterprise 19045, **sessão RDP**; nenhum outro build rodando, Edge e VS Code abertos na sessão; `oha` 1.16.0). Mediana de 3 rodadas, **todos os critérios passam**:
+
+| Critério | Orçamento | Rodadas 1 / 2 / 3 | Mediana | Resultado |
+|---|---|---|---|---|
+| Vazão atingida, erros | ≥ 990 req/s, 0 erros | 998,8 / 998,7 / 996,8 req/s; 0 erros e só 200 | 998,7 req/s | passa |
+| Contagem do Forgebox | exata, `sampled = false` | 70.001 / 70.000 / 69.998, iguais às do `oha` | exata | passa |
+| CPU do `forgeboxd` sob carga (60 s estáveis) | < 2 % da máquina | 0,32 / 0,40 / 0,44 % (2,6 / 3,2 / 3,5 % de um núcleo) | **0,40 %** (3,2 % de um núcleo) | passa |
+| Base ociosa do `forgeboxd` (20 s, mesmo polling de status) | informativo | 0,01 / 0,18 / 0,42 % (0,1 / 1,4 / 3,4 % de um núcleo) | 0,18 % (1,4 % de um núcleo) | — |
+| Máquina inteira durante a carga (nginx, upstream, `oha` incluídos) | informativo | 4,5 / 4,2 / 7,2 % | 4,5 % | — |
+| p50/p90/p99 `oha` | referência | 20,93/54,91/121,17 · 21,00/54,80/121,25 · 20,93/54,58/117,99 ms | 20,93 / 54,80 / 121,17 ms | — |
+| p50/p90/p99 Forgebox (`stats.get`) | ±5 % do `oha` | 21,01/55,01/121,02 · 21,01/55,01/121,02 · 21,01/55,01/118,02 ms | 21,01 / 55,01 / 121,02 ms; desvio **0,38 / 0,38 / 0,12 %** | passa |
+| Forgebox contra o próprio `access.json` do nginx | ≤ 0,1 % (resolução HDR) | 21,007 contra 21 ms etc. nas três | dentro da resolução | passa |
+| `services.status` durante a carga | p99 < 50 ms | 14,0 / 4,9 / 5,2 ms (máx. 22 / 43 / 12 ms; 352 amostras cada) | 5,2 ms | passa |
+| Atribuição do pool compartilhado (3:1 em requisições) | 75/25 ± 15 pp | 75,0 / 73,5 / 75,6 % para `a.test` | **75,0 / 25,0** | passa |
+
+**Primeira execução e o achado do gate (2026-11-04, commit `ec11599`, sem keepalive de upstream).** O p99 passava e p50/p90 falhavam: `oha` em 31,4 / 65,9 / 128,5 ms, Forgebox em 29,0 / 62,0 / 126,0 ms, desvio de 9,7 / 5,2 / 2,1 %. O pipeline já era exato, igual ao `$request_time` gravado pelo nginx. A diferença estava entre o nginx e o cliente: o template de proxy abria uma conexão TCP nova até o app por requisição (`Connection: close`), parte desses connects em loopback custa um tique do Windows (~15,6 ms) e o laço de eventos único do worker do nginx trava junto, fora do `$request_time` das requisições que esperam o laço. `access_log off` e `buffer=64k flush=1s` deram o mesmo resultado, então o log e o tail não eram a causa. O M2-E3-T22 corrigiu o template ([06 §4.1.1](06-sites-vhosts-multi-php.md)), e esta tabela é o mesmo gate depois da correção, sem nenhum ajuste no pipeline. A latência medida passou a ser a distribuição do próprio upstream.
+
+Outras observações:
+- **CPU menor que na primeira execução:** 1,03 % → 0,40 % da máquina e 6,9 % → 4,5 % da máquina inteira, com o mesmo pipeline. A causa provável é o fim da conexão por requisição, que deixava milhares de sockets em `TIME_WAIT` na tabela TCP que o daemon lê para os pools; isso não foi medido em separado.
+- **Carga secundária no PHP:** 4 / 5 / 2 requisições em ~3.200 por rodada ainda falham com "connection error" ou "error writing a body to connection", com uma conexão nova por requisição e mesmo com o `multi_accept on` do M2-E3-T22 (0 falhas em ~55 `nginx -s reload` no teste isolado de 06 §4.1.1). A primeira execução tinha de 2 a 5. Cada rodada tem reloads reais por reciclagem de workers (`pool.worker.recycled`, `pool.scaled`, `config.rendered`), mas a relação com eles não foi isolada neste pipeline. Não entra no aceite, que aqui é só a atribuição, e fica em aberto para o M3. Durante a carga principal nenhum evento de servidor ou pool ocorreu nas três rodadas.
+- **Base ociosa:** varia entre rodadas (0,1 a 3,4 % de um núcleo). Com o `services.status` a 5/s, ela é limitada pelo que o daemon faz em segundo plano logo após o boot e pelo que mais roda na sessão (na rodada 3 a máquina inteira estava em 6,7 % durante a base, contra 0,7 e 1,2 % nas outras). A carga soma de 0,02 a 0,31 % da máquina sobre a base da mesma rodada, que é o custo do tail, do agregador e da atribuição a 1.000 linhas/s.
+- Além dos orçamentos, o teste assegura em toda execução: contagem exata, nenhuma amostragem, só 2xx, Forgebox igual ao `access.json`, nenhum nginx ou `php-cgi` sobrando e o daemon parando limpo.
 
 ## 4. O que a UI mostra
 
