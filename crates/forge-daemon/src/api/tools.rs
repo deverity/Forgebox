@@ -99,6 +99,7 @@ async fn search(daemon: Daemon, params: ToolSearchParams, _ctx: Ctx) -> Result<C
                 summary: entry.summary().map(str::to_owned),
                 color: facts.color,
                 icon_sha256: entry.icon.as_ref().map(|i| i.sha256.clone()),
+                icon_color: entry.manifest.icon_color().map(str::to_owned),
                 native: facts.platforms.is_empty()
                     || facts.platforms.contains(&convert::host_platform()),
                 platforms,
@@ -122,6 +123,7 @@ async fn icon(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<IconDto> 
             params.tool
         ))
     })?;
+    let icon_color = entry.manifest.icon_color().map(str::to_owned);
     let icon = entry
         .icon
         .ok_or_else(|| ForgeError::NotFound(format!("{} has no icon", params.tool)))?;
@@ -130,6 +132,7 @@ async fn icon(daemon: Daemon, params: ToolParams, _ctx: Ctx) -> Result<IconDto> 
         tool: params.tool,
         svg,
         sha256: icon.sha256,
+        icon_color,
     })
 }
 

@@ -9,6 +9,7 @@ metadata:
     CakePHP 5 com Apache e MySQL. O driver `cakephp` usa `webroot/` como raiz do site.
   tags: [php, cakephp, mysql]
   icon: cakephp.svg
+  icon_color: "#D33C43"
   homepage: https://cakephp.org
 spec:
   tools:

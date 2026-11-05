@@ -171,7 +171,9 @@ export function StackStep({
               id={entry.id}
               name={entry.name}
               summary={entry.summary ?? entry.description}
-              icon={<CatalogIcon tool={entry.id} sha256={entry.icon_sha256} />}
+              icon={
+                <CatalogIcon tool={entry.id} sha256={entry.icon_sha256} color={entry.icon_color} />
+              }
               checked={choices.stack === entry.id}
               onSelect={() => {
                 select(entry.id);
@@ -185,7 +187,7 @@ export function StackStep({
             icon={
               <span
                 aria-hidden="true"
-                className="block size-8 rounded-control border border-stroke"
+                className="block size-10 rounded-card border border-stroke"
               />
             }
             checked={choices.stack === EMPTY_STACK}

@@ -15,6 +15,7 @@ metadata:
     O site usa o driver `generic-php`, que serve a pasta do projeto como ela está.
   tags: [php, generic, mysql, onboarding]
   icon: php.svg
+  icon_color: "#777BB4"
   homepage: https://www.php.net
   order: 3
 spec:

@@ -20,6 +20,7 @@ metadata:
   changelog_url: https://github.com/caddyserver/caddy/releases
   license: Apache-2.0
   icon: caddy.svg
+  icon_color: "#1F88C0"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

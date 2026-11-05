@@ -69,6 +69,10 @@
   "statusDot": {
     "title": "StatusDot"
   },
+  "toolTile": {
+    "title": "Ícones de ferramentas (logo oficial na cor da marca)",
+    "fallback": "Sem logo"
+  },
   "kbd": {
     "title": "Kbd",
     "palette": "Abrir a paleta de comandos"

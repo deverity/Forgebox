@@ -22,6 +22,7 @@ metadata:
   docs: https://www.postgresql.org/docs/
   license: PostgreSQL
   icon: postgresql.svg
+  icon_color: "#4169E1"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

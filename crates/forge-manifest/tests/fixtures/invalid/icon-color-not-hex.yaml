@@ -1,0 +1,9 @@
+# expect: invalid_value
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: icon-color-not-hex, name: Fixture, category: devtool, icon_color: "#77BB4G" }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist

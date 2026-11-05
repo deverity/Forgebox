@@ -6,7 +6,7 @@ metadata:
   name: icons-fixture
 spec:
   schema_version: 1
-  updated_at: 2026-11-03T17:37:11Z
+  updated_at: 2026-11-05T12:38:03Z
   tools:
   - id: evil-external
     path: tools/evil-external.yaml
@@ -70,7 +70,7 @@ spec:
     latest: 3.0.0
   - id: hello-web
     path: tools/hello-web.yaml
-    sha256: 3d43fb2c0a3f0b28f5251a26da07d67cebc1c2d1ec9156b15bde2df71d048fc5
+    sha256: cbb92b89faabbb9007269914e37252ad8a8e484fe51bfabc28cd7dc0d0656114
     categories:
     - webserver
     latest: 1.10.0

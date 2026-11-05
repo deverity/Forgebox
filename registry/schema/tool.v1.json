@@ -2422,6 +2422,14 @@
             "null"
           ]
         },
+        "icon_color": {
+          "description": "Brand colour of the icon tile, `#RRGGBB` (docs/04 §1, docs/07 §2.4): the client paints the\nwhite glyph of `icon` on a tile of this colour, darkened when the glyph would fall under\n3:1. Without it, clients fall back to a monogram on a palette colour.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
         "id": {
           "description": "Unique slug in the registry (`[a-z0-9-]`).",
           "$ref": "#/$defs/ToolId"

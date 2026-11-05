@@ -18,22 +18,12 @@ const SCENARIOS_UNDER_TEST = ["errors", "not-implemented", "daemon-down"] as con
  * test below fails when an entry stops reproducing, so whoever fixes the screen has to delete
  * the line (the stale-entry guard), and a new offender outside the list fails the build.
  */
-const SITE = "/sites/01QAS1TE000000000000000001";
 const KNOWN_OPEN: Record<string, string> = {
   "/dashboard|errors":
     "R-09 family (E4-T9): Sites recentes stays a skeleton (Projetos is fixed, R-15)",
   "/dashboard|not-implemented": "R-16 (E4-T9): tiles stay skeletons",
-  "/services|not-implemented": "R-16 (E4-T9)",
-  "/sites|errors": "R-09 (E4-T9)",
-  "/sites|not-implemented": "R-09 (E4-T9)",
-  "/php|not-implemented": "R-16 (E4-T9)",
-  [`${SITE}|errors`]: "R-10 (E4-T9)",
-  [`${SITE}|not-implemented`]: "R-10 (E4-T9)",
-  [`${SITE}|daemon-down`]: "R-10 (E4-T9)",
-  "/catalog/php|not-implemented": "R-16 (E4-T9)",
-  "/catalog/php|daemon-down": "R-16 (E4-T9)",
-  "/catalog/laravel|not-implemented": "R-16 (E4-T9)",
-  "/catalog/laravel|daemon-down": "R-16 (E4-T9)",
+  // The Services, Sites, site detail, PHP and tool page entries were fixed by E4-T9 (the
+  // stale-entry guard below flagged them; removed in M2-E1-T24).
 };
 
 /** The gallery shows skeletons on purpose (it is the primitives catalogue). */

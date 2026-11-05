@@ -23,6 +23,7 @@ metadata:
   changelog_url: https://nginx.org/en/CHANGES
   license: BSD-2-Clause
   icon: nginx.svg
+  icon_color: "#009639"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

@@ -15,6 +15,16 @@
   --duration-transition: 220ms;
   --duration-sheet: 280ms;
   --duration-reduced: 100ms;
+  --tool-tile-list-size: 30px;
+  --tool-tile-list-glyph: 19px;
+  --tool-tile-list-radius: 8px;
+  --tool-tile-grid-size: 40px;
+  --tool-tile-grid-glyph: 24px;
+  --tool-tile-grid-radius: 10px;
+  --tool-tile-hero-size: 56px;
+  --tool-tile-hero-glyph: 34px;
+  --tool-tile-hero-radius: 14px;
+  --tool-tile-stroke-width: 1px;
   --bg-canvas: var(--bg-canvas-solid);
   --bg-sidebar: var(--bg-sidebar-solid);
   --bg-sidebar-material: transparent;
@@ -62,6 +72,8 @@
   --tool-6: #B3541E;
   --tool-7: #AD1457;
   --tool-8: #546E7A;
+  --tool-tile-stroke: #0000001F;
+  --tool-tile-edge: #0000001F;
   --elevation-popover: 0px 8px 24px 0px #00000014;
   color-scheme: light;
 }
@@ -108,6 +120,8 @@
     --tool-6: #B3541E;
     --tool-7: #AD1457;
     --tool-8: #546E7A;
+    --tool-tile-stroke: #0000001F;
+    --tool-tile-edge: #FFFFFF33;
     --elevation-popover: 0px 8px 24px 0px #0000002E;
     color-scheme: dark;
   }
@@ -154,6 +168,8 @@
   --tool-6: #B3541E;
   --tool-7: #AD1457;
   --tool-8: #546E7A;
+  --tool-tile-stroke: #0000001F;
+  --tool-tile-edge: #0000001F;
   --elevation-popover: 0px 8px 24px 0px #00000014;
   color-scheme: light;
 }
@@ -199,6 +215,8 @@
   --tool-6: #B3541E;
   --tool-7: #AD1457;
   --tool-8: #546E7A;
+  --tool-tile-stroke: #0000001F;
+  --tool-tile-edge: #FFFFFF33;
   --elevation-popover: 0px 8px 24px 0px #0000002E;
   color-scheme: dark;
 }
@@ -260,6 +278,8 @@
   --tool-6: #000000;
   --tool-7: #000000;
   --tool-8: #000000;
+  --tool-tile-stroke: #FFFFFF;
+  --tool-tile-edge: #FFFFFF;
   --bg-canvas: var(--bg-canvas-solid);
   --bg-sidebar: var(--bg-sidebar-solid);
 }
@@ -306,6 +326,8 @@
     --tool-6: Canvas;
     --tool-7: Canvas;
     --tool-8: Canvas;
+    --tool-tile-stroke: CanvasText;
+    --tool-tile-edge: CanvasText;
     --bg-canvas: var(--bg-canvas-solid);
     --bg-sidebar: var(--bg-sidebar-solid);
   }
@@ -413,5 +435,7 @@
   --color-tool-6: var(--tool-6);
   --color-tool-7: var(--tool-7);
   --color-tool-8: var(--tool-8);
+  --color-tool-tile-stroke: var(--tool-tile-stroke);
+  --color-tool-tile-edge: var(--tool-tile-edge);
   --shadow-popover: var(--elevation-popover);
 }

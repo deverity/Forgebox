@@ -1,15 +1,18 @@
 import type { CSSProperties } from "react";
+import { luminance, mixHex } from "../../app/appearance";
+import { toolTile } from "../tokens";
 import { cx } from "./shared";
 
-// The icon of a tool on every screen that shows one (M2-E1-T23, docs/07 section 2.4):
-// - a full-colour SVG from `tools.icon` is shown as it is;
-// - a monochrome SVG (only `currentColor`/black, like the registry's line icons) would render
-//   black inside an <img> ("black circles"), so it is drawn white on a coloured tile;
-// - without an icon, a coloured rounded-square monogram ("My", "Rd") holds the same box.
+// The icon of a tool on every screen that shows one (M2-E1-T24, docs/07 section 2.4, style C of
+// the approved icons mockup):
+// - the registry icon is the official logo as a monochrome glyph and the manifest carries the
+//   brand colour (`metadata.icon_color`): the glyph is drawn WHITE on a rounded tile filled with
+//   that colour (darkened when white would fall under 3:1), with a thin inner stroke;
+// - a full-colour SVG (third-party registries) is shown as it is;
+// - without an icon or without a brand colour, a rounded-square monogram ("My", "Rd") on one of
+//   the `tool-*` palette tokens (picked from the id) holds the same box.
 // The SVG is ONLY ever an <img> with a data URI: a document from a manifest never enters the
 // DOM, so its scripts, handlers and references cannot run (docs/07 section 7, docs/11).
-// The tile colour is one of the `tool-*` tokens, picked from the tool id (never the manifest's
-// `ui.color`, which has no contrast guarantee).
 
 const DATA_URI = "data:image/svg+xml;charset=utf-8,";
 
@@ -85,72 +88,147 @@ export function svgDataUri(svg: string): string {
   return `${DATA_URI}${encodeURIComponent(svg)}`;
 }
 
-export type ToolTileKind = "image" | "tinted" | "monogram";
+/** WCAG contrast the white glyph keeps against its tile (non-text UI, 1.4.11). */
+export const GLYPH_MIN_CONTRAST = 3;
+
+/** Tiles darker than this luminance get the light edge on the dark canvas (MariaDB, Next.js). */
+const DARK_TILE_LUMINANCE = 0.05;
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+/** The thin inner stroke of a brand tile, and the light edge of a very dark one (tokens). */
+const TILE_STROKE = "shadow-[inset_0_0_0_var(--tool-tile-stroke-width)_var(--tool-tile-stroke)]";
+const EDGE_STROKE = "shadow-[inset_0_0_0_var(--tool-tile-stroke-width)_var(--tool-tile-edge)]";
+
+/** WCAG contrast of white on `#RRGGBB`. */
+export function whiteContrast(hex: string): number {
+  return 1.05 / (luminance(hex) + 0.05);
+}
+
+export interface BrandTile {
+  /** The tile fill: the brand colour, or a darker shade of it when white would be under 3:1. */
+  fill: string;
+  /** Whether the fill is so dark that the dark canvas needs the light edge stroke. */
+  dark: boolean;
+}
+
+/**
+ * The tile of a brand colour (`metadata.icon_color`): generic, from the colour's luminance only
+ * (never from the tool id). Light colours are mixed toward black in 2 % steps until the white
+ * glyph reaches {@link GLYPH_MIN_CONTRAST}; anything that is not `#RRGGBB` gives `null` (the
+ * caller falls back to the monogram).
+ */
+export function brandTile(color: string | null | undefined): BrandTile | null {
+  if (color === null || color === undefined || !HEX_COLOR.test(color)) return null;
+  let fill = color.toUpperCase();
+  for (let step = 1; whiteContrast(fill) < GLYPH_MIN_CONTRAST && step <= 50; step += 1) {
+    fill = mixHex(color, "black", step / 50).toUpperCase();
+  }
+  return { fill, dark: luminance(fill) < DARK_TILE_LUMINANCE };
+}
+
+/** `list`: Services rows and Dashboard tiles; `grid`: Catalog cards and onboarding; `hero`: page header. */
+export type ToolTileVariant = "list" | "grid" | "hero";
+
+/** Edge, glyph and radius (px) of a tile variant, from the `tool-tile` tokens. */
+export function toolTileMetrics(variant: ToolTileVariant): {
+  size: number;
+  glyph: number;
+  radius: number;
+} {
+  return {
+    size: toolTile[`${variant}-size`],
+    glyph: toolTile[`${variant}-glyph`],
+    radius: toolTile[`${variant}-radius`],
+  };
+}
+
+export type ToolTileKind = "brand" | "image" | "monogram";
 
 export interface ToolTileProps {
-  /** Tool id (`mysql`): picks the tile colour and the monogram. */
+  /** Tool id (`mysql`): picks the fallback palette colour and the monogram. */
   tool: string;
   /** The SVG of `tools.icon`, when there is one. */
   svg?: string | undefined;
   /** Or its data URI, when the caller caches URIs (Catalog). */
   uri?: string | undefined;
-  /** Edge in px; the box is the same with or without the icon (no layout shift). */
-  size: number;
+  /** `metadata.icon_color` (`#RRGGBB`) of the entry: the tile colour of the white glyph. */
+  color?: string | null | undefined;
+  /** Box size; the box is the same with or without the icon (no layout shift). */
+  variant: ToolTileVariant;
   /** Known monochrome-ness of `uri` (the caller saw the SVG); default: from `svg`. */
   monochrome?: boolean | undefined;
 }
 
-function monogramText(size: number): string {
-  if (size <= 24) return "text-caption";
-  if (size <= 32) return "text-callout";
-  if (size <= 48) return "text-headline";
+function monogramText(variant: ToolTileVariant): string {
+  if (variant === "list") return "text-callout";
+  if (variant === "grid") return "text-headline";
   return "text-title-2";
 }
 
-/** The tile: an <img> of the icon, the icon whitened on a coloured tile, or a monogram. */
-export function ToolTile({ tool, svg, uri, size, monochrome }: ToolTileProps) {
+/** The tile: the white logo on the brand colour, a full-colour image, or a monogram. */
+export function ToolTile({ tool, svg, uri, color, variant, monochrome }: ToolTileProps) {
   const src = uri ?? (svg === undefined ? undefined : svgDataUri(svg));
   const mono = monochrome ?? (svg === undefined ? false : isMonochromeSvg(svg));
-  const kind: ToolTileKind = src === undefined ? "monogram" : mono ? "tinted" : "image";
-  const box: CSSProperties = { width: size, height: size };
-  const radius = size > 32 ? "rounded-card" : "rounded-item";
+  const brand = brandTile(color);
+  const kind: ToolTileKind =
+    src === undefined ? "monogram" : !mono ? "image" : brand === null ? "monogram" : "brand";
+  const metrics = toolTileMetrics(variant);
+  const box: CSSProperties = {
+    width: metrics.size,
+    height: metrics.size,
+    borderRadius: metrics.radius,
+  };
   if (kind === "image") {
     return (
       <span
         data-tool-tile="image"
         style={box}
-        className={cx("flex shrink-0 items-center justify-center overflow-hidden", radius)}
+        className="flex shrink-0 items-center justify-center overflow-hidden"
       >
-        <img alt="" src={src} style={box} />
+        <img alt="" src={src} style={{ width: metrics.size, height: metrics.size }} />
       </span>
     );
   }
-  const glyph = Math.round(size * 0.66);
+  if (kind === "brand" && brand !== null) {
+    // The brand colour reaches CSS only through --tool-brand (no colour literal in the
+    // component); forced colours keep it, since the white glyph needs its tile to be seen.
+    const style = { ...box, "--tool-brand": brand.fill } as CSSProperties;
+    return (
+      <span
+        aria-hidden="true"
+        data-tool-tile="brand"
+        data-tool-edge={brand.dark ? "dark" : undefined}
+        style={style}
+        className={cx(
+          "flex shrink-0 items-center justify-center overflow-hidden bg-(--tool-brand) forced-color-adjust-none",
+          brand.dark ? EDGE_STROKE : TILE_STROKE,
+        )}
+      >
+        {/* brightness(0) makes every drawn pixel black, invert(1) white: the logo keeps its
+            shape and alpha. */}
+        <img
+          alt=""
+          src={src}
+          style={{ width: metrics.glyph, height: metrics.glyph }}
+          className="brightness-0 invert"
+        />
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden="true"
-      data-tool-tile={kind}
+      data-tool-tile="monogram"
       data-tool-color={toolColorIndex(tool) + 1}
       style={box}
       className={cx(
         "flex shrink-0 items-center justify-center overflow-hidden font-semibold text-fg-on-tool",
-        radius,
         toolTileClass(tool),
-        kind === "monogram" && monogramText(size),
+        monogramText(variant),
       )}
     >
-      {kind === "tinted" ? (
-        // brightness(0) makes every drawn pixel black, invert(1) white: the glyph keeps its
-        // shape and alpha and reads on the tile in both themes.
-        <img
-          alt=""
-          src={src}
-          style={{ width: glyph, height: glyph }}
-          className="brightness-0 invert"
-        />
-      ) : (
-        toolMonogram(tool)
-      )}
+      {toolMonogram(tool)}
     </span>
   );
 }

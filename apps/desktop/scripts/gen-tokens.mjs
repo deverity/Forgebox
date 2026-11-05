@@ -70,6 +70,7 @@ export function load() {
         typography,
         space: mapValues(values(src.space), num),
         radius: mapValues(values(src.radius), num),
+        toolTile: mapValues(values(src["tool-tile"]), num),
         shadow: {
             light: mapValues(values(src.shadow.light), shadowCss),
             dark: mapValues(values(src.shadow.dark), shadowCss),
@@ -111,6 +112,7 @@ export function buildCss(t) {
     L.push(`  --font-feature-tnum: ${t.font.tnum};`);
     for (const [k, v] of Object.entries(t.space)) L.push(`  --space-${k}: ${v}px;`);
     for (const [k, v] of Object.entries(t.motion.duration)) L.push(`  --duration-${k}: ${v}ms;`);
+    for (const [k, v] of Object.entries(t.toolTile)) L.push(`  --tool-tile-${k}: ${v}px;`);
     L.push("  --bg-canvas: var(--bg-canvas-solid);");
     L.push("  --bg-sidebar: var(--bg-sidebar-solid);");
     // What the sidebar paints over a material: nothing over Mica/Acrylic (already tinted),
@@ -206,6 +208,8 @@ export const fontFamily = ${json(t.font.family)} as const;
 export const space = ${json(t.space)} as const;
 
 export const radius = ${json(t.radius)} as const;
+
+export const toolTile = ${json(t.toolTile)} as const;
 
 export const shadow = ${json(t.shadow)} as const;
 

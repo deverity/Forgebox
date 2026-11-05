@@ -339,6 +339,12 @@ export type CatalogEntryDto = {
 	 *  Clients cache icons by it.
 	 */
 	icon_sha256?: string | null,
+	/**
+	 *  `metadata.icon_color` (`#RRGGBB`, M2-E1-T24): the brand colour of the icon tile; the
+	 *  icon is drawn white on it. `None` when the manifest has none (clients then show a
+	 *  monogram on a palette colour).
+	 */
+	icon_color?: string | null,
 	/**  `spec.platforms` (`windows-x64`...). */
 	platforms?: string[],
 	/**
@@ -1181,6 +1187,11 @@ export type IconDto = {
 	svg: string,
 	/**  SHA-256 (hex) of `svg`: the `CatalogEntryDto.icon_sha256` of the entry. */
 	sha256: string,
+	/**
+	 *  `metadata.icon_color` of the entry (`#RRGGBB`, M2-E1-T24), so screens that only ask
+	 *  for the icon (Services, Dashboard) can paint its tile.
+	 */
+	icon_color?: string | null,
 };
 
 /**  One imported item. */

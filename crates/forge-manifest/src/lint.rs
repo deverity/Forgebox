@@ -10,7 +10,8 @@
 //!    consistency;
 //! 4. `render.template` exists in [`LintContext::known_templates`] (the templates embedded
 //!    by forge-render), in `<registry>/templates/` or in [`LintContext::template_roots`];
-//! 7. icons in `<registry>/icons/` are SVG, at most 20 KB and without scripts.
+//! 7. icons in `<registry>/icons/` are SVG, at most 20 KB and without scripts (plus the
+//!    `ATTRIBUTION.md` that lists their sources).
 //!
 //! Rules 2, 3, 5 and 6 come from the validator. The lint is blocking file I/O: call it
 //! from `spawn_blocking` in async code.
@@ -32,6 +33,9 @@ use crate::yaml::Location;
 
 /// Largest icon accepted (rule 7).
 pub const MAX_ICON_BYTES: u64 = 20 * 1024;
+
+/// The one non-SVG file allowed in `icons/`: where each logo comes from (docs/04 §1.10).
+pub const ICON_ATTRIBUTION: &str = "ATTRIBUTION.md";
 
 /// A registry folder: `index.yaml`, `tools/`, `stacks/`, `icons/`, `templates/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -407,6 +411,10 @@ fn lint_icons_dir(dir: &RegistryDir, issues: &mut Vec<LintIssue>) {
     let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
     paths.sort();
     for path in paths.into_iter().filter(|p| p.is_file()) {
+        // The list of logo sources, licences and trademark owners (docs/04 §1.10).
+        if path.file_name().is_some_and(|n| n == ICON_ATTRIBUTION) {
+            continue;
+        }
         let svg = path.extension().is_some_and(|e| e == "svg");
         let problem = if svg {
             icon_problem(&path)
