@@ -1,6 +1,6 @@
 # Status do roadmap
 
-Fonte: [10-roadmap-and-agent-tasks.md](10-roadmap-and-agent-tasks.md). Estados: `todo | doing | review | done`.
+Fonte: [10-roadmap-and-agent-tasks.md](10-roadmap-and-agent-tasks.md). Estados: `todo | doing | review | done | deferred`.
 Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (último commit). Só `done` após revisão aprovada.
 
 | ID | Tarefa | Estado | Branch | Observações |
@@ -129,8 +129,8 @@ Ao iniciar uma tarefa, marcar `doing` (primeiro commit); ao terminar, `review` (
 | M2-E4-T8 | Correções: shell, navegação, paleta, estados transversais | done | feature/M2-E4-T8-qa-fixes-shell | Bucket do shell do relatório §3: R-01 (remoto: `--accent-remote`, rodapé "Daemon remoto · N ms"), R-02 (pílula do SegmentedControl por offsets), R-03, R-04 (CPU <= 100 %), R-05 (barras finas), R-06 (`_zero` pt-BR), R-08 (regra de esqueleto eterno + `KNOWN_OPEN` de 16 casos de E4-T9/T10), E2-02 (idioma salvo e lido no boot), E2-05; R-07 adiado com motivo (mockup aprovado). Sem P0/P1 no bucket. Medido: `qa:check` 528/536 na execução completa (8 timeouts por carga da máquina), os 8 re-executados 22/22 verdes; vitest dos arquivos tocados verde. `qa:perf`, paridade e `perf:startup` não rodados (aguardam slot silencioso do gate). |
 | M2-E4-T9 | Correções: telas núcleo (Onboarding, Dashboard, Serviços, Sites, PHP, Catálogo) | done | feature/M2-E4-T9-qa-fixes-core-screens | R-09/R-10 (P1) e R-11..R-22 fechados com teste (`qa/checks/core-screens.spec.ts`, `coreScreens.test.tsx`); paridade estrita verde (`pending: []`); `qa:check` 497+ ok (R-14 flaky segue com o harness), `qa:perf` só R-24 (E4-T10). Detalhes em docs/design/qa/M2-E4-report.md §3. |
 | M2-E4-T10 | Correções: telas complementares + Desempenho/Projetos | done | feature/M2-E4-T10-qa-fixes-complementary | Bucket E4-T10 do relatório §4: R-15, R-16 (Bancos, Logs), R-24 a R-31 e 4 achados novos (2 P1 medidos: axe `aria-required-children` no Terminal e contraste 3,82:1 do link `file:line` no escuro). Terminal: faixa em `group`, anel de foco, `minimumContrastRatio` 4,5 e ANSI por token; gráficos: faixas a 20 %, orçamento de atualização no p95; `qa/checks/complementary.spec.ts` (15) mede xterm e HTML de e-mail por captura. Medido: `qa:check` das 6 telas 85/85, states 47/47, e2e 32/32. |
-| M2-E4-T11 | Gate do M2: script automatizado + checklist humano com aprovação do usuário | todo | — | |
-| M2-E4-T12 | Capturas de tela no README (hero, galeria e script de captura reproduzível) | todo | — | |
+| M2-E4-T11 | Gate do M2: script automatizado + checklist humano com aprovação do usuário | deferred | — | Adiada pelo usuário em 2026-11-05: será tratada depois, por versões de patch. Não foi executada (nada aprovado); `scripts/qa/m2-gate.ps1` não existe. |
+| M2-E4-T12 | Capturas de tela no README (hero, galeria e script de captura reproduzível) | review | feature/M2-E4-T12-readme-screenshots | 8 PNGs em `docs/assets/screenshots/` (1600x1000, 60-122 KB; qa build + Edge, cenário populated, pt-BR); `pnpm -C apps/desktop qa:readme-shots`; README com hero, galeria, Status e Desenvolvimento atualizados; teste vitest de links/tamanhos/dados pessoais; docs/08 §8. Bandeja não capturada (exige janela real). |
 | M3-E1 | Catálogo completo de manifestos | todo | — | |
 | M3-E2 | Stacks + forge new + drivers restantes | todo | — | |
 | M3-E3 | forge share, LAN, backups, bundles | todo | — | |

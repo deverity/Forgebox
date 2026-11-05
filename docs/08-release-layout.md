@@ -174,3 +174,9 @@ Idempotente: reexecutar relata "já registrada"/"já existe" e não cria nada. I
 ## 7. Compatibilidade de atualização do Forgebox
 - Updates do app nunca tocam `bin\ data\ www\ certs\ etc\`. Só `*.exe`, `app\` e migrations do `state\forgebox.db` (sempre forward-compatíveis; backup automático do `.db` antes, via `VACUUM INTO`, em `state\forgebox.db.bak-v<NNNN>-<UTC>`; um `.db` com schema mais novo que o binário é recusado, nunca rebaixado).
 - Templates embutidos novos podem mudar o conteúdo dos **blocos gerenciados** em `etc\`; o update mostra diff antes de aplicar (ou aplica silenciosamente se o usuário escolher "sempre aceitar").
+
+## 8. Checklist de release: capturas do README
+- Regerar as imagens do README a cada release: `pnpm -C apps/desktop qa:readme-shots` (build de QA + Edge, cenário `populated` da ponte falsa, pt-BR, 1280x800 a DPR 1.25 = 1600x1000). Saída: `docs/assets/screenshots/<tela>-<tema>.png`.
+- Conferir cada imagem: no máximo 1600 px de largura e 400 KB, sem dados pessoais (usuário, caminhos, hosts, IPs): só dados dos cenários de QA. O teste `src/qa/readme.test.ts` (`pnpm -C apps/desktop test`) verifica tamanhos, links relativos do `README.md` e a lista de capturas.
+- A lista de telas e as legendas ficam em `apps/desktop/qa/readme-shots.ts`; mudou uma tela, mude a legenda no `README.md` junto.
+- A bandeja não entra no conjunto automático (exige a janela real): `scripts/qa/capture-tray.ps1` e `scripts/qa/capture-window.ps1` no build de release, se quiser acrescentar.
