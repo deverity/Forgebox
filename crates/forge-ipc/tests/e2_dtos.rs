@@ -73,6 +73,7 @@ fn catalog_entries_round_trip_with_the_1_1_metadata() {
     entry.summary = Some("Depurador".into());
     entry.color = Some("#777BB4".into());
     entry.icon_sha256 = Some("ab".repeat(32));
+    entry.icon_color = Some("#777BB4".into());
     entry.platforms = vec!["windows-x64".into()];
     entry.native = false;
     entry.official = true;
@@ -83,6 +84,7 @@ fn catalog_entries_round_trip_with_the_1_1_metadata() {
     assert_eq!(json["kind"], "extension");
     assert_eq!(json["native"], false);
     assert_eq!(json["size_estimate_bytes"], 35u64 << 20);
+    assert_eq!(json["icon_color"], "#777BB4");
     round_trip(&CatalogSearchDto {
         entries: vec![entry],
     });
@@ -100,11 +102,12 @@ fn catalog_entries_read_api_1_0_json() {
             &entry.summary,
             &entry.color,
             &entry.icon_sha256,
+            &entry.icon_color,
             &entry.latest,
             &entry.update_available,
             entry.size_estimate_bytes
         ),
-        (&None, &None, &None, &None, &None, None)
+        (&None, &None, &None, &None, &None, &None, None)
     );
     assert!(entry.platforms.is_empty());
 }
@@ -398,9 +401,14 @@ fn icons_round_trip() {
         tool: tool("php"),
         svg: "<svg xmlns=\"http://www.w3.org/2000/svg\"/>".into(),
         sha256: "0f".repeat(32),
+        icon_color: Some("#777BB4".into()),
     };
     let json = round_trip(&icon);
     assert_eq!(json["svg"], icon.svg);
+    assert_eq!(json["icon_color"], "#777BB4");
+    // Daemons before M2-E1-T24 send no colour.
+    let old: IconDto = from(json!({ "tool": "php", "svg": "<svg/>", "sha256": "0f" }));
+    assert_eq!(old.icon_color, None);
 }
 
 // --- services ----------------------------------------------------------------------------

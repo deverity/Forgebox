@@ -25,6 +25,7 @@ metadata:
   docs: https://httpd.apache.org/docs/2.4/
   license: Apache-2.0
   icon: apache.svg
+  icon_color: "#D22128"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

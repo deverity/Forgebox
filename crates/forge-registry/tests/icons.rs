@@ -177,3 +177,43 @@ async fn empty_search_lists_in_index_order() {
         ids.iter().position(|i| *i == "hello-stack") > ids.iter().position(|i| *i == "hello-web")
     );
 }
+
+/// M2-E1-T24: every icon of the official registry is the official logo as a monochrome
+/// 24x24 glyph the client draws white on the brand-colour tile; it passes the same
+/// `sanitize_svg` as `tools.icon`, stays under the lint limit (20 KB, rule 7) and carries no
+/// colour or text of its own.
+#[test]
+fn official_icons_are_sanitized_monochrome_glyphs() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../registry/icons");
+    let mut svgs = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name == forge_manifest::lint::ICON_ATTRIBUTION {
+            continue;
+        }
+        assert!(name.ends_with(".svg"), "{name}: only SVGs in icons/");
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(
+            bytes.len() as u64 <= forge_manifest::lint::MAX_ICON_BYTES,
+            "{name}: {} bytes",
+            bytes.len()
+        );
+        let svg = sanitize_svg(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert!(svg.contains("viewBox=\"0 0 24 24\""), "{name}: viewBox");
+        assert!(
+            svg.contains("fill=\"currentColor\""),
+            "{name}: currentColor"
+        );
+        assert!(!svg.contains("<text"), "{name}: text element");
+        assert!(!svg.contains('#'), "{name}: a colour of its own");
+        let attribution =
+            std::fs::read_to_string(dir.join(forge_manifest::lint::ICON_ATTRIBUTION)).unwrap();
+        assert!(
+            attribution.contains(&format!("`{name}`")),
+            "{name}: not listed in ATTRIBUTION.md"
+        );
+        svgs += 1;
+    }
+    assert_eq!(svgs, 16);
+}

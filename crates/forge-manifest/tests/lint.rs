@@ -195,6 +195,9 @@ fn icons_folder_rules() {
     let big = format!("<svg>{}</svg>", "x".repeat(MAX_ICON_BYTES as usize));
     registry.write("icons/big.svg", &big);
     registry.write("icons/ok.svg", TINY_SVG);
+    // The attribution list is the one non-SVG file allowed; any other is not.
+    registry.write("icons/ATTRIBUTION.md", "# Icon sources\n");
+    registry.write("icons/README.md", "# Not allowed\n");
     let report = registry.lint(&context());
     assert_eq!(
         codes(&report),
@@ -205,7 +208,10 @@ fn icons_folder_rules() {
         .iter()
         .map(|i| i.path.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(files, ["big.svg", "evil.svg", "fake.svg", "logo.png"]);
+    assert_eq!(
+        files,
+        ["README.md", "big.svg", "evil.svg", "fake.svg", "logo.png"]
+    );
     assert!(report.issues.iter().all(|i| i.rule == 7));
 }
 
@@ -217,6 +223,42 @@ fn referenced_icon_must_exist() {
     assert_eq!(report.issues.len(), 1, "{:#?}", report.issues);
     assert_eq!(report.issues[0].code, IssueCode::InvalidIcon);
     assert_eq!(report.issues[0].field.as_deref(), Some("metadata.icon"));
+}
+
+#[test]
+fn icon_color_must_be_a_hex_colour() {
+    for bad in ["#777BB", "777BB4", "#777BBG", "purple", "#777BB4FF"] {
+        let registry = full_registry();
+        let php = read(&registry.root().join("tools/php.yaml"))
+            .replace("icon_color: \"#777BB4\"", &format!("icon_color: \"{bad}\""));
+        registry.add_manifest("php", &php);
+        write_index(
+            &registry,
+            &[
+                "composer", "mailpit", "memurai", "mysql", "nginx", "nodejs", "php", "xdebug",
+            ],
+            &["laravel"],
+        );
+        let report = registry.lint(&context());
+        assert_eq!(report.issues.len(), 1, "{bad}: {:#?}", report.issues);
+        assert_eq!(report.issues[0].code, IssueCode::InvalidValue);
+        assert_eq!(
+            report.issues[0].field.as_deref(),
+            Some("metadata.icon_color")
+        );
+    }
+    // Lower-case digits are fine.
+    let registry = full_registry();
+    let php = read(&registry.root().join("tools/php.yaml")).replace("#777BB4", "#777bb4");
+    registry.add_manifest("php", &php);
+    write_index(
+        &registry,
+        &[
+            "composer", "mailpit", "memurai", "mysql", "nginx", "nodejs", "php", "xdebug",
+        ],
+        &["laravel"],
+    );
+    assert!(registry.lint(&context()).is_clean());
 }
 
 #[test]

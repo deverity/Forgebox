@@ -908,9 +908,25 @@ impl Checker<'_> {
         self.env_names(&format!("{f}.env"), mail.env.keys());
     }
 
+    /// A `#RRGGBB` colour (`spec.ui.color`, `metadata.icon_color`).
+    fn hex_color(&mut self, field: &str, color: Option<&str>) {
+        let Some(color) = color else { return };
+        let ok = color.len() == 7
+            && color.starts_with('#')
+            && color[1..].bytes().all(|b| b.is_ascii_hexdigit());
+        if !ok {
+            self.push(
+                IssueCode::InvalidValue,
+                field,
+                format!("{color:?} must be #RRGGBB"),
+            );
+        }
+    }
+
     fn tool_metadata(&mut self, m: &ToolMetadata) {
         self.not_empty("metadata.name", &m.name);
         self.icon("metadata.icon", m.icon.as_deref());
+        self.hex_color("metadata.icon_color", m.icon_color.as_deref());
         if let Some(url) = &m.homepage {
             self.url("metadata.homepage", url, false);
         }
@@ -1927,14 +1943,7 @@ impl Checker<'_> {
     }
 
     fn ui(&mut self, ui: &Ui, config_ids: &BTreeSet<String>) {
-        if let Some(color) = &ui.color {
-            let ok = color.len() == 7
-                && color.starts_with('#')
-                && color[1..].bytes().all(|b| b.is_ascii_hexdigit());
-            if !ok {
-                self.push(IssueCode::InvalidValue, "spec.ui.color", "must be #RRGGBB");
-            }
-        }
+        self.hex_color("spec.ui.color", ui.color.as_deref());
         for (i, action) in ui.actions.iter().enumerate() {
             let f = format!("spec.ui.actions[{i}]");
             self.not_empty(&format!("{f}.label"), &action.label);
@@ -2163,6 +2172,7 @@ impl Checker<'_> {
     fn stack(&mut self, m: &StackManifest) {
         self.not_empty("metadata.name", &m.metadata.name);
         self.icon("metadata.icon", m.metadata.icon.as_deref());
+        self.hex_color("metadata.icon_color", m.metadata.icon_color.as_deref());
         if let Some(url) = &m.metadata.homepage {
             self.url("metadata.homepage", url, false);
         }

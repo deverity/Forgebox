@@ -22,6 +22,7 @@ metadata:
   changelog_url: https://mariadb.com/kb/en/release-notes/
   license: GPL-2.0-only
   icon: mariadb.svg
+  icon_color: "#003545"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

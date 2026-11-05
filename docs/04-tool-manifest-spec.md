@@ -43,6 +43,7 @@ metadata:
   changelog_url: https://www.php.net/ChangeLog-8.php   # notas de versão do upstream (https), ligadas no catálogo
   license: PHP-3.01
   icon: php.svg                  # relativo a registry/icons/ ou URL https (SVG, regra 7)
+  icon_color: "#777BB4"          # cor da marca (#RRGGBB) do bloco do ícone; o glifo é desenhado em branco sobre ela (§1.10)
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
   deprecated: false              # true + replaced_by: <id> esconde do catálogo (mas mantém instalados)
 
@@ -425,6 +426,14 @@ O daemon escolhe o adaptador por `api`, nunca pelo id da tool. Manifesto oficial
 
 ---
 
+### 1.10 Ícone e cor da marca (`metadata.icon`, `metadata.icon_color`)
+Vale para Tool, Extension e Stack (M2-E1-T24, decisão do usuário de 2026-11-04 sobre o mockup de estilos, estilo C).
+- `metadata.icon` é a **forma oficial do logo** do projeto como glifo **monocromático**: SVG `viewBox="0 0 24 24"`, `fill="currentColor"` (ou sem pintura própria), sem `<text>`, de preferência um único `<path>`, ≤ 20 KB (regra 7) e aprovado por `sanitize_svg`. Não é um ícone colorido: o cliente pinta o glifo.
+- `metadata.icon_color` é a cor da marca, `#RRGGBB` (validada: outro formato é `invalid_value`, regra 1). O cliente desenha o glifo **branco** sobre um bloco arredondado preenchido com essa cor. Se o branco ficar abaixo de 3:1 contra a cor, o cliente escurece o bloco (cálculo genérico pela luminância, nunca por id) até chegar a 3:1; blocos muito escuros ganham um contorno claro sutil no tema escuro ([07](07-ui-ux.md) §2.4).
+- Sem `icon` ou sem `icon_color` (registries de terceiros antigos) o cliente mostra o monograma de duas letras sobre a paleta `--tool-*`.
+- `spec.ui.color` é outra coisa (cor de destaque do card da instância) e não pinta o bloco do ícone.
+- Os ícones do registry oficial vêm do Simple Icons (dados CC0) ou foram redesenhados a partir do logo oficial do projeto; origem, licença do SVG, dono da marca e guia de marca de cada um estão em `registry/icons/ATTRIBUTION.md`. Os logos são marcas dos seus donos e aparecem só para identificar a ferramenta (uso nominativo).
+
 ## 2. `kind: Extension`
 
 ```yaml
@@ -481,7 +490,7 @@ spec:
 ```yaml
 apiVersion: forgebox.dev/v1
 kind: Stack
-metadata: { id: laravel, name: Laravel, summary: "PHP 8.4 + Nginx + MySQL 8 + Redis + Mailpit", icon: laravel.svg }
+metadata: { id: laravel, name: Laravel, summary: "PHP 8.4 + Nginx + MySQL 8 + Redis + Mailpit", icon: laravel.svg, icon_color: "#FF2D20" }
 spec:
   tools:
     - { id: php, series: "8.4", extensions: [xdebug] }
@@ -566,7 +575,7 @@ spec:
 ```
 - `schema_version` é `1`; `sha256` tem 64 dígitos hexadecimais **e é conferido pelo lint contra os bytes do arquivo** (`index_mismatch`); `path` é relativo à raiz do registry.
 - `registry/index.yaml` é **gerado** por `cargo xtask registry-index` (tools por id; stacks com `metadata.order` primeiro, por ordem, depois os demais por id; `categories` vem de `metadata.category`; `latest` é a maior versão estável de `source.releases` quando houver, senão ausente; `updated_at` só muda quando as entradas mudam). Depois de editar qualquer manifesto, rode o comando; `lint-registry` falha com `index_mismatch` se o índice estiver velho.
-- Ícones: `cargo xtask registry-index` lista em cada entrada o ícone relativo de `metadata.icon` (`icon: {path: icons/php.svg, sha256}`); URLs `https` e arquivos ausentes não entram. O hash vai assinado com o índice, o loader o confere como o dos manifestos (diferente = `verification_failed`, o registry inteiro é recusado), o cache guarda `icons/` e `lint-registry` confere o hash (`index_mismatch`). O daemon só entrega o SVG depois de `sanitize_svg` (`tools.icon`, [09](09-cli.md)). Ícone ausente ou maior que 64 KiB na fonte simplesmente não é oferecido.
+- Ícones: `cargo xtask registry-index` lista em cada entrada o ícone relativo de `metadata.icon` (`icon: {path: icons/php.svg, sha256}`); URLs `https` e arquivos ausentes não entram. `metadata.icon_color` não vai para o índice: fica no manifesto (coberto pelo sha256 dele) e chega ao cliente em `CatalogEntryDto.icon_color` e `IconDto.icon_color` (`tools.search`/`tools.icon`, §1.10). O hash vai assinado com o índice, o loader o confere como o dos manifestos (diferente = `verification_failed`, o registry inteiro é recusado), o cache guarda `icons/` e `lint-registry` confere o hash (`index_mismatch`). O daemon só entrega o SVG depois de `sanitize_svg` (`tools.icon`, [09](09-cli.md)). Ícone ausente ou maior que 64 KiB na fonte simplesmente não é oferecido.
 - Assinatura ([ADR-0018](adr/0018-detached-index-signature.md)): o índice é assinado por uma **assinatura minisign destacada, `index.yaml.minisig`, ao lado dele, sobre os bytes crus de `index.yaml`**. Não há canonicalização nem dependência do emissor YAML: o payload é exatamente o arquivo, então qualquer implementação de minisign assina e verifica, inclusive autores de registries de terceiros e o bot do registry (`minisign -S -s <chave> -m index.yaml`). `spec.signature` **não existe mais** no schema (um `signature:` antigo é recusado por `deny_unknown_fields`). `cargo xtask registry-index` gera o índice sem assinatura e `cargo xtask registry-sign --key <secreta> [--dir <registry>]` escreve `index.yaml.minisig` (e confere com o próprio loader antes de gravar); editar o `index.yaml` depois de assinar, por um byte que seja, invalida a assinatura e exige `registry-sign` de novo. Como os bytes são o contrato, toda fonte entrega o arquivo intacto: `Http` baixa `<URL do index>.minisig`, `Git` faz checkout byte-exato (`core.autocrlf=false`; `.gitattributes` fixa LF), `Dir` lê o par de arquivos, e o cache guarda os dois. O loader só aceita um índice sem `.minisig` se o registry estiver marcado `trusted_unsigned` (desenvolvimento; aparece como "não verificado"); uma assinatura presente e errada (outra chave, índice editado, arquivo ilegível) é **sempre** recusada, e uma assinatura sem chave configurada só carrega com `trusted_unsigned`. O `key_id` mostrado vem da chave pública configurada que verificou. A chave de desenvolvimento pública é `registry/keys/dev.pub` (embutida em `forge_registry::index::DEV_PUBLIC_KEY`); a secreta não é commitada. `lint-registry` confere a assinatura quando `registry/keys/dev.pub` existe. Um teste golden (`forge-registry`, `index.rs`) fixa o hash do `index.yaml` da fixture e verifica a assinatura commitada, para pegar mudanças de comportamento em atualizações de dependências.
 - Verificação no loader (`forge-registry`): (1) assinatura do índice **antes** de qualquer manifesto ser lido/baixado; (2) sha256 de cada arquivo contra o índice (diferença = a carga inteira falha e o cache anterior continua valendo); (3) cada manifesto é parseado e validado; um manifesto inválido, com `id`/`kind` diferente do índice ou, em registry não oficial, com `post_install.run` é **ignorado e listado** (`skipped`), sem derrubar o resto. `path` do índice é confinado a `tools/` ou `stacks/`, termina em `.yaml`, sem `..`, `:`, `\` nem caminho absoluto.
 - Fontes: pasta local (`Dir`, também `file://` e compartilhamentos de rede), `Http` (URL do `index.yaml`; manifestos relativos a ela; `ETag`/`If-None-Match`) e `Git` (URL do repositório com `index.yaml` na raiz; usa o comando `git` da máquina, `--depth 1`, sem libgit2 e sem caminho especial para o GitHub; sem `git` no PATH o erro é claro e dá para usar `Http` com `raw.githubusercontent.com`). Esquemas aceitos para git: `https`, `http`, `ssh`, `git`, `file`.
@@ -585,4 +594,4 @@ Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::pa
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).
 5. Variáveis de template desconhecidas (§1.4) ou expressões que não são variáveis = erro. `{{ sql }}`, `{{ database }}` e `{{ charset }}` só valem dentro de `spec.database` (§1.8, nos campos indicados); em qualquer outro lugar são `unknown_template_variable`.
 6. `post_install.run` só pode invocar executáveis dentro de `{{ paths.version }}` (caminho relativo, resolvido lá e nunca via PATH; sem `..`, caminho absoluto ou variáveis); destinos de `copy`/`render`/`mkdir` começam com `{{ paths.<dir> }}` e não saem dele; `config.files[].overlay` começa com `{{ paths.etc }}` e não sai dele; `Extension.install.target` começa com `{{ paths.version }}`; registries de terceiros não podem declarar `run`. Os `exe` de `spec.database` (`client`, `dump`, `restore`, `shell`) seguem a mesma ideia: caminho relativo à pasta da versão, sem `..`, caminho absoluto ou variáveis (`exe_outside_version`).
-7. Ícones em SVG ≤ 20 KB (arquivo em `registry/icons/` ou URL `https://` para `.svg`), sem `<script>`; tudo em `registry/icons/` é `.svg`.
+7. Ícones em SVG ≤ 20 KB (arquivo em `registry/icons/` ou URL `https://` para `.svg`), sem `<script>`; tudo em `registry/icons/` é `.svg` (exceto `ATTRIBUTION.md`, a lista de origens e licenças dos logos, §1.10).

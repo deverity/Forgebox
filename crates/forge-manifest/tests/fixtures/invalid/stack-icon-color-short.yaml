@@ -1,0 +1,8 @@
+# expect: invalid_value
+# with: ../valid/mysql.yaml
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata: { id: stack-icon-color-short, name: Fixture, icon_color: "#F00" }
+spec:
+  tools:
+    - { id: mysql, series: "8.4" }

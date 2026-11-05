@@ -27,6 +27,7 @@ metadata:
   changelog_url: https://xdebug.org/updates
   license: Xdebug-1.03
   icon: xdebug.svg
+  icon_color: "#317E1E"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

@@ -18,6 +18,7 @@ metadata:
   changelog_url: https://github.com/nodejs/node/blob/main/CHANGELOG.md
   license: MIT
   icon: nodejs.svg
+  icon_color: "#5FA04E"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

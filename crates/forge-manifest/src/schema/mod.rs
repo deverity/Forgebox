@@ -84,6 +84,16 @@ impl Manifest {
             Manifest::Project(_) | Manifest::Registry(_) => None,
         }
     }
+
+    /// `metadata.icon_color` of Tool, Extension and Stack (`#RRGGBB`).
+    pub fn icon_color(&self) -> Option<&str> {
+        match self {
+            Manifest::Tool(m) => m.metadata.icon_color.as_deref(),
+            Manifest::Extension(m) => m.metadata.icon_color.as_deref(),
+            Manifest::Stack(m) => m.metadata.icon_color.as_deref(),
+            Manifest::Project(_) | Manifest::Registry(_) => None,
+        }
+    }
 }
 
 impl From<ToolManifest> for Manifest {

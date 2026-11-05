@@ -19,6 +19,7 @@ metadata:
   changelog_url: https://github.com/axllent/mailpit/releases
   license: MIT
   icon: mailpit.svg
+  icon_color: "#00B786"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

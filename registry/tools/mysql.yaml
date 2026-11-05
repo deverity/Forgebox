@@ -23,6 +23,7 @@ metadata:
   docs: https://dev.mysql.com/doc/refman/8.4/en/
   license: GPL-2.0-only
   icon: mysql.svg
+  icon_color: "#4479A1"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

@@ -115,12 +115,15 @@ async fn search_info_and_icons_come_from_the_verified_registry() {
     assert_eq!(web.size_estimate_bytes, Some(12 * MB));
     let web_sha = sha256_of_file(&fixture().join("icons/hello-web.svg"));
     assert_eq!(web.icon_sha256.as_deref(), Some(web_sha.as_str()));
+    // metadata.icon_color (M2-E1-T24) is the tile colour of the white glyph.
+    assert_eq!(web.icon_color.as_deref(), Some("#336699"));
     let db = found
         .entries
         .iter()
         .find(|e| e.id == id("hello-db"))
         .unwrap();
     assert_eq!(db.icon_sha256, None);
+    assert_eq!(db.icon_color, None);
     assert_eq!(db.size_estimate_bytes, Some(30 * MB));
     let stack = found
         .entries
@@ -213,6 +216,7 @@ async fn search_info_and_icons_come_from_the_verified_registry() {
         .await
         .unwrap();
     assert_eq!(icon.sha256, web_sha);
+    assert_eq!(icon.icon_color.as_deref(), Some("#336699"));
     assert_eq!(
         icon.svg.as_bytes(),
         std::fs::read(fixture().join("icons/hello-web.svg")).unwrap()
