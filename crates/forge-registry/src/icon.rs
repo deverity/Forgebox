@@ -316,6 +316,14 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../registry/icons");
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
+            // The one non-SVG file lint rule 7 allows in `icons/` (docs/04 §1.10); it is never
+            // served as an icon. Any other file still has to pass.
+            if path
+                .file_name()
+                .is_some_and(|n| n == forge_manifest::lint::ICON_ATTRIBUTION)
+            {
+                continue;
+            }
             let bytes = std::fs::read(&path).unwrap();
             sanitize_svg(&bytes).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         }
