@@ -16,6 +16,9 @@ https://app.test {
         header_up FORGEBOX_SITE "app.test"
         transport http {
             read_timeout 3600s
+            # Idle upstream connections are reused (docs/06 section 4.1.1).
+            keepalive 4s
+            keepalive_idle_conns_per_host 32
         }
     }
 

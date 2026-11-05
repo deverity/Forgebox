@@ -611,7 +611,12 @@ export function ToolPage({ id }: { id: string }) {
           {t("tool.back")}
         </Link>
         <header className="flex items-center gap-4">
-          <CatalogIcon tool={id} sha256={entry?.icon_sha256} size={56} />
+          <CatalogIcon
+            tool={id}
+            sha256={entry?.icon_sha256}
+            color={entry?.icon_color}
+            variant="hero"
+          />
           <h1 className="min-w-0 flex-1 truncate text-title-1">
             {dto?.tool.name ?? entry?.name ?? id}
           </h1>

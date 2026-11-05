@@ -42,7 +42,7 @@ describe("CatalogIcon", () => {
     const h = harness;
     const { container } = render(
       <ForgeStateProvider layer={h.layer}>
-        <CatalogIcon tool="shady" sha256={"a".repeat(64)} />
+        <CatalogIcon tool="shady" sha256={"a".repeat(64)} color="#6A3FD4" />
       </ForgeStateProvider>,
     );
     await waitFor(() => {
@@ -96,7 +96,7 @@ describe("CatalogIcon", () => {
     const sha = "b".repeat(64);
     const { rerender } = render(
       <ForgeStateProvider layer={h.layer}>
-        <CatalogIcon tool="one" sha256={sha} />
+        <CatalogIcon tool="one" sha256={sha} color="#336699" />
       </ForgeStateProvider>,
     );
     await waitFor(() => {
@@ -104,8 +104,8 @@ describe("CatalogIcon", () => {
     });
     rerender(
       <ForgeStateProvider layer={h.layer}>
-        <CatalogIcon tool="one" sha256={sha} />
-        <CatalogIcon tool="two" sha256={sha} />
+        <CatalogIcon tool="one" sha256={sha} color="#336699" />
+        <CatalogIcon tool="two" sha256={sha} color="#336699" />
       </ForgeStateProvider>,
     );
     await waitFor(() => {

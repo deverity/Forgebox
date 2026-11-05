@@ -122,10 +122,10 @@ pub fn proxy_vhost(
     model.kind = SiteKind::Proxy;
     model.headers = options.headers.clone();
     model.proxy = Some(ProxyModel {
-        upstream: target.url(),
         websocket: options.websocket,
         read_timeout_secs: options.read_timeout_secs,
         start_on_visit: options.start_on_visit,
+        ..ProxyModel::new(target.url())
     });
     Ok(model)
 }

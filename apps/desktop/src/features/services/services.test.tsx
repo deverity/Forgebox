@@ -185,7 +185,14 @@ describe("list", () => {
       data: categorized(),
       extra: {
         // The fake answers tools.icon with not_found by default: give this tool an icon.
-        handlers: { "tools.icon": (params) => ({ tool: params.tool, svg, sha256: "00" }) },
+        handlers: {
+          "tools.icon": (params) => ({
+            tool: params.tool,
+            svg,
+            sha256: "00",
+            icon_color: "#4479A1",
+          }),
+        },
       },
     });
     const row = await rowOf("mysql/default");

@@ -7,143 +7,143 @@ metadata:
   url: https://github.com/forgebox/registry
 spec:
   schema_version: 1
-  updated_at: 2026-11-04T17:50:58Z
+  updated_at: 2026-11-05T12:38:05Z
   tools:
   - id: apache
     path: tools/apache.yaml
-    sha256: 8caf292624a57e8aa9ff04db7cf1c8563d6185b6053cd81c7c1f56c6af3cab3d
+    sha256: 89c815cc29d3136f26288740bbc67c9b77f06be83af9fcce0514dda20452cbb0
     categories:
     - webserver
     latest: 2.4.69
     icon:
       path: icons/apache.svg
-      sha256: 1466286a101be0ea769dfe456997b736efaf3cbe5807702bbe39c0fec2af853a
+      sha256: 7340d7112bebed37081a49d66b697d5eafd9ae3bf298b94ce0b76d2471ea2ced
   - id: caddy
     path: tools/caddy.yaml
-    sha256: e1a28e4e9319be68859d3cebdfd64afb1d09d24551a9fcd34dca708e0d6b5e1e
+    sha256: f4fc538e1545e9cd18bdafae56d001fc92646f7264b01174f8460058465d5aeb
     categories:
     - webserver
     latest: 2.11.7
     icon:
       path: icons/caddy.svg
-      sha256: 2092d7b60a0172dcec6ef120372b243338a808c89647e17d070b297b95be3152
+      sha256: 0de33843547dd4468bed07cb18bae11a137f46901483876efae31cd821af91d1
   - id: composer
     path: tools/composer.yaml
-    sha256: 8abec7950e7f20b2be743d188650df125bcf7dfc0ec9e0f15aa6d829da257a77
+    sha256: c57ee27fcf3fefebc6a83a2aee9fbbd32e48d1625075796f2b7c486aa19f7eab
     categories:
     - devtool
     latest: 2.10.3
     icon:
       path: icons/composer.svg
-      sha256: 2092d7b60a0172dcec6ef120372b243338a808c89647e17d070b297b95be3152
+      sha256: ccbd2e59c4f1645d101991c25b01a4796e5e5fbc8bd1da3da5fb4e49727b3faf
   - id: mailpit
     path: tools/mailpit.yaml
-    sha256: a398d0eb1c4d37acc01b59ebcfbd9a9d2b28f2ff24e87f4cd8a590a57f8cae52
+    sha256: 7b492ba2794e6ab807ee258150d14cc2d1d73f50235e2147e44da0ac4986b8d5
     categories:
     - mail
     latest: 1.32.0
     icon:
       path: icons/mailpit.svg
-      sha256: 94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3
+      sha256: f5119686ad2a8712cbc0739038c1bc58b401d5f7e1d45b05a0bb3a565b081d23
   - id: mariadb
     path: tools/mariadb.yaml
-    sha256: 8d8584847a23308cbc6b5305f857fae59a76e0cc9bf0b91b7f25c25ea775c877
+    sha256: b7d2263f7a67525eafe2aa5df988b1761dd38d6d99ea4c405541acb8a74e102f
     categories:
     - database
     latest: 11.8.9
     icon:
       path: icons/mariadb.svg
-      sha256: 94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3
+      sha256: 6f2401cb972d375347d820109eb66590aca085bf73acb7ad01c68f75920a0c5e
   - id: memurai
     path: tools/memurai.yaml
-    sha256: 20bb8b938e546fe11e3cd3fa1854b168974485299e8d82790696671236fb2566
+    sha256: 109b31f8761626bc596f094f66b1b3673d942deb09c966a04d8b41ee7fb804e2
     categories:
     - cache
     latest: 4.3.2
     icon:
       path: icons/memurai.svg
-      sha256: 94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3
+      sha256: bc78b5eb024a29d486d284859b757eaa02dd14be80f9b7c81b6b67ccce14f344
   - id: mysql
     path: tools/mysql.yaml
-    sha256: fdee53b30550848c237f2810f927be3774a1c3a00e97a3592e4ce4aa4f7e155a
+    sha256: 020dae7bb13a82f634edd35d3a6307832d814f1e836fb3596c6218aae0567e58
     categories:
     - database
     latest: 8.4.13
     icon:
       path: icons/mysql.svg
-      sha256: 94192f550d566dbaa8ca2274d5572a7dc7c77eea6aea0d3d651236c2006bf0e3
+      sha256: 309e7c487c46f8bbb0f9dddd1a5ee7ab92bfb22053bbc8a9cbffc7c024f14d64
   - id: nginx
     path: tools/nginx.yaml
-    sha256: 4866e5d8ae20a47b945cf01944ce7398c7f91ddc47a1750a571104ed29929a5f
+    sha256: b4ff1379e262124f11d08d5a03001f2717a7df11e229965ca3e9fecdd6e5f8ef
     categories:
     - webserver
     latest: 1.31.8
     icon:
       path: icons/nginx.svg
-      sha256: 61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c
+      sha256: 312ef8a8dfb58604b2c8979fc0e9f799e263623a218344fca709e52f5cda1c97
   - id: nodejs
     path: tools/nodejs.yaml
-    sha256: c2c839fd997cb29f5b9fea5f4e0046a9d833cd6f97f2da250b114dd92ac5c8b1
+    sha256: 3ed55a06d30268bd137383ad3518bde9663086d33f12c50666a311127e8a96e8
     categories:
     - runtime
     latest: 22.23.4
     icon:
       path: icons/nodejs.svg
-      sha256: 61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c
+      sha256: a6ce2237079559088ab21ba0882a89d38623fca67886ff65b357a0ad3af16269
   - id: php
     path: tools/php.yaml
-    sha256: 338e739575a938d77251ec6dbd862dd88a0cd0282a0d51e5ef060d01326bc0dc
+    sha256: ba765c916a800044f57c0c47648d6dd555d065a83e5d27c4691790140a137bee
     categories:
     - runtime
     icon:
       path: icons/php.svg
-      sha256: 4e00f80604d5a129006e91171ed996656d6fad1f842551ad18f5a6ea4c7dcbec
+      sha256: 4d98e00d37a82e9249109156447864801d9e43ab8db8b820f54993d3948f933f
   - id: postgresql
     path: tools/postgresql.yaml
-    sha256: fb116f6cfd1b52fbd98a1cf7d697a9b8bde12be090f0dfdba3adabe7dd354d41
+    sha256: 3d0b86f6746eba0420648e06162376a6573e427d805b874002e0ae6140e907af
     categories:
     - database
     latest: '18.6'
     icon:
       path: icons/postgresql.svg
-      sha256: 4e00f80604d5a129006e91171ed996656d6fad1f842551ad18f5a6ea4c7dcbec
+      sha256: e4261412fcd6a3ad20e0badf5ccd4a225e021a5bc7bdf62c54cc09d5131b1075
   - id: xdebug
     path: tools/xdebug.yaml
-    sha256: fd5a6cb95c70f1644e00aba17d590e0c24e6971d5f1d69b55206087ecfe9de33
+    sha256: 423502ecc6a801f8dcbb9c3c2b30321a2b2af1ed19fde6f1703365cecd01bed2
     categories:
     - devtool
     latest: 3.5.3
     icon:
       path: icons/xdebug.svg
-      sha256: f9279825372dd4eeea8de24a7efa0aecc0a8b5ebf8b0f04a7d4b901289074565
+      sha256: be99d437615781aa8150be0599ddba40b03789568ae36414da6b5ffce30b8818
   stacks:
   - id: laravel
     path: stacks/laravel.yaml
-    sha256: efa09ff18f6676452ae74198370871ebef7d5e2dda76b1cd841efaa215dbcc2e
+    sha256: ce3067256ae6d090ceffe91314c57278f63d84d85c1a341e899c5aceec5085f3
     icon:
       path: icons/laravel.svg
-      sha256: 933015c345a901df9bdb864b40ea3cfebef79fad6023348b1f97dd31ee463ad6
+      sha256: 8b6ea7f6390f53d322768c241e9590a196e38a8fe01548d5e9cab0101fe0b414
   - id: wordpress
     path: stacks/wordpress.yaml
-    sha256: 928aeecc96017e553c132b3705dd9a6ffe13e82e610e39078ce3cdf7466479da
+    sha256: 52168ca3987af45b5919fb5fd65709dd171ea7657e9e90eb7c893dd3019e0767
     icon:
       path: icons/wordpress.svg
-      sha256: 5fd2e529f68b76ba46b2963cb066f78fda7587b9f996056da12d3da3545eada3
+      sha256: 0446c3cbcd58013687bb2744fa7db2309885cd664866d95601e294b76d6bd68d
   - id: php
     path: stacks/php.yaml
-    sha256: e94e8ddacb8ed0fa1a3e72cf029ada3441c7b8961430989c2a5653289ea9a81c
+    sha256: 276148bcdb4922a45fa625d9ef7676a0779a5169ce49ba7582d26e1daba97dd6
     icon:
       path: icons/php.svg
-      sha256: 4e00f80604d5a129006e91171ed996656d6fad1f842551ad18f5a6ea4c7dcbec
+      sha256: 4d98e00d37a82e9249109156447864801d9e43ab8db8b820f54993d3948f933f
   - id: nextjs
     path: stacks/nextjs.yaml
-    sha256: d67bdcc77770edc85fe204b0d028fe2aff4f0858f4d5364a9df8855f6224e19e
+    sha256: 8246dbebec99e4dfa793810d54d4c25c7452cc97020f5533f9465f7d30a2c1d9
     icon:
       path: icons/nextjs.svg
-      sha256: 61c5a0b669f4a7c2cd9a2120cf59923a41283a0cbea61e54979dfa201d5e035c
+      sha256: f5a5134076e1f3b054b2c766a5613666bb369a2de853c6b05ee116d68c141fe9
   - id: cakephp
     path: stacks/cakephp.yaml
-    sha256: afbe694a96a6339fcf2000984446a7427dcbf3ca400f47d051d77a7c6476504a
+    sha256: fa7b73ec1f56058fbc406ba7ef6698522983cd913940d8224a8e85a0277f97b4
     icon:
       path: icons/cakephp.svg
-      sha256: 2092d7b60a0172dcec6ef120372b243338a808c89647e17d070b297b95be3152
+      sha256: b81983cd597df7c8996f33171cdd7911d2a9c5ef4699c1bd4c3c208bf371f2ad

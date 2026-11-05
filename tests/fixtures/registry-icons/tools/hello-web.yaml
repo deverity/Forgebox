@@ -15,6 +15,7 @@ metadata:
   changelog_url: https://example.org/hello-web/changelog
   license: MIT
   icon: hello-web.svg
+  icon_color: "#336699"
 spec:
   platforms: [windows-x64]
   suggests: [hello-db]

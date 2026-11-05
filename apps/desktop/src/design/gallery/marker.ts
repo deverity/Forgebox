@@ -25,6 +25,7 @@ export const P = {
   CommandPalette: "CommandPalette",
   Kbd: "Kbd",
   Tooltip: "Tooltip",
+  ToolTile: "ToolTile",
 } as const;
 
 /** Attribute that tells which docs/07 section 6 primitive(s) a gallery block shows. */

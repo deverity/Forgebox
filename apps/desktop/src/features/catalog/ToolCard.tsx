@@ -83,7 +83,12 @@ export const ToolCard = memo(function ToolCard({ entry, large = false }: ToolCar
       className="flex flex-col gap-2 rounded-card border border-stroke bg-surface p-4"
     >
       <div className="flex items-center gap-3">
-        <CatalogIcon tool={entry.id} sha256={entry.icon_sha256} size={large ? 48 : 32} />
+        <CatalogIcon
+          tool={entry.id}
+          sha256={entry.icon_sha256}
+          color={entry.icon_color}
+          variant="grid"
+        />
         <div className="min-w-0 flex-1">
           <Link
             to={DETAIL_ROUTE}

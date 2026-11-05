@@ -7,18 +7,22 @@
 // - `nodejs` answers `tools.releases` from a stale cache (`stale: true`);
 // - `legacy` answers `tools.releases` with a network failure;
 // - `redis` installs until `jobs.cancel` (the cancel flow);
-// - `laravel` is a stack of php + mysql + redis (sizes of mysql are estimates).
+// - `laravel` is a stack of php + mysql + redis (sizes of mysql are estimates);
+// - icons and brand colours are the official registry's (`registryIcons.ts`, M2-E1-T24), for
+//   every registry id even outside this catalog (Services and Dashboard ask `tools.icon`);
+//   `redis` and `legacy` have none (monogram fallback).
 import { fakeError, fakeJob, type FakeHandlers } from "../../../src/ipc/fakeBridge";
 import type * as T from "../../../src/ipc/generated";
 import type { QaData } from "./data";
+import { REGISTRY_ICONS, registryIcon } from "./registryIcons";
 
 const MB = 1024 * 1024;
 
 /** The icon of `shady`: everything a hostile manifest could try. */
 export const HOSTILE_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" onload="window.__pwned=1"><script>window.__pwned=2</script><image href="x" onerror="window.__pwned=3"/><circle r="4"/></svg>';
-const PLAIN_SVG =
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3"/></svg>';
+/** Brand colour of the third-party `shady` (a fixture value, not a registry one). */
+const SHADY_COLOR = "#6A3FD4";
 
 /** Not a real digest: fixtures only need a stable id. */
 function sha(id: string): string {
@@ -38,6 +42,8 @@ interface Seed {
   native?: boolean;
   update?: string;
   icon?: string;
+  /** `metadata.icon_color`; defaults to the registry's. */
+  color?: string;
   tags?: string[];
 }
 
@@ -49,7 +55,6 @@ const SEEDS: Seed[] = [
     summary: "The PHP interpreter, in several versions side by side.",
     versions: ["8.4.27", "8.4.26", "8.3.40", "8.3.39"],
     size_mb: 31,
-    icon: PLAIN_SVG,
   },
   {
     id: "mysql",
@@ -59,7 +64,6 @@ const SEEDS: Seed[] = [
     versions: ["8.4.3", "8.4.2"],
     size_mb: 190,
     update: "8.4.3",
-    icon: PLAIN_SVG,
   },
   {
     id: "redis",
@@ -68,7 +72,6 @@ const SEEDS: Seed[] = [
     summary: "In-memory data store and cache.",
     versions: ["7.4.1"],
     size_mb: 12,
-    icon: PLAIN_SVG,
   },
   {
     id: "mailpit",
@@ -77,7 +80,6 @@ const SEEDS: Seed[] = [
     summary: "Catches the mail your apps send while you develop.",
     versions: ["1.21.8"],
     size_mb: 18,
-    icon: PLAIN_SVG,
   },
   {
     id: "nodejs",
@@ -106,6 +108,7 @@ const SEEDS: Seed[] = [
     registry: "community",
     size_mb: 2,
     icon: HOSTILE_SVG,
+    color: SHADY_COLOR,
   },
   {
     id: "laravel",
@@ -139,7 +142,13 @@ const SEEDS: Seed[] = [
   },
 ];
 
-const ICONS = new Map(SEEDS.filter((s) => s.icon !== undefined).map((s) => [s.id, s.icon ?? ""]));
+/** What `tools.icon` serves: the registry's icons plus the fixture-only ones (`shady`). */
+const ICONS = new Map<string, { svg: string; color: string | null }>([
+  ...REGISTRY_ICONS,
+  ...SEEDS.flatMap((s) =>
+    s.icon === undefined ? [] : [[s.id, { svg: s.icon, color: s.color ?? null }] as const],
+  ),
+]);
 
 function entryOf(seed: Seed, installed: ReadonlySet<string>): T.CatalogEntryDto {
   return {
@@ -156,7 +165,8 @@ function entryOf(seed: Seed, installed: ReadonlySet<string>): T.CatalogEntryDto 
     latest: seed.versions[0] ?? null,
     installed: installed.has(seed.id),
     kind: seed.kind ?? "tool",
-    icon_sha256: seed.icon === undefined ? null : sha(seed.id),
+    icon_sha256: ICONS.has(seed.id) ? sha(seed.id) : null,
+    icon_color: seed.color ?? registryIcon(seed.id)?.color ?? null,
     update_available: seed.update ?? null,
     size_estimate_bytes: (seed.size_mb ?? 0) * MB,
     platforms: ["windows-x64"],
@@ -281,9 +291,9 @@ export function catalogHandlers(_data: QaData, base: FakeHandlers = {}): FakeHan
       };
     },
     "tools.icon": ({ tool }) => {
-      const svg = ICONS.get(tool);
-      if (svg === undefined) fakeError("not_found", `${tool} has no icon`);
-      return { tool, svg, sha256: sha(tool) };
+      const icon = ICONS.get(tool);
+      if (icon === undefined) fakeError("not_found", `${tool} has no icon`);
+      return { tool, svg: icon.svg, sha256: sha(tool), icon_color: icon.color };
     },
     "tools.info": (params, ctx) => {
       const seed = seedOf(params.tool);

@@ -133,6 +133,11 @@ pub struct CatalogEntryDto {
     /// Clients cache icons by it.
     #[serde(default)]
     pub icon_sha256: Option<String>,
+    /// `metadata.icon_color` (`#RRGGBB`, M2-E1-T24): the brand colour of the icon tile; the
+    /// icon is drawn white on it. `None` when the manifest has none (clients then show a
+    /// monogram on a palette colour).
+    #[serde(default)]
+    pub icon_color: Option<String>,
     /// `spec.platforms` (`windows-x64`...).
     #[serde(default)]
     pub platforms: Vec<String>,
@@ -656,4 +661,8 @@ pub struct IconDto {
     pub svg: String,
     /// SHA-256 (hex) of `svg`: the `CatalogEntryDto.icon_sha256` of the entry.
     pub sha256: String,
+    /// `metadata.icon_color` of the entry (`#RRGGBB`, M2-E1-T24), so screens that only ask
+    /// for the icon (Services, Dashboard) can paint its tile.
+    #[serde(default)]
+    pub icon_color: Option<String>,
 }

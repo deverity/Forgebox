@@ -67,9 +67,16 @@ pub struct StaticLocation {
 }
 
 /// Reverse proxy settings (docs/06 §4.1).
+///
+/// Connections to the upstream are kept alive and reused (docs/06 §4.1.1): a new TCP
+/// connection per request costs a Windows timer tick (~15.6 ms) on part of the connects
+/// and stalls nginx's event loop for every site it serves. `keepalive_conns` and
+/// `keepalive_idle_secs` are server-neutral: nginx `keepalive` / `keepalive_timeout` of
+/// the site's `upstream {}`, Apache `ttl=` of the `ProxyPass` worker (`disablereuse=On`
+/// when off), Caddy `keepalive` / `keepalive_idle_conns_per_host`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProxyModel {
-    /// `http://127.0.0.1:3000` (no trailing slash).
+    /// `http://127.0.0.1:3000` (no trailing slash, no path).
     pub upstream: String,
     /// Forward WebSocket upgrades (`forge proxy add --ws`).
     #[serde(default)]
@@ -80,10 +87,123 @@ pub struct ProxyModel {
     /// Show the "starting" page on 502 while an on-visit app boots (docs/06 §8).
     #[serde(default)]
     pub start_on_visit: bool,
+    /// Idle upstream connections each server process keeps for reuse; 0 = a new
+    /// connection per request (`Connection: close`, the behaviour before M2-E3-T22).
+    #[serde(default = "default_keepalive_conns")]
+    pub keepalive_conns: u32,
+    /// Seconds an idle upstream connection is kept. Below the idle timeout of the common
+    /// dev servers (Node and uvicorn close after 5 s), so the proxy never reuses a
+    /// connection the app is closing right then (a POST on it would get a 502).
+    #[serde(default = "default_keepalive_idle")]
+    pub keepalive_idle_secs: u32,
+    /// Derived by [`VhostModel::normalized`]: `http` or `https`.
+    #[serde(default, skip_deserializing)]
+    pub scheme: String,
+    /// Derived: `host:port` of the upstream with the scheme's default port filled in
+    /// (IPv6 keeps its brackets: `[::1]:5173`).
+    #[serde(default, skip_deserializing)]
+    pub address: String,
+    /// Derived: the upstream host without brackets (TLS server name of `https` upstreams).
+    #[serde(default, skip_deserializing)]
+    pub host: String,
 }
 
 fn default_read_timeout() -> u32 {
     3600
+}
+
+/// Default of [`ProxyModel::keepalive_conns`]: enough idle connections for a burst of a
+/// browser's parallel requests and HMR without keeping many sockets open per app.
+pub const DEFAULT_PROXY_KEEPALIVE_CONNS: u32 = 32;
+/// Default of [`ProxyModel::keepalive_idle_secs`].
+pub const DEFAULT_PROXY_KEEPALIVE_IDLE_SECS: u32 = 4;
+
+fn default_keepalive_conns() -> u32 {
+    DEFAULT_PROXY_KEEPALIVE_CONNS
+}
+
+fn default_keepalive_idle() -> u32 {
+    DEFAULT_PROXY_KEEPALIVE_IDLE_SECS
+}
+
+impl ProxyModel {
+    /// Proxy to `upstream` with the defaults: no WebSocket, 1 h read timeout, upstream
+    /// keep-alive on.
+    pub fn new(upstream: impl Into<String>) -> Self {
+        Self {
+            upstream: upstream.into(),
+            websocket: false,
+            read_timeout_secs: default_read_timeout(),
+            start_on_visit: false,
+            keepalive_conns: DEFAULT_PROXY_KEEPALIVE_CONNS,
+            keepalive_idle_secs: DEFAULT_PROXY_KEEPALIVE_IDLE_SECS,
+            scheme: String::new(),
+            address: String::new(),
+            host: String::new(),
+        }
+    }
+
+    /// Trims the trailing `/`, validates the upstream and fills `scheme`, `address` and
+    /// `host`.
+    fn normalize(&mut self) -> Result<()> {
+        self.upstream = self.upstream.trim_end_matches('/').to_owned();
+        check_token("proxy upstream", &self.upstream, "@?#")?;
+        let upstream = self.upstream.clone();
+        let (scheme, authority) = upstream
+            .split_once("://")
+            .filter(|(scheme, _)| matches!(*scheme, "http" | "https"))
+            .ok_or_else(|| {
+                invalid(format!(
+                    "proxy upstream must be http:// or https://: '{upstream}'"
+                ))
+            })?;
+        if authority.contains('/') {
+            return Err(invalid(format!(
+                "proxy upstream must not have a path: '{upstream}'"
+            )));
+        }
+        let bad = || invalid(format!("invalid proxy upstream: '{upstream}'"));
+        let (host, plain, port) = match authority.strip_prefix('[') {
+            Some(rest) => {
+                let (ip, after) = rest.split_once(']').ok_or_else(bad)?;
+                if ip.is_empty() || !ip.chars().all(|c| c.is_ascii_hexdigit() || c == ':') {
+                    return Err(bad());
+                }
+                let port = match after {
+                    "" => None,
+                    p => Some(p.strip_prefix(':').ok_or_else(bad)?),
+                };
+                (format!("[{ip}]"), ip.to_owned(), port)
+            }
+            None => {
+                let (host, port) = match authority.split_once(':') {
+                    Some((host, port)) => (host, Some(port)),
+                    None => (authority, None),
+                };
+                if host.contains('*') || check_host(host).is_err() {
+                    return Err(bad());
+                }
+                (host.to_owned(), host.to_owned(), port)
+            }
+        };
+        let port = match port {
+            Some(p) => p.parse::<u16>().ok().filter(|p| *p != 0).ok_or_else(bad)?,
+            None if scheme == "https" => 443,
+            None => 80,
+        };
+        if self.read_timeout_secs == 0 {
+            return Err(invalid("proxy read timeout must be positive"));
+        }
+        if self.keepalive_conns > 0 && self.keepalive_idle_secs == 0 {
+            return Err(invalid(
+                "proxy keep-alive idle time must be positive when keep-alive is on",
+            ));
+        }
+        self.scheme = scheme.to_owned();
+        self.address = format!("{host}:{port}");
+        self.host = plain;
+        Ok(())
+    }
 }
 
 /// Per-server hand-written snippets inserted verbatim at the end of the site.
@@ -279,21 +399,10 @@ impl VhostModel {
                 }
             }
             SiteKind::Proxy | SiteKind::App => {
-                let p = m
-                    .proxy
+                m.proxy
                     .as_mut()
-                    .ok_or_else(|| invalid("proxy site without proxy settings"))?;
-                p.upstream = p.upstream.trim_end_matches('/').to_owned();
-                check_token("proxy upstream", &p.upstream, "")?;
-                if !(p.upstream.starts_with("http://") || p.upstream.starts_with("https://")) {
-                    return Err(invalid(format!(
-                        "proxy upstream must be http:// or https://: '{}'",
-                        p.upstream
-                    )));
-                }
-                if p.read_timeout_secs == 0 {
-                    return Err(invalid("proxy read timeout must be positive"));
-                }
+                    .ok_or_else(|| invalid("proxy site without proxy settings"))?
+                    .normalize()?;
             }
         }
         for i in &m.index {
@@ -740,19 +849,85 @@ mod tests {
             kind: SiteKind::Proxy,
             hosts: vec!["app.test".into()],
             proxy: Some(ProxyModel {
-                upstream: "http://127.0.0.1:3000/".into(),
                 websocket: true,
-                read_timeout_secs: 3600,
-                start_on_visit: false,
+                ..ProxyModel::new("http://127.0.0.1:3000/")
             }),
             ..VhostModel::default()
         };
+        let p = m.normalized().unwrap().proxy.unwrap();
+        assert_eq!(p.upstream, "http://127.0.0.1:3000");
         assert_eq!(
-            m.normalized().unwrap().proxy.unwrap().upstream,
-            "http://127.0.0.1:3000"
+            (p.scheme.as_str(), p.address.as_str()),
+            ("http", "127.0.0.1:3000")
         );
+        assert_eq!(p.keepalive_conns, DEFAULT_PROXY_KEEPALIVE_CONNS);
         m.proxy.as_mut().unwrap().upstream = "ftp://x".into();
         assert!(m.normalized().is_err());
+    }
+
+    #[test]
+    fn proxy_upstream_is_split_for_the_templates() {
+        let split = |upstream: &str| {
+            let m = VhostModel {
+                kind: SiteKind::Proxy,
+                hosts: vec!["app.test".into()],
+                proxy: Some(ProxyModel::new(upstream)),
+                ..VhostModel::default()
+            };
+            m.normalized()
+                .map(|m| {
+                    let p = m.proxy.unwrap();
+                    (p.scheme, p.address, p.host)
+                })
+                .map_err(|e| e.code())
+        };
+        let ok = |s: &str, a: &str, h: &str| Ok((s.to_owned(), a.to_owned(), h.to_owned()));
+        assert_eq!(
+            split("http://127.0.0.1:3000"),
+            ok("http", "127.0.0.1:3000", "127.0.0.1")
+        );
+        assert_eq!(
+            split("http://localhost"),
+            ok("http", "localhost:80", "localhost")
+        );
+        assert_eq!(
+            split("https://backend.internal/"),
+            ok("https", "backend.internal:443", "backend.internal")
+        );
+        assert_eq!(split("http://[::1]:5173"), ok("http", "[::1]:5173", "::1"));
+        assert_eq!(split("https://[::1]"), ok("https", "[::1]:443", "::1"));
+        for bad in [
+            "http://x:1/api",
+            "http://u@x:1",
+            "http://x:1?a",
+            "http://x:0",
+            "http://x:99999",
+            "http://x:",
+            "http://:80",
+            "http://[::1",
+            "http://[zz]:1",
+            "http://[::1]x",
+            "http://*.x:1",
+            "http://a:b:c",
+        ] {
+            assert_eq!(split(bad), Err("invalid_input"), "{bad}");
+        }
+    }
+
+    #[test]
+    fn proxy_keepalive_needs_an_idle_time() {
+        let mut m = VhostModel {
+            kind: SiteKind::Proxy,
+            hosts: vec!["app.test".into()],
+            proxy: Some(ProxyModel {
+                keepalive_idle_secs: 0,
+                ..ProxyModel::new("http://127.0.0.1:3000")
+            }),
+            ..VhostModel::default()
+        };
+        assert_eq!(m.normalized().unwrap_err().code(), "invalid_input");
+        m.proxy.as_mut().unwrap().keepalive_conns = 0;
+        assert!(m.normalized().is_ok());
     }
 
     #[test]

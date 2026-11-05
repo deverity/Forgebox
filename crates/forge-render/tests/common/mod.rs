@@ -1,6 +1,8 @@
 //! Fixed contexts shared by the snapshot tests and the online end-to-end tests.
 #![allow(dead_code)]
 
+pub mod online;
+
 use std::collections::BTreeMap;
 
 use forge_core::paths::ForgeRoot;
@@ -63,10 +65,9 @@ pub fn sites(root: &ForgeRoot) -> Vec<VhostModel> {
             kind: SiteKind::Proxy,
             hosts: vec!["app.test".to_owned()],
             proxy: Some(ProxyModel {
-                upstream: "http://127.0.0.1:3000".to_owned(),
                 websocket: true,
-                read_timeout_secs: 3600,
                 start_on_visit: true,
+                ..ProxyModel::new("http://127.0.0.1:3000")
             }),
             ssl: Some(ssl("app.test")),
             http_redirect: true,

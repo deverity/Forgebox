@@ -13,6 +13,7 @@ metadata:
   tags: [node, nextjs, react, proxy, onboarding]
   order: 4
   icon: nextjs.svg
+  icon_color: "#000000"
   homepage: https://nextjs.org
 spec:
   tools:

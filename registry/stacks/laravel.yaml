@@ -11,6 +11,7 @@ metadata:
   tags: [php, laravel, mysql, redis, onboarding]
   order: 1
   icon: laravel.svg
+  icon_color: "#FF2D20"
   homepage: https://laravel.com
 spec:
   tools:

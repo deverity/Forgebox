@@ -15,6 +15,7 @@ metadata:
   docs: https://www.php.net/manual
   license: PHP-3.01
   icon: php.svg
+  icon_color: "#777BB4"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
   deprecated: false
 

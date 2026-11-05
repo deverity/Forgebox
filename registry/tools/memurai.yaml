@@ -27,6 +27,7 @@ metadata:
   docs: https://docs.memurai.com
   license: LicenseRef-Memurai-Developer
   icon: memurai.svg
+  icon_color: "#080606"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

@@ -41,7 +41,9 @@ export const colors = {
     "tool-5": "#2E7D32",
     "tool-6": "#B3541E",
     "tool-7": "#AD1457",
-    "tool-8": "#546E7A"
+    "tool-8": "#546E7A",
+    "tool-tile-stroke": "#0000001F",
+    "tool-tile-edge": "#0000001F"
   },
   "dark": {
     "bg-canvas": "#1C1C1E",
@@ -83,7 +85,9 @@ export const colors = {
     "tool-5": "#2E7D32",
     "tool-6": "#B3541E",
     "tool-7": "#AD1457",
-    "tool-8": "#546E7A"
+    "tool-8": "#546E7A",
+    "tool-tile-stroke": "#0000001F",
+    "tool-tile-edge": "#FFFFFF33"
   },
   "highContrast": {
     "bg-canvas": "#000000",
@@ -125,7 +129,9 @@ export const colors = {
     "tool-5": "#000000",
     "tool-6": "#000000",
     "tool-7": "#000000",
-    "tool-8": "#000000"
+    "tool-8": "#000000",
+    "tool-tile-stroke": "#FFFFFF",
+    "tool-tile-edge": "#FFFFFF"
   }
 } as const;
 
@@ -226,6 +232,19 @@ export const radius = {
   "sheet": 12,
   "window": 8,
   "item": 7
+} as const;
+
+export const toolTile = {
+  "list-size": 30,
+  "list-glyph": 19,
+  "list-radius": 8,
+  "grid-size": 40,
+  "grid-glyph": 24,
+  "grid-radius": 10,
+  "hero-size": 56,
+  "hero-glyph": 34,
+  "hero-radius": 14,
+  "stroke-width": 1
 } as const;
 
 export const shadow = {

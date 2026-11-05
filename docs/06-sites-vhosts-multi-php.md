@@ -43,7 +43,8 @@ VhostModel {
   static_locations: [...], deny: ["/\\.ht", "/.env"],
   headers, client_max_body: "256M",
   ssl: { cert, key } | None, http_redirect: bool,   # http→https
-  proxy: { upstream, websocket, start_on_visit, read_timeout_secs } | None,   # kind: proxy
+  proxy: { upstream, websocket, start_on_visit, read_timeout_secs,
+           keepalive_conns: 32, keepalive_idle_secs: 4 } | None,   # kind: proxy (§4.1.1)
   env: { NOME: valor },                  # fastcgi_param/SetEnv; sem `$` nem `%{`
   fallback_resource,                     # derivado do último try_files (Apache)
   extra: { apache: "...", nginx: "...", caddy: "..." }   # escape hatch por servidor (do usuário)
@@ -179,20 +180,58 @@ Implementação: `forge_fcgi::swap::swap` ([03 §2.2](03-engine.md)); os passos 
 ### 4.1 Site proxy
 `forge proxy add app.test http://127.0.0.1:3000 --ws --secure`
 ```nginx
+upstream forgebox_proxy_app.test {      # um pool de conexões por site proxy (§4.1.1)
+    server 127.0.0.1:3000 max_fails=0;
+    keepalive 32;
+    keepalive_timeout 4s;
+}
 server {
     listen 127.0.0.1:443 ssl; http2 on; server_name app.test;
     include snippets/ssl-app.test.conf;
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://forgebox_proxy_app.test;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $forgebox_upstream_connection;
         proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header FORGEBOX_SITE app.test;
         proxy_read_timeout 1h;          # HMR/WebSocket
         proxy_buffering off;
     }
 }
 ```
-Apache equivalente com `ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket` (2.4.47+). Caddy: `reverse_proxy 127.0.0.1:3000`.
+Apache equivalente com `ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket ttl=4 timeout=3600` (2.4.47+). Caddy: `reverse_proxy 127.0.0.1:3000` com `transport http { keepalive 4s; keepalive_idle_conns_per_host 32 }`.
+
+#### 4.1.1 Conexões com o upstream e reload (M2-E3-T22)
+**Por quê.** Achado do gate M2-E5-T13 ([14 §3.9](14-observability-metrics.md)): o template de proxy do nginx abria uma conexão TCP nova até o app a cada requisição (`Connection: close`). Nesta máquina parte desses connects em loopback custa um tique do Windows (~15,6 ms) e o laço de eventos do worker do nginx trava junto, atrasando **todos** os sites daquele nginx, não só o proxy.
+
+**Modelo** (`forge_render::ProxyModel`, neutro de servidor, sem código por tool): `keepalive_conns` (conexões ociosas guardadas por processo do servidor; padrão `DEFAULT_PROXY_KEEPALIVE_CONNS` = 32; `0` = uma conexão por requisição, o comportamento anterior) e `keepalive_idle_secs` (padrão 4 s: abaixo dos 5 s em que Node e uvicorn fecham uma conexão ociosa, então o proxy nunca reaproveita uma conexão que o app está fechando naquele instante; um POST nela viraria 502, porque o nginx só repete métodos idempotentes). `keepalive_conns > 0` exige `keepalive_idle_secs > 0`. `VhostModel::normalized` valida o upstream (`http(s)://host[:porta]`, sem caminho, credenciais, query nem fragmento, porta 1–65535) e deriva `scheme`, `address` (`host:porta` com a porta padrão do esquema; IPv6 com colchetes: `[::1]:5173`) e `host` (sem colchetes) para os templates. Os valores ainda não são expostos ao usuário (`spec.proxies[]` do `forgebox.yaml` não tem a chave): os padrões valem para todo site `proxy` e `app`.
+
+**Por servidor:**
+- **nginx** (`site-proxy.conf.j2`): um `upstream forgebox_proxy_<host principal>` por site (`*` vira `wildcard`) com `server <address> max_fails=0` (no `start_on_visit` um connect recusado enquanto o app sobe nunca marca o único servidor como indisponível por 10 s), `keepalive` e `keepalive_timeout`; `proxy_pass <scheme>://forgebox_proxy_<host>`, `proxy_http_version 1.1` e `Connection ""`. Com WebSocket, `Upgrade $http_upgrade` e `Connection $forgebox_upstream_connection` (mapa do `nginx.conf`: `upgrade` quando o cliente pede, vazio nos demais casos; o `$connection_upgrade` antigo mandava `close` e impedia o reuso). Upstream HTTPS: `proxy_ssl_server_name on` e `proxy_ssl_name <host>` (o nome do `upstream {}` não serve de SNI). `keepalive_conns = 0` renderiza o formato anterior (`proxy_pass <upstream>`, sem bloco `upstream`).
+- **Apache** (`site-proxy.conf.j2`): o `mod_proxy_http` já reaproveita as conexões do worker do `ProxyPass` (o template não tem `disablereuse`, `enablereuse=off`, `proxy-nokeepalive`, `force-proxy-request-1.0` nem `Connection: close`); o template só acrescenta `ttl=<keepalive_idle_secs>`. Com `0`: `disablereuse=On`.
+- **Caddy** (`site-proxy.caddy.j2`): o `reverse_proxy` mantém conexões por padrão; o template deixa explícitos `keepalive <idle>s` e `keepalive_idle_conns_per_host <conns>` no `transport http`. Com `0`: `keepalive off`.
+- Os três continuam com LF, UTF-8 sem BOM, cabeçalho de arquivo gerado, access log JSON `forgebox` e `FORGEBOX_SITE` ([14](14-observability-metrics.md)); asserts em `crates/forge-render/tests/snapshots.rs` (`nginx_proxy_keeps_upstream_connections_alive`, `apache_proxy_reuses_backend_connections`, `caddy_proxy_keeps_upstream_connections_alive`).
+
+**Verificado com os servidores reais** (`crates/forge-render/tests/proxy_keepalive_online.rs`, `proxy_sites_reuse_upstream_connections_online`; nginx 1.30.6, Apache httpd 2.4.69 e Caddy 2.11.7 do cache, app HTTP/1.1 dentro do teste que conta as conexões TCP): 20 GET e 1 POST, cada um numa conexão nova do cliente, chegam ao app por **uma** conexão nos três servidores, sempre em HTTP/1.1 e sem `Connection: close` (nginx e Caddy não mandam `Connection`; o Apache manda `Keep-Alive`); com `keepalive_conns = 0` são 21 conexões com `Connection: close`. O eco WebSocket passa pelo mesmo site e as requisições normais seguem funcionando depois dele. O e2e existente `nginx_proxies_http_websocket_and_the_on_visit_page_online` (`forge-sites`: Node real, HMR por WebSocket, página "Iniciando" do on-visit) passa com o upstream de keepalive.
+
+**Medido** (2026-11-05, `cargo test -p forge-render --release --test proxy_keepalive_online -- --ignored --nocapture nginx_proxy_keepalive` com `FORGEBOX_PERF_ROUNDS=3`; i5-1135G7 com 4 núcleos e 8 lógicos, Windows 10 Enterprise 19045, **sessão RDP**, nenhum `cargo`/`rustc` rodando; nginx 1.30.6; `oha` 1.16.0; upstream igual ao do gate do T13: atraso log-normal com mediana 20 ms e p99 120 ms, uma thread por conexão). "Antes" = `keepalive_conns = 0` e sem `multi_accept`; "depois" = os templates atuais. Mediana de 3 rodadas:
+
+| Medida | Antes p50 / p90 / p99 | Depois p50 / p90 / p99 |
+|---|---|---|
+| Proxy, `oha -q 1000 -c 64 -z 30s` (keep-alive) | 30,67 / 65,20 / 130,39 ms | **20,90 / 54,07 / 117,52 ms** |
+| 404 do mesmo nginx (`nobody.test`, 50 req/s) durante a carga no proxy | 0,78 / 18,75 / 23,97 ms | **0,25 / 0,46 / 0,90 ms** |
+| 404 com o nginx ocioso (referência) | 0,24 / 0,30 / 0,79 ms | 0,24 / 0,45 / 0,92 ms |
+
+| Falhas com `nginx -s reload` a cada 0,5 s (30 s, ~55 reloads por rodada) | Antes (rodadas 1 / 2 / 3) | Depois |
+|---|---|---|
+| Conexão nova por requisição (`--disable-keepalive`, 4 clientes) | 16 / 17 / 15 de ~2.600 | **0 / 0 / 0** de ~3.560 |
+| Clientes keep-alive (4 conexões) | 41 / 39 / 44 de ~3.170 | 34 / 28 / 22 de ~4.100 |
+
+Com keepalive a latência do proxy volta à distribuição do próprio app (a mediana cai ~10 ms) e o 404 sob carga fica igual ao do nginx ocioso. Na carga principal do "depois" houve 1 erro de socket do lado do `oha` (WSAEINVAL, `os error 10022`) em 90.000 requisições e nenhuma resposta fora de 2xx; ele não se repetiu em 100.000 requisições a um nginx sem upstream, com ou sem `multi_accept`. O teste tolera até 1 erro de transporte em 10.000 requisições e nenhum não-2xx.
+
+**Reload sem requisições perdidas.** Causa medida (nginx 1.30.6 isolado, `return 200`, nenhum upstream, reload a cada 1 s, 200 req/s): todo `nginx -s reload` no Windows sobe workers novos e fecha o socket de escuta do worker antigo; as conexões que ainda estavam na fila de `accept` dele falham no cliente (`connection error`, `error writing a body to connection`), ~1,8 por reload com uma conexão nova por requisição, também com `use poll` ou `accept_mutex on`. Um reload com configuração idêntica falha igual (o nginx sempre troca os workers). **Correção:** `multi_accept on` no bloco `events` do `nginx.conf.j2`: o worker esvazia a fila toda vez que acorda e quase nada sobra nela quando o socket é fechado (0 falhas nas 3 rodadas acima; no experimento isolado, de 0 a 5 em ~54 reloads contra ~51 em 28 sem ele). É o achado do M2-E5-T11/T13: 2 a 5 falhas em ~3.200 requisições PHP com `--disable-keepalive` quando a reciclagem de workers do pool re-renderiza o upstream e recarrega o nginx.
+
+**Resíduo documentado.** Clientes **keep-alive** ainda podem falhar durante um reload: no desligamento gracioso o nginx fecha as conexões keep-alive ociosas do worker antigo, e um cliente que envia a próxima requisição nesse instante recebe erro de conexão (corrida do HTTP/1.1, igual em qualquer SO). Navegadores repetem sozinhos uma requisição que falha numa conexão reaproveitada; o `oha` não. Por isso o daemon **não recarrega** quando nada mudou: `render::apply_target` só escreve arquivos cujo conteúdo mudou (`WriteOutcome::Unchanged`, comparação byte a byte) e `WebManager::apply_web` só chama `apply_reload` quando algum arquivo do servidor foi escrito (`Applied::changed`). Testes: `forge-daemon` `render::tests::same_web_model_writes_nothing_so_the_server_is_not_reloaded` (o mesmo modelo não escreve nem publica `config.rendered`; um worker reciclado em outra porta reescreve só `upstreams/php_8_4.conf`) e, com o nginx real, o fim de `nginx_proxy_keepalive_latency_and_reload_online` (re-render do mesmo contexto = tudo `Unchanged`). A reciclagem de um worker PHP muda a porta no upstream e por isso continua recarregando; evitar esse reload é desenho do pool (`forge-fcgi`), fora desta tarefa.
 
 ### 4.2 Processes (Procfile 2.0)
 Um site (ou o `forgebox.yaml` do projeto) declara processos; o supervisor os gerencia como `App`:

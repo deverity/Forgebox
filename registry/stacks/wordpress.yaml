@@ -16,6 +16,7 @@ metadata:
   tags: [php, wordpress, mariadb, cms, onboarding]
   order: 2
   icon: wordpress.svg
+  icon_color: "#21759B"
   homepage: https://wordpress.org
 spec:
   tools:
