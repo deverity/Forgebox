@@ -64,12 +64,23 @@ ulid = { workspace = true }
 # (M1-E5-T4, ADR-0024): WMI static methods (Wmi, Variant, Ole SAFEARRAYs), the firewall COM
 # API (WindowsFirewall), LocalMachine\Root, ReplaceFileW and the embedded manifest reader;
 # the daemon host (M1-E5-T2): single-instance mutex (CreateMutexW), connection cost
-# (INetworkCostManager) and detached start of a new daemon (daemon.restart).
+# (INetworkCostManager) and detached start of a new daemon (daemon.restart); the desktop
+# shell's system appearance (M2-E1-T5): HKCU Personalize/DWM values, DwmGetColorizationColor,
+# SystemParametersInfoW(SPI_GETHIGHCONTRAST), GetSystemMetrics(SM_REMOTESESSION) and
+# RtlGetVersion (declared locally in windows/appearance.rs); the pseudo consoles of the
+# daemon's terminal sessions (M2-E3-T3): CreatePipe, Create/Resize/ClosePseudoConsole and
+# PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE; the machine counters and process image names
+# (M2-E5-T10): GetSystemTimes, GlobalMemoryStatusEx, GetDiskFreeSpaceExW and
+# QueryFullProcessImageNameW (features already listed: System_Threading,
+# System_SystemInformation, Storage_FileSystem); ending a port holder (M2-E3-T11,
+# ADR-0045): IsProcessCritical/TerminateProcess (System_Threading) and the services hosted
+# by a pid (EnumServicesStatusExW, System_Services).
 [target.'cfg(windows)'.dependencies]
 junction = { workspace = true }
 windows = { workspace = true, features = [
     "Wdk_Storage_FileSystem",
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_NetworkManagement_Dns",
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
@@ -88,8 +99,10 @@ windows = { workspace = true, features = [
     "Win32_System_JobObjects",
     "Win32_System_LibraryLoader",
     "Win32_System_Ole",
+    "Win32_System_Pipes",
     "Win32_System_ProcessStatus",
     "Win32_System_Registry",
+    "Win32_System_Services",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_System_Variant",
@@ -101,3 +114,8 @@ windows = { workspace = true, features = [
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+
+# Test-only Win32 (unit tests under platform/windows): the process snapshot that finds a
+# shell's descendants and the console host of a pseudo console (M2-E3-T3).
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = ["Win32_System_Diagnostics_ToolHelp"] }

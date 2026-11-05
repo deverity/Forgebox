@@ -1,0 +1,61 @@
+{
+  "placeholder": "Digite um comando ou pesquise…",
+  "label": "Paleta de comandos",
+  "empty": "Nenhum resultado para “{query}”",
+  "hint": "Pressione {key} para abrir a paleta de comandos",
+  "groups": {
+    "actions": "Ações",
+    "navigation": "Navegação",
+    "services": "Serviços",
+    "sites": "Sites"
+  },
+  "commands": {
+    "goTo": "Ir para {name}",
+    "startAll": "Iniciar tudo",
+    "stopAll": "Parar tudo",
+    "newSite": "Novo site",
+    "logs": "Abrir logs",
+    "settings": "Abrir configurações",
+    "openTerminal": "Abrir terminal",
+    "startInstance": "Iniciar {name}",
+    "restartInstance": "Reiniciar {name}",
+    "openInstance": "Abrir detalhes de {name}",
+    "stopInstance": "Parar {name}",
+    "openSite": "Abrir {host} no navegador"
+  },
+  "unavailable": "Indisponível: {reason}",
+  "toast": {
+    "running": "{label}…",
+    "done": "{label}: concluído",
+    "openFailed": "Não foi possível abrir {url}"
+  },
+  "global": {
+    "failed": "Não foi possível registrar o atalho global {chord}: {error}"
+  },
+  "shortcuts": {
+    "conflict": "{chord} já é usado por “{name}”",
+    "invalid": "“{chord}” não é um atalho válido",
+    "needsModifier": "{chord} precisa de Ctrl ou Alt",
+    "unknown": "Atalho desconhecido {id}",
+    "saveFailed": "O atalho não foi salvo: {message}",
+    "names": {
+      "palette.open": "Paleta de comandos",
+      "nav.dashboard": "Ir para Dashboard",
+      "nav.services": "Ir para Serviços",
+      "nav.sites": "Ir para Sites",
+      "nav.php": "Ir para PHP",
+      "nav.databases": "Ir para Bancos de dados",
+      "nav.mail": "Ir para Mail",
+      "nav.logs": "Ir para Logs",
+      "nav.catalog": "Ir para Catálogo",
+      "nav.terminal": "Ir para Terminal",
+      "services.startAll": "Iniciar tudo",
+      "services.stopAll": "Parar tudo",
+      "sites.new": "Novo site",
+      "logs.open": "Abrir logs",
+      "settings.open": "Abrir configurações",
+      "terminal.open": "Abrir terminal",
+      "terminal.global": "Abrir terminal (global)"
+    }
+  }
+}

@@ -25,27 +25,151 @@ pub fn repo_registry() -> PathBuf {
 }
 
 /// Compiles `tests/fixtures/<name>.rs` (no dependencies) with rustc into
-/// `CARGO_TARGET_TMPDIR/<name>/<name>.exe` and returns the executable.
+/// `CARGO_TARGET_TMPDIR/<name>/<name>-<source hash>.exe` and returns the executable.
+///
+/// Safe across processes (cargo nextest runs every test in its own process): one
+/// executable per source content, linked under a per-process name and published by
+/// rename, so no process links over an executable that another one is running.
 pub fn compile_fixture(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     std::fs::create_dir_all(&dir).unwrap();
-    let exe = dir.join(format!("{name}.exe"));
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures")
-        .join(format!("{name}.rs"));
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let output = Command::new(rustc)
-        .args(["--edition", "2024", "-O", "-o"])
-        .arg(&exe)
-        .arg(&source)
-        .output()
-        .expect("running rustc");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    // A single file (`name.rs`) or a small project folder (`name/main.rs`).
+    let single = fixtures.join(format!("{name}.rs"));
+    let source = if single.is_file() {
+        single
+    } else {
+        fixtures.join(name).join("main.rs")
+    };
+    // FNV-1a of the source: a new executable whenever the fixture changes.
+    let hash = std::fs::read(&source)
+        .unwrap()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    let exe = dir.join(format!("{name}-{hash:016x}.exe"));
+    if !exe.exists() {
+        let partial = dir.join(format!("{name}-{hash:016x}-{}.exe", std::process::id()));
+        let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+        let output = Command::new(rustc)
+            .args(["--edition", "2024", "-O", "-o"])
+            .arg(&partial)
+            .arg(&source)
+            .output()
+            .expect("running rustc");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // Another process may have published the same executable meanwhile and may be
+        // running it, so it cannot be replaced: keep theirs.
+        if let Err(e) = std::fs::rename(&partial, &exe) {
+            assert!(exe.exists(), "publishing {}: {e}", exe.display());
+            let _ = std::fs::remove_file(&partial);
+        }
+    }
     exe
+}
+
+/// Samples each latency window needs: its p99 then ignores at most two of them.
+pub const LATENCY_SAMPLES: usize = 200;
+
+/// No single status answer may take this long while something else is stuck (on a machine
+/// whose own noise stays under it): an order of magnitude over the 50 ms budget, yet far
+/// under what a daemon waiting on the stuck thing takes (a stop cascade step is seconds
+/// long, an actor ask times out after 1 s, a client that never reads never frees anything).
+pub const LATENCY_CEILING: Duration = Duration::from_millis(500);
+
+/// How much worse than the windows without the stuck thing (measured right before and
+/// after, under the same outside load) the window with it may be when the machine itself
+/// is over the budget.
+pub const LOAD_FACTOR: u32 = 2;
+
+/// The 99th percentile of `samples`.
+pub fn p99(samples: &[Duration]) -> Duration {
+    let mut sorted = samples.to_vec();
+    sorted.sort();
+    let i = (sorted.len() * 99).div_ceil(100).saturating_sub(1);
+    sorted.get(i).copied().unwrap_or_default()
+}
+
+/// The status-latency budget of docs/03 §7.6 for a window measured while something is
+/// stuck, against windows measured right before and after without it.
+///
+/// The budget is a p99 (`budget`, 50 ms) plus a ceiling for any single answer
+/// ([`LATENCY_CEILING`]). On a shared 4-core machine another build can starve every thread
+/// of the test for whole scheduler quanta (M2-GATE-B16: p99 100-200 ms, single answers up
+/// to 700 ms, with or without the stuck thing), so both limits rise to [`LOAD_FACTOR`]
+/// times what the free windows measured: outside load weighs on both sides, while a daemon
+/// that waits on the stuck thing is far worse than its own free windows.
+#[derive(Debug)]
+pub struct LatencyVerdict {
+    pub samples: usize,
+    pub p99: Duration,
+    pub max: Duration,
+    pub free_samples: Vec<usize>,
+    pub free_p99: Duration,
+    pub free_max: Duration,
+    pub allowed_p99: Duration,
+    pub allowed_max: Duration,
+}
+
+impl LatencyVerdict {
+    pub fn new(budget: Duration, stuck: &[Duration], free: &[&[Duration]]) -> Self {
+        let max_of = |s: &[Duration]| s.iter().max().copied().unwrap_or_default();
+        let free_p99 = free.iter().map(|s| p99(s)).max().unwrap_or_default();
+        let free_max = free.iter().map(|s| max_of(s)).max().unwrap_or_default();
+        Self {
+            samples: stuck.len(),
+            p99: p99(stuck),
+            max: max_of(stuck),
+            free_samples: free.iter().map(|s| s.len()).collect(),
+            free_p99,
+            free_max,
+            allowed_p99: budget.max(free_p99 * LOAD_FACTOR),
+            allowed_max: LATENCY_CEILING.max(free_max * LOAD_FACTOR),
+        }
+    }
+
+    pub fn ok(&self) -> bool {
+        self.samples >= LATENCY_SAMPLES
+            && self.free_samples.iter().all(|&n| n >= LATENCY_SAMPLES)
+            && self.p99 < self.allowed_p99
+            && self.max < self.allowed_max
+    }
+}
+
+impl std::fmt::Display for LatencyVerdict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} samples: p99 {:?} (allowed {:?}), max {:?} (allowed {:?}); without it {:?} \
+             samples: p99 {:?}, max {:?}",
+            self.samples,
+            self.p99,
+            self.allowed_p99,
+            self.max,
+            self.allowed_max,
+            self.free_samples,
+            self.free_p99,
+            self.free_max
+        )
+    }
+}
+
+/// `n` distinct free TCP ports, as a TOML list body. Used for a private `databases` range so
+/// parallel test processes never reserve (and then fail to bind) each other's ports.
+pub fn free_ports(n: usize) -> String {
+    let listeners: Vec<_> = (0..n)
+        .map(|_| std::net::TcpListener::bind("127.0.0.1:0").unwrap())
+        .collect();
+    listeners
+        .iter()
+        .map(|l| l.local_addr().unwrap().port().to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// A free TCP port of 127.0.0.1 right now.
@@ -71,9 +195,10 @@ impl TestRoot {
         std::fs::create_dir_all(root.etc()).unwrap();
         // Private CRL and internal-endpoint ports: tests run in parallel.
         let toml = format!(
-            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\n",
+            "[dns]\nenabled = false\n\n[ports.ranges]\ntls-crl = [{}]\ninternal = [{}]\ndatabases = [{}]\n",
             free_port(),
-            free_port()
+            free_port(),
+            free_ports(16)
         );
         std::fs::write(root.forgebox_toml(), toml).unwrap();
         Self { dir, root }
@@ -240,6 +365,33 @@ pub fn working_set_kib(pid: u32) -> Option<u64> {
     let mem = line.rsplit("\",\"").next()?;
     let digits: String = mem.chars().filter(char::is_ascii_digit).collect();
     digits.parse().ok()
+}
+
+/// PIDs of the processes named `image` whose executable lives under `dir` (a test root).
+/// Unlike [`pids_of`] it ignores same-named processes of other tests running in parallel.
+pub fn pids_under(image: &str, dir: &Path) -> Vec<u32> {
+    let dir = dir.to_string_lossy().replace('/', "\\").to_lowercase();
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"Name='{image}'\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.ExecutablePath)\" }}"
+    );
+    let Ok(out) = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let (pid, path) = l.trim().split_once('|')?;
+            let path = path.replace('/', "\\").to_lowercase();
+            // The root may be spelled 8.3 or with a verbatim prefix: compare on the unique
+            // temp folder name.
+            let leaf = dir.rsplit('\\').next().unwrap_or(&dir);
+            path.contains(&format!("\\{leaf}\\"))
+                .then(|| pid.parse().ok())?
+        })
+        .collect()
 }
 
 /// PIDs of the processes named `image` (`forgeboxd.exe`) from `tasklist`.

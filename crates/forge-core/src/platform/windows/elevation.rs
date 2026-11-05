@@ -164,10 +164,10 @@ fn quote(path: &Path) -> Result<String> {
 
 /// COM initialized for `ShellExecuteExW` on this thread (apartment threaded, as the shell
 /// expects); uninitialized on drop when we did it.
-struct Com(bool);
+pub(super) struct Com(bool);
 
 impl Com {
-    fn init() -> Self {
+    pub(super) fn init() -> Self {
         // SAFETY: plain initialization of the calling thread.
         let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) };
         // S_FALSE (already initialized) also needs a matching uninitialize;

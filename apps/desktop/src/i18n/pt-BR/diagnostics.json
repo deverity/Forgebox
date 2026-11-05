@@ -1,0 +1,71 @@
+{
+  "title": "Diagnóstico",
+  "run": "Executar diagnóstico",
+  "runAgain": "Executar de novo",
+  "running": "Executando…",
+  "idle": {
+    "title": "Nada verificado ainda",
+    "description": "O diagnóstico olha PATH, DNS, a CA local, portas, runtime do Visual C++, Defender e versões. Ele só lê; nada muda até você apertar Corrigir. Exportar relatório fica disponível depois da primeira execução."
+  },
+  "progress": {
+    "label": "Progresso do diagnóstico",
+    "starting": "Iniciando as verificações…",
+    "step": "Verificando: {step}"
+  },
+  "summary": "{ok} ok · {warn} avisos · {fail} falhas",
+  "summarySkipped": "· {count} ignoradas",
+  "none": "O daemon não devolveu nenhuma verificação",
+  "rerunFailed": "Não foi possível verificar de novo depois da correção. Execute o diagnóstico outra vez.",
+  "rechecking": "Verificando de novo…",
+  "status": {
+    "ok": "OK",
+    "warn": "Atenção",
+    "fail": "Falhou",
+    "skipped": "Ignorada"
+  },
+  "groups": {
+    "root": "Pasta de instalação",
+    "store": "Banco de dados",
+    "dns": "DNS",
+    "tls": "Certificados",
+    "port": "Portas",
+    "runtime": "Runtime",
+    "path": "PATH",
+    "defender": "Windows Defender",
+    "versions": "Versões",
+    "registry": "Registries",
+    "service": "Serviços"
+  },
+  "fix": "Corrigir",
+  "fixing": "Corrigindo…",
+  "fixed": "Corrigido",
+  "changePort": "Trocar porta",
+  "kill": {
+    "action": "Encerrar",
+    "title": "Encerrar o processo da porta {port}?",
+    "loading": "Procurando quem usa a porta…",
+    "lookupFailed": "Não foi possível consultar o processo desta porta.",
+    "free": "A porta {port} está livre agora. Nada a encerrar.",
+    "description": "Isto encerra à força o processo abaixo. Trabalho não salvo nele será perdido.",
+    "pid": "PID",
+    "exe": "Programa",
+    "cancel": "Cancelar",
+    "confirm": "Encerrar",
+    "killing": "Encerrando…",
+    "done": "Processo da porta {port} encerrado"
+  },
+  "dns": {
+    "test": "Testar DNS",
+    "testing": "Testando…",
+    "ok": "{host} resolve para {addresses} (via {via})",
+    "failed": "{host} não resolveu como esperado (via {via}, obtido {addresses})",
+    "none": "nada"
+  },
+  "export": {
+    "action": "Exportar relatório",
+    "needsRun": "Execute o diagnóstico para poder exportar o relatório.",
+    "exporting": "Exportando…",
+    "saved": "Relatório salvo em {path}",
+    "failed": "Não foi possível exportar o relatório: {cause}"
+  }
+}

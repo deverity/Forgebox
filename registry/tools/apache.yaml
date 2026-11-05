@@ -25,6 +25,7 @@ metadata:
   docs: https://httpd.apache.org/docs/2.4/
   license: Apache-2.0
   icon: apache.svg
+  icon_color: "#D22128"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:
@@ -136,7 +137,30 @@ spec:
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
         - { label: Error log, path: "{{ paths.logs }}/apache/error.log", format: apache-error }
-        - { label: Access log (JSON), path: "{{ paths.logs }}/apache/access.json", format: forgebox-json }
+        - label: Access log (JSON)
+          path: "{{ paths.logs }}/apache/access.json"
+          format: forgebox-json
+          access:
+            # LogFormat forgebox_json (crates/forge-render/templates/apache/httpd.conf.j2)
+            ts: { pointer: /t, unit: ms, start: true }   # %{msec}t: when the request arrived
+            host: /host                                  # %{Host}i, may carry the port
+            status: /s
+            duration: { pointer: /rt_us, unit: us }      # %D
+            bytes: /b
+            method: /m
+            uri: { pointer: /u }                         # %U has no query string
+            upstream: /up
+            lenient_escapes: true                        # \xhh and \v are not JSON
+            # Measured with httpd 2.4.69 (docs/14 section 3.8): APR opens the log with
+            # FILE_SHARE_DELETE, so the daemon renames it while httpd writes; a graceful
+            # restart (the same Ctrl+Break as `reload`) reopens it, with no failed request
+            # and no lost line. `rotatelogs.exe` is not an option: it names the files by time
+            # or alternates between two names, neither of which the tailer can follow.
+            rotate:
+              max_size: 64MB
+              keep: 1
+              strategy: rename-reopen
+              reopen: { signal: ctrl-break }
       autostart: true
 
   discover:

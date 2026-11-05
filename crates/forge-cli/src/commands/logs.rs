@@ -1,12 +1,16 @@
-//! `forge logs <target> [-f] [--since] [--grep]`, `forge daemon logs`, `forge run ... logs`.
+//! `forge logs <target> [-f] [--since] [--grep] [--before]`, `forge logs --list`,
+//! `forge daemon logs`, `forge run ... logs`.
 
-use forge_ipc::api::{LogLineDto, LogSource, LogsReadParams, LogsSubscribeParams};
+use forge_ipc::api::{
+    LogLineDto, LogSource, LogTargetDto, LogTargetKind, LogsReadParams, LogsSubscribeParams,
+    NoParams,
+};
 use forge_ipc::client::SubscriptionItem;
 
 use crate::context::Context;
 use crate::error::CliResult;
 use crate::messages::Msg;
-use crate::output::{DIM, RED, paint};
+use crate::output::{DIM, Output, RED, or_dash, paint};
 
 /// What to read.
 pub struct LogsRequest {
@@ -16,6 +20,8 @@ pub struct LogsRequest {
     pub since: Option<String>,
     pub grep: Option<String>,
     pub lines: Option<u32>,
+    /// Page back: only lines with a smaller `seq`.
+    pub before: Option<u64>,
 }
 
 /// Lines shown first when following without `-n`.
@@ -81,6 +87,7 @@ pub async fn run(ctx: &Context, request: LogsRequest) -> CliResult<()> {
             since_secs,
             grep: request.grep,
             limit: request.lines,
+            before_seq: request.before,
         })
         .await?;
     ctx.out.emit(&chunk, |out| {
@@ -91,6 +98,56 @@ pub async fn run(ctx: &Context, request: LogsRequest) -> CliResult<()> {
             out.line(human_line(line));
         }
     });
+    Ok(())
+}
+
+fn kind_name(kind: LogTargetKind) -> &'static str {
+    match kind {
+        LogTargetKind::Daemon => "daemon",
+        LogTargetKind::Instance => "instance",
+        LogTargetKind::InstanceFile => "instance_file",
+        LogTargetKind::Pool => "pool",
+        LogTargetKind::Site => "site",
+        LogTargetKind::App => "app",
+    }
+}
+
+fn targets_table(out: &Output, targets: &[LogTargetDto]) {
+    let rows = targets
+        .iter()
+        .map(|t| {
+            vec![
+                t.target.clone(),
+                kind_name(t.kind).to_owned(),
+                t.group.clone(),
+                or_dash(t.format.as_deref()),
+                if t.live {
+                    out.t(Msg::Yes).to_owned()
+                } else {
+                    out.t(Msg::No).to_owned()
+                },
+            ]
+        })
+        .collect();
+    out.table(
+        &[
+            out.t(Msg::HTarget),
+            out.t(Msg::HType),
+            out.t(Msg::HGroup),
+            out.t(Msg::HFormat),
+            out.t(Msg::HLive),
+        ],
+        rows,
+        Msg::NoLogTargets,
+    );
+}
+
+/// `forge logs --list` (`logs.targets`).
+pub async fn targets(ctx: &Context) -> CliResult<()> {
+    let list = ctx
+        .call::<forge_ipc::api::methods::logs_targets>(NoParams {})
+        .await?;
+    ctx.out.emit(&list, |out| targets_table(out, &list.targets));
     Ok(())
 }
 
@@ -107,6 +164,7 @@ mod tests {
             source: LogSource::Stdout,
             level: None,
             text: "hello".into(),
+            access: None,
         };
         assert_eq!(strip_ansi(&human_line(&line)), "12:34:56 hello");
         let untimed = LogLineDto { ts: None, ..line };

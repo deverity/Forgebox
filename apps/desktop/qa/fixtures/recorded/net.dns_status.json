@@ -1,0 +1,22 @@
+{
+  "enabled": false,
+  "listen": null,
+  "mode": "none",
+  "policy": "not_applied",
+  "reason": "group_policy_table_present",
+  "server_running": false,
+  "tld_policies": [
+    {
+      "group_policy_table": true,
+      "mode": "none",
+      "nameserver": null,
+      "policy": "not_applied",
+      "probe": null,
+      "reason": "group_policy_table_present",
+      "tld": ".test"
+    }
+  ],
+  "tlds": [
+    ".test"
+  ]
+}

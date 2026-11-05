@@ -20,6 +20,10 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+# Forgebox icon resource (build.rs, docs/design/brand).
+[build-dependencies]
+embed-resource = { workspace = true }
+
 [dependencies]
 forge-ipc = { path = "../forge-ipc" }
 anstream = { workspace = true }
@@ -36,5 +40,8 @@ tokio = { workspace = true }
 toml = { workspace = true }
 
 [dev-dependencies]
+serde_yaml_ng = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+# Keys of the seeded metadata cache (releases_plan).
+sha2 = { workspace = true }

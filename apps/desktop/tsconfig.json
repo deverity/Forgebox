@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "resolveJsonModule": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowJs": true
+  },
+  "include": [
+    "src",
+    "qa",
+    "e2e",
+    "playwright.config.ts",
+    "playwright.real.config.ts",
+    "playwright.live.config.ts",
+    "playwright.qa.config.ts",
+    "playwright.perf.config.ts",
+    "vite.config.ts",
+    "eslint.i18n.js",
+    "eslint.actions.js",
+    "eslint.colors.js",
+    "eslint.disable.js"
+  ]
+}

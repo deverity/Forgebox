@@ -19,7 +19,7 @@ Nenhum artefato embute PHP/Nginx/MySQL. O instalador baixa o que o usuário esco
 
 ```
 C:\Forgebox\
-├── Forgebox.exe                  # GUI (Tauri). ~8 MB
+├── Forgebox.exe                  # GUI (Tauri). ~8 MB (alvo; medido no gate M2-E1: 16,2 MiB, redução em follow-up, docs/07 §10)
 ├── forgeboxd.exe                 # daemon (motor). ~7 MB
 ├── forge.exe                     # CLI. ~4 MB
 ├── forgebox-helper.exe           # helper elevado (manifest requireAdministrator; só roda sob demanda)
@@ -29,9 +29,9 @@ C:\Forgebox\
 ├── portable.flag                 # presente só no portátil: força tudo relativo e sem registro/PATH
 ├── VERSION                       # "1.0.0+build.sha"
 │
-├── app\                          # recursos da GUI que não vão embutidos (ícones de tools, fontes, templates de UI)
-│   ├── icons\tools\*.svg
-│   └── fonts\Inter-*.woff2, JetBrainsMono-*.woff2
+├── app\                          # recursos da GUI que não vão embutidos (ícones de tools, templates de UI)
+│   └── icons\tools\*.svg         # o ícone do Forgebox e os da bandeja NÃO ficam aqui: vão embutidos nos EXEs
+│                                 #   (recurso 32512 de todos os .exe acima; bandeja dentro do Forgebox.exe), docs/design/brand
 │
 ├── bin\                          # TOOLS INSTALADAS — layout versionado, visível, copiável
 │   ├── shims\                    # php.cmd, composer.cmd, node.cmd... → versão do projeto (.php-version, .nvmrc, forgebox.yaml) ou bin\<tool>\current; forgebox-project.ps1 lê o forgebox.yaml (opcional ao PATH; docs/06 §2.3)
@@ -109,13 +109,15 @@ C:\Forgebox\
 │   ├── ipc.token                 # token da API local (ACL: só o usuário)
 │   ├── dns-policy.json           # TLDs em modo hosts (fallback da NRPT, ADR-0033); gravado por dns enable/disable
 │   ├── registry\                 # cache do(s) registry(ies) + índices de providers
+│   ├── gui\                      # SÓ no modo portátil: dados da GUI (prefs.json, window-state.json, webview\ = perfil do WebView2); instalado → %LOCALAPPDATA%\Forgebox\gui (ADR-0035)
 │   └── locks\                    # forgeboxd.lock (pid, versão e pipe do daemon em execução; removido na parada) + arquivos de troca do helper
 │
 ├── tmp\                          # efêmero (limpo automaticamente)
 │   ├── downloads\ , stage\ , sessions\php\8.3\ , uploads\
 │
-├── backups\                      # dumps agendados/manuais de bancos, snapshots de etc\ antes de updates
-│   └── 2026-10-26T13-00\mysql-default-loja.sql.zst
+├── backups\                      # dumps de bancos, snapshots de etc\ antes de updates
+│   ├── mysql\default\loja-20261026T130000Z.sql.zst      # db.export sem --output: <tool>\<instância>\<banco>-<UTC>.sql.zst (M2-E3-T6)
+│   └── postgresql\default\Loja-20261026T130512Z.sql.zst  # escrito como .partial e renomeado só no fim; cancelar/falhar apaga o .partial
 │
 └── manifests\
     └── local\                    # manifestos do usuário (kind: Tool/Extension) fora do registry
@@ -124,11 +126,16 @@ C:\Forgebox\
 ### 2.1 Modo "por usuário" (alternativo)
 Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binários ficam lá e **a raiz de dados** (`bin\ etc\ data\ www\ certs\ logs\ state\ tmp\ backups\ manifests\`) vai para a pasta escolhida (padrão `C:\Forgebox`). `forgebox.toml` em `%LOCALAPPDATA%\Forgebox\root.toml` aponta a raiz. Tudo o resto é idêntico. **Exceção pendente (M4-E1):** o `forgebox-helper.exe` só atende a raiz em que ele mesmo está ([ADR-0022](adr/0022-elevated-helper-protocol.md)/[ADR-0024](adr/0024-helper-execution.md)); neste modo o instalador precisa colocar uma cópia dele na raiz de dados.
 
+**Escrita do `root.toml` (M2-E2-T11).** `forge_core::paths::RootPointer` (reexportado em `forge_ipc::base::paths`) grava `root = "D:/Forgebox"` (barras `/`, caminho absoluto, sem caracteres de controle) em `%LOCALAPPDATA%\Forgebox\root.toml`, ou em `$FORGE_CONFIG_DIR/root.toml` quando a variável existe (a leitura em `ForgeRoot::discover` usa a mesma pasta). A escrita é atômica (`root.toml.tmp` + rename). Na GUI, `choose_root(path)` recusa com `invalid_input` e `details.reason` estável (texto pt-BR/en-US em `errors.json`): `path_invalid`, `path_not_absolute`, `path_not_local` (UNC/dispositivo), `path_is_file`, `path_inside_bin` (dentro do `bin` da raiz atual ou de outra raiz Forgebox), `path_not_empty` (pasta com conteúdo que não é raiz Forgebox), `path_not_writable`, e `root_overridden_env`/`root_overridden_portable` quando `FORGEBOX_ROOT` ou `portable.flag` já decidem a raiz. Aceita pasta inexistente (criada), vazia ou raiz Forgebox existente; depois grava o ponteiro, reinicia a conexão `local` da ponte e inicia o `forgeboxd` da nova raiz, que cria `www/etc/data/logs/tmp` com a flag case-sensitive (docs/15 §3). O `forgeboxd` da raiz anterior continua rodando até ser parado. `first_run_state` informa `{root, source: env|portable|root_toml|default, root_initialized, daemon_reachable, onboarding_done}`; o progresso do onboarding (`step`, `choices`, `done`) fica em `onboarding.json` na pasta de dados da GUI, uma entrada por raiz (`root:<caminho>`) ou contexto remoto (`context:<nome>`); contextos remotos nunca mostram o passo da raiz.
+
 ### 2.2 Modo portátil
-`portable.flag` presente → nenhuma escrita fora da pasta: sem PATH, sem registro, sem CA no store (usa `--insecure` ou instala CA manualmente), DNS via `hosts` só se o usuário pedir. Útil para pendrive, VM descartável, CI.
+`portable.flag` presente → nenhuma escrita fora da pasta: sem PATH, sem registro, sem CA no store (usa `--insecure` ou instala CA manualmente), DNS via `hosts` só se o usuário pedir. As métricas por site ficam desligadas (sem tail dos access logs nem escrita em `metrics_*`) enquanto `[metrics] enabled` não for definido ([14](14-observability-metrics.md) §3.7). Útil para pendrive, VM descartável, CI. A GUI guarda preferências, posição da janela e o perfil do WebView2 em `state\gui\` (nunca nas pastas padrão do Tauri em `%APPDATA%`/`%LOCALAPPDATA%`, [ADR-0035](adr/0035-window-chrome-materials.md)); `state\` só com `gui\` não conta como raiz inicializada (a GUI ainda leva ao onboarding).
 
 ### 2.4 Case sensitivity dos diretórios
 `www\`, `etc\`, `data\`, `logs\`, `tmp\` e `backups\` são criados com a flag NTFS `FILE_CS_FLAG_CASE_SENSITIVE_DIR` (herdada por subdiretórios) quando o modo paridade Linux está ligado (padrão). `bin\`, `app\`, `state\`, `certs\` e `manifests\` ficam no modo normal do Windows. Ver [15](15-linux-parity-case-sensitivity.md).
+
+### 2.5 Fontes
+Inter e JetBrains Mono são **embutidas no frontend** (woff2 de `@fontsource/inter` e `@fontsource/jetbrains-mono`, subconjuntos latin e latin-ext, importados em `apps/desktop/src/design/fonts.css`): ficam dentro do bundle da GUI e não existem como arquivos soltos em `apponts\`. São o último fallback das pilhas de `docs/design/tokens.json` (docs/07 §2.1); a GUI prefere as fontes do sistema.
 
 ## 3. O que toca fora da raiz (e como reverter)
 
@@ -136,6 +143,7 @@ Se o usuário escolher instalar em `%LOCALAPPDATA%\Programs\Forgebox`, os binár
 |---|---|---|---|
 | PATH do usuário | `HKCU\Environment\Path` + `WM_SETTINGCHANGE` (entradas no início do PATH do usuário, sem duplicatas, `REG_EXPAND_SZ` e demais entradas preservados; [ADR-0025](adr/0025-layout-staging-shims-user-path.md)) | Onboarding, se o usuário marcar (`[path]` do `forgebox.toml`: `bin\<tool>\current` e/ou `bin\shims`); nunca no modo portátil | Desinstalador remove entradas sob `<raiz>\bin\` (`Layout::remove_path_entries`) |
 | Iniciar com Windows | `HKCU\...\Run\Forgebox` | Opt-in | Desinstalador remove |
+| Dados da GUI | `%LOCALAPPDATA%\Forgebox\gui` (`prefs.json`, `window-state.json`, `webview\` = perfil do WebView2; [ADR-0035](adr/0035-window-chrome-materials.md)) | Primeira execução do `Forgebox.exe`; nunca no modo portátil (`state\gui\`); `FORGE_GUI_DATA_DIR` redireciona (testes) | Desinstalador remove a pasta (M4-E1) |
 | Protocolo `forgebox://` | `HKCU\Software\Classes\forgebox` | Instalação | Desinstalador remove |
 | CA raiz | `CurrentUser\Root` (e opcional `LocalMachine\Root`) | Opt-in | Desinstalador oferece remover: a CA atual e toda raiz registrada em `certs\ca\trust.json` (thumbprint SHA-1 + escopo; inclui CAs antigas cuja remoção foi recusada numa rotação). Remover de `CurrentUser\Root` mostra o diálogo do Windows; `LocalMachine` vai pelo helper |
 | Regra NRPT `.test` | Política DNS do sistema | Opt-in via helper | Desinstalador remove via helper |
@@ -166,3 +174,9 @@ Idempotente: reexecutar relata "já registrada"/"já existe" e não cria nada. I
 ## 7. Compatibilidade de atualização do Forgebox
 - Updates do app nunca tocam `bin\ data\ www\ certs\ etc\`. Só `*.exe`, `app\` e migrations do `state\forgebox.db` (sempre forward-compatíveis; backup automático do `.db` antes, via `VACUUM INTO`, em `state\forgebox.db.bak-v<NNNN>-<UTC>`; um `.db` com schema mais novo que o binário é recusado, nunca rebaixado).
 - Templates embutidos novos podem mudar o conteúdo dos **blocos gerenciados** em `etc\`; o update mostra diff antes de aplicar (ou aplica silenciosamente se o usuário escolher "sempre aceitar").
+
+## 8. Checklist de release: capturas do README
+- Regerar as imagens do README a cada release: `pnpm -C apps/desktop qa:readme-shots` (build de QA + Edge, cenário `populated` da ponte falsa, pt-BR, 1280x800 a DPR 1.25 = 1600x1000). Saída: `docs/assets/screenshots/<tela>-<tema>.png`.
+- Conferir cada imagem: no máximo 1600 px de largura e 400 KB, sem dados pessoais (usuário, caminhos, hosts, IPs): só dados dos cenários de QA. O teste `src/qa/readme.test.ts` (`pnpm -C apps/desktop test`) verifica tamanhos, links relativos do `README.md` e a lista de capturas.
+- A lista de telas e as legendas ficam em `apps/desktop/qa/readme-shots.ts`; mudou uma tela, mude a legenda no `README.md` junto.
+- A bandeja não entra no conjunto automático (exige a janela real): `scripts/qa/capture-tray.ps1` e `scripts/qa/capture-window.ps1` no build de release, se quiser acrescentar.

@@ -24,8 +24,10 @@ metadata:
   tags: [php, debug, profiler]
   homepage: https://xdebug.org
   docs: https://xdebug.org/docs/
+  changelog_url: https://xdebug.org/updates
   license: Xdebug-1.03
   icon: xdebug.svg
+  icon_color: "#317E1E"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:
@@ -78,4 +80,13 @@ spec:
       - { key: mode, label: Mode, ini: "xdebug.mode", type: multi, options: [off, debug, develop, coverage, profile, trace], default: [debug, develop], apply: reload }
       - { key: start_with_request, label: Start with request, ini: "xdebug.start_with_request", type: select, options: [yes, trigger, no], default: trigger, apply: reload }
       - { key: client_port, label: Client port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true, apply: reload }
-  toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }
+      - { key: idekey, label: IDE key, ini: "xdebug.idekey", type: text, default: FORGEBOX, apply: reload }
+  # `php.xdebug {mode}` (M2-E2-T9): `off` writes `disable`; `on`/`trigger` write `enable` and
+  # store these values of the quick settings above (the user's other keys stay).
+  toggle:
+    enable: "zend_extension=php_xdebug.dll"
+    disable: ";zend_extension=php_xdebug.dll"
+    apply: reload
+    modes:
+      "on": { mode: [debug, develop], start_with_request: "yes" }
+      trigger: { mode: [debug, develop], start_with_request: trigger }

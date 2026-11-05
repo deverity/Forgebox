@@ -37,6 +37,9 @@ struct SubState {
     /// discarded as duplicates.
     resume_floor: Option<u64>,
     closed: bool,
+    /// The first subscribe call is in flight: that call attaches it (or fails and closes
+    /// it), so the maintenance task must not subscribe it again meanwhile.
+    opening: bool,
     server_id: Option<SubscriptionId>,
     generation: u64,
 }
@@ -81,6 +84,7 @@ impl SubShared {
                     last_seq,
                     resume_floor: None,
                     closed: false,
+                    opening: true,
                     server_id: None,
                     generation: 0,
                 },
@@ -163,6 +167,16 @@ impl SubShared {
 
     pub(crate) fn is_closed(&self) -> bool {
         self.state.lock().closed
+    }
+
+    /// The first subscribe call ended (attached, or failed and closed).
+    pub(crate) fn opened(&self) {
+        self.state.lock().opening = false;
+    }
+
+    /// The first subscribe call is still in flight.
+    pub(crate) fn is_opening(&self) -> bool {
+        self.state.lock().opening
     }
 
     /// Item notification from the server (params of the notification).

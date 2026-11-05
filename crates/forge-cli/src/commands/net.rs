@@ -5,12 +5,13 @@
 
 use forge_ipc::api::methods::{
     net_dns_disable, net_dns_enable, net_lan_expose, net_lan_unexpose, tls_ca_install,
-    tls_ca_rotate, tls_issue, tls_renew,
+    tls_ca_rotate, tls_ca_uninstall, tls_issue, tls_renew,
 };
 use forge_ipc::api::{
-    Ack, CaInstallParams, CaRotateParams, CaStatusDto, CertFormat, CertificateDto,
-    CertificateListDto, DnsMode, DnsPolicyReason, DnsPolicyState, DnsProbeDto, DnsStatusDto,
-    DnsTestParams, LanAccessDto, LanSiteParams, MailClearParams, MailListParams, MailShowParams,
+    Ack, CaInstallParams, CaRotateParams, CaStatusDto, CaUninstallParams, CertFormat,
+    CertificateDto, CertificateListDto, DnsMode, DnsPolicyReason, DnsPolicyState, DnsProbeDto,
+    DnsStatusDto, DnsTestParams, LanAccessDto, LanSiteParams, MailAttachmentParams,
+    MailClearParams, MailDeleteParams, MailListParams, MailMarkReadParams, MailShowParams,
     NoParams, SiteRef, TlsExportParams, TlsHostParams, TlsRenewParams, TrustScopeDto,
 };
 
@@ -224,6 +225,42 @@ fn certificates_table(out: &Output, certificates: &[CertificateDto]) {
     );
 }
 
+/// `forge tls list`: every leaf certificate with its expiry (red when past, yellow within
+/// 30 days) and whether this machine trusts it.
+fn certificate_list_table(out: &Output, certificates: &[CertificateDto]) {
+    let now = forge_ipc::base::Timestamp::now();
+    let soon = now
+        .checked_add(std::time::Duration::from_secs(30 * 86_400))
+        .unwrap_or(now);
+    let rows = certificates
+        .iter()
+        .map(|c| {
+            let expires = render::time_cell(c.not_after);
+            vec![
+                c.host.clone(),
+                c.sans.join(", "),
+                if c.not_after <= now {
+                    paint(RED, expires)
+                } else if c.not_after <= soon {
+                    paint(YELLOW, expires)
+                } else {
+                    expires
+                },
+                match c.trusted {
+                    Some(true) => paint(GREEN, out.t(Msg::Yes)),
+                    Some(false) => paint(RED, out.t(Msg::No)),
+                    None => out.t(Msg::TrustUnknown).to_owned(),
+                },
+            ]
+        })
+        .collect();
+    out.table(
+        &["HOST", "SAN", out.t(Msg::HExpires), out.t(Msg::HTrusted)],
+        rows,
+        Msg::NoCertificates,
+    );
+}
+
 /// Writes `bytes` to `path` and tells the user.
 fn write_output(ctx: &Context, path: &std::path::Path, bytes: &[u8]) -> CliResult<()> {
     std::fs::write(path, bytes).map_err(|e| CliError::io(format!("{}: {e}", path.display())))?;
@@ -235,6 +272,14 @@ fn write_output(ctx: &Context, path: &std::path::Path, bytes: &[u8]) -> CliResul
 pub async fn tls(ctx: &Context, command: TlsCmd) -> CliResult<()> {
     match command {
         TlsCmd::Ca(ca) => tls_ca(ctx, ca).await,
+        TlsCmd::List => {
+            let list = ctx
+                .call::<forge_ipc::api::methods::tls_list>(NoParams {})
+                .await?;
+            ctx.out
+                .emit(&list, |out| certificate_list_table(out, &list.certificates));
+            Ok(())
+        }
         TlsCmd::Issue { host } => {
             let cert: CertificateDto = ctx
                 .job::<tls_issue, CertificateDto>(TlsHostParams { host })
@@ -328,6 +373,19 @@ async fn tls_ca(ctx: &Context, command: TlsCaCmd) -> CliResult<()> {
             };
             let ca: CaStatusDto = ctx
                 .job::<tls_ca_install, CaStatusDto>(CaInstallParams { scope })
+                .await?;
+            ctx.out.emit(&ca, |out| ca_lines(out, &ca));
+        }
+        TlsCaCmd::Uninstall { scope } => {
+            let scope = match scope {
+                ScopeArg::User => TrustScopeDto::CurrentUser,
+                ScopeArg::Machine => {
+                    ctx.elevation("forge tls ca uninstall --scope machine")?;
+                    TrustScopeDto::LocalMachine
+                }
+            };
+            let ca: CaStatusDto = ctx
+                .job::<tls_ca_uninstall, CaStatusDto>(CaUninstallParams { scope })
                 .await?;
             ctx.out.emit(&ca, |out| ca_lines(out, &ca));
         }
@@ -429,9 +487,19 @@ pub async fn mail(ctx: &Context, command: MailCmd) -> CliResult<()> {
                 .await?;
             ctx.out.emit(&ack, |_| {});
         }
-        MailCmd::List { unread, limit } => {
+        MailCmd::List {
+            unread,
+            search,
+            limit,
+            offset,
+        } => {
             let list = ctx
-                .call::<forge_ipc::api::methods::mail_list>(MailListParams { unread, limit })
+                .call::<forge_ipc::api::methods::mail_list>(MailListParams {
+                    unread,
+                    limit,
+                    query: search,
+                    offset,
+                })
                 .await?;
             ctx.out.emit(&list, |out| {
                 let rows = list
@@ -462,21 +530,111 @@ pub async fn mail(ctx: &Context, command: MailCmd) -> CliResult<()> {
                     rows,
                     Msg::NoMail,
                 );
+                let shown = u32::try_from(list.messages.len()).unwrap_or(u32::MAX);
+                let first = offset.unwrap_or(0);
+                if shown > 0 && first.saturating_add(shown) < list.total {
+                    out.line(paint(
+                        DIM,
+                        out.tf(
+                            Msg::MailPage,
+                            &[&(first + 1), &(first + shown), &list.total],
+                        ),
+                    ));
+                }
             });
         }
-        MailCmd::Show { id } => {
+        MailCmd::Show {
+            id,
+            attachment: Some(part_id),
+            output,
+            ..
+        } => {
+            let content = ctx
+                .call::<forge_ipc::api::methods::mail_attachment>(MailAttachmentParams {
+                    id,
+                    part_id,
+                })
+                .await?;
+            let bytes = decode_base64(&content.content_base64)?;
+            match output {
+                Some(path) if ctx.out.human() => write_output(ctx, &path, &bytes)?,
+                Some(path) => {
+                    std::fs::write(&path, &bytes)
+                        .map_err(|e| CliError::io(format!("{}: {e}", path.display())))?;
+                    ctx.out.json_value(&serde_json::json!({
+                        "filename": content.file_name,
+                        "path": path.display().to_string(),
+                        "bytes": bytes.len(),
+                    }));
+                }
+                // Never written under the sender's file name: it is untrusted input.
+                None => ctx
+                    .out
+                    .emit(&content, |out| match std::str::from_utf8(&bytes) {
+                        Ok(text) if content.content_type.starts_with("text/") => out.raw(text),
+                        _ => out.line(out.tf(Msg::BinaryNeedsOutput, &[&content.file_name])),
+                    }),
+            }
+        }
+        MailCmd::Show {
+            id, keep_unread, ..
+        } => {
             let message = ctx
-                .call::<forge_ipc::api::methods::mail_show>(MailShowParams { id })
+                .call::<forge_ipc::api::methods::mail_show>(MailShowParams {
+                    id,
+                    mark_read: !keep_unread,
+                })
                 .await?;
             ctx.out.emit(&message, |out| {
-                out.pairs(&[
+                let mut pairs = vec![
                     (out.t(Msg::HFrom), message.summary.from.clone()),
                     (out.t(Msg::HTo), message.summary.to.join(", ")),
-                    (out.t(Msg::HSubject), message.summary.subject.clone()),
-                ]);
+                ];
+                if !message.cc.is_empty() {
+                    pairs.push(("Cc", message.cc.join(", ")));
+                }
+                pairs.push((out.t(Msg::HSubject), message.summary.subject.clone()));
+                if !message.attachments.is_empty() {
+                    let names: Vec<String> = message
+                        .attachments
+                        .iter()
+                        .map(|a| format!("{} [{}]", a.file_name, a.part_id))
+                        .collect();
+                    pairs.push((out.t(Msg::HAttachments), names.join(", ")));
+                }
+                out.pairs(&pairs);
                 out.line("");
                 out.raw(message.text.as_deref().unwrap_or(""));
             });
+        }
+        MailCmd::Read { ids, unread } => {
+            let count = ids.len();
+            let ack = ctx
+                .call::<forge_ipc::api::methods::mail_mark_read>(MailMarkReadParams {
+                    ids,
+                    read: !unread,
+                })
+                .await?;
+            ctx.out.emit(&ack, |out| {
+                let msg = if unread {
+                    Msg::MailMarkedUnread
+                } else {
+                    Msg::MailMarkedRead
+                };
+                out.success(out.tf(msg, &[&count]));
+            });
+        }
+        MailCmd::Delete { ids } => {
+            let count = ids.len();
+            ctx.confirm(&ctx.out.tf(Msg::ConfirmDeleteMail, &[&count]))?;
+            let ack = ctx
+                .call::<forge_ipc::api::methods::mail_delete>(MailDeleteParams {
+                    ids,
+                    confirm: true,
+                })
+                .await?;
+            ctx.out
+                .emit(&ack, |out| out.success(out.tf(Msg::MailDeleted, &[&count])));
         }
         MailCmd::Clear => {
             ctx.confirm(ctx.out.t(Msg::ConfirmClearMail))?;

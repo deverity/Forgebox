@@ -177,6 +177,133 @@ pub fn trust_store(helper: Option<HelperClient>) -> Arc<dyn TrustStore> {
     Arc::new(super::windows::WindowsTrustStore::new(helper))
 }
 
+/// In-memory [`TrustStore`] for tests (no store is ever written): a set of
+/// `(thumbprint, scope)`. `CurrentUser` changes apply directly (the confirmation dialog is
+/// [`MemoryTrustStore::decline_current_user`]); `LocalMachine` changes go through the
+/// [`HelperClient`] given to [`MemoryTrustStore::new`], as on Windows (the same
+/// `trust.add_machine_root` / `trust.remove_machine_root` operations, so a
+/// [`crate::helper::FakeElevation`] sees them), and apply when the helper succeeds;
+/// without a helper they fail with `needs_elevation`. Like the Windows store, removing a
+/// root that is not there is `Ok(false)` without asking the helper.
+#[derive(Debug, Default)]
+pub struct MemoryTrustStore {
+    roots: std::sync::Mutex<std::collections::BTreeSet<(CertThumbprint, TrustScope)>>,
+    calls: std::sync::Mutex<Vec<String>>,
+    decline: std::sync::atomic::AtomicBool,
+    helper: Option<HelperClient>,
+}
+
+impl MemoryTrustStore {
+    pub fn new(helper: Option<HelperClient>) -> Self {
+        Self {
+            helper,
+            ..Self::default()
+        }
+    }
+
+    /// Puts a root in a store, as if trusted before (no call recorded).
+    pub fn seed(&self, thumbprint: CertThumbprint, scope: TrustScope) {
+        self.lock_roots().insert((thumbprint, scope));
+    }
+
+    /// Whether `thumbprint` is in `scope`.
+    pub fn contains(&self, thumbprint: CertThumbprint, scope: TrustScope) -> bool {
+        self.lock_roots().contains(&(thumbprint, scope))
+    }
+
+    /// Every change asked so far (`add current_user <thumbprint>`, `remove ...`).
+    pub fn calls(&self) -> Vec<String> {
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    /// From now on, `CurrentUser` changes fail with `cancelled` (the dialog declined).
+    pub fn decline_current_user(&self, decline: bool) {
+        self.decline
+            .store(decline, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn lock_roots(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::BTreeSet<(CertThumbprint, TrustScope)>> {
+        self.roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn record(&self, call: String) {
+        self.calls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(call);
+    }
+
+    fn permit(&self, op: crate::helper::HelperOp, scope: TrustScope) -> Result<()> {
+        match scope {
+            TrustScope::CurrentUser => {
+                if self.decline.load(std::sync::atomic::Ordering::SeqCst) {
+                    Err(ForgeError::Cancelled(
+                        "the trust confirmation was declined".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+            TrustScope::LocalMachine => match &self.helper {
+                Some(helper) => helper.run(op).map(|_| ()),
+                None => Err(ForgeError::NeedsElevation(format!(
+                    r"{}: LocalMachine\Root changes need forgebox-helper",
+                    op.name()
+                ))),
+            },
+        }
+    }
+}
+
+impl TrustStore for MemoryTrustStore {
+    fn is_trusted(&self, thumbprint: &CertThumbprint, scope: TrustScope) -> Result<bool> {
+        Ok(self.contains(*thumbprint, scope))
+    }
+
+    fn add_root(&self, cert_der: &[u8], scope: TrustScope) -> Result<()> {
+        let thumbprint = CertThumbprint::of_der(cert_der);
+        if self.contains(thumbprint, scope) {
+            return Ok(());
+        }
+        self.record(format!("add {scope} {thumbprint}"));
+        self.permit(
+            crate::helper::HelperOp::TrustAddMachineRoot {
+                thumbprint: thumbprint.to_hex(),
+            },
+            scope,
+        )?;
+        self.lock_roots().insert((thumbprint, scope));
+        Ok(())
+    }
+
+    fn remove_root(&self, thumbprint: &CertThumbprint, scope: TrustScope) -> Result<bool> {
+        if !self.contains(*thumbprint, scope) {
+            return Ok(false);
+        }
+        self.record(format!("remove {scope} {thumbprint}"));
+        self.permit(
+            crate::helper::HelperOp::TrustRemoveMachineRoot {
+                thumbprint: thumbprint.to_hex(),
+            },
+            scope,
+        )?;
+        Ok(self.lock_roots().remove(&(*thumbprint, scope)))
+    }
+
+    fn verify_server(&self, _: &[Vec<u8>], _: &[u8], _: &str, _: bool) -> Result<()> {
+        Err(ForgeError::UnsupportedPlatform(
+            "MemoryTrustStore does not verify chains".into(),
+        ))
+    }
+}
+
 /// The trust store of the running OS (stub until the Linux/macOS ports:
 /// `update-ca-certificates`, Keychain; docs/13 §4).
 #[cfg(not(windows))]
@@ -233,6 +360,42 @@ mod tests {
             let err = bad.parse::<CertThumbprint>().unwrap_err();
             assert_eq!(err.code(), "invalid_input", "{bad:?}");
         }
+    }
+
+    #[test]
+    fn the_memory_store_sends_machine_changes_to_the_helper() {
+        use crate::helper::{FakeElevation, HelperOp, HelperPolicy};
+        let t = CertThumbprint::of_der(b"ca");
+        let bare = MemoryTrustStore::new(None);
+        bare.add_root(b"ca", TrustScope::CurrentUser).unwrap();
+        assert!(bare.is_trusted(&t, TrustScope::CurrentUser).unwrap());
+        let err = bare.add_root(b"ca", TrustScope::LocalMachine).unwrap_err();
+        assert_eq!(err.code(), "needs_elevation");
+        bare.decline_current_user(true);
+        let err = bare.remove_root(&t, TrustScope::CurrentUser).unwrap_err();
+        assert_eq!(err.code(), "cancelled");
+        assert!(bare.contains(t, TrustScope::CurrentUser), "declined: kept");
+
+        let fake = Arc::new(FakeElevation::accepting());
+        let policy = HelperPolicy::new(std::env::temp_dir().join("fbx-trust"), [".test"]).unwrap();
+        let helper = HelperClient::new(fake.clone(), "forgebox-helper.exe", policy);
+        let store = MemoryTrustStore::new(Some(helper));
+        store.add_root(b"ca", TrustScope::LocalMachine).unwrap();
+        assert!(store.remove_root(&t, TrustScope::LocalMachine).unwrap());
+        // Absent: nothing to ask.
+        assert!(!store.remove_root(&t, TrustScope::LocalMachine).unwrap());
+        assert_eq!(
+            fake.ops(),
+            vec![
+                HelperOp::TrustAddMachineRoot {
+                    thumbprint: t.to_hex()
+                },
+                HelperOp::TrustRemoveMachineRoot {
+                    thumbprint: t.to_hex()
+                },
+            ]
+        );
+        assert_eq!(store.calls().len(), 2);
     }
 
     #[test]

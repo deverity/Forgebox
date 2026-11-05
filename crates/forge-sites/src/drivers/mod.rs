@@ -174,6 +174,29 @@ pub fn detect(dir: &Path, driver_override: Option<&str>) -> Result<Detection> {
     })
 }
 
+/// Subfolders drivers use as document root; when a site's root is one of them and no
+/// project marker is found, the project is their parent.
+const DOC_ROOT_NAMES: [&str; 4] = ["public", "pub", "web", "webroot"];
+
+/// Detection again for a stored site whose document root is `doc_root` (what
+/// `sites.driver` does): finds the project folder
+/// ([`crate::lint_case::project_dir_for_root`], or the parent of a conventional
+/// document-root folder), then runs [`detect`] on it with `driver_override`. Blocking.
+pub fn redetect(doc_root: &Path, driver_override: Option<&str>) -> Result<Detection> {
+    let mut project = crate::lint_case::project_dir_for_root(doc_root);
+    if project == doc_root
+        && doc_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| DOC_ROOT_NAMES.contains(&n))
+    {
+        if let Some(parent) = doc_root.parent() {
+            project = parent.to_path_buf();
+        }
+    }
+    detect(&project, driver_override)
+}
+
 pub(crate) fn is_file(dir: &Path, rel: &str) -> bool {
     dir.join(rel).is_file()
 }

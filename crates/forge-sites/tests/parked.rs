@@ -248,3 +248,30 @@ async fn watcher_creates_and_removes_sites_with_real_fs_events() {
     tokio::time::sleep(Duration::from_millis(1500)).await;
     assert_eq!(hosts(&svc).await, ["existing.test"]);
 }
+
+#[tokio::test]
+async fn a_tld_change_moves_the_parked_sites_to_the_new_suffix() {
+    let tmp = tempfile::tempdir().unwrap();
+    let www = tmp.path();
+    let store = Store::open_in_memory().unwrap();
+    let bus = EventBus::new();
+    let svc = service(&store, &bus);
+    std::fs::create_dir_all(www.join("a")).unwrap();
+    ParkedSync::new(svc.clone(), config(www))
+        .reconcile()
+        .await
+        .unwrap();
+    let id = svc.get_by_host("a.test").await.unwrap().unwrap().id;
+
+    // The preference changed: the site rules and the parked TLD follow.
+    svc.set_rules(SiteRules::new([".dev"]));
+    let mut moved = config(www);
+    moved.default_tld = "dev".to_owned();
+    let report = ParkedSync::new(svc.clone(), moved)
+        .reconcile()
+        .await
+        .unwrap();
+    assert_eq!(report.updated, ["a.dev"]);
+    assert_eq!(hosts(&svc).await, ["a.dev"]);
+    assert_eq!(svc.get_by_host("a.dev").await.unwrap().unwrap().id, id);
+}

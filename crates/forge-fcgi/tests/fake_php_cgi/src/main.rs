@@ -16,13 +16,70 @@
 //! Test knobs (environment): `FAKE_PHP_VERSION` (default `8.3.99`),
 //! `FAKE_LISTEN_DELAY_MS` (bind only after that), `FAKE_EXIT_CODE` (exit at once with
 //! it, before binding), `FAKE_ALLOC_MB` (keep that much memory touched: a big working
-//! set). Prints `listening <addr>` once bound and `PHPRC=<value>` at start.
+//! set), `FAKE_BURN_PCT` (one thread uses that % of one CPU, metered by its own CPU time,
+//! for the CPU sampling tests). Prints `listening <addr>` once bound and `PHPRC=<value>` at start.
 //! CTRL_BREAK ends the process (default console handling).
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+#[repr(C)]
+#[derive(Default, Clone, Copy)]
+struct FileTime {
+    low: u32,
+    high: u32,
+}
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetCurrentThread() -> isize;
+    fn GetThreadTimes(
+        thread: isize,
+        creation: *mut FileTime,
+        exit: *mut FileTime,
+        kernel: *mut FileTime,
+        user: *mut FileTime,
+    ) -> i32;
+}
+
+/// CPU time of the calling thread.
+#[cfg(windows)]
+fn thread_cpu() -> Duration {
+    let mut t = [FileTime::default(); 4];
+    // SAFETY: pseudo handle of the current thread; four writable FILETIMEs.
+    let ok = unsafe { GetThreadTimes(GetCurrentThread(), &mut t[0], &mut t[1], &mut t[2], &mut t[3]) };
+    assert_ne!(ok, 0, "GetThreadTimes failed");
+    let ticks = |t: FileTime| (u64::from(t.high) << 32) | u64::from(t.low);
+    Duration::from_nanos((ticks(t[2]) + ticks(t[3])) * 100)
+}
+
+#[cfg(not(windows))]
+fn thread_cpu() -> Duration {
+    Duration::ZERO
+}
+
+/// Uses `pct` % of one CPU: in every 1 s period, spins until this thread got `pct` % of
+/// it as CPU time (or the period is over), then sleeps.
+fn burn(pct: u32) {
+    let period = Duration::from_secs(1);
+    let budget = period * pct.min(100) / 100;
+    loop {
+        let start = Instant::now();
+        let cpu_start = thread_cpu();
+        let mut x = 0_u64;
+        while thread_cpu() - cpu_start < budget && start.elapsed() < period {
+            for _ in 0..10_000 {
+                x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
+            }
+        }
+        if let Some(rest) = period.checked_sub(start.elapsed()) {
+            std::thread::sleep(rest);
+        }
+    }
+}
 
 const BEGIN_REQUEST: u8 = 1;
 const END_REQUEST: u8 = 3;
@@ -170,7 +227,7 @@ fn serve(mut stream: TcpStream, version: &str) -> bool {
     true
 }
 
-fn main() {
+pub fn main() {
     if let Some(code) = env_u64("FAKE_EXIT_CODE") {
         eprintln!("fake php-cgi: exiting with {code}");
         std::process::exit(code as i32);
@@ -195,6 +252,9 @@ fn main() {
         Some(mb) => vec![1_u8; (mb as usize) * 1024 * 1024],
         None => Vec::new(),
     };
+    if let Some(pct) = env_u64("FAKE_BURN_PCT") {
+        std::thread::spawn(move || burn(pct as u32));
+    }
     if let Some(ms) = env_u64("FAKE_LISTEN_DELAY_MS") {
         std::thread::sleep(Duration::from_millis(ms));
     }

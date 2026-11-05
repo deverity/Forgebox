@@ -42,6 +42,46 @@ pub const NGINX_1_30: Archive = Archive {
     inner: "nginx-1.30.6",
 };
 
+/// Apache httpd 2.4.69 VS18 from Apache Lounge (curated sha256 of `registry/tools/apache.yaml`).
+pub const APACHE_2_4: Archive = Archive {
+    file: "httpd-2.4.69-261002-Win64-VS18.zip",
+    url: "https://www.apachelounge.com/download/VS18/binaries/httpd-2.4.69-261002-Win64-VS18.zip",
+    sha256: "77d715d0d9cee731e2251e7ddc2090a7a8e6d41fedef2e9827cd918593c5a652",
+    inner: "Apache24",
+};
+
+/// Caddy 2.11.7 (curated sha256 of `registry/tools/caddy.yaml`).
+pub const CADDY_2_11: Archive = Archive {
+    file: "caddy_2.11.7_windows_amd64.zip",
+    url: "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_windows_amd64.zip",
+    sha256: "0a1edc0b799512051c57071ce0e798d3f2cf67dc98171366f1d2b326072e3b06",
+    inner: "",
+};
+
+/// MySQL 8.4.13 (curated sha256 of `registry/tools/mysql.yaml`).
+pub const MYSQL_8_4: Archive = Archive {
+    file: "mysql-8.4.13-winx64.zip",
+    url: "https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.13-winx64.zip",
+    sha256: "e9cd98b1d23f122987b1afca26ad942efec5891481103d48ae3cde237fa3ea54",
+    inner: "mysql-8.4.13-winx64",
+};
+
+/// PostgreSQL 17.11 EDB binaries (curated sha256 of `registry/tools/postgresql.yaml`).
+pub const POSTGRESQL_17: Archive = Archive {
+    file: "postgresql-17.11-1-windows-x64-binaries.zip",
+    url: "https://get.enterprisedb.com/postgresql/postgresql-17.11-1-windows-x64-binaries.zip",
+    sha256: "6eabdf00d2893713b75db4336a23c3fdf505f056e217ec6e2e95d901750cfea3",
+    inner: "pgsql",
+};
+
+/// Mailpit 1.32.0 (curated sha256 of `registry/tools/mailpit.yaml`).
+pub const MAILPIT_1_32: Archive = Archive {
+    file: "mailpit-windows-amd64.zip",
+    url: "https://github.com/axllent/mailpit/releases/download/v1.32.0/mailpit-windows-amd64.zip",
+    sha256: "16915767a6c95dca569336e8f561f91cf355e9a33c57b91deedcc10a4bba7fd4",
+    inner: "",
+};
+
 fn shared_dir(var: &str, default: &str) -> PathBuf {
     let dir = std::env::var_os(var)
         .map(PathBuf::from)

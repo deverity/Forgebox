@@ -1,0 +1,127 @@
+{
+  "title": "Catálogo",
+  "loading": "Carregando o catálogo",
+  "unavailable": "O catálogo não está disponível",
+  "count_one": "{count} item",
+  "count_other": "{count} itens",
+  "search": {
+    "label": "Buscar no catálogo",
+    "placeholder": "Buscar ferramentas e stacks"
+  },
+  "filter": {
+    "category": "Categoria",
+    "allCategories": "Todas as categorias",
+    "state": "Mostrar",
+    "all": "Todos",
+    "installed": "Instalados",
+    "updates": "Com atualização"
+  },
+  "section": {
+    "stacks": "Stacks",
+    "stacksHint": "Uma stack instala um conjunto de ferramentas que funcionam juntas.",
+    "tools": "Ferramentas"
+  },
+  "offline": {
+    "title": "Aguardando o daemon",
+    "description": "O catálogo carrega assim que o Forgebox estiver conectado."
+  },
+  "empty": {
+    "title": "O catálogo está vazio",
+    "noMatchTitle": "Nada corresponde a \"{query}\"",
+    "description": "Tente outra palavra, outra categoria ou outro filtro."
+  },
+  "badge": {
+    "official": "Registry oficial",
+    "thirdParty": "Registry de terceiros: {registry}",
+    "native": "Nativo Windows",
+    "wsl": "Via WSL (v2)",
+    "installed": "Instalado",
+    "update": "Atualizar para {version}",
+    "stack": "Stack"
+  },
+  "card": {
+    "changelog": "Changelog",
+    "noVersion": "Sem versão para esta plataforma",
+    "latest": "Mais recente: {version}",
+    "size": "Cerca de {size}"
+  },
+  "plan": {
+    "loading": "Calculando o que será baixado",
+    "title": "O que será instalado",
+    "item": "{tool} {version}",
+    "sizeUnknown": "tamanho desconhecido",
+    "approx": "≈ ",
+    "alreadyInstalled": "já instalado",
+    "nothing": "Nada a baixar: tudo já está instalado.",
+    "total": "Download total: {size}",
+    "unknownSize_one": "{count} item não tem tamanho conhecido e não entra no total.",
+    "unknownSize_other": "{count} itens não têm tamanho conhecido e não entram no total."
+  },
+  "tool": {
+    "back": "Voltar ao catálogo",
+    "current": "CLI",
+    "broken": "Quebrada",
+    "removeVersion": "Remover a versão {version}",
+    "remove": "Remover",
+    "removeTitle": "Remover {spec}",
+    "removeWarning": "{spec} será apagada do disco. Sites ou serviços que a usam precisam trocar antes.",
+    "removing": "Removendo",
+    "removed": "Removida",
+    "confirmRemove": "Remover versão",
+    "cancel": "Cancelar",
+    "installed": "Versões instaladas",
+    "noneInstalled": "Nenhuma versão instalada ainda.",
+    "installedBadge": "Instalada",
+    "choose": "Escolher a versão {version}",
+    "chosenLabel": "Versão {version} escolhida",
+    "chosen": "Escolhida",
+    "chooseShort": "Escolher",
+    "loadingReleases": "Carregando versões",
+    "stale": "Não foi possível falar com os provedores de versões. Mostrando a lista em cache.",
+    "staleSince": "Não foi possível falar com os provedores de versões. Mostrando a lista em cache de {date}.",
+    "retry": "Tentar de novo",
+    "noReleases": "Nenhuma versão é oferecida para esta plataforma.",
+    "series_one": "Série {series} ({count} versão)",
+    "series_other": "Série {series} ({count} versões)",
+    "version": "Versão",
+    "variant": "Build",
+    "variantHint": "Escolha do build ({key}): o padrão serve para a maioria dos sites; o outro só se um site precisar.",
+    "starting": "Iniciando",
+    "install": "Instalar",
+    "extensionNote": "Extensões são instaladas dentro de uma versão de {target}, pela tela própria.",
+    "pickVersion": "Escolha uma versão primeiro.",
+    "versions": "Versões disponíveis",
+    "changelog": "Changelog",
+    "homepage": "Site oficial",
+    "docs": "Documentação"
+  },
+  "stack": {
+    "waitPlan": "Aguardando o plano de instalação.",
+    "contains": "O que a stack instala",
+    "tool": "{tool} {series}",
+    "latest": "mais recente",
+    "install": "Instalar a stack",
+    "confirm": "Confirmar e instalar ({size})",
+    "confirmIdle": "Confirmar e instalar",
+    "projectDisabled": "Criar projeto a partir de uma stack chega com o marco de Projetos.",
+    "createProject": "Criar projeto",
+    "allInstalled": "Todas as ferramentas desta stack já estão instaladas."
+  },
+  "installProgress": {
+    "list": "Instalações em andamento",
+    "label": "Instalando {name}",
+    "cancel": "Cancelar",
+    "cancelling": "Cancelando",
+    "cancelled": "Instalação cancelada. Nada foi alterado.",
+    "retry": "Tentar de novo",
+    "dismiss": "Dispensar",
+    "done": "Instalado",
+    "working": "Trabalhando",
+    "bytesOf": "{done} de {total}"
+  },
+  "discover": {
+    "label": "Procurar pastas em bin/",
+    "running": "Procurando…",
+    "done": "Pronto"
+  }
+}

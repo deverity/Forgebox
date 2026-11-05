@@ -1,0 +1,212 @@
+{
+  "events": [
+    {
+      "id": "01FORGEBOXFIXTURE000000007",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/etc/templates",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 1,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000008",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/etc/sites",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 2,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000009",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/data",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 3,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000010",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/logs",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 4,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000011",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/tmp",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 5,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000012",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/tmp/downloads",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 6,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000013",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/tmp/stage",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 7,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000014",
+      "kind": "fs.case_sensitivity_applied",
+      "payload": {
+        "dir": "C:/Forgebox/backups",
+        "reason": null,
+        "reason_code": null,
+        "site_id": null,
+        "v": 1
+      },
+      "seq": 8,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000015",
+      "kind": "site.created",
+      "payload": {
+        "host": "demo.test",
+        "site_id": "01FORGEBOXFIXTURE000000005",
+        "v": 1
+      },
+      "seq": 9,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000016",
+      "kind": "site.created",
+      "payload": {
+        "host": "shop.test",
+        "site_id": "01FORGEBOXFIXTURE000000006",
+        "v": 1
+      },
+      "seq": 10,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000017",
+      "kind": "config.rendered",
+      "payload": {
+        "fs_path": "etc/php/8.4/conf.d/10-forgebox.ini",
+        "owner": "php@8.4",
+        "path": "C:/Forgebox/etc/php/8.4/conf.d/10-forgebox.ini",
+        "v": 1
+      },
+      "seq": 11,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000018",
+      "kind": "config.rendered",
+      "payload": {
+        "fs_path": "etc/php/8.4/conf.d/90-forgebox-settings.ini",
+        "owner": "php@8.4",
+        "path": "C:/Forgebox/etc/php/8.4/conf.d/90-forgebox-settings.ini",
+        "v": 1
+      },
+      "seq": 12,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000019",
+      "kind": "pool.scaled",
+      "payload": {
+        "backends": [
+          "127.0.0.1:19000"
+        ],
+        "from_workers": 0,
+        "policy": "least_conn",
+        "reason": "start",
+        "series": "8.4",
+        "to_workers": 1,
+        "upstream": "php_8_4",
+        "v": 1,
+        "version": "8.4.27",
+        "version_id": "01FORGEBOXFIXTURE000000001"
+      },
+      "seq": 13,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000020",
+      "kind": "pool.scaled",
+      "payload": {
+        "backends": [
+          "127.0.0.1:19000",
+          "127.0.0.1:19001"
+        ],
+        "from_workers": 1,
+        "policy": "least_conn",
+        "reason": "start",
+        "series": "8.4",
+        "to_workers": 2,
+        "upstream": "php_8_4",
+        "v": 1,
+        "version": "8.4.27",
+        "version_id": "01FORGEBOXFIXTURE000000001"
+      },
+      "seq": 14,
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "01FORGEBOXFIXTURE000000021",
+      "kind": "daemon.ready",
+      "payload": {
+        "api_version": {
+          "major": 1,
+          "minor": 1
+        },
+        "v": 1,
+        "version": "0.1.0"
+      },
+      "seq": 15,
+      "ts": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "has_more": false,
+  "last_seq": 15,
+  "next_after": 15
+}

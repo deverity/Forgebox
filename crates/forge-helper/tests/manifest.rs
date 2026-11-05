@@ -6,8 +6,20 @@
 use std::path::Path;
 
 use forge_core::platform::windows::pe_resources::{
-    application_manifest, requested_execution_level,
+    APP_ICON_ID, application_manifest, ico_file_images, icon_group, requested_execution_level,
 };
+
+/// The brand icon (build.rs, docs/design/brand/README.md), embedded next to the manifest.
+const ICON: &[u8] = include_bytes!("../../../apps/desktop/src-tauri/icons/icon.ico");
+
+#[test]
+fn forgebox_helper_carries_the_forgebox_icon() {
+    let exe = Path::new(env!("CARGO_BIN_EXE_forgebox-helper"));
+    let embedded = icon_group(exe, APP_ICON_ID)
+        .unwrap()
+        .expect("icon group 32512 is embedded");
+    assert_eq!(embedded, ico_file_images(ICON).unwrap());
+}
 
 #[test]
 fn forgebox_helper_requires_administrator() {

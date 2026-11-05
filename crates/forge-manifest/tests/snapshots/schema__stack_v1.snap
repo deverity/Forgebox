@@ -163,12 +163,29 @@ expression: text
             "null"
           ]
         },
+        "icon_color": {
+          "description": "Brand colour of the icon tile, `#RRGGBB` (docs/04 §1, docs/07 §2.4): the client paints the\nwhite glyph of `icon` on a tile of this colour, darkened when the glyph would fall under\n3:1. Without it, clients fall back to a monogram on a palette colour.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
         "id": {
           "description": "Unique among stacks (`[a-z0-9-]`).",
           "$ref": "#/$defs/ToolId"
         },
         "name": {
           "type": "string"
+        },
+        "order": {
+          "description": "Display position among curated stacks (`onboarding`, docs/07 §5.1): lower first. The\nregistry index lists stacks with an `order` first, by it, then the others by id\n(docs/04 §5). Absent means \"after every ordered stack\".",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
         },
         "summary": {
           "type": [

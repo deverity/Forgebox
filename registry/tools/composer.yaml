@@ -18,8 +18,10 @@ metadata:
   tags: [composer, php, packages]
   homepage: https://getcomposer.org
   docs: https://getcomposer.org/doc/
+  changelog_url: https://github.com/composer/composer/releases
   license: MIT
   icon: composer.svg
+  icon_color: "#885630"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:

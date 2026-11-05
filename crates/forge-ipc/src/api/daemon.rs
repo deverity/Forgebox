@@ -28,6 +28,15 @@ pub struct DaemonStatusDto {
     pub last_event_seq: u64,
     pub active_jobs: u32,
     pub connections: u32,
+    /// CPU of the daemon process, share of the whole machine since the previous
+    /// `daemon.status` (0-100, like Task Manager; the first call averages over the
+    /// process lifetime). API 1.1; 0 from 1.0 daemons.
+    #[serde(default)]
+    pub cpu_pct: f64,
+    /// Working set of the daemon process (API 1.1).
+    #[serde(default)]
+    #[specta(type = specta_typescript::Number)]
+    pub rss_bytes: u64,
 }
 
 /// Params of `daemon.stop`.

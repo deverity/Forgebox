@@ -13,7 +13,8 @@
 //!    excepted;
 //! 7. PHP pools for the versions referenced by enabled sites;
 //! 8. web server configuration rendered (managed blocks, drift kept) and web servers
-//!    started or reloaded;
+//!    started or reloaded; then the metrics service gets the sites and the access logs of
+//!    the running web servers (`[metrics] enabled`; off by default in a portable root);
 //! 9. API opened on the local transport and `daemon.ready` published.
 //!
 //! Every step that can wait on the outside world is bounded; a step that fails without
@@ -64,6 +65,7 @@ use crate::pools::{DaemonPoolSwitcher, PoolManager};
 use crate::render::DaemonRenderer;
 use crate::scheduler::Scheduler;
 use crate::services::ServiceManager;
+use crate::update_feed::UpdateSource;
 use crate::web::{LateListener, WebManager};
 
 /// Name of the registry added on first boot.
@@ -252,6 +254,29 @@ async fn start_dns(dns: &DnsServer, policy: &DnsPolicyManager, config: &ForgeCon
     }
 }
 
+/// Collaborators a test replaces; `main` boots with the defaults (the real OS, the real
+/// update engine).
+#[derive(Default)]
+pub struct BootOptions {
+    /// OS facts and actions (fakes for the port table, the shell opener...).
+    pub platform: Option<Platform>,
+    /// Answers the scheduler's update questions (a fake with no network).
+    pub update_source: Option<Arc<dyn UpdateSource>>,
+    /// Terminal tunables (ring size, reaping delay).
+    pub terminal: Option<crate::terminal::TerminalOptions>,
+    /// Builds the certificate trust store from the daemon's helper client (tests:
+    /// `forge_core::platform::MemoryTrustStore`, so no OS store is ever written; the
+    /// helper client carries `platform.elevation()`, a `FakeElevation` in tests).
+    pub trust_store: Option<TrustStoreFactory>,
+    /// Answers `tools.install`/`tools.releases`/`tools.plan` (a fake with canned releases
+    /// and no network); default: the providers of the manifests.
+    pub release_resolver: Option<Arc<dyn crate::install::ReleaseResolver>>,
+}
+
+/// See [`BootOptions::trust_store`].
+pub type TrustStoreFactory =
+    Arc<dyn Fn(HelperClient) -> Arc<dyn forge_core::platform::TrustStore> + Send + Sync>;
+
 /// Runs the whole sequence. `lock` is the instance mutex taken by `main`, which also
 /// prepared the root folders (`ForgeRoot::init`, reported in `init_report`) and read
 /// `config`.
@@ -261,6 +286,26 @@ pub async fn boot(
     lock: &InstanceLock,
     config: ForgeConfig,
     init_report: InitReport,
+) -> Result<Booted> {
+    boot_with(
+        args,
+        root,
+        lock,
+        config,
+        init_report,
+        BootOptions::default(),
+    )
+    .await
+}
+
+/// [`boot`] with some collaborators replaced ([`BootOptions`]).
+pub async fn boot_with(
+    args: Args,
+    root: ForgeRoot,
+    lock: &InstanceLock,
+    config: ForgeConfig,
+    init_report: InitReport,
+    options: BootOptions,
 ) -> Result<Booted> {
     let started = Instant::now();
     let started_at = Timestamp::now();
@@ -275,7 +320,7 @@ pub async fn boot(
     publish_case_report(&bus, &init_report);
     let jobs = JobRegistry::new(bus.clone());
     let actors = ActorSupervisor::new(bus.clone());
-    let platform: Platform = platform::current();
+    let platform: Platform = options.platform.unwrap_or_else(platform::current);
     let (config_tx, config_rx) = watch::channel(Arc::new(config.clone()));
     let config_fn: Arc<dyn Fn() -> Arc<ForgeConfig> + Send + Sync> = {
         let rx = config_rx.clone();
@@ -332,14 +377,27 @@ pub async fn boot(
     let providers = Arc::new(ProviderRegistry::new(ProviderConfig::new(
         root.state_registry().join("cache"),
     ))?);
+    let resolver: Arc<dyn crate::install::ReleaseResolver> = options
+        .release_resolver
+        .clone()
+        .unwrap_or_else(|| Arc::new(crate::install::ProviderResolver::new(providers.clone())));
     let helper_policy = HelperPolicy::from_config(&root, &config)?;
-    let helper = HelperClient::for_root(&root, helper_policy);
+    // The platform's elevation (a `FakeElevation` when a test injects one).
+    let helper = HelperClient::new(
+        Arc::clone(platform.elevation()),
+        root.path().join(forge_core::helper::HELPER_EXE_NAME),
+        helper_policy,
+    );
+    let trust_store = match &options.trust_store {
+        Some(factory) => factory(helper.clone()),
+        None => platform::trust_store(Some(helper.clone())),
+    };
     let tls = TlsManager::spawn(
         &actors,
         &root,
         TlsConfig::for_root(&root, &config),
         platform.shared_file_acl(),
-        platform::trust_store(Some(helper.clone())),
+        trust_store,
     );
     let sites = SiteService::new(
         store.writer().clone(),
@@ -440,7 +498,34 @@ pub async fn boot(
         .with_state_file(root.state_dns_policy());
     start_dns(&dns, &dns_policy, &config).await;
 
+    let terminals = {
+        let tree = job_tree.clone();
+        crate::terminal::TerminalManager::new(
+            bus.clone(),
+            Arc::new(move || tree.instance_job()),
+            Arc::clone(platform.pty_spawner()),
+            options.terminal.clone().unwrap_or_default(),
+        )
+    };
+
+    // Metrics service (rehydrates the last 24 h in its own task; fed after step 8).
+    let metrics_enabled = {
+        let (config, root) = (config.clone(), root.clone());
+        tokio::task::spawn_blocking(move || crate::metrics::enabled_for(&config, &root))
+            .await
+            .map_err(blocking_err)?
+    };
+    let metrics = forge_metrics::service::spawn(
+        forge_metrics::ServiceConfig::default(),
+        store.reader().clone(),
+        store.writer().clone(),
+        metrics_enabled,
+    );
+
     let endpoint = forge_ipc::transport::local_transport(&root).endpoint();
+    let top = Arc::new(crate::top::TopSampler::new(Arc::clone(
+        platform.process_stats(),
+    )));
     let daemon = Daemon::new(Inner {
         root: root.clone(),
         args: args.clone(),
@@ -453,6 +538,7 @@ pub async fn boot(
         actors,
         registry,
         providers,
+        resolver,
         downloads,
         layout,
         updates,
@@ -464,6 +550,7 @@ pub async fn boot(
         web: web.clone(),
         sites: sites.clone(),
         apps,
+        terminals,
         tls,
         dns,
         dns_policy,
@@ -476,6 +563,12 @@ pub async fn boot(
         started_at,
         server: std::sync::OnceLock::new(),
         endpoint: endpoint.clone(),
+        config_owner: crate::config_owner::ConfigOwner::spawn(),
+        settings_turn: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
+        db_sizes: crate::databases::SizeCache::default(),
+        mail: crate::mail::MailHub::default(),
+        metrics,
+        top,
     });
 
     // Internal endpoint (`/_forgebox/starting` of on-visit processes), before any web
@@ -515,6 +608,7 @@ pub async fn boot(
             "web servers autostarted"
         );
     }
+    crate::metrics::initial_sync(&daemon).await;
 
     // 9. API.
     let token = {
@@ -530,6 +624,8 @@ pub async fn boot(
             ..ServerConfig::default()
         })
         .router(crate::api::router(&daemon))
+        .process_stats(Arc::clone(daemon.platform.process_stats()))
+        .not_implemented(crate::api::not_implemented::methods())
         .root(root.clone())
         .events(EventSource::new(bus.clone()).with_store(store.reader().clone()))
         .jobs(jobs.clone())
@@ -552,7 +648,10 @@ pub async fn boot(
         Ok(Err(err)) => tracing::warn!(%err, "lock file not written"),
         Err(e) => tracing::warn!(%e, "lock file task failed"),
     }
-    let scheduler = Scheduler::start(&daemon);
+    let scheduler = match options.update_source {
+        Some(source) => Scheduler::start_with(&daemon, source),
+        None => Scheduler::start(&daemon),
+    };
     let boot_ms = started.elapsed().as_millis();
     bus.publish(
         EventKind::DaemonReady,

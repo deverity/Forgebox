@@ -479,7 +479,7 @@ async fn sites(
     report: &mut ImportReport,
     counts: &mut Counts,
 ) -> Result<()> {
-    let rules = env.sites.rules().clone();
+    let rules = env.sites.rules();
     // Names of explicit sites; parked ones yield to an explicit site, so they do not
     // block it (`SiteService::create` replaces them).
     let mut taken: BTreeSet<String> = env

@@ -2,8 +2,9 @@
 //! substitution ([`forge_provider::layout::TemplateVars`]) knows — `version`, `series`,
 //! `variant.<key>`, `paths.<dir>` — plus what only exists once an instance or a pool runs:
 //! `instance.name|data_dir`, `instance.ports.<name>`, `instance.config.<id>`,
-//! `prefs.<key>`, and for `service.pool` `recycle.*`, `scaling.*` and `{{ port }}` (kept
-//! as the placeholder the pool fills per worker).
+//! `prefs.<key>`, for `service.pool` `recycle.*`, `scaling.*` and `{{ port }}` (kept
+//! as the placeholder the pool fills per worker), and `{{ value }}` in a quick setting's
+//! `also_set` ([`RuntimeVars::with_value`]).
 //!
 //! Generic on purpose: nothing here knows a tool; the manifest says which variables a
 //! string uses and the validator (forge-manifest, rule 5) already refused unknown ones.
@@ -40,6 +41,8 @@ pub struct RuntimeVars {
     pub instance: Option<InstanceVars>,
     pub prefs: BTreeMap<String, String>,
     pub pool: Option<PoolVars>,
+    /// `{{ value }}`: the written text of a quick setting (`config.quick_settings[].also_set`).
+    pub value: Option<String>,
 }
 
 impl RuntimeVars {
@@ -49,6 +52,15 @@ impl RuntimeVars {
             instance: None,
             prefs: BTreeMap::new(),
             pool: None,
+            value: None,
+        }
+    }
+
+    /// These variables plus `{{ value }}` = `value`.
+    pub fn with_value(&self, value: impl Into<String>) -> Self {
+        Self {
+            value: Some(value.into()),
+            ..self.clone()
         }
     }
 
@@ -98,6 +110,10 @@ impl RuntimeVars {
                 None => return missing("unknown preference"),
             },
             ["port"] if self.pool.is_some() => return Ok(None),
+            ["value"] => match &self.value {
+                Some(v) => v.clone(),
+                None => return missing("only in a quick setting's also_set"),
+            },
             ["recycle", key] | ["scaling", key] => {
                 let Some(pool) = &self.pool else {
                     return missing("only in service.pool");

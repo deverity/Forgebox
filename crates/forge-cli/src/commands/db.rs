@@ -108,13 +108,19 @@ pub async fn run(ctx: &Context, command: DbCmd) -> CliResult<()> {
             });
         }
         DbCmd::Shell { instance, database } => {
-            let ack = ctx
+            let command = ctx
                 .call::<forge_ipc::api::methods::db_shell>(DbShellParams {
                     instance: InstanceRef::from(instance),
                     database,
                 })
                 .await?;
-            ctx.out.emit(&ack, |_| {});
+            // `--json` prints the command (for scripts); otherwise the client runs here,
+            // attached to this console, and `forge` exits with its code.
+            if ctx.out.json {
+                ctx.out.json_value(&command);
+            } else {
+                super::shell::run_attached(ctx, &command).await?;
+            }
         }
         DbCmd::Url { instance, database } => {
             let url = ctx

@@ -1,9 +1,10 @@
 //! Sites → pools → web servers (docs/01 §5.1 steps 7-8, docs/06 §2, docs/03 §2.2):
 //!
 //! * [`WebManager::reconcile`]: resolves the PHP version of every enabled `php` site
-//!   (exact pin, series, or the newest installed series), makes sure each needed pool
+//!   (exact pin, series, or the newest installed series) and its pool (the version's
+//!   shared pool, or the site's dedicated one, [`PoolKey`]), makes sure each needed pool
 //!   runs, renders the web servers' configuration and reloads the running ones, then
-//!   stops pools no site uses any more.
+//!   drains pools no site uses any more.
 //! * [`WebManager::apply_web`]: only the render + reload part. It is also the
 //!   [`UpstreamListener`] of every pool (scaling, recycle, blue/green), so the web
 //!   server always lists the warm workers.
@@ -23,7 +24,7 @@
 //! of a server that refuses to initialize); for an initialized one, the value recorded
 //! when it was initialized, whatever the flag reads now.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,7 +35,9 @@ use forge_core::event::{EventBus, EventKind};
 use forge_core::ids::{SiteId, VersionId};
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::CaseSensitiveFs;
-use forge_core::store::{CASE_SENSITIVE_KEY, Site, SiteKind, StoreReader, ToolVersionRow};
+use forge_core::store::{
+    CASE_SENSITIVE_KEY, Site, SiteKind, SitePoolMode, StoreReader, ToolVersionRow,
+};
 use forge_fcgi::{PoolState, UpstreamChange, UpstreamFuture, UpstreamListener};
 use forge_registry::Registry;
 use forge_render::{
@@ -47,9 +50,10 @@ use tokio::sync::Semaphore;
 
 use crate::catalog;
 use crate::instance_case::{self, DataDirProbe};
-use crate::pools::PoolManager;
+use crate::pools::{PoolHold, PoolKey, PoolManager};
 use crate::render;
 use crate::services::{ConfigRenderer, Entry, ServiceManager};
+use crate::settings;
 
 const TURN_TIMEOUT: Duration = Duration::from_secs(60);
 const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
@@ -59,8 +63,21 @@ const TLS_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Debug, Clone)]
 pub struct SitePhp {
     pub version: ToolVersionRow,
-    /// `php_8_3` (series) or `php_8_3_36` (exact pin).
+    /// What the vhost points at: `php_8_3` (series), `php_8_3_36` (exact pin), or the
+    /// site's dedicated pool `php_8_3__loja-test` (`pool_mode: dedicated`).
     pub upstream: String,
+    /// The version's shared name (`php_8_3` or `php_8_3_36`), whatever the pool mode.
+    pub shared_upstream: String,
+    /// The pool that serves the site: the version's shared pool, or its own.
+    pub pool: PoolKey,
+}
+
+impl SitePhp {
+    /// Upstream name the pool of [`SitePhp::pool`] is spawned with: `None` for the shared
+    /// pool (its spec names it after the series), the dedicated name otherwise.
+    pub fn pool_upstream(&self) -> Option<&str> {
+        self.pool.is_dedicated().then_some(self.upstream.as_str())
+    }
 }
 
 struct Inner {
@@ -100,6 +117,13 @@ pub struct WebReport {
     pub written: Vec<String>,
     pub reloaded: Vec<String>,
     pub skipped_sites: Vec<String>,
+    /// Why a site's vhost did not build, by host.
+    pub site_errors: BTreeMap<String, String>,
+    /// Why a PHP site was left out of the render before building its vhost, by host: its
+    /// version is not installed or its pool is not running.
+    pub unserved: BTreeMap<String, String>,
+    /// Web servers whose render or reload failed: `(tool id, error)`.
+    pub server_errors: Vec<(String, String)>,
 }
 
 impl WebManager {
@@ -217,14 +241,20 @@ impl WebManager {
             };
             match chosen {
                 Some(row) => {
+                    let pool = match site.pool_mode {
+                        SitePoolMode::Shared => PoolKey::shared(row.id),
+                        SitePoolMode::Dedicated => PoolKey::dedicated(row.id, site.id),
+                    };
                     out.insert(
                         site.id,
                         SitePhp {
                             version: row.clone(),
-                            upstream: forge_sites::vhost::php_upstream_name(
+                            upstream: forge_sites::vhost::site_upstream_name(site, &default_series),
+                            shared_upstream: forge_sites::vhost::php_upstream_name(
                                 &site.php,
                                 &default_series,
                             ),
+                            pool,
                         },
                     );
                 }
@@ -236,40 +266,203 @@ impl WebManager {
         Ok(out)
     }
 
+    /// The installed PHP version a user spec (`8.3` or `8.3.36`) designates, or
+    /// [`ForgeError::VersionNotInstalled`] listing what is installed (`sites.php`).
+    pub async fn require_php(&self, requested: &str) -> Result<ToolVersionRow> {
+        let tool = catalog::pool_tools(&self.inner.registry)
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                ForgeError::NotFound("no PHP tool in the loaded registries".to_owned())
+            })?;
+        let id = tool.manifest.metadata.id.clone();
+        let rows = catalog::installed(&self.inner.reader, &id, Some(&tool.manifest)).await?;
+        catalog::pick(&tool.manifest, &rows, requested)
+            .cloned()
+            .ok_or_else(|| ForgeError::VersionNotInstalled {
+                tool: id.to_string(),
+                requested: requested.to_owned(),
+                installed: rows.iter().map(|r| r.version.clone()).collect(),
+                fix: format!("forge tool install {id}@{requested}"),
+            })
+    }
+
+    /// Version a `php` site is served by right now (`8.3.36`), `None` when nothing
+    /// installed satisfies it.
+    pub async fn resolved_php(&self, site: &Site) -> Option<String> {
+        let plan = self.php_plan(std::slice::from_ref(site)).await.ok()?;
+        plan.get(&site.id).map(|p| p.version.version.clone())
+    }
+
+    /// Starts the pool that would serve `candidate` (a not yet stored row) and fails
+    /// with the pool's own error when it cannot start. This is step 1 of the blue/green
+    /// switch (docs/06 §2.2): it runs *before* the row is written, so a bad target never
+    /// emits `site.updated`, never triggers a concurrent reconcile and never drains the
+    /// pool that keeps serving the site. A disabled or non-PHP site needs no pool.
+    ///
+    /// The returned hold keeps the target pool from being retired by a reconcile that
+    /// runs before the row is written (it does not see the pool as needed yet); keep it
+    /// until the switch re-rendered ([`WebManager::reconcile_for`]).
+    pub async fn ensure_pool_for(&self, candidate: &Site) -> Result<Option<PoolHold>> {
+        let plan = self.php_plan(std::slice::from_ref(candidate)).await?;
+        let Some(php) = plan.get(&candidate.id) else {
+            if candidate.enabled && candidate.kind == SiteKind::Php {
+                return Err(ForgeError::NotFound(format!(
+                    "no installed PHP serves {}",
+                    candidate.host
+                )));
+            }
+            return Ok(None);
+        };
+        let Some(pools) = self.pools() else {
+            return Ok(None);
+        };
+        let hold = pools.hold(php.pool);
+        pools
+            .ensure_started_key(php.pool, php.pool_upstream())
+            .await?;
+        Ok(Some(hold))
+    }
+
+    /// The pool `candidate` (a not yet stored row) would be served by, with its upstream
+    /// name: `None` for a disabled or non-PHP site, or when no installed PHP serves it.
+    pub async fn pool_for(&self, candidate: &Site) -> Result<Option<(PoolKey, String)>> {
+        let plan = self.php_plan(std::slice::from_ref(candidate)).await?;
+        Ok(plan
+            .get(&candidate.id)
+            .map(|p| (p.pool, p.upstream.clone())))
+    }
+
     /// Steps 7-8 of the boot, and the reaction to site changes: pools for the sites,
     /// web servers rendered and reloaded, unused pools drained (blue/green of docs/06
     /// §2.2: target up, vhost re-rendered, reload, source drained).
     pub async fn reconcile(&self, reason: &str) -> Result<WebReport> {
+        self.reconcile_scoped(reason, None).await
+    }
+
+    /// [`WebManager::reconcile`] for a change to `target`: the same work, but the result
+    /// answers for that site only. A vhost that does not build or a web server that fails
+    /// to render/reload for it is an error, and so is a pool that cannot start for its
+    /// PHP version when `check_pool` (a PHP switch; a driver change does not depend on
+    /// the pool). Failures of other sites and pools stay in the log (a bad neighbour must
+    /// not fail someone else's job).
+    pub async fn reconcile_for(
+        &self,
+        reason: &str,
+        target: &Site,
+        check_pool: bool,
+    ) -> Result<WebReport> {
+        self.reconcile_scoped(reason, Some((target, check_pool)))
+            .await
+    }
+
+    async fn reconcile_scoped(
+        &self,
+        reason: &str,
+        scope: Option<(&Site, bool)>,
+    ) -> Result<WebReport> {
+        let target = scope.map(|(site, _)| site);
+        let check_pool = scope.is_some_and(|(_, check)| check);
         let sites = self.inner.sites.list().await?;
         let plan = self.php_plan(&sites).await?;
-        let needed: BTreeSet<VersionId> = plan.values().map(|p| p.version.id).collect();
+        // Each pool once, with the upstream name it is spawned with.
+        let needed: BTreeMap<PoolKey, Option<String>> = plan
+            .values()
+            .map(|p| (p.pool, p.pool_upstream().map(str::to_owned)))
+            .collect();
+        let target_pool = target.and_then(|t| plan.get(&t.id)).map(|p| p.pool);
+        let mut target_failure: Option<ForgeError> = None;
+        if let Some(t) = target.filter(|_| check_pool) {
+            if t.enabled && t.kind == SiteKind::Php && target_pool.is_none() {
+                target_failure = Some(ForgeError::NotFound(format!(
+                    "no installed PHP serves {} (php {})",
+                    t.host,
+                    t.php
+                        .exact
+                        .as_deref()
+                        .or(t.php.series.as_deref())
+                        .unwrap_or("default")
+                )));
+            }
+        }
         if let Some(pools) = self.pools() {
-            let starts = needed
-                .iter()
-                .map(|id| async move { (*id, pools.ensure_started(*id).await) });
-            for (id, result) in futures::future::join_all(starts).await {
+            let starts = needed.iter().map(|(key, upstream)| async move {
+                (
+                    *key,
+                    pools.ensure_started_key(*key, upstream.as_deref()).await,
+                )
+            });
+            for (key, result) in futures::future::join_all(starts).await {
                 if let Err(err) = result {
-                    tracing::warn!(version = %id, %err, "PHP pool did not start");
+                    tracing::warn!(pool = %key, %err, "PHP pool did not start");
+                    if target_pool == Some(key) && target_failure.is_none() {
+                        target_failure = Some(err);
+                    }
                 }
+            }
+        }
+        // Blue/green: a target pool that did not come up aborts before anything is
+        // re-rendered or drained, so the previous version keeps serving the site.
+        if check_pool {
+            if let Some(err) = target_failure.take() {
+                return Err(err);
             }
         }
         let report = self.apply_web(reason).await?;
         if let Some(pools) = self.pools() {
-            for handle in pools.handles() {
-                if !needed.contains(&handle.version_id()) {
+            // The sites again, right before retiring: a switch may have written its row
+            // while this pass rendered (its pool is needed now even if it was not when
+            // the pass began). Nothing awaits between this plan and the retirements.
+            let fresh: BTreeMap<SiteId, SitePhp> = match self.inner.sites.list().await {
+                Ok(sites) => self.php_plan(&sites).await.unwrap_or_default(),
+                Err(_) => BTreeMap::new(),
+            };
+            for (key, handle) in pools.entries() {
+                if !needed.contains_key(&key) && !fresh.values().any(|p| p.pool == key) {
                     // The web servers no longer route to it (rendered above): drain.
                     tracing::info!(pool = %handle.upstream_name(), version = %handle.spec().version, "no site uses this pool; draining");
-                    pools.retire(handle.version_id());
+                    pools.retire(key);
                 }
+            }
+        }
+        if let Some(err) = target_failure.filter(|_| check_pool) {
+            return Err(err);
+        }
+        if let Some(t) = target {
+            if let Some(why) = report
+                .unserved
+                .get(&t.host)
+                .filter(|_| check_pool)
+                .or_else(|| report.site_errors.get(&t.host))
+            {
+                return Err(ForgeError::ConfigInvalid(format!(
+                    "{} was not rendered: {why}",
+                    t.host
+                )));
+            }
+            let served_by = t
+                .server
+                .clone()
+                .unwrap_or_else(|| (self.inner.config)().default_server.to_string());
+            if let Some((_, why)) = report
+                .server_errors
+                .iter()
+                .find(|(tool, _)| *tool == served_by)
+            {
+                return Err(ForgeError::ConfigInvalid(format!(
+                    "{served_by} could not apply the configuration of {}: {why}",
+                    t.host
+                )));
             }
         }
         Ok(report)
     }
 
     /// Upstreams of the running pools, plus an alias per exact pin (`php_8_3_36` →
-    /// the servers of its version's pool). Two pools of one series share its name
+    /// the servers of its version's shared pool). Two pools of one series share its name
     /// during a blue/green switch: the one serving wins, and `pinned` (the model a pool
-    /// just handed to the listener) wins over both.
+    /// just handed to the listener) wins over both. A dedicated pool carries its own name
+    /// (`php_8_3__loja-test`), so it never stands in for the shared one.
     async fn upstreams(
         &self,
         plan: &BTreeMap<SiteId, SitePhp>,
@@ -280,9 +473,9 @@ impl WebManager {
         };
         let mut by_version: BTreeMap<VersionId, Vec<UpstreamServer>> = BTreeMap::new();
         let mut names: BTreeMap<String, Vec<UpstreamServer>> = BTreeMap::new();
-        let mut statuses = pools.statuses().await;
-        statuses.sort_by_key(|s| s.serving);
-        for status in statuses {
+        let mut statuses = pools.keyed_statuses().await;
+        statuses.sort_by_key(|(_, s)| s.serving);
+        for (key, status) in statuses {
             if !matches!(status.state, PoolState::Running | PoolState::Starting) {
                 continue;
             }
@@ -295,7 +488,9 @@ impl WebManager {
             if servers.is_empty() {
                 continue;
             }
-            by_version.insert(status.version_id, servers.clone());
+            if !key.is_dedicated() {
+                by_version.insert(status.version_id, servers.clone());
+            }
             names.insert(status.upstream.name.clone(), servers);
         }
         if let Some(model) = pinned.filter(|m| !m.is_empty()) {
@@ -306,7 +501,7 @@ impl WebManager {
                 .collect();
             names.insert(model.name.clone(), servers);
         }
-        for php in plan.values() {
+        for php in plan.values().filter(|p| !p.pool.is_dedicated()) {
             if let Some(servers) = by_version.get(&php.version.id) {
                 names
                     .entry(php.upstream.clone())
@@ -367,7 +562,11 @@ impl WebManager {
         let default_series = plan
             .values()
             .next()
-            .map(|p| p.upstream.trim_start_matches("php_").replace('_', "."))
+            .map(|p| {
+                p.shared_upstream
+                    .trim_start_matches("php_")
+                    .replace('_', ".")
+            })
             .unwrap_or_else(|| "8.4".to_owned());
         let ctx = VhostContext {
             certs_sites: self.inner.root.certs_sites(),
@@ -408,17 +607,27 @@ impl WebManager {
             if site.kind == SiteKind::Php {
                 let Some(php) = plan.get(&site.id) else {
                     report.skipped_sites.push(site.host.clone());
+                    report
+                        .unserved
+                        .insert(site.host.clone(), "its PHP version is not installed".into());
                     continue;
                 };
                 if !upstreams.iter().any(|u| u.name == php.upstream) {
                     tracing::warn!(site = %site.host, upstream = %php.upstream, "PHP pool not running; site not rendered");
                     report.skipped_sites.push(site.host.clone());
+                    report.unserved.insert(
+                        site.host.clone(),
+                        format!("PHP pool {} is not running", php.upstream),
+                    );
                     continue;
                 }
                 // Render against the exact upstream the plan resolved.
                 if site.php.exact.is_none() && site.php.series.is_none() {
-                    site.php.series =
-                        Some(php.upstream.trim_start_matches("php_").replace('_', "."));
+                    site.php.series = Some(
+                        php.shared_upstream
+                            .trim_start_matches("php_")
+                            .replace('_', "."),
+                    );
                 }
             }
             if site.secure && !self.ensure_cert(&site).await {
@@ -430,6 +639,9 @@ impl WebManager {
                 Err(err) => {
                     tracing::warn!(site = %site.host, %err, "site not rendered");
                     report.skipped_sites.push(site.host.clone());
+                    report
+                        .site_errors
+                        .insert(site.host.clone(), err.to_string());
                 }
             }
         }
@@ -461,12 +673,17 @@ impl WebManager {
         let case_sensitive = self
             .instance_case_sensitive(entry, config.case_sensitive, &data_dir)
             .await?;
+        // Stored keys plus the effective quick settings in the form the file gets
+        // (`On`, `1G`): a template that renders the whole file emits the same values the
+        // writers enforce (ADR-0042).
+        let mut values = entry.row.settings.clone();
+        values.extend(settings::context(manifest, &entry.row.settings));
         ctx.instance = InstanceModel {
             name: entry.row.name.clone(),
             ports: entry.ports.clone(),
             data_dir,
             case_sensitive,
-            settings: entry.row.settings.clone(),
+            settings: values,
         };
         if let Some(port) = entry.ports.get("http") {
             ctx.prefs.http_port = *port;
@@ -556,8 +773,31 @@ impl WebManager {
         report: &mut WebReport,
         pinned: Option<&forge_fcgi::UpstreamModel>,
     ) -> Result<bool> {
-        let Some(ctx) = self.instance_context(entry, report, pinned).await? else {
-            return Ok(false);
+        // The table holds what `services.set` stored after `entry` was cloned.
+        let mut entry = entry.clone();
+        if let Some(current) = self.inner.services.get(entry.row.id) {
+            entry.row.settings = current.row.settings;
+        }
+        let entry = &entry;
+        let plans = match (&entry.manifest, &entry.vars) {
+            (Some(manifest), Some(vars)) => settings::plans(manifest, &entry.row.settings, vars)
+                .unwrap_or_else(|err| {
+                    // Never blocks a start: the API validated the values it stored.
+                    tracing::warn!(instance = %entry.label(), %err, "quick settings not written");
+                    Vec::new()
+                }),
+            _ => Vec::new(),
+        };
+        let ctx = match self.instance_context(entry, report, pinned).await? {
+            Some(ctx) => ctx,
+            // No render target: only the files of its quick settings.
+            None => match (&entry.manifest, &entry.version) {
+                (Some(manifest), Some(version)) if !plans.is_empty() => {
+                    let config = (self.inner.config)();
+                    render::base_context(&self.inner.root, &config, manifest, version)
+                }
+                _ => return Ok(false),
+            },
         };
         let (root, engine, bus, owner) = (
             self.inner.root.clone(),
@@ -568,7 +808,7 @@ impl WebManager {
         let applied = forge_core::runtime::spawn_blocking_timeout(
             "rendering configuration",
             RENDER_TIMEOUT,
-            move || render::apply_target(&root, &engine, &bus, &ctx, &owner),
+            move || render::apply_target(&root, &engine, &bus, &ctx, &owner, &plans),
         )
         .await?;
         report.written.extend(applied.written.iter().cloned());
@@ -599,10 +839,20 @@ impl WebManager {
                 Ok(true) => match self.inner.services.apply_reload(entry.row.id).await {
                     Ok(true) => report.reloaded.push(entry.label()),
                     Ok(false) => {}
-                    Err(err) => tracing::warn!(server = %entry.label(), %err, "reload failed"),
+                    Err(err) => {
+                        tracing::warn!(server = %entry.label(), %err, "reload failed");
+                        report
+                            .server_errors
+                            .push((entry.row.tool_id.to_string(), err.to_string()));
+                    }
                 },
                 Ok(false) => {}
-                Err(err) => tracing::warn!(server = %entry.label(), %err, "render failed"),
+                Err(err) => {
+                    tracing::warn!(server = %entry.label(), %err, "render failed");
+                    report
+                        .server_errors
+                        .push((entry.row.tool_id.to_string(), err.to_string()));
+                }
             }
         }
         tracing::debug!(reason, servers = ?report.servers, written = report.written.len(), reloaded = ?report.reloaded, "web configuration applied");

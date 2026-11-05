@@ -18,7 +18,8 @@ pub mod runtime;
 pub mod spec;
 
 pub use manager::{
-    AppManager, AppTimeouts, EnsureOutcome, ProcessStatus, SiteAppsStatus, StartingPage,
+    AppManager, AppTimeouts, EnsureOutcome, ProcessSample, ProcessStatus, SiteAppsStatus,
+    StartingPage,
 };
 pub use runtime::{ResolvedRuntime, RuntimeCatalog, RuntimeSource, RuntimeTool};
 pub use spec::{

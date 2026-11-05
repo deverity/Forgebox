@@ -76,6 +76,86 @@ impl<'c> EventRepo<'c> {
         Ok(events)
     }
 
+    /// Events with `from <= ts < to` of the given `kinds`, ascending by `seq`, at most
+    /// `limit` (the oldest). Served by the `events_ts` index.
+    ///
+    /// `ts` is stored as RFC 3339 text whose fraction length varies, so the SQL bounds are
+    /// widened by one second and the exact comparison is done on the parsed instants.
+    pub fn list_between(
+        &self,
+        from: jiff::Timestamp,
+        to: jiff::Timestamp,
+        kinds: &[crate::event::EventKind],
+        limit: usize,
+    ) -> Result<Vec<Event>> {
+        if kinds.is_empty() || from >= to {
+            return Ok(Vec::new());
+        }
+        let slack = jiff::SignedDuration::from_secs(1);
+        let (lo, hi) = (from - slack, to + slack);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, seq, ts, kind, payload FROM events              WHERE ts >= ?1 AND ts < ?2 ORDER BY seq",
+        )?;
+        let rows = stmt.query_map(params![lo.to_string(), hi.to_string()], |row| {
+            Ok((
+                row.get(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+        let mut events = Vec::new();
+        for row in rows {
+            let (id, seq, ts, kind, payload) = row?;
+            let Ok(kind) = kind.parse::<crate::event::EventKind>() else {
+                continue;
+            };
+            if !kinds.contains(&kind) {
+                continue;
+            }
+            let corrupt = |what: &str, e: String| {
+                ForgeError::Schema(format!("events row seq {seq}: invalid {what}: {e}"))
+            };
+            let ts: jiff::Timestamp = ts
+                .parse()
+                .map_err(|e: jiff::Error| corrupt("ts", e.to_string()))?;
+            if ts < from || ts >= to {
+                continue;
+            }
+            events.push(Event {
+                id,
+                seq: u64::try_from(seq).map_err(|e| corrupt("seq", e.to_string()))?,
+                ts,
+                kind,
+                payload: serde_json::from_str(&payload)
+                    .map_err(|e| corrupt("payload", e.to_string()))?,
+            });
+            if events.len() >= limit {
+                break;
+            }
+        }
+        Ok(events)
+    }
+
+    /// Payload of the most recent stored event of `kind` (`None` when there is none).
+    pub fn latest_payload(
+        &self,
+        kind: crate::event::EventKind,
+    ) -> Result<Option<serde_json::Value>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT payload FROM events WHERE kind = ?1 ORDER BY seq DESC LIMIT 1")?;
+        let mut rows = stmt.query(params![kind.as_str()])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+        let text: String = row.get(0)?;
+        serde_json::from_str(&text)
+            .map(Some)
+            .map_err(|e| ForgeError::Schema(format!("events payload of {}: {e}", kind.as_str())))
+    }
+
     /// Highest stored `seq` (0 when empty). Seeds `EventBus::starting_at`.
     pub fn max_seq(&self) -> Result<u64> {
         let max: i64 =

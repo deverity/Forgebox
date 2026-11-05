@@ -62,6 +62,8 @@ fn site_dto(id: SiteId, host: &str) -> SiteDto {
         processes: vec![],
         created_at: ts(),
         updated_at: ts(),
+        pool_mode: SitePoolMode::Shared,
+        metrics_enabled: true,
     }
 }
 
@@ -100,6 +102,7 @@ struct Fakes {
     stats: StatsDto,
     remote: RemoteClientListDto,
     registry: RegistryListDto,
+    terminal: TerminalDto,
 }
 
 fn fakes() -> Fakes {
@@ -157,6 +160,8 @@ fn fakes() -> Fakes {
                 rss_bytes: Some(400 << 20),
                 restarts: 0,
                 last_error: None,
+                data_dir: Some("C:/Forgebox/data/mysql/default".into()),
+                size_bytes: None,
             }],
             pools: vec![pool_dto()],
         },
@@ -168,6 +173,7 @@ fn fakes() -> Fakes {
                 source: LogSource::File,
                 level: Some("error".into()),
                 text: "upstream timed out".into(),
+                access: None,
             }],
             last_seq: 41,
         },
@@ -197,6 +203,23 @@ fn fakes() -> Fakes {
                 collation: None,
                 size_bytes: Some(1 << 20),
                 tables: Some(42),
+            }],
+            instances: vec![DbInstanceDto {
+                instance_id: InstanceId::new(),
+                instance: "mysql/default".into(),
+                tool: tool("mysql"),
+                version: "8.4.13".into(),
+                protocol: "mysql".into(),
+                state: ServiceState::Running,
+                port: Some(3306),
+                data_size_bytes: None,
+                capabilities: DbCapabilitiesDto {
+                    create: true,
+                    drop: true,
+                    shell: true,
+                    url: true,
+                    ..DbCapabilitiesDto::default()
+                },
             }],
         },
         net: DnsStatusDto {
@@ -273,6 +296,20 @@ fn fakes() -> Fakes {
                 mem_bytes: Some(64 << 20),
                 approx: true,
                 sampled: false,
+                from: Some(ts()),
+                bytes: 4 << 20,
+                status_1xx: 0,
+                status_2xx: 1150,
+                status_3xx: 47,
+                status_4xx: 0,
+                status_5xx: 3,
+                php_p50_ms: Some(10.0),
+                php_p90_ms: Some(35.0),
+                php_p99_ms: Some(110.0),
+                workers_active: Some(2),
+                processes: None,
+                last_request_at: Some(ts()),
+                metrics_enabled: true,
             }],
         },
         remote: RemoteClientListDto {
@@ -295,7 +332,25 @@ fn fakes() -> Fakes {
                 priority: 100,
                 tools: 26,
                 last_refresh_at: None,
+                trusted_unsigned: false,
+                verified: true,
+                key_id: Some("ABCD1234".into()),
+                last_error: Some("index unreachable".into()),
             }],
+        },
+        terminal: TerminalDto {
+            id: TerminalId::new(),
+            title: "loja.test".into(),
+            shell: "pwsh".into(),
+            cwd: "C:/Forgebox/www/loja".into(),
+            site_id: Some(site_id),
+            cols: 120,
+            rows: 30,
+            pid: Some(4412),
+            started_at: ts(),
+            exit_code: None,
+            exited_at: None,
+            last_seq: 0,
         },
     }
 }
@@ -325,6 +380,32 @@ fn fake_router(f: &Fakes) -> Router {
     answer!(stats_get, f.stats);
     answer!(remote_clients, f.remote);
     answer!(registry_list, f.registry);
+    answer!(terminal_open, f.terminal);
+    // A terminal stream: two output chunks (seq = byte offset past each), then `exited`
+    // (produced bytes + 1), as ADR-0040 specifies.
+    router.handle::<terminal_subscribe, _, _>(move |_params, ctx| async move {
+        let sender = ctx.open_stream(None)?;
+        let id = sender.id();
+        let mut offset = 0u64;
+        for chunk in ["hi\r\n", "PS C:\\> "] {
+            offset += chunk.len() as u64;
+            sender.send(&TerminalEnvelope {
+                subscription_id: id,
+                seq: offset,
+                item: TerminalItemDto::Output { data: chunk.into() },
+            });
+        }
+        sender.send(&TerminalEnvelope {
+            subscription_id: id,
+            seq: offset + 1,
+            item: TerminalItemDto::Exited { exit_code: Some(0) },
+        });
+        Ok(SubscriptionDto {
+            subscription_id: id,
+            stream: "terminal".into(),
+            last_seq: 0,
+        })
+    });
     // A metrics stream that sends three samples.
     let sample = f.stats.sites[0].clone();
     router.handle::<metrics_subscribe, _, _>(move |_params, ctx| {
@@ -400,6 +481,7 @@ async fn one_method_per_group_round_trips() {
             since_secs: Some(600),
             grep: None,
             limit: None,
+            before_seq: None,
         })
         .await
         .unwrap();
@@ -479,6 +561,58 @@ async fn one_method_per_group_round_trips() {
     }
     seen("metrics.subscribe");
 
+    // The terminal group (API 1.1, ADR-0040): a session and its byte stream.
+    let session = client
+        .terminal_open(TerminalOpenParams {
+            dir: None,
+            site: Some(SiteRef::from("loja.test")),
+            versions: BTreeMap::new(),
+            shell: None,
+            command: vec![],
+            env: BTreeMap::new(),
+            cols: 120,
+            rows: 30,
+            title: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(session, f.terminal);
+    seen("terminal.open");
+    let mut terminal = client
+        .terminal_subscribe(TerminalSubscribeParams {
+            id: session.id,
+            resume_from: None,
+        })
+        .await
+        .unwrap();
+    let mut received = Vec::new();
+    for _ in 0..3 {
+        let envelope = tokio::time::timeout(Duration::from_secs(5), terminal.next())
+            .await
+            .unwrap()
+            .unwrap();
+        received.push((envelope.seq, envelope.item));
+    }
+    assert_eq!(
+        received,
+        vec![
+            (
+                4,
+                TerminalItemDto::Output {
+                    data: "hi\r\n".into()
+                }
+            ),
+            (
+                12,
+                TerminalItemDto::Output {
+                    data: "PS C:\\> ".into()
+                }
+            ),
+            (13, TerminalItemDto::Exited { exit_code: Some(0) }),
+        ]
+    );
+    seen("terminal.subscribe");
+
     let all: BTreeSet<&str> = METHODS.iter().map(|m| m.group()).collect();
     assert_eq!(groups, all, "every API group is exercised");
 }
@@ -515,6 +649,7 @@ async fn long_running_methods_answer_with_a_job_and_report_through_events() {
             specs: vec![ToolSpec::from("php@8.3")],
             variant: None,
             yes: true,
+            target: None,
         })
         .await
         .unwrap();
@@ -721,6 +856,13 @@ async fn protocol_rules_hello_first_request_id_required_bad_token_closes() {
     let answer = exchange(&mut conn, hello_frame(server.token.secret())).await;
     assert_eq!(answer["result"]["role"], "admin");
     assert_eq!(answer["result"]["local"], true);
+    // A 1.0 client (hello_frame says minor 0) is accepted by a 1.1 daemon, which answers
+    // with its own version and the additive field.
+    assert_eq!(
+        answer["result"]["api_version"],
+        json!({"major": 1, "minor": 1})
+    );
+    assert_eq!(answer["result"]["not_implemented"], json!([]));
 
     // request_id is mandatory and must be a ULID.
     let answer = exchange(
@@ -846,9 +988,22 @@ async fn roles_and_local_only_are_enforced_for_remote_connections() {
         site: SiteRef::from("loja.test"),
         with: SiteOpenTarget::Editor,
     };
-    let err = client.sites_open(params.clone()).await.unwrap_err();
-    assert_eq!(err.code(), "forbidden");
-    assert!(err.to_string().contains("local_only"), "{err}");
+    for with in [
+        SiteOpenTarget::Editor,
+        SiteOpenTarget::Browser,
+        SiteOpenTarget::Explorer,
+        SiteOpenTarget::Terminal,
+    ] {
+        let err = client
+            .sites_open(SiteOpenParams {
+                with,
+                ..params.clone()
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(err.code(), "forbidden", "{with:?}");
+        assert!(err.to_string().contains("local_only"), "{err}");
+    }
     handle.shutdown();
 
     // Locally the same call works.
@@ -1006,4 +1161,117 @@ async fn stream_answers_precede_their_notifications_and_unsubscribe_stops_them()
             == 1)
         .await
     );
+}
+
+/// Process counters with fixed figures.
+#[derive(Debug)]
+struct FixedStats;
+
+impl forge_core::platform::ProcessStats for FixedStats {
+    fn sample(&self, pid: u32) -> forge_core::Result<forge_core::platform::ProcStats> {
+        Ok(forge_core::platform::ProcStats {
+            pid,
+            cpu_total: Duration::from_secs(5),
+            rss_bytes: 123_456_789,
+            private_bytes: 0,
+            handles: 0,
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+            uptime: Duration::from_secs(100),
+        })
+    }
+    fn logical_cpus(&self) -> u32 {
+        5
+    }
+}
+
+#[tokio::test]
+async fn hello_lists_not_implemented_and_status_reports_the_daemon_process() {
+    let server = spawn_on(InMemoryTransport::new(), |b| {
+        b.process_stats(Arc::new(FixedStats))
+            .not_implemented(["db.list", "stats.get"])
+    })
+    .await;
+    let client = server.client();
+    let hello = client.hello().await.unwrap();
+    assert_eq!(hello.api_version, API_VERSION);
+    assert_eq!(hello.not_implemented, ["db.list", "stats.get"]);
+    // 5 s of CPU in 100 s on 5 logical processors: 1 % of the machine.
+    let status = client.daemon_status(NoParams {}).await.unwrap();
+    assert_eq!(status.cpu_pct, 1.0);
+    assert_eq!(status.rss_bytes, 123_456_789);
+
+    // The wire fields exist, and a 1.0 daemon (without them) still deserializes.
+    let wire = serde_json::to_value(&status).unwrap();
+    assert_eq!(wire["rss_bytes"], 123_456_789);
+    let mut old = wire.clone();
+    old.as_object_mut().unwrap().remove("cpu_pct");
+    old.as_object_mut().unwrap().remove("rss_bytes");
+    let old: DaemonStatusDto = serde_json::from_value(old).unwrap();
+    assert_eq!((old.cpu_pct, old.rss_bytes), (0.0, 0));
+    let mut hello_wire = serde_json::to_value(&hello).unwrap();
+    hello_wire
+        .as_object_mut()
+        .unwrap()
+        .remove("not_implemented");
+    let old: HelloDto = serde_json::from_value(hello_wire).unwrap();
+    assert!(old.not_implemented.is_empty());
+}
+
+#[tokio::test]
+async fn port_check_and_updates_event_round_trip() {
+    let mut router = Router::new();
+    router.handle::<net_port_check, _, _>(|params, _| async move {
+        Ok(PortCheckDto {
+            free: params.port == 8080,
+            reserved_by: (params.port == 3306).then(|| "mysql/default".to_owned()),
+            holder: (params.port == 80).then(|| PortHolderDto {
+                pid: 4,
+                exe: "C:/Windows/System32/ntoskrnl.exe".into(),
+            }),
+        })
+    });
+    let server = spawn(router).await;
+    let client = server.client();
+    // Viewer role is enough, and the protocol defaults to TCP on the wire.
+    let method = method_info("net.port_check").unwrap();
+    assert_eq!(method.min_role, Role::Viewer);
+    assert!(!method.local_only && !method.mutating);
+    let raw = client
+        .call_raw(
+            "net.port_check",
+            json!({ "port": 3306 }),
+            CallOptions::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(raw["reserved_by"], "mysql/default");
+    assert_eq!(raw["free"], false);
+    let held = client
+        .net_port_check(PortCheckParams {
+            port: 80,
+            protocol: PortProtocol::Tcp,
+        })
+        .await
+        .unwrap();
+    assert_eq!(held.holder.unwrap().pid, 4);
+
+    let payload = ToolUpdatesAvailablePayload {
+        v: 1,
+        count: 1,
+        updates: vec![PendingUpdateDto {
+            tool: tool("php"),
+            series: "8.3".into(),
+            from: "8.3.36".into(),
+            to: "8.3.37".into(),
+        }],
+    };
+    let wire = serde_json::to_value(&payload).unwrap();
+    assert_eq!(wire["updates"][0]["to"], "8.3.37");
+    assert_eq!(
+        serde_json::from_value::<ToolUpdatesAvailablePayload>(wire).unwrap(),
+        payload
+    );
+    assert!(EVENT_PAYLOADS.iter().any(
+        |(kind, ty)| *kind == "tool.updates_available" && *ty == "ToolUpdatesAvailablePayload"
+    ));
 }

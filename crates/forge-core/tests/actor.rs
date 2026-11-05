@@ -373,6 +373,40 @@ async fn actor_stops_itself_or_when_unreferenced() {
     }
 }
 
+/// `children()` reads each status once: a second read of the same `watch` while the first
+/// is still borrowed deadlocks (the reader and the actor that publishes its new state)
+/// when the actor's write queues between the two reads, since the lock is fair to it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn children_never_deadlocks_with_actors_changing_state() {
+    use std::sync::atomic::AtomicBool;
+
+    let supervisor = ActorSupervisor::new(EventBus::new());
+    let reader = supervisor.clone();
+    let done = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&done);
+    let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut rows = 0_usize;
+        while !flag.load(Ordering::Relaxed) {
+            rows = rows.wrapping_add(reader.children().len());
+        }
+        let _ = finished_tx.send(rows);
+    });
+    for i in 0..300 {
+        let handle = supervisor.spawn(ActorSpec::new(format!("churn-{i}")), TestActor::default);
+        assert_eq!(handle.actor_ref().ask(Msg::Ping, SECOND).await, Ok("pong"));
+        // Every reference dropped: Running -> Stopping -> Stopped while `children()` reads.
+        drop(handle);
+        tokio::task::yield_now().await;
+    }
+    done.store(true, Ordering::Relaxed);
+    let finished =
+        tokio::task::spawn_blocking(move || finished_rx.recv_timeout(Duration::from_secs(10)))
+            .await
+            .unwrap();
+    assert!(finished.is_ok(), "children() deadlocked on an actor status");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn never_policy_fails_on_first_panic() {
     let supervisor = ActorSupervisor::new(EventBus::new());

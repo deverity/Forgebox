@@ -17,8 +17,10 @@ metadata:
   tags: [php, language, fastcgi]
   homepage: https://www.php.net
   docs: https://www.php.net/manual
+  changelog_url: https://www.php.net/ChangeLog-8.php
   license: PHP-3.01
   icon: php.svg
+  icon_color: "#777BB4"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:
@@ -80,6 +82,9 @@ spec:
         format: ini
         label: php.ini
         editable: true
+        # Quick settings go to a file Forgebox owns, scanned after php.ini (PHP_INI_SCAN_DIR):
+        # the user's php.ini is never edited (docs/04 section 1.3).
+        overlay: "{{ paths.etc }}/php/{{ series }}/conf.d/90-forgebox-settings.ini"
     quick_settings:
       - key: memory_limit
         label: Memory limit
@@ -143,6 +148,9 @@ spec:
       recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
       env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }
       health: { fastcgi: "/_forgebox/health.php" }
+      logs:
+        # The error_log of php.ini.j2; `php@<series>` in the log viewer reads this file.
+        - { label: Error log, path: "{{ paths.logs }}/php/{{ series }}/error.log", format: php }
 
   discover:
     match_files: [php.exe, php-cgi.exe]

@@ -1,0 +1,1132 @@
+[
+  {
+    "action": "db.create",
+    "method": "db.create",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja",
+          "charset": "utf8mb4"
+        },
+        "command": "forge db create loja --on mysql/default --charset utf8mb4"
+      },
+      {
+        "input": {
+          "instance": "postgresql/default",
+          "name": "loja_test",
+          "charset": null
+        },
+        "command": "forge db create loja_test --on postgresql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.drop",
+    "method": "db.drop",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja"
+        },
+        "command": "forge db drop loja --on mysql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.export",
+    "method": "db.export",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja"
+        },
+        "command": "forge db export loja --on mysql/default"
+      },
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja",
+          "output": "D:\\Backups MySQL\\loja.sql.gz"
+        },
+        "command": "forge db export loja --on mysql/default --output \"D:\\Backups MySQL\\loja.sql.gz\""
+      }
+    ]
+  },
+  {
+    "action": "db.import",
+    "method": "db.import",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "name": "loja",
+          "file": "C:\\Meus Dumps\\loja.sql.zst"
+        },
+        "command": "forge db import loja \"C:\\Meus Dumps\\loja.sql.zst\" --on mysql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.shell",
+    "method": "db.shell",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "database": "loja"
+        },
+        "command": "forge db shell mysql/default loja"
+      },
+      {
+        "input": {
+          "instance": "postgresql/default",
+          "database": null
+        },
+        "command": "forge db shell postgresql/default"
+      }
+    ]
+  },
+  {
+    "action": "db.url",
+    "method": "db.url",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "database": "loja"
+        },
+        "command": "forge db url mysql/default loja"
+      }
+    ]
+  },
+  {
+    "action": "diagnostics.ca_install",
+    "method": "tls.ca_install",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "scope": "current_user"
+        },
+        "command": "forge tls ca install --scope user"
+      },
+      {
+        "input": {
+          "scope": "local_machine"
+        },
+        "command": "forge tls ca install --scope machine"
+      }
+    ]
+  },
+  {
+    "action": "diagnostics.dns_enable",
+    "method": "net.dns_enable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge dns enable"
+      }
+    ]
+  },
+  {
+    "action": "diagnostics.path_add",
+    "method": "shell.path_add",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge path add"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.case_convert",
+    "method": "fs_parity.case_convert",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:/forgebox/www",
+          "revert": false
+        },
+        "command": "forge fs case-sensitive convert C:/forgebox/www"
+      },
+      {
+        "input": {
+          "dir": "C:/forgebox/www",
+          "revert": true
+        },
+        "command": "forge fs case-sensitive convert C:/forgebox/www --revert"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.case_disable",
+    "method": "fs_parity.case_disable",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "C:/forgebox/www",
+        "command": "forge fs case-sensitive disable C:/forgebox/www"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.case_enable",
+    "method": "fs_parity.case_enable",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "C:/forgebox/www",
+        "command": "forge fs case-sensitive enable C:/forgebox/www"
+      }
+    ]
+  },
+  {
+    "action": "filesystem.lint_case",
+    "method": "fs_parity.lint_case",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "strategy": "auto",
+          "dryRun": true
+        },
+        "command": "forge site lint-case loja.test --fix --dry-run --strategy auto"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "strategy": "rename",
+          "dryRun": false
+        },
+        "command": "forge site lint-case loja.test --fix --strategy rename"
+      }
+    ]
+  },
+  {
+    "action": "mail.clear",
+    "method": "mail.clear",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge mail clear"
+      }
+    ]
+  },
+  {
+    "action": "mail.delete",
+    "method": "mail.delete",
+    "kind": "call",
+    "samples": [
+      {
+        "input": [
+          "abc"
+        ],
+        "command": "forge mail delete abc"
+      }
+    ]
+  },
+  {
+    "action": "mail.mark_read",
+    "method": "mail.mark_read",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "ids": [
+            "abc"
+          ],
+          "read": true
+        },
+        "command": "forge mail read abc"
+      },
+      {
+        "input": {
+          "ids": [
+            "abc",
+            "def"
+          ],
+          "read": false
+        },
+        "command": "forge mail read abc def --unread"
+      }
+    ]
+  },
+  {
+    "action": "mail.open",
+    "method": "mail.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge mail open"
+      }
+    ]
+  },
+  {
+    "action": "onboarding.case_disable",
+    "method": "fs_parity.case_disable",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:/Forgebox/www"
+        },
+        "command": "forge fs case-sensitive disable C:/Forgebox/www"
+      }
+    ]
+  },
+  {
+    "action": "onboarding.park",
+    "method": "sites.park",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:/Forgebox/www",
+          "tld": ".test"
+        },
+        "command": "forge park C:/Forgebox/www --tld .test"
+      }
+    ]
+  },
+  {
+    "action": "php.ext_disable",
+    "method": "php.ext_disable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "version": "8.4",
+          "extension": "intl"
+        },
+        "command": "forge php ext disable 8.4 intl"
+      }
+    ]
+  },
+  {
+    "action": "php.ext_enable",
+    "method": "php.ext_enable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "version": "8.4",
+          "extension": "intl"
+        },
+        "command": "forge php ext enable 8.4 intl"
+      }
+    ]
+  },
+  {
+    "action": "php.ini_open",
+    "method": "php.ini_open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "8.4",
+        "command": "forge php ini 8.4 --open"
+      }
+    ]
+  },
+  {
+    "action": "php.xdebug",
+    "method": "php.xdebug",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "version": "8.4",
+          "mode": "trigger"
+        },
+        "command": "forge php xdebug 8.4 trigger"
+      },
+      {
+        "input": {
+          "version": "8.3",
+          "mode": "on",
+          "port": 9010
+        },
+        "command": "forge php xdebug 8.3 on --port 9010"
+      },
+      {
+        "input": {
+          "version": "8.4",
+          "mode": "off"
+        },
+        "command": "forge php xdebug 8.4 off"
+      }
+    ]
+  },
+  {
+    "action": "registries.add",
+    "method": "registry.add",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "url": "https://example.org/registry/index.yaml",
+          "name": "acme"
+        },
+        "command": "forge registry add https://example.org/registry/index.yaml --name acme"
+      }
+    ]
+  },
+  {
+    "action": "registries.remove",
+    "method": "registry.remove",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "acme",
+        "command": "forge registry remove acme"
+      }
+    ]
+  },
+  {
+    "action": "registries.update",
+    "method": "registry.update",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge registry update"
+      }
+    ]
+  },
+  {
+    "action": "security.ca_export",
+    "method": "tls.ca_export",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tls ca export"
+      }
+    ]
+  },
+  {
+    "action": "security.ca_uninstall",
+    "method": "tls.ca_uninstall",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "scope": "current_user"
+        },
+        "command": "forge tls ca uninstall --scope user"
+      },
+      {
+        "input": {
+          "scope": "local_machine"
+        },
+        "command": "forge tls ca uninstall --scope machine"
+      }
+    ]
+  },
+  {
+    "action": "security.cert_renew",
+    "method": "tls.renew",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "host": "loja.test"
+        },
+        "command": "forge tls renew loja.test"
+      },
+      {
+        "input": {
+          "all": true
+        },
+        "command": "forge tls renew --all"
+      }
+    ]
+  },
+  {
+    "action": "security.dns_disable",
+    "method": "net.dns_disable",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge dns disable"
+      }
+    ]
+  },
+  {
+    "action": "services.create_instance",
+    "method": "services.create",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "tool": "mysql@8.4.3",
+          "name": "legacy",
+          "port": 3307,
+          "autostart": true,
+          "dataDir": ""
+        },
+        "command": "forge service create mysql@8.4.3 legacy --port 3307 --autostart"
+      },
+      {
+        "input": {
+          "tool": "redis",
+          "name": "cache",
+          "port": null,
+          "autostart": false,
+          "dataDir": ""
+        },
+        "command": "forge service create redis cache"
+      },
+      {
+        "input": {
+          "tool": "mysql@8.4.3",
+          "name": "legacy",
+          "port": null,
+          "autostart": false,
+          "dataDir": "D:\\Dados MySQL\\legacy"
+        },
+        "command": "forge service create mysql@8.4.3 legacy --data-dir \"D:\\Dados MySQL\\legacy\""
+      }
+    ]
+  },
+  {
+    "action": "services.kill_port_holder",
+    "method": "services.kill_port_holder",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "port": 80,
+          "pid": 4412
+        },
+        "command": "forge service kill-port 80 --pid 4412"
+      }
+    ]
+  },
+  {
+    "action": "services.open_config",
+    "method": "services.config",
+    "kind": "call",
+    "samples": [
+      {
+        "input": "nginx",
+        "command": "forge service config nginx"
+      }
+    ]
+  },
+  {
+    "action": "services.reload",
+    "method": "services.reload",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php@8.4",
+        "command": "forge reload php@8.4"
+      },
+      {
+        "input": "nginx",
+        "command": "forge reload nginx"
+      }
+    ]
+  },
+  {
+    "action": "services.remove_instance",
+    "method": "services.remove",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/legacy",
+          "deleteData": true
+        },
+        "command": "forge service remove mysql/legacy --delete-data"
+      }
+    ]
+  },
+  {
+    "action": "services.restart_instance",
+    "method": "services.restart",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "nginx",
+        "command": "forge restart nginx"
+      }
+    ]
+  },
+  {
+    "action": "services.set_port",
+    "method": "services.set",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "target": "mysql/default",
+          "port": 3307
+        },
+        "command": "forge service set mysql/default ports.main=3307"
+      }
+    ]
+  },
+  {
+    "action": "services.set_settings",
+    "method": "services.set",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "target": "php@8.4",
+          "settings": {
+            "memory_limit": "1G",
+            "max_execution_time": "60"
+          }
+        },
+        "command": "forge service set php@8.4 max_execution_time=60 memory_limit=1G"
+      }
+    ]
+  },
+  {
+    "action": "services.start",
+    "method": "services.start",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge start all"
+      }
+    ]
+  },
+  {
+    "action": "services.start_instance",
+    "method": "services.start",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "mysql/default",
+        "command": "forge start mysql/default"
+      }
+    ]
+  },
+  {
+    "action": "services.stop",
+    "method": "services.stop",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge stop all"
+      }
+    ]
+  },
+  {
+    "action": "services.stop_instance",
+    "method": "services.stop",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "mysql/default",
+        "command": "forge stop mysql/default"
+      }
+    ]
+  },
+  {
+    "action": "services.update_instance",
+    "method": "services.update",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "instance": "mysql/default",
+          "patch": {
+            "autostart": false
+          }
+        },
+        "command": "forge service update mysql/default --no-autostart"
+      },
+      {
+        "input": {
+          "instance": "mysql/default",
+          "patch": {
+            "restart_policy": {
+              "on": "failure",
+              "max": 5,
+              "window_secs": 120
+            },
+            "version": "8.4.14"
+          }
+        },
+        "command": "forge service update mysql/default --restart failure --restart-max 5 --restart-window 120 --version 8.4.14"
+      }
+    ]
+  },
+  {
+    "action": "settings.ca_rotate",
+    "method": "tls.ca_rotate",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tls ca rotate"
+      }
+    ]
+  },
+  {
+    "action": "settings.config_set",
+    "method": "system.config_set",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "key": "dns.enabled",
+          "value": true
+        },
+        "command": "forge config set dns.enabled true"
+      },
+      {
+        "input": {
+          "key": "editor.command",
+          "value": "code -g {path}:{line}"
+        },
+        "command": "forge config set editor.command \"code -g {path}:{line}\""
+      }
+    ]
+  },
+  {
+    "action": "settings.daemon_restart",
+    "method": "daemon.restart",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge daemon restart"
+      }
+    ]
+  },
+  {
+    "action": "settings.terminal_test",
+    "method": "shell.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:\\Meus Projetos\\loja virtual"
+        },
+        "command": "forge shell \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
+    "action": "sites.add",
+    "method": "sites.add",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "dir": "C:\\www\\loja",
+          "host": "loja.test",
+          "php": "8.3",
+          "server": "nginx",
+          "secure": true
+        },
+        "command": "forge site add C:\\www\\loja --host loja.test --php 8.3 --server nginx --secure"
+      },
+      {
+        "input": {
+          "dir": "C:\\Meus Projetos\\loja virtual",
+          "host": null,
+          "php": null,
+          "server": null,
+          "secure": false
+        },
+        "command": "forge site add \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
+    "action": "sites.down",
+    "method": "sites.down",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "C:\\Meus Projetos\\loja virtual",
+        "command": "forge down \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
+    "action": "sites.open",
+    "method": "sites.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "with": "browser"
+        },
+        "command": "forge site open loja.test"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "with": "editor"
+        },
+        "command": "forge site open loja.test --editor"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "with": "terminal"
+        },
+        "command": "forge site open loja.test --terminal"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "with": "explorer"
+        },
+        "command": "forge site open loja.test --explorer"
+      }
+    ]
+  },
+  {
+    "action": "sites.proxy_add",
+    "method": "sites.proxy_add",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "host": "api.test",
+          "upstream": "http://127.0.0.1:3000",
+          "websocket": true,
+          "secure": null
+        },
+        "command": "forge proxy add api.test http://127.0.0.1:3000 --ws"
+      }
+    ]
+  },
+  {
+    "action": "sites.remove",
+    "method": "sites.remove",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "loja.test",
+        "command": "forge site remove loja.test"
+      }
+    ]
+  },
+  {
+    "action": "sites.run_process",
+    "method": "sites.run",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "process": "queue",
+          "action": "restart"
+        },
+        "command": "forge run loja.test queue restart"
+      }
+    ]
+  },
+  {
+    "action": "sites.secure",
+    "method": "sites.secure",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "secure": true
+        },
+        "command": "forge site secure loja.test"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "secure": false
+        },
+        "command": "forge site unsecure loja.test"
+      }
+    ]
+  },
+  {
+    "action": "sites.server",
+    "method": "sites.server",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "server": "nginx"
+        },
+        "command": "forge site server loja.test nginx"
+      }
+    ]
+  },
+  {
+    "action": "sites.set_driver",
+    "method": "sites.driver",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "driver": "laravel"
+        },
+        "command": "forge site driver loja.test laravel"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "driver": null
+        },
+        "command": "forge site driver loja.test auto"
+      }
+    ]
+  },
+  {
+    "action": "sites.set_metrics",
+    "method": "sites.metrics",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "enabled": true
+        },
+        "command": "forge site metrics loja.test on"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "enabled": false
+        },
+        "command": "forge site metrics loja.test off"
+      }
+    ]
+  },
+  {
+    "action": "sites.set_pool_mode",
+    "method": "sites.pool_mode",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "mode": "dedicated"
+        },
+        "command": "forge site pool loja.test dedicated"
+      },
+      {
+        "input": {
+          "site": "loja.test",
+          "mode": "shared"
+        },
+        "command": "forge site pool loja.test shared"
+      }
+    ]
+  },
+  {
+    "action": "sites.switch_php",
+    "method": "sites.php",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "site": "loja.test",
+          "php": "8.4"
+        },
+        "command": "forge site php loja.test 8.4"
+      }
+    ]
+  },
+  {
+    "action": "sites.up",
+    "method": "sites.up",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "C:\\Meus Projetos\\loja virtual",
+        "command": "forge up \"C:\\Meus Projetos\\loja virtual\""
+      }
+    ]
+  },
+  {
+    "action": "terminal.close",
+    "method": "terminal.close",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "id": "01J0000000000000000000000"
+        },
+        "command": null
+      }
+    ]
+  },
+  {
+    "action": "terminal.open",
+    "method": "terminal.open",
+    "kind": "call",
+    "samples": [
+      {
+        "input": null,
+        "command": null
+      }
+    ]
+  },
+  {
+    "action": "tools.check_updates_one",
+    "method": "tools.check_updates",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php",
+        "command": "forge tool update php --check"
+      }
+    ]
+  },
+  {
+    "action": "tools.discover",
+    "method": "tools.discover",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tool discover"
+      }
+    ]
+  },
+  {
+    "action": "tools.install_spec",
+    "method": "tools.install",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php@8.4",
+        "command": "forge tool install php@8.4"
+      }
+    ]
+  },
+  {
+    "action": "tools.install_specs",
+    "method": "tools.install",
+    "kind": "job",
+    "samples": [
+      {
+        "input": {
+          "specs": [
+            "php@8.4.27",
+            "nginx"
+          ],
+          "variant": "nts"
+        },
+        "command": "forge tool install php@8.4.27 nginx --variant nts"
+      },
+      {
+        "input": {
+          "specs": [
+            "redis"
+          ]
+        },
+        "command": "forge tool install redis"
+      }
+    ]
+  },
+  {
+    "action": "tools.remove_version",
+    "method": "tools.remove",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php@8.3.36",
+        "command": "forge tool remove php@8.3.36"
+      }
+    ]
+  },
+  {
+    "action": "tools.rollback_series",
+    "method": "tools.rollback",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php@8.3",
+        "command": "forge tool rollback php@8.3"
+      }
+    ]
+  },
+  {
+    "action": "tools.set_policy",
+    "method": "tools.policy",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "tool": "php",
+          "policy": "notify"
+        },
+        "command": "forge tool policy php notify"
+      },
+      {
+        "input": {
+          "tool": "php",
+          "policy": "auto-patch"
+        },
+        "command": "forge tool policy php auto-patch"
+      }
+    ]
+  },
+  {
+    "action": "tools.update",
+    "method": "tools.update",
+    "kind": "job",
+    "samples": [
+      {
+        "input": "php",
+        "command": "forge tool update php"
+      }
+    ]
+  },
+  {
+    "action": "tools.use_version",
+    "method": "tools.use",
+    "kind": "call",
+    "samples": [
+      {
+        "input": {
+          "tool": "php",
+          "version": "8.4"
+        },
+        "command": "forge use php 8.4"
+      }
+    ]
+  },
+  {
+    "action": "updates.check_all",
+    "method": "tools.check_updates",
+    "kind": "job",
+    "samples": [
+      {
+        "input": null,
+        "command": "forge tool update --check"
+      }
+    ]
+  }
+]

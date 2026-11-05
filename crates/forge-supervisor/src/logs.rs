@@ -9,8 +9,11 @@
 //! * **Pumps** (one task per pipe) read the overlapped pipe, split lines (`\n`, a
 //!   trailing `\r` is dropped, lines longer than [`LogOptions::max_line_bytes`] are cut)
 //!   and send them to the hub. They never hold a thread while the pipe is idle.
-//! * The **hub** numbers lines (`seq` grows across restarts of the instance), stamps
-//!   them, broadcasts them and queues them for the file.
+//! * The **hub** (one task per instance, shared by its runs) numbers lines, stamps them,
+//!   broadcasts them and queues them for the file. `seq` continues the instance's file
+//!   set ([`set`], ADR-0046): line `n` of `.out.log.4` … `.out.log` (plus the lines
+//!   rotation deleted) is `seq` `n`, across runs, daemon restarts and rotations, so a
+//!   client can mix the tail backlog, a replay from the files and the live lines.
 //! * **File** delivery is guaranteed with backpressure: when the writer falls behind, the
 //!   queue fills, the hub waits, the pumps stop reading, the 64 KiB pipe buffer fills and
 //!   the child blocks in `WriteFile`, exactly as on a slow terminal. Writes run in
@@ -26,14 +29,16 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use forge_core::Timestamp;
 use forge_core::platform::PipeReader;
+use forge_core::sync::{LockLevel, OrderedMutex};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{OnceCell, broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
+
+pub mod set;
 
 /// Which stream a line came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -46,7 +51,8 @@ pub enum LogStream {
 /// One line written by a supervised process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LogLine {
-    /// Per instance, strictly increasing by one (also across restarts).
+    /// Per instance, strictly increasing by one (also across restarts of the instance
+    /// and of the daemon): the line's index in the instance's file set ([`set`]).
     pub seq: u64,
     /// When the supervisor read it (UTC).
     pub ts: Timestamp,
@@ -70,9 +76,19 @@ pub enum LogItem {
 pub struct LogSubscription {
     receiver: broadcast::Receiver<LogLine>,
     missed: u64,
+    numbering: Arc<Numbering>,
 }
 
 impl LogSubscription {
+    /// `seq` from which this subscription receives every line (or a
+    /// [`LogItem::Lagged`] for it); the lines before it are in the file set (or still
+    /// being written to it). Lines below it may also arrive: they are in the files too.
+    /// Waits, the first time, until the hub has counted the files.
+    pub async fn start_seq(&self) -> u64 {
+        self.numbering.ready().await;
+        self.numbering.next()
+    }
+
     /// Next line, skipping over gaps (counted in [`LogSubscription::missed`]). `None`
     /// once the instance is gone.
     pub async fn recv(&mut self) -> Option<LogLine> {
@@ -165,16 +181,91 @@ struct RawLine {
     bytes: Vec<u8>,
 }
 
-/// Shared by every run of an instance: the broadcast channel and the line counter.
+/// What the pumps (and the end of a run) send to the hub, in order.
+enum RawMsg {
+    Line(RawLine),
+    /// A run ended: acknowledge once everything before it is in the file (and the file
+    /// is closed until the next run).
+    Flush(oneshot::Sender<()>),
+}
+
+/// What the hub queues for the file writer, in `seq` order.
+enum FileMsg {
+    Line { seq: u64, bytes: Vec<u8> },
+    Flush(oneshot::Sender<()>),
+}
+
+/// Lock of a hub's line counter. Innermost: nothing is acquired while it is held (the
+/// broadcast send under it does not block).
+const LOG_HUB_SEQ: LockLevel = LockLevel::new(200, "log_hub.seq");
+
+/// Numbering of one instance's lines (ADR-0046): `seq` continues the file set
+/// ([`set::LogSet::Rotated`] of [`LogOptions::file`]), so the tail backlog, a replay and
+/// the live lines share one domain across daemon restarts and rotations.
+struct Numbering {
+    file: Option<PathBuf>,
+    /// Set once `next` continues the file set (counted in `spawn_blocking`).
+    ready: OnceCell<()>,
+    /// `seq` of the next line. The hub takes a number and broadcasts the line under it.
+    next: OrderedMutex<u64>,
+}
+
+impl std::fmt::Debug for Numbering {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Numbering")
+            .field("file", &self.file)
+            .field("ready", &self.ready.initialized())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Numbering {
+    /// Counts the file set once (first caller; the others wait).
+    async fn ready(&self) {
+        self.ready
+            .get_or_init(|| async {
+                let last = match self.file.clone() {
+                    None => 0,
+                    Some(file) => {
+                        let shown = file.display().to_string();
+                        match tokio::task::spawn_blocking(move || set::prepare_append(&file))
+                            .await
+                        {
+                            Ok(Ok(last)) => last,
+                            Ok(Err(err)) => {
+                                tracing::warn!(path = %shown, %err, "cannot count the instance log; numbering from 1");
+                                0
+                            }
+                            Err(err) => {
+                                tracing::warn!(path = %shown, %err, "log count task failed; numbering from 1");
+                                0
+                            }
+                        }
+                    }
+                };
+                *self.next.lock() = last + 1;
+            })
+            .await;
+    }
+
+    /// `seq` of the next line (after [`Numbering::ready`]).
+    fn next(&self) -> u64 {
+        *self.next.lock()
+    }
+}
+
+/// Shared by every run of an instance: the broadcast channel, the line counter and the
+/// hub task (numbering + file writer) that outlives the runs.
 #[derive(Debug, Clone)]
 pub(crate) struct LogHub {
     sender: broadcast::Sender<LogLine>,
-    seq: Arc<AtomicU64>,
+    numbering: Arc<Numbering>,
+    raw: mpsc::Sender<RawMsg>,
     options: LogOptions,
 }
 
 /// Tasks of one run; [`LogPipeline::finished`] resolves once both pipes reached EOF and
-/// the file was flushed and closed.
+/// their lines were broadcast and written to the file.
 #[derive(Debug)]
 pub(crate) struct LogPipeline {
     done: JoinHandle<()>,
@@ -188,11 +279,26 @@ impl LogPipeline {
 }
 
 impl LogHub {
+    /// Starts the hub task (needs a tokio runtime). It numbers from the file set as soon
+    /// as it is counted, and ends when the hub and every run are gone.
     pub(crate) fn new(options: LogOptions) -> Self {
         let (sender, _) = broadcast::channel(options.broadcast_capacity.max(1));
+        let numbering = Arc::new(Numbering {
+            file: options.file.clone(),
+            ready: OnceCell::new(),
+            next: OrderedMutex::new(LOG_HUB_SEQ, 1),
+        });
+        let (raw, raw_rx) = mpsc::channel::<RawMsg>(256);
+        tokio::spawn(hub(
+            raw_rx,
+            sender.clone(),
+            Arc::clone(&numbering),
+            options.clone(),
+        ));
         Self {
             sender,
-            seq: Arc::new(AtomicU64::new(1)),
+            numbering,
+            raw,
             options,
         }
     }
@@ -201,6 +307,7 @@ impl LogHub {
         LogSubscription {
             receiver: self.sender.subscribe(),
             missed: 0,
+            numbering: Arc::clone(&self.numbering),
         }
     }
 
@@ -210,31 +317,21 @@ impl LogHub {
         stdout: Option<PipeReader>,
         stderr: Option<PipeReader>,
     ) -> LogPipeline {
-        let (raw_tx, raw_rx) = mpsc::channel::<RawLine>(256);
         let max_line = self.options.max_line_bytes.max(1);
-        for (stream, reader) in [(LogStream::Stdout, stdout), (LogStream::Stderr, stderr)] {
-            if let Some(reader) = reader {
-                tokio::spawn(pump(stream, reader, raw_tx.clone(), max_line));
-            }
-        }
-        drop(raw_tx);
-
-        let (file_tx, file_rx) = mpsc::channel::<Vec<u8>>(self.options.file_queue.max(1));
-        let writer = self
-            .options
-            .file
-            .clone()
-            .map(|path| tokio::spawn(write_file(path, self.options.rotation, file_rx)));
-        let hub = tokio::spawn(hub(
-            raw_rx,
-            self.sender.clone(),
-            Arc::clone(&self.seq),
-            writer.is_some().then_some(file_tx),
-        ));
+        let pumps: Vec<JoinHandle<()>> = [(LogStream::Stdout, stdout), (LogStream::Stderr, stderr)]
+            .into_iter()
+            .filter_map(|(stream, reader)| {
+                reader.map(|reader| tokio::spawn(pump(stream, reader, self.raw.clone(), max_line)))
+            })
+            .collect();
+        let raw = self.raw.clone();
         let done = tokio::spawn(async move {
-            let _ = hub.await;
-            if let Some(writer) = writer {
-                let _ = writer.await;
+            for pump in pumps {
+                let _ = pump.await;
+            }
+            let (ack, acked) = oneshot::channel();
+            if raw.send(RawMsg::Flush(ack)).await.is_ok() {
+                let _ = acked.await;
             }
         });
         LogPipeline { done }
@@ -245,7 +342,7 @@ impl LogHub {
 async fn pump(
     stream: LogStream,
     mut reader: PipeReader,
-    lines: mpsc::Sender<RawLine>,
+    lines: mpsc::Sender<RawMsg>,
     max_line: usize,
 ) {
     let mut buf = vec![0_u8; 8 * 1024];
@@ -261,100 +358,247 @@ async fn pump(
             }
         };
         for bytes in splitter.push(&buf[..read]) {
-            if lines.send(RawLine { stream, bytes }).await.is_err() {
+            if lines
+                .send(RawMsg::Line(RawLine { stream, bytes }))
+                .await
+                .is_err()
+            {
                 return;
             }
         }
     }
     if let Some(bytes) = splitter.finish() {
-        let _ = lines.send(RawLine { stream, bytes }).await;
+        let _ = lines.send(RawMsg::Line(RawLine { stream, bytes })).await;
     }
 }
 
-/// Numbers, broadcasts and queues for the file.
+/// Numbers, broadcasts and queues for the file, for every run of the instance.
 async fn hub(
-    mut lines: mpsc::Receiver<RawLine>,
+    mut raw: mpsc::Receiver<RawMsg>,
     sender: broadcast::Sender<LogLine>,
-    seq: Arc<AtomicU64>,
-    file: Option<mpsc::Sender<Vec<u8>>>,
+    numbering: Arc<Numbering>,
+    options: LogOptions,
 ) {
-    while let Some(RawLine { stream, mut bytes }) = lines.recv().await {
-        let line = LogLine {
-            seq: seq.fetch_add(1, Ordering::Relaxed),
-            ts: Timestamp::now(),
-            stream,
-            text: String::from_utf8_lossy(&bytes).into_owned(),
+    // Lines wait (the pipes fill) until the numbering continues the files.
+    numbering.ready().await;
+    let mut file = options.file.clone().map(|path| {
+        let (tx, rx) = mpsc::channel::<FileMsg>(options.file_queue.max(1));
+        let last = numbering.next().saturating_sub(1);
+        (
+            tx,
+            tokio::spawn(write_file(path, options.rotation, rx, last)),
+        )
+    });
+    while let Some(msg) = raw.recv().await {
+        match msg {
+            RawMsg::Line(RawLine { stream, mut bytes }) => {
+                let text = String::from_utf8_lossy(&bytes).into_owned();
+                let seq = {
+                    let mut next = numbering.next.lock();
+                    let seq = *next;
+                    *next += 1;
+                    // Numbered and broadcast atomically: a subscriber that read `next`
+                    // receives every line from that number on.
+                    // No subscriber is not an error; slow subscribers lag on their own.
+                    let _ = sender.send(LogLine {
+                        seq,
+                        ts: Timestamp::now(),
+                        stream,
+                        text,
+                    });
+                    seq
+                };
+                if let Some((queue, _)) = &file {
+                    bytes.push(b'\n');
+                    // Backpressure: waits while the writer is behind.
+                    if queue.send(FileMsg::Line { seq, bytes }).await.is_err() {
+                        tracing::warn!("log file writer stopped; output is only broadcast now");
+                        file = None;
+                    }
+                }
+            }
+            RawMsg::Flush(ack) => match &file {
+                Some((queue, _)) => {
+                    if let Err(mpsc::error::SendError(FileMsg::Flush(ack))) =
+                        queue.send(FileMsg::Flush(ack)).await
+                    {
+                        let _ = ack.send(());
+                    }
+                }
+                None => {
+                    let _ = ack.send(());
+                }
+            },
+        }
+    }
+    if let Some((queue, writer)) = file {
+        drop(queue);
+        let _ = writer.await;
+    }
+}
+
+/// The file side of a hub: the rotating file (open while a run writes), the count of
+/// lines in the set and what to check when it is reopened. Blocking.
+struct Writer {
+    path: PathBuf,
+    rotation: Rotation,
+    file: Option<RotatingFile>,
+    /// Lines in the set (= `seq` of the last line written).
+    last_seq: u64,
+    /// Size of the current file when it was closed: a different size at reopen means
+    /// someone else truncated or replaced it.
+    closed_size: Option<u64>,
+    /// A write failed: recount the set before writing again.
+    resync: bool,
+    /// Warned about a failure that still lasts.
+    failing: bool,
+}
+
+impl Writer {
+    fn open(&mut self) {
+        if self.resync {
+            match set::prepare_append(&self.path) {
+                Ok(last) => {
+                    self.last_seq = last;
+                    self.resync = false;
+                }
+                Err(err) => {
+                    self.warn("cannot recount the instance log", &err);
+                    return;
+                }
+            }
+        }
+        match RotatingFile::open(&self.path, self.rotation, self.last_seq) {
+            Ok(mut file) => {
+                if self
+                    .closed_size
+                    .take()
+                    .is_some_and(|size| size != file.size)
+                {
+                    file.realign();
+                }
+                self.last_seq = file.last_seq;
+                self.file = Some(file);
+            }
+            Err(err) => self.warn("cannot open the instance log file", &err),
+        }
+    }
+
+    fn warn(&mut self, what: &str, err: &io::Error) {
+        if !self.failing {
+            tracing::warn!(path = %self.path.display(), %err, "{what}");
+            self.failing = true;
+        }
+    }
+
+    fn write(&mut self, seq: u64, bytes: &[u8]) {
+        if self.file.is_none() {
+            self.open();
+        }
+        // Without a file the line is dropped: the process is never blocked by it.
+        let Some(file) = self.file.as_mut() else {
+            return;
         };
-        // No subscriber is not an error; slow subscribers lag on their own.
-        let _ = sender.send(line);
-        if let Some(file) = &file {
-            bytes.push(b'\n');
-            // Backpressure: waits while the writer is behind.
-            if file.send(bytes).await.is_err() {
-                tracing::warn!("log file writer stopped; output is only broadcast now");
-                break;
+        match file.write_line(seq, bytes) {
+            Ok(()) => {
+                self.last_seq = file.last_seq;
+                self.failing = false;
+            }
+            Err(err) => {
+                self.warn("writing the instance log failed", &err);
+                self.file = None;
+                self.resync = true;
             }
         }
     }
-    // Keep draining to the subscribers if the file writer died.
-    while let Some(RawLine { stream, bytes }) = lines.recv().await {
-        let _ = sender.send(LogLine {
-            seq: seq.fetch_add(1, Ordering::Relaxed),
-            ts: Timestamp::now(),
-            stream,
-            text: String::from_utf8_lossy(&bytes).into_owned(),
-        });
+
+    fn flush(&mut self) {
+        if let Some(file) = self.file.as_mut() {
+            if let Err(err) = file.flush() {
+                self.warn("writing the instance log failed", &err);
+                self.file = None;
+                self.resync = true;
+            }
+        }
+    }
+
+    /// End of a run: flushed and closed until the next line.
+    fn close(&mut self) {
+        if let Some(file) = self.file.take() {
+            self.last_seq = file.last_seq;
+            let size = file.size;
+            match file.close() {
+                Ok(()) => self.closed_size = Some(size),
+                Err(err) => {
+                    self.warn("writing the instance log failed", &err);
+                    self.resync = true;
+                }
+            }
+        }
     }
 }
 
 /// Batches queued lines into blocking writes with rotation.
-async fn write_file(path: PathBuf, rotation: Rotation, mut queue: mpsc::Receiver<Vec<u8>>) {
+async fn write_file(
+    path: PathBuf,
+    rotation: Rotation,
+    mut queue: mpsc::Receiver<FileMsg>,
+    last_seq: u64,
+) {
     const MAX_BATCH: usize = 512;
-    let opened = {
-        let path = path.clone();
-        tokio::task::spawn_blocking(move || RotatingFile::open(&path, rotation)).await
-    };
-    let mut file = match opened {
-        Ok(Ok(file)) => Some(file),
-        Ok(Err(err)) => {
-            tracing::warn!(path = %path.display(), %err, "cannot open the instance log file");
-            None
-        }
-        Err(err) => {
-            tracing::warn!(%err, "log file open task failed");
-            None
-        }
-    };
+    let mut writer = Some(Writer {
+        path,
+        rotation,
+        file: None,
+        last_seq,
+        closed_size: None,
+        resync: false,
+        failing: false,
+    });
     let mut batch = Vec::with_capacity(MAX_BATCH);
     while queue.recv_many(&mut batch, MAX_BATCH).await > 0 {
-        let Some(mut current) = file.take() else {
-            batch.clear();
-            continue; // keep draining so the process is never blocked by a dead file
+        let Some(mut current) = writer.take() else {
+            // The blocking task panicked: keep draining so the process is never blocked.
+            for msg in batch.drain(..) {
+                if let FileMsg::Flush(ack) = msg {
+                    let _ = ack.send(());
+                }
+            }
+            continue;
         };
-        let lines = std::mem::take(&mut batch);
+        let mut items = std::mem::take(&mut batch);
         let written = tokio::task::spawn_blocking(move || {
-            let result = current.write_lines(&lines);
-            (current, result, lines)
+            let mut acks = Vec::new();
+            for msg in items.drain(..) {
+                match msg {
+                    FileMsg::Line { seq, bytes } => current.write(seq, &bytes),
+                    FileMsg::Flush(ack) => {
+                        current.close();
+                        acks.push(ack);
+                    }
+                }
+            }
+            current.flush();
+            (current, acks, items)
         })
         .await;
         match written {
-            Ok((current, result, mut lines)) => {
-                if let Err(err) = result {
-                    tracing::warn!(path = %path.display(), %err, "writing the instance log failed");
+            Ok((current, acks, items)) => {
+                writer = Some(current);
+                for ack in acks {
+                    let _ = ack.send(());
                 }
-                file = Some(current);
-                lines.clear();
-                batch = lines;
+                batch = items;
             }
             Err(err) => tracing::warn!(%err, "log file write task failed"),
         }
     }
-    if let Some(file) = file {
-        let _ = tokio::task::spawn_blocking(move || file.close()).await;
+    if let Some(mut writer) = writer {
+        let _ = tokio::task::spawn_blocking(move || writer.close()).await;
     }
 }
 
-/// Splits a byte stream into lines.
+// Splits a byte stream into lines.
 pub(crate) struct LineSplitter {
     partial: Vec<u8>,
     max_line: usize,
@@ -398,13 +642,16 @@ impl LineSplitter {
     }
 }
 
-/// Append-only file rotated by size. Blocking.
+/// Append-only file rotated by size; the newest file of a [`set::LogSet::Rotated`] set,
+/// whose sidecar it keeps. Blocking.
 pub(crate) struct RotatingFile {
     path: PathBuf,
     /// `None` only transiently during a rotation.
     writer: Option<BufWriter<File>>,
     size: u64,
     rotation: Rotation,
+    /// Lines in the set: line `n` of the set is `seq` `n`.
+    last_seq: u64,
 }
 
 fn open_append(path: &Path) -> io::Result<File> {
@@ -417,8 +664,12 @@ fn rotated(path: &Path, index: u32) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// Placeholders written at most for one gap (lines lost by a failed write).
+const MAX_PLACEHOLDERS: u64 = 100_000;
+
 impl RotatingFile {
-    pub(crate) fn open(path: &Path, rotation: Rotation) -> io::Result<Self> {
+    /// Opens `path` for appending; the set holds `last_seq` lines.
+    pub(crate) fn open(path: &Path, rotation: Rotation, last_seq: u64) -> io::Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -429,19 +680,66 @@ impl RotatingFile {
             writer: Some(BufWriter::with_capacity(64 * 1024, file)),
             size,
             rotation,
+            last_seq,
         })
     }
 
-    /// Writes every line (each already ends with `\n`), rotating when needed; flushes.
+    /// The file changed while it was closed (truncated or deleted by someone else):
+    /// recounts the set and, if it lost lines, records them as dropped so that the next
+    /// line still gets the next `seq` (the numbering never goes back).
+    fn realign(&mut self) {
+        let Ok(snapshot) = set::LogSet::rotated(&self.path).snapshot() else {
+            return;
+        };
+        if snapshot.last_seq < self.last_seq {
+            let missing = self.last_seq - snapshot.last_seq;
+            let _ = set::rotating(&self.path, |dropped| {
+                *dropped += missing;
+                Ok(())
+            });
+            tracing::info!(path = %self.path.display(), missing, "instance log shrank while closed; numbering continues");
+        } else if snapshot.last_seq > self.last_seq {
+            tracing::warn!(path = %self.path.display(), "instance log grew while closed; its numbering may be off");
+            self.last_seq = snapshot.last_seq;
+        }
+    }
+
+    /// Writes line `seq` (`line` ends with `\n`), rotating when needed (not flushed).
+    /// Lines lost before it (a failed write) become empty lines, so line `n` of the set
+    /// stays `seq` `n`.
+    pub(crate) fn write_line(&mut self, seq: u64, line: &[u8]) -> io::Result<()> {
+        let gap = seq.saturating_sub(self.last_seq + 1);
+        if gap > MAX_PLACEHOLDERS {
+            tracing::warn!(path = %self.path.display(), gap, "instance log far behind its numbering");
+        }
+        for _ in 0..gap.min(MAX_PLACEHOLDERS) {
+            self.write_raw(b"\n")?;
+        }
+        self.write_raw(line)
+    }
+
+    /// Writes every line (each already ends with `\n`) with the next `seq`s; flushes.
+    #[cfg(test)]
     pub(crate) fn write_lines(&mut self, lines: &[Vec<u8>]) -> io::Result<()> {
         for line in lines {
-            let len = line.len() as u64;
-            if self.size > 0 && self.size + len > self.rotation.max_bytes {
-                self.rotate()?;
-            }
-            self.writer()?.write_all(line)?;
-            self.size += len;
+            let seq = self.last_seq + 1;
+            self.write_line(seq, line)?;
         }
+        self.flush()
+    }
+
+    fn write_raw(&mut self, line: &[u8]) -> io::Result<()> {
+        let len = line.len() as u64;
+        if self.size > 0 && self.size + len > self.rotation.max_bytes {
+            self.rotate()?;
+        }
+        self.writer()?.write_all(line)?;
+        self.size += len;
+        self.last_seq += 1;
+        Ok(())
+    }
+
+    pub(crate) fn flush(&mut self) -> io::Result<()> {
         self.writer()?.flush()
     }
 
@@ -451,33 +749,42 @@ impl RotatingFile {
             .ok_or_else(|| io::Error::other("log file is closed"))
     }
 
-    /// The oldest file (`.<max_files-1>`) is dropped, every other one shifts by one, the
-    /// current file becomes `.1` and a new one is started (`max_files == 1`: the file is
-    /// emptied). If a rename fails (file locked by a viewer without `FILE_SHARE_DELETE`)
-    /// the current file keeps growing and rotation is retried at the next line.
+    /// Every file from `.<max_files-1>` up is dropped (its lines counted in the sidecar),
+    /// every other one shifts by one, the current file becomes `.1` and a new one is
+    /// started (`max_files == 1`: the file is emptied). If a rename fails (file locked
+    /// by a viewer without `FILE_SHARE_DELETE`) the current file keeps growing and
+    /// rotation is retried at the next line.
     fn rotate(&mut self) -> io::Result<()> {
         if let Some(mut writer) = self.writer.take() {
             // Closed before renaming (Windows refuses to rename an open file otherwise).
             writer.flush()?;
         }
         let keep = self.rotation.max_files.max(1);
-        let shifted = if keep == 1 {
-            std::fs::remove_file(&self.path)
-        } else {
-            (|| -> io::Result<()> {
-                let oldest = rotated(&self.path, keep - 1);
-                if oldest.exists() {
-                    std::fs::remove_file(&oldest)?;
+        let path = self.path.clone();
+        let shifted = set::rotating(&path, |dropped| {
+            let mut drop_file = |file: &Path| -> io::Result<()> {
+                let (lines, _) = set::count_lines(file)?;
+                std::fs::remove_file(file)?;
+                *dropped += lines;
+                Ok(())
+            };
+            if keep == 1 {
+                return drop_file(&path);
+            }
+            // The oldest kept index and anything above it (left by a larger `max_files`).
+            for (index, oldest) in set::LogSet::siblings(&path)? {
+                if index >= keep - 1 {
+                    drop_file(&oldest)?;
                 }
-                for index in (1..keep - 1).rev() {
-                    let from = rotated(&self.path, index);
-                    if from.exists() {
-                        std::fs::rename(&from, rotated(&self.path, index + 1))?;
-                    }
+            }
+            for index in (1..keep - 1).rev() {
+                let from = rotated(&path, index);
+                if from.exists() {
+                    std::fs::rename(&from, rotated(&path, index + 1))?;
                 }
-                std::fs::rename(&self.path, rotated(&self.path, 1))
-            })()
-        };
+            }
+            std::fs::rename(&path, rotated(&path, 1))
+        });
         if let Err(err) = &shifted {
             tracing::warn!(path = %self.path.display(), %err, "log rotation failed; appending");
         }
@@ -532,7 +839,7 @@ mod tests {
             max_bytes: 100,
             max_files: 3,
         };
-        let mut file = RotatingFile::open(&path, rotation).unwrap();
+        let mut file = RotatingFile::open(&path, rotation, 0).unwrap();
         let line = |i: usize| format!("line {i:04} {}\n", "x".repeat(28)).into_bytes(); // 39 bytes
         let lines: Vec<Vec<u8>> = (0..20).map(line).collect();
         file.write_lines(&lines).unwrap();
@@ -545,9 +852,14 @@ mod tests {
         names.sort();
         assert_eq!(
             names,
-            vec!["default.out.log", "default.out.log.1", "default.out.log.2"]
+            vec![
+                "default.out.log",
+                "default.out.log.1",
+                "default.out.log.2",
+                "default.out.log.seq"
+            ]
         );
-        for name in &names {
+        for name in names.iter().filter(|n| !n.ends_with(".seq")) {
             let len = std::fs::metadata(path.parent().unwrap().join(name))
                 .unwrap()
                 .len();
@@ -562,8 +874,22 @@ mod tests {
         let previous = std::fs::read_to_string(rotated(&path, 1)).unwrap();
         assert!(previous.contains("line 0017"), "{previous}");
 
-        // Reopening appends and keeps rotating from the existing size.
-        let mut file = RotatingFile::open(&path, rotation).unwrap();
+        // Two lines per file, three files: the 14 oldest lines were dropped and counted,
+        // so `seq` is still the line's number in everything ever written.
+        let state = set::read_state(&path);
+        assert_eq!((state.dropped, state.rotations % 2), (14, 0), "{state:?}");
+        let (snapshot, tail) = set::LogSet::rotated(&path).tail(100).unwrap();
+        assert_eq!((snapshot.first_seq, snapshot.last_seq), (15, 20));
+        for (seq, text) in &tail {
+            assert!(
+                text.starts_with(&format!("line {:04}", seq - 1)),
+                "{seq} {text}"
+            );
+        }
+        assert_eq!(tail.len(), 6);
+
+        // Reopening appends and keeps rotating from the existing size and numbering.
+        let mut file = RotatingFile::open(&path, rotation, 20).unwrap();
         file.write_lines(&[line(20), line(21)]).unwrap();
         file.close().unwrap();
         assert!(
@@ -571,6 +897,9 @@ mod tests {
                 .unwrap()
                 .contains("line 0021")
         );
+        let (_, tail) = set::LogSet::rotated(&path).tail(1).unwrap();
+        assert_eq!(tail[0].0, 22);
+        assert!(tail[0].1.starts_with("line 0021"));
     }
 
     #[test]
@@ -583,13 +912,17 @@ mod tests {
                 max_bytes: 10,
                 max_files: 1,
             },
+            0,
         )
         .unwrap();
         file.write_lines(&[b"12345678\n".to_vec(), b"abc\n".to_vec()])
             .unwrap();
         file.close().unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "abc\n");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        // The file and its sidecar: the truncated line is counted, "abc" is line 2.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+        let (_, tail) = set::LogSet::rotated(&path).tail(5).unwrap();
+        assert_eq!(tail, [(2, "abc".to_owned())]);
     }
 
     #[tokio::test]
@@ -674,5 +1007,79 @@ mod tests {
         }
         assert_eq!(slow.recv().await.unwrap().seq, 93);
         assert_eq!(slow.missed(), 92);
+    }
+
+    #[tokio::test]
+    async fn numbering_continues_the_file_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("svc.out.log");
+        // A previous daemon left 100 rotated-away lines, 5 in `.1` and 10 in the file,
+        // the last one cut by a crash.
+        set::write_state(
+            &path,
+            set::SeqState {
+                dropped: 100,
+                rotations: 2,
+            },
+        )
+        .unwrap();
+        std::fs::write(rotated(&path, 1), "old\n".repeat(5)).unwrap();
+        std::fs::write(&path, format!("{}cut", "prev\n".repeat(9))).unwrap();
+        let hub = LogHub::new(LogOptions {
+            file: Some(path.clone()),
+            ..LogOptions::default()
+        });
+        let mut sub = hub.subscribe();
+        assert_eq!(sub.start_seq().await, 116);
+        let stdout: PipeReader = Box::pin(&b"new\n"[..]);
+        hub.attach(Some(stdout), None).finished().await;
+        let line = sub.try_recv().unwrap();
+        assert_eq!((line.seq, line.text.as_str()), (116, "new"));
+        let (snapshot, tail) = set::LogSet::rotated(&path).tail(3).unwrap();
+        assert_eq!(
+            tail,
+            [
+                (114, "prev".to_owned()),
+                (115, "cut".to_owned()),
+                (116, "new".to_owned())
+            ]
+        );
+        assert_eq!(snapshot.first_seq, 101);
+        // A subscription taken now starts after the last line.
+        assert_eq!(hub.subscribe().start_seq().await, 117);
+    }
+
+    #[tokio::test]
+    async fn live_seq_matches_the_files_across_rotations() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("svc.out.log");
+        let hub = LogHub::new(LogOptions {
+            file: Some(path.clone()),
+            rotation: Rotation {
+                max_bytes: 64,
+                max_files: 3,
+            },
+            ..LogOptions::default()
+        });
+        let mut sub = hub.subscribe();
+        for run in 0..4 {
+            let text: String = (0..10).map(|i| format!("run {run} line {i}\n")).collect();
+            let stdout: PipeReader = Box::pin(std::io::Cursor::new(text.into_bytes()));
+            hub.attach(Some(stdout), None).finished().await;
+        }
+        let mut live = Vec::new();
+        while let Some(line) = sub.try_recv() {
+            live.push((line.seq, line.text));
+        }
+        assert_eq!(live.len(), 40);
+        assert!(live.windows(2).all(|w| w[1].0 == w[0].0 + 1));
+        // Whatever the files still hold has the seq the live line had.
+        let (snapshot, kept) = set::LogSet::rotated(&path).range(1, 100, 100).unwrap();
+        assert!(snapshot.first_seq > 1, "rotation deleted something");
+        assert!(!kept.is_empty());
+        for (seq, text) in &kept {
+            assert_eq!(&live[(*seq - 1) as usize], &(*seq, text.clone()));
+        }
+        assert_eq!(kept.last().unwrap().0, 40);
     }
 }

@@ -55,6 +55,24 @@ fn check(id: &str, status: CheckStatus, message: impl Into<String>, fix: Option<
         status,
         message: message.into(),
         fix: fix.map(str::to_owned),
+        fix_method: None,
+        fix_params: None,
+    }
+}
+
+/// A check with a "Fix" button: `method` is a `METHODS` entry (ADR-0040).
+fn check_fix(
+    id: &str,
+    status: CheckStatus,
+    message: impl Into<String>,
+    fix: &str,
+    method: &str,
+    params: Option<serde_json::Value>,
+) -> CheckDto {
+    CheckDto {
+        fix_method: Some(method.to_owned()),
+        fix_params: params,
+        ..check(id, status, message, Some(fix))
     }
 }
 
@@ -168,16 +186,24 @@ pub async fn run_checks(daemon: &Daemon, filters: &[String]) -> Vec<CheckDto> {
                     if let Some(reason) = state.reason {
                         detail.push_str(&format!(" ({})", reason.as_str()));
                     }
-                    out.push(check(
-                        &format!("dns.policy{}", state.tld),
-                        if ok {
-                            CheckStatus::Ok
-                        } else {
-                            CheckStatus::Warn
-                        },
-                        detail,
-                        (!ok).then_some("forge dns enable"),
-                    ));
+                    let id = format!("dns.policy{}", state.tld);
+                    let status = if ok {
+                        CheckStatus::Ok
+                    } else {
+                        CheckStatus::Warn
+                    };
+                    out.push(if ok {
+                        check(&id, status, detail, None)
+                    } else {
+                        check_fix(
+                            &id,
+                            status,
+                            detail,
+                            "forge dns enable",
+                            "net.dns_enable",
+                            None,
+                        )
+                    });
                 }
             }
             Ok(Err(err)) => out.push(check(
@@ -203,20 +229,23 @@ pub async fn run_checks(daemon: &Daemon, filters: &[String]) -> Vec<CheckDto> {
                 });
                 if status.ca.is_some() {
                     let trusted = status.trusted_current_user || status.trusted_local_machine;
-                    out.push(check(
-                        "tls.ca_trusted",
-                        if trusted {
-                            CheckStatus::Ok
-                        } else {
-                            CheckStatus::Warn
-                        },
-                        if trusted {
-                            "trusted by Windows"
-                        } else {
-                            "not trusted by Windows"
-                        },
-                        (!trusted).then_some("forge tls ca install"),
-                    ));
+                    out.push(if trusted {
+                        check(
+                            "tls.ca_trusted",
+                            CheckStatus::Ok,
+                            "trusted by Windows",
+                            None,
+                        )
+                    } else {
+                        check_fix(
+                            "tls.ca_trusted",
+                            CheckStatus::Warn,
+                            "not trusted by Windows",
+                            "forge tls ca install",
+                            "tls.ca_install",
+                            Some(serde_json::json!({ "scope": "current_user" })),
+                        )
+                    });
                 }
             }
             Err(err) => out.push(check("tls.ca", CheckStatus::Fail, err.to_string(), None)),
@@ -377,14 +406,16 @@ async fn path_check(daemon: &Daemon) -> CheckDto {
             ),
             None,
         ),
-        Ok(path) => check(
+        Ok(path) => check_fix(
             "path.user",
             CheckStatus::Warn,
             format!(
                 "{} Forgebox entries missing from the user PATH (new terminals will not find the tools)",
                 path.missing.len()
             ),
-            Some("forge path add"),
+            "forge path add",
+            "shell.path_add",
+            None,
         ),
         Err(err) => check("path.user", CheckStatus::Skipped, err.to_string(), None),
     }

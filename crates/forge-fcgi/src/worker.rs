@@ -8,8 +8,9 @@
 //!   ([`worker_env`]). Restart policy `never`: the pool decides what replaces a worker.
 //!   Stop: `CTRL_BREAK` (php-cgi exits at once), then `TerminateJobObject`.
 //! * **Launch** ([`launch`]): port from the injected [`PortReservations`] (range
-//!   `php-pools`, owner `pool/<version id>#worker-<slot>`), baseline of the connections
-//!   already on that port, spawn (pre-checks: VC++ runtime and the port), then warmup:
+//!   `php-pools`, owner `pool/<owner id>#worker-<slot>`, the version id of a shared
+//!   pool), baseline of the connections already on that port, spawn (pre-checks: VC++
+//!   runtime and the port), then warmup:
 //!   `FCGI_GET_VALUES` + `GET /_forgebox/health.php` until it answers (the first attempts
 //!   are refused while php-cgi binds), checking `PHP_VERSION` and that the answering pid
 //!   is the worker's. Any failure stops the process and frees the port.
@@ -199,7 +200,7 @@ pub fn instance_spec(spec: &PoolSpec, port: u16) -> InstanceSpec {
 pub fn reservation_owner(spec: &PoolSpec, slot: u64) -> ReservationOwner {
     ReservationOwner {
         kind: OwnerKind::Pool,
-        id: spec.version_id.to_string(),
+        id: spec.owner_id(),
         port_name: format!("worker-{slot}"),
     }
 }
@@ -516,7 +517,7 @@ pub async fn retire(
 }
 
 /// Snapshot of a worker for [`crate::PoolStatus`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkerStatus {
     pub slot: u64,
     pub phase: WorkerPhase,
@@ -533,6 +534,11 @@ pub struct WorkerStatus {
     /// Slot of the worker this one replaces / is replaced by.
     pub replaces: Option<u64>,
     pub replaced_by: Option<u64>,
+    /// CPU of the process as a share of the whole machine (0-100) since the previous
+    /// sample; `None` before the first measurable window. Absent in statuses written
+    /// before M2-E5-T6.
+    #[serde(default)]
+    pub cpu_pct: Option<f64>,
 }
 
 #[cfg(test)]
@@ -595,6 +601,8 @@ mod tests {
             ForgeError::PortInUse {
                 port: 1,
                 owner: None,
+                pid: None,
+                exe: None,
             },
             "w",
         );

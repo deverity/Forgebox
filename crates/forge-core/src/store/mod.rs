@@ -22,14 +22,19 @@
 //! Repositories are added per aggregate (docs/02). M0-E1-T4 ships the migration runner
 //! and [`events::EventRepo`]; M1-E3-T3 adds [`ports::PortRepo`] (port reservations);
 //! M1-E2-T5 adds [`update_history::UpdateHistoryRepo`] (updates and rollbacks);
-//! M1-E5-T2 adds [`instances::InstanceRepo`] (service instances of the daemon).
+//! M1-E5-T2 adds [`instances::InstanceRepo`] (service instances of the daemon); M2-E2-T7
+//! adds [`tool_series_settings::ToolSeriesSettingsRepo`] (quick settings of a tool series,
+//! the PHP pools); M2-E5-T7 adds [`metrics::MetricsRepo`] (per-minute and per-hour metrics, tail
+//! checkpoints).
 
 pub mod events;
 pub mod instances;
+pub mod metrics;
 pub mod migrations;
 pub mod ports;
 mod reader;
 pub mod sites;
+pub mod tool_series_settings;
 pub mod tool_versions;
 pub mod update_history;
 pub mod writer;
@@ -43,12 +48,16 @@ use crate::error::{ForgeError, IoResultExt, Result};
 pub use events::EventRepo;
 pub use instances::{
     CASE_SENSITIVE_KEY, DesiredState, EXTERNAL_DATA_DIR_KEY, InstanceRepo, InstanceRow,
-    validate_instance_name,
+    LAUNCH_ARGS_KEY, LAUNCH_ENV_KEY, RESTART_POLICY_KEY, validate_instance_name,
 };
+pub use metrics::{MetricsRepo, MetricsRow, TailRow, Tier as MetricsTier};
 pub use migrations::{MIGRATIONS, Migration, MigrationReport};
 pub use ports::PortRepo;
 pub use reader::StoreReader;
-pub use sites::{Site, SiteKind, SitePhp, SiteRepo, SiteXdebug};
+/// The SQLite connection handed to writer operations and reader queries.
+pub use rusqlite::Connection as DbConnection;
+pub use sites::{Site, SiteKind, SitePhp, SitePoolMode, SiteRepo, SiteXdebug};
+pub use tool_series_settings::{ToolSeriesSettingsRepo, is_setting_key};
 pub use tool_versions::{
     NewToolVersion, ToolVersionRepo, ToolVersionRow, VersionSource, VersionState,
 };

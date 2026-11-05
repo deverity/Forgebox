@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use forge_core::ForgeError;
 use forge_core::event::EventKind;
-use forge_core::ids::{InstanceId, ToolId};
+use forge_core::ids::{InstanceId, SiteId, ToolId};
 use forge_core::jobs::JobErrorInfo;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +35,8 @@ pub struct ServiceRef {
     pub tool: ToolId,
     /// Instance name (`default`, `legacy`...).
     pub instance: String,
+    /// Site of an app instance (`service.*` payloads carry it as `site_id`).
+    pub site_id: Option<SiteId>,
 }
 
 impl ServiceRef {
@@ -141,6 +143,9 @@ pub struct ServiceEventPayload {
     /// `failed`: structured diagnosis (`port_in_use`, `missing_dll`, `health_timeout`...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<FailureReason>,
+    /// App instances: the site the process belongs to (M2-E2-T6, ADR-0041).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site_id: Option<SiteId>,
 }
 
 impl ServiceEventPayload {
@@ -163,6 +168,7 @@ impl ServiceEventPayload {
             cause: None,
             restart_in_ms: None,
             reason: None,
+            site_id: service.site_id,
         }
     }
 
@@ -287,6 +293,7 @@ mod tests {
             instance_id: InstanceId::new(),
             tool: ToolId::new("mysql").unwrap(),
             instance: "default".into(),
+            site_id: None,
         }
     }
 

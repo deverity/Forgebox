@@ -8,20 +8,29 @@
 
 pub mod convert;
 mod daemon_api;
+mod db;
 mod fs_parity;
 mod logs;
+mod mail;
 pub(crate) mod net;
 pub mod not_implemented;
 mod php;
 mod registry;
 mod services;
+mod settings;
 mod shell;
 mod sites;
+mod stats;
+mod stats_series;
 mod system;
+mod terminal;
 mod tls;
 mod tools;
 
 use forge_ipc::server::Router;
+
+pub(crate) use services::{instance_names, owner_name};
+pub(crate) use sites::{reconcile_parked, reconcile_quietly};
 
 use crate::daemon::Daemon;
 
@@ -44,6 +53,7 @@ pub fn router(daemon: &Daemon) -> Router {
     daemon_api::register(&mut router, daemon);
     tools::register(&mut router, daemon);
     services::register(&mut router, daemon);
+    settings::register(&mut router, daemon);
     sites::register(&mut router, daemon);
     php::register(&mut router, daemon);
     net::register(&mut router, daemon);
@@ -52,7 +62,11 @@ pub fn router(daemon: &Daemon) -> Router {
     system::register(&mut router, daemon);
     logs::register(&mut router, daemon);
     shell::register(&mut router, daemon);
+    terminal::register(&mut router, daemon);
+    db::register(&mut router, daemon);
+    mail::register(&mut router, daemon);
     fs_parity::register(&mut router, daemon);
+    stats::register(&mut router, daemon);
     not_implemented::register(&mut router);
     router
 }
@@ -74,4 +88,5 @@ pub const SERVER_BUILTINS: &[&str] = &[
     "fs.list",
     "logs.unsubscribe",
     "metrics.unsubscribe",
+    "terminal.unsubscribe",
 ];

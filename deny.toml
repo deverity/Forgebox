@@ -43,6 +43,11 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
+# The Tauri tree (apps/desktop/src-tauri, M2-E1-T1) needs NO exception: it adds MPL-2.0 crates
+# (already allowed), duplicate majors of common crates (syn 1, toml 0.8, windows-sys 0.45/0.52,
+# ... only warned here, never a failure) and, because [graph] targets Windows only, none of the
+# unmaintained GTK3/WebKitGTK crates that only the Linux backend of wry/tao pulls in. If a Tauri
+# bump ever needs an exception, add it here with its reason and revisit condition (ADR-0017).
 multiple-versions = "warn"
 wildcards = "deny"
 # Dependências entre crates do workspace são path deps sem versão (ver docs/02 §3).

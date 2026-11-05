@@ -1,0 +1,66 @@
+{
+  "sites": [
+    {
+      "aliases": [],
+      "case_sensitive": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "driver": "generic-php",
+      "enabled": true,
+      "env": {},
+      "host": "demo.test",
+      "http_redirect": true,
+      "id": "01FORGEBOXFIXTURE000000005",
+      "kind": "php",
+      "metrics_enabled": true,
+      "parked": true,
+      "php": {
+        "exact": null,
+        "resolved": "8.4.27",
+        "series": null,
+        "upstream": "php_8_4"
+      },
+      "pool_mode": "shared",
+      "processes": [],
+      "root": "C:/Forgebox/www/demo",
+      "secure": true,
+      "server": "nginx",
+      "slug": "demo-test",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "upstream": null,
+      "url": "https://demo.test",
+      "websocket": false,
+      "xdebug": "inherit"
+    },
+    {
+      "aliases": [],
+      "case_sensitive": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "driver": "generic-php",
+      "enabled": true,
+      "env": {},
+      "host": "shop.test",
+      "http_redirect": true,
+      "id": "01FORGEBOXFIXTURE000000006",
+      "kind": "php",
+      "metrics_enabled": true,
+      "parked": true,
+      "php": {
+        "exact": null,
+        "resolved": "8.4.27",
+        "series": null,
+        "upstream": "php_8_4"
+      },
+      "pool_mode": "shared",
+      "processes": [],
+      "root": "C:/Forgebox/www/shop/public",
+      "secure": true,
+      "server": "nginx",
+      "slug": "shop-test",
+      "updated_at": "2026-01-01T00:00:00Z",
+      "upstream": null,
+      "url": "https://shop.test",
+      "websocket": false,
+      "xdebug": "inherit"
+    }
+  ]
+}

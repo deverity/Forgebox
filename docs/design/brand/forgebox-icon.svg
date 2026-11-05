@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Forgebox</title>
+  <!--
+    Master app icon (docs/design/brand/README.md). Vector recreation of the user reference
+    (reference-icon-tray.png): floating blue glass lid, purple/green and orange plates, dark open
+    box with a U notch and a white ">_" prompt, blue/orange rim lights. Isometric-ish projection:
+    slope 0.55 for the lid, plates and rim, 0.45 for the box bottom. Transparent background, no
+    outer glow (no halo on light backgrounds). Rendered by apps/desktop/scripts/gen-icons.mjs for
+    the 40/48/64/256 px icon entries, the Tauri platform icons and forgebox-icon-1024.png; the
+    16/20/24/32 px entries come from the hand-pixeled grids in pixel/.
+  -->
+  <defs>
+    <linearGradient id="faceL" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121c33"/>
+      <stop offset="1" stop-color="#090e19"/>
+    </linearGradient>
+    <linearGradient id="faceR" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121722"/>
+      <stop offset="1" stop-color="#07090e"/>
+    </linearGradient>
+    <linearGradient id="rimLight" x1="112" y1="0" x2="912" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f86ff"/>
+      <stop offset="0.3" stop-color="#2f86ff" stop-opacity="0"/>
+      <stop offset="0.7" stop-color="#ff9a3c" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ff9a3c"/>
+    </linearGradient>
+    <linearGradient id="rimEdge" x1="112" y1="0" x2="912" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7fa8ff"/>
+      <stop offset="0.5" stop-color="#e6ebf5"/>
+      <stop offset="1" stop-color="#ffc58f"/>
+    </linearGradient>
+    <linearGradient id="frontEdge" x1="0" y1="700" x2="0" y2="992" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d5dbe8" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#d5dbe8" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="lidTop" x1="112" y1="90" x2="912" y2="470" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1b5cff"/>
+      <stop offset="0.5" stop-color="#1846e0"/>
+      <stop offset="0.8" stop-color="#3b3fd8"/>
+      <stop offset="1" stop-color="#b8559a"/>
+    </linearGradient>
+    <linearGradient id="lidSheen" x1="300" y1="90" x2="520" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="lidInner" x1="300" y1="190" x2="760" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3d8bff"/>
+      <stop offset="0.55" stop-color="#2f6cff"/>
+      <stop offset="1" stop-color="#8a7dff"/>
+    </linearGradient>
+    <linearGradient id="lidBand" x1="112" y1="0" x2="912" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#43c2ff"/>
+      <stop offset="0.45" stop-color="#2f78ff"/>
+      <stop offset="0.75" stop-color="#8b5cf6"/>
+      <stop offset="1" stop-color="#ffa64d"/>
+    </linearGradient>
+    <linearGradient id="lidEdge" x1="112" y1="0" x2="912" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d6f1ff"/>
+      <stop offset="0.45" stop-color="#a8cdff"/>
+      <stop offset="0.75" stop-color="#e2c2ff"/>
+      <stop offset="1" stop-color="#ffd9a8"/>
+    </linearGradient>
+    <linearGradient id="lidSpec" x1="112" y1="0" x2="512" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="soft2" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="3"/></filter>
+    <linearGradient id="plate2Top" x1="160" y1="0" x2="860" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8b55ff"/>
+      <stop offset="0.36" stop-color="#7040f2"/>
+      <stop offset="0.46" stop-color="#3cc061"/>
+      <stop offset="1" stop-color="#52d672"/>
+    </linearGradient>
+    <linearGradient id="plate2Band" x1="160" y1="0" x2="860" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5a22e0"/>
+      <stop offset="0.36" stop-color="#4f24d0"/>
+      <stop offset="0.46" stop-color="#23a043"/>
+      <stop offset="1" stop-color="#1f8a3b"/>
+    </linearGradient>
+    <linearGradient id="plate2Edge" x1="160" y1="0" x2="860" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c2a4ff"/>
+      <stop offset="0.36" stop-color="#a98bff"/>
+      <stop offset="0.46" stop-color="#a7f3b5"/>
+      <stop offset="1" stop-color="#b9f7c6"/>
+    </linearGradient>
+    <linearGradient id="orangeTop" x1="0" y1="300" x2="0" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffc23a"/>
+      <stop offset="1" stop-color="#ff9a1a"/>
+    </linearGradient>
+    <linearGradient id="orangeBand" x1="200" y1="0" x2="820" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f36a0c"/>
+      <stop offset="0.5" stop-color="#ff8a1c"/>
+      <stop offset="1" stop-color="#e05a06"/>
+    </linearGradient>
+    <clipPath id="boxClip"><path d="M898.9 404 Q898.9 396.8 885.7 389.5 L538.3 198.5 Q512 184 485.7 198.5 L138.3 389.5 Q125.1 396.8 125.1 404 L125.1 772 Q125.1 812 161.4 828.9 L484.8 979.3 Q512 992 539.2 979.3 L862.6 828.9 Q898.9 812 898.9 772Z"/></clipPath>
+    <filter id="soft" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+
+  <g transform="translate(0 -19)">
+    <!-- box interior (inner faces of the back walls) -->
+    <path d="M125.1 404 Q125.1 411.2 138.3 418.5 L238 473.3 C272 496 270 521 304 585.6 L512 700 L720 585.6 C754 521 752 496 786 473.3 L885.7 418.5 Q898.9 411.2 898.9 404 Q898.9 396.8 885.7 389.5 L538.3 198.5 Q512 184 485.7 198.5 L138.3 389.5 Q125.1 396.8 125.1 404Z" fill="#05070b"/>
+    <g clip-path="url(#boxClip)">
+      <path d="M898.9 404 Q898.9 396.8 885.7 389.5 L538.3 198.5 Q512 184 485.7 198.5 L138.3 389.5 Q125.1 396.8 125.1 404" fill="none" stroke="#3b4150" stroke-width="18" stroke-linejoin="round"/>
+      <path d="M898.9 404 Q898.9 396.8 885.7 389.5 L538.3 198.5 Q512 184 485.7 198.5 L138.3 389.5 Q125.1 396.8 125.1 404" fill="none" stroke="#9aa3b6" stroke-width="7" stroke-linejoin="round"/>
+    </g>
+
+    <!-- plates: orange (bottom), purple/green -->
+    <g id="plate-orange">
+      <path d="M236.9 478 Q236.9 486.2 251.8 494.4 L482.2 621.1 Q512 637.5 541.8 621.1 L772.2 494.4 Q787.1 486.2 787.1 478 L787.1 518 Q787.1 526.2 772.2 534.4 L541.8 661.1 Q512 677.5 482.2 661.1 L251.8 534.4 Q236.9 526.2 236.9 518Z" fill="url(#orangeBand)"/>
+      <path d="M251.8 461.6 L482.2 334.9 Q512 318.5 541.8 334.9 L772.2 461.6 Q802 478 772.2 494.4 L541.8 621.1 Q512 637.5 482.2 621.1 L251.8 494.4 Q222 478 251.8 461.6Z" fill="url(#orangeTop)"/>
+      <path d="M236.9 478 Q236.9 486.2 251.8 494.4 L482.2 621.1 Q512 637.5 541.8 621.1 L772.2 494.4 Q787.1 486.2 787.1 478" fill="none" stroke="#ffe08a" stroke-width="5" stroke-linecap="round" stroke-opacity="0.9"/>
+    </g>
+    <g id="plate-green">
+      <path d="M192.6 386 Q192.6 395.2 209.3 404.3 L478.7 552.5 Q512 570.8 545.3 552.5 L814.7 404.3 Q831.4 395.2 831.4 386 L831.4 422 Q831.4 431.2 814.7 440.3 L545.3 588.5 Q512 606.8 478.7 588.5 L209.3 440.3 Q192.6 431.2 192.6 422Z" fill="url(#plate2Band)"/>
+      <path d="M209.3 367.7 L478.7 219.5 Q512 201.2 545.3 219.5 L814.7 367.7 Q848 386 814.7 404.3 L545.3 552.5 Q512 570.8 478.7 552.5 L209.3 404.3 Q176 386 209.3 367.7Z" fill="url(#plate2Top)"/>
+      <path d="M192.6 386 Q192.6 395.2 209.3 404.3 L478.7 552.5 Q512 570.8 545.3 552.5 L814.7 404.3 Q831.4 395.2 831.4 386" fill="none" stroke="url(#plate2Edge)" stroke-width="5" stroke-linecap="round" stroke-opacity="0.9"/>
+    </g>
+
+    <!-- box front walls -->
+    <g id="box">
+      <path d="M125.1 404 Q125.1 411.2 138.3 418.5 L238 473.3 C272 496 270 521 304 585.6 L512 700 L512 985.7 Q498.4 985.7 484.8 979.3 L161.4 828.9 Q125.1 812 125.1 772Z" fill="url(#faceL)"/>
+      <path d="M898.9 404 Q898.9 411.2 885.7 418.5 L786 473.3 C752 496 754 521 720 585.6 L512 700 L512 985.7 Q525.6 985.7 539.2 979.3 L862.6 828.9 Q898.9 812 898.9 772Z" fill="url(#faceR)"/>
+      <g clip-path="url(#boxClip)">
+        <path d="M898.9 404 Q898.9 396.8 885.7 389.5 L538.3 198.5 Q512 184 485.7 198.5 L138.3 389.5 Q125.1 396.8 125.1 404 L125.1 772 Q125.1 812 161.4 828.9 L484.8 979.3 Q512 992 539.2 979.3 L862.6 828.9 Q898.9 812 898.9 772Z" fill="none" stroke="url(#rimLight)" stroke-width="34" filter="url(#soft)"/>
+        <path d="M512 700 L512 992" stroke="url(#frontEdge)" stroke-width="6"/>
+        <path d="M125.1 752 Q125.1 812 161.4 828.9 L484.8 979.3 Q512 992 539.2 979.3 L862.6 828.9 Q898.9 812 898.9 752" fill="none" stroke="#7d8aa6" stroke-opacity="0.45" stroke-width="10"/>
+      </g>
+      <g clip-path="url(#boxClip)">
+        <path d="M125.1 404 Q125.1 411.2 138.3 418.5 L238 473.3 C272 496 270 521 304 585.6 L512 700 L720 585.6 C754 521 752 496 786 473.3 L885.7 418.5 Q898.9 411.2 898.9 404" fill="none" stroke="#3b4150" stroke-width="18" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="M125.1 404 Q125.1 411.2 138.3 418.5 L238 473.3 C272 496 270 521 304 585.6 L512 700 L720 585.6 C754 521 752 496 786 473.3 L885.7 418.5 Q898.9 411.2 898.9 404" fill="none" stroke="url(#rimEdge)" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>
+      </g>
+      <g fill="none" stroke="#eef2ff" stroke-width="30" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M190 606 L262 662 L190 718"/>
+      <g transform="matrix(1 0.5 0 1 0 -56)"><path d="M286 690 L350 690"/></g>
+    </g>
+    </g>
+
+    <!-- lid -->
+    <g id="lid">
+      <path d="M141.9 286 Q141.9 298 163.8 310.1 L468.2 477.5 Q512 501.6 555.8 477.5 L860.2 310.1 Q882.1 298 882.1 286 L882.1 318 Q882.1 330 860.2 342.1 L555.8 509.5 Q512 533.6 468.2 509.5 L163.8 342.1 Q141.9 330 141.9 318Z" fill="url(#lidBand)"/>
+      <path d="M163.8 261.9 L468.2 94.5 Q512 70.4 555.8 94.5 L860.2 261.9 Q904 286 860.2 310.1 L555.8 477.5 Q512 501.6 468.2 477.5 L163.8 310.1 Q120 286 163.8 261.9Z" fill="url(#lidTop)"/>
+      <path d="M163.8 261.9 L468.2 94.5 Q512 70.4 555.8 94.5 L860.2 261.9 Q904 286 860.2 310.1 L555.8 477.5 Q512 501.6 468.2 477.5 L163.8 310.1 Q120 286 163.8 261.9Z" fill="url(#lidSheen)"/>
+      <path d="M297.8 283.6 L488.2 178.9 Q518 162.5 547.8 178.9 L738.2 283.6 Q768 300 738.2 316.4 L547.8 421.1 Q518 437.5 488.2 421.1 L297.8 316.4 Q268 300 297.8 283.6Z" fill="url(#lidInner)" filter="url(#soft2)" opacity="0.95"/>
+      <path d="M163.8 261.9 L468.2 94.5 Q512 70.4 555.8 94.5 L860.2 261.9 Q904 286 860.2 310.1 L555.8 477.5 Q512 501.6 468.2 477.5 L163.8 310.1 Q120 286 163.8 261.9Z" fill="none" stroke="url(#lidEdge)" stroke-width="9"/>
+      <path d="M141.9 286 Q141.9 298 163.8 310.1 L468.2 477.5" fill="none" stroke="url(#lidSpec)" stroke-width="5" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

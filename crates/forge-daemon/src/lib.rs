@@ -5,32 +5,48 @@
 //! * [`api`]: one handler per method of `forge_ipc::api::METHODS`, delegating to the
 //!   domain actors; methods of later roadmap tasks answer `not_implemented`;
 //! * [`services`], [`pools`], [`web`]: instances from manifests, PHP pools, sites rendered
-//!   into the web servers;
+//!   into the web servers; [`settings`]: the quick settings of a manifest (docs/04 §1.3);
 //! * [`scheduler`]: periodic work with jitter (updates, registry, `tmp/`, ports) and the
 //!   reactions to site/TLS events;
+//! * [`mail`]: the captured e-mail of `spec.mail` instances and the `mail.changed` watcher;
+//! * [`terminal`]: terminal sessions hosted by the daemon (the GUI's integrated terminal);
+//! * [`metrics`]: feeds the per-site metrics service (`forge_metrics::service`) with the
+//!   access logs of the running web servers, the sites and the pool samples;
 //! * [`shutdown`]: graceful stop in cascade with a global budget;
 //! * [`logging`]: `logs/forgeboxd.log.<date>` (JSON lines) and stdout in `--foreground`;
 //! * [`instance_lock`]: the single-instance mutex and `state/locks/forgeboxd.lock`.
 //!
 //! Nothing here knows a tool by id: everything a service needs comes from its manifest.
 
+pub mod advanced;
 pub mod api;
 pub mod args;
 pub mod boot;
 pub mod catalog;
+pub mod config_owner;
 pub mod daemon;
+pub mod data_size;
+pub mod databases;
 pub mod event_log;
 pub mod install;
 pub mod instance_case;
 pub mod instance_lock;
 pub mod internal;
+pub mod log_format;
 pub mod logging;
+pub mod mail;
 pub mod messages;
+pub mod metrics;
+pub mod php_ext;
 pub mod pools;
 pub mod render;
 pub mod scheduler;
 pub mod services;
+pub mod settings;
 pub mod shutdown;
+pub mod terminal;
+pub mod top;
+pub mod update_feed;
 pub mod vars;
 pub mod web;
 

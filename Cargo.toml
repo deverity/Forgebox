@@ -1,10 +1,9 @@
 [workspace]
-# apps/desktop/src-tauri entra no workspace em M2-E1 (ver docs/02-project-structure.md).
-members = ["crates/*", "xtask"]
+members = ["crates/*", "xtask", "apps/desktop/src-tauri"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/deverity/Forgebox"
@@ -95,6 +94,12 @@ tar = "0.4.46"
 flate2 = "1.1.10"
 # Same version as sevenz-rust2 uses: one LZMA implementation for 7z and tar.xz.
 lzma-rust2 = { version = "0.16.5", default-features = false, features = ["std", "xz"] }
+# `.sql.zst` of db.export/db.import (forgeboxd, M2-E3-T6, ADR-0040). Builds the C libzstd
+# with the MSVC toolchain rusqlite's `bundled` already needs; the pure-Rust rule of
+# ADR-0017 is for the verify/extract stack of forge-provider. No default features (no
+# legacy formats, no dictionary builder). MIT (zstd) / MIT OR Apache-2.0 (zstd-safe,
+# zstd-sys) / BSD-3-Clause (libzstd).
+zstd = { version = "0.13.4", default-features = false }
 # Signs minisign fixtures in tests and the dev registry index in xtask (never shipped); RNG of the same major as pgp (key generation in tests).
 minisign = "0.10.0"
 rand = "0.8.6"
@@ -103,6 +108,10 @@ camino = "1.2.6"
 tempfile = "3.27.0"
 pretty_assertions = "1.4.1"
 insta = "1.49.0"
+# Latency histograms of forge-metrics (docs/14, ADR-0048): the HDR layout and the V2 encoding
+# of the persisted minute/hour blobs. Only `serialization` (V2 + base64/flate2/nom); not
+# `sync` (crossbeam), the aggregator is single-owner. MIT OR Apache-2.0.
+hdrhistogram = { version = "7.5.4", default-features = false, features = ["serialization"] }
 # Filesystem watcher of parked directories (forge-sites). CC0-1.0, allowed by deny.toml.
 notify = { version = "8.2.0", default-features = false }
 # DNS server for the local zones (forge-net::dns, ADR-0004). No default features: plain UDP/TCP
@@ -114,6 +123,46 @@ async-trait = "0.1.89"
 # Embeds the application manifest (requireAdministrator) of forgebox-helper.exe from its
 # build.rs: MIT, no dependencies, no rc.exe/mt.exe needed (ADR-0024).
 embed-manifest = "1.5.1"
+# Embeds the Forgebox icon (apps/desktop/src-tauri/icons/icon.ico, docs/design/brand) in forge,
+# forgeboxd, forgebox-helper, forge-mcp and forgebox-ctrl from their build.rs. MIT; the same
+# version tauri-build already uses through tauri-winres. Needs rc.exe from the Windows SDK, like
+# the Forgebox.exe resource (README "Desenvolvimento"); a no-op on non-Windows targets.
+embed-resource = "3.0.12"
+
+# Desktop shell (apps/desktop/src-tauri, ADR-0002). Tauri 2 stable line; never the 3.x alphas.
+# Default features: wry/WebView2, common-controls-v6 (manifest), compression of embedded assets.
+tauri = "2.12.5"
+tauri-build = "2.7.4"
+# Window chrome (ADR-0035): the material is applied by window-vibrancy (same version Tauri
+# itself links) and its Result decides the opaque fallback; Tauri's set_effects is not used.
+window-vibrancy = "0.8.1"
+# A second Forgebox.exe focuses the running one (ADR-0035). Plugins may link Win32 themselves;
+# src-tauri still has no direct windows/windows-sys dependency (cargo xtask arch-guard).
+tauri-plugin-single-instance = "2.4.5"
+# App autostart (HKCU Run with --minimized) and the app updater (minisign-verified, ADR-0038).
+# Both plugins link Win32 themselves; src-tauri still has no direct windows/windows-sys dependency.
+tauri-plugin-autostart = "2.5.1"
+# No `zip` feature: it only unpacks the legacy zipped installers and drags in `zip` 4.x, which
+# carries open RUSTSEC advisories; Tauri 2 NSIS updates are plain .exe files (ADR-0038).
+tauri-plugin-updater = { version = "2.12.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
+# Clipboard ("Copiar comando") and native folder/file dialog (PathField, only when hello.local);
+# M2-E1-T13. Plugins may link Win32 themselves; src-tauri still has no direct windows deps.
+# Pinned exactly: the Tauri CLI refuses a crate and its npm package on different minors
+# ("version mismatched Tauri packages"), so apps/desktop/package.json pins
+# @tauri-apps/plugin-dialog 2.7.3 and @tauri-apps/plugin-clipboard-manager 2.3.3 (same minors).
+# The workspace MSRV (rust-version 1.88) limits the crates: dialog 2.8.x and clipboard-manager
+# 2.5.x need Rust 1.90. Bump crate and npm package together when the MSRV moves.
+tauri-plugin-clipboard-manager = "2.3.3"
+tauri-plugin-dialog = "2.7.3"
+# M2-E1-T14: open a site in the browser (opener) and the global terminal shortcut. Same minor as
+# the npm packages (@tauri-apps/plugin-opener 2.5.3, plugin-global-shortcut 2.3.1); opener 2.7.x
+# needs Rust 1.90 (workspace MSRV 1.88).
+tauri-plugin-opener = "2.5.3"
+tauri-plugin-global-shortcut = "2.3.1"
+# M2-E1-T16: native toasts from the tray model (src-tauri/src/notifications.rs). 2.4.x is the last
+# line below the workspace MSRV (2.5+ needs Rust 1.90). The webview never calls the plugin (no
+# `notification:*` permission is granted), so there is no npm counterpart to keep in step.
+tauri-plugin-notification = "=2.4.0"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
@@ -138,3 +187,17 @@ codegen-units = 1
 strip = true
 # Mantemos unwind: catch_unwind é usado pelos atores (ADR-0011).
 panic = "unwind"
+
+# Desktop GUI: size matters more than speed (LTO + codegen-units=1 are the profile above).
+# Cargo allows per-package overrides only for opt-level/codegen-units/debug/strip, so the
+# crates that make up the shell are listed here (no effect on the daemon/CLI crates).
+[profile.release.package.forgebox-desktop]
+opt-level = "s"
+[profile.release.package.tauri]
+opt-level = "s"
+[profile.release.package.tauri-runtime-wry]
+opt-level = "s"
+[profile.release.package.wry]
+opt-level = "s"
+[profile.release.package.tao]
+opt-level = "s"

@@ -7,9 +7,10 @@
 //! docs/11 §3 defines it: a self-signed CA whose subject starts with `Forgebox` and whose
 //! Name Constraints only permit names under suffixes reserved for local use
 //! ([`crate::dns_name::LOCAL_USE_SUFFIXES`]) and loopback or private addresses. Even a
-//! stolen key of such a CA cannot sign `google.com`. Removal is limited to certificates
-//! whose subject starts with `Forgebox` (a request can never strip a corporate or a
-//! Microsoft root from the machine).
+//! stolen key of such a CA cannot sign `google.com`. Removal (`tls.ca_uninstall`, a CA
+//! rotation) applies the same test to the certificate found in `LocalMachine\Root`
+//! (ADR-0045): a request can never strip a corporate or a Microsoft root from the
+//! machine, not even one whose subject was made to start with `Forgebox`.
 
 use std::net::IpAddr;
 
@@ -125,16 +126,17 @@ pub fn check_machine_root_candidate(
     Ok(())
 }
 
-/// Checks that the certificate found in `LocalMachine\Root` may be removed.
+/// Checks that the certificate found in `LocalMachine\Root` may be removed: the same test
+/// as [`check_machine_root_candidate`] (a constrained, self-signed Forgebox CA), so the
+/// helper only ever removes what it could have added (ADR-0045).
 pub fn check_machine_root_removal(info: &CertificateInfo) -> Result<()> {
-    if info.subject.starts_with(CA_SUBJECT_PREFIX) {
-        Ok(())
-    } else {
-        Err(forbidden(
+    if !info.subject.starts_with(CA_SUBJECT_PREFIX) {
+        return Err(forbidden(
             info,
             format_args!("is not a Forgebox CA; the helper only removes its own roots"),
-        ))
+        ));
     }
+    check_machine_root_candidate(info, &info.thumbprint)
 }
 
 #[cfg(test)]
@@ -259,5 +261,31 @@ mod tests {
             check_machine_root_removal(&microsoft).unwrap_err().code(),
             "forbidden"
         );
+    }
+
+    #[test]
+    fn removal_takes_the_install_test() {
+        // A root named like ours but unconstrained (or with a public TLD, or not a CA)
+        // is not one the helper could have added: it stays (ADR-0045).
+        type Change = fn(&mut CertificateInfo);
+        let cases: [(&str, Change); 4] = [
+            ("unconstrained", |c| c.name_constraints = None),
+            ("public tld", |c| {
+                c.name_constraints
+                    .as_mut()
+                    .unwrap()
+                    .permitted_dns
+                    .push("com".into());
+            }),
+            ("not a CA", |c| c.is_ca = false),
+            ("not self-signed", |c| c.self_signed = false),
+        ];
+        for (what, change) in cases {
+            let mut ca = forgebox_ca();
+            change(&mut ca);
+            let err = check_machine_root_removal(&ca).unwrap_err();
+            assert_eq!(err.code(), "forbidden", "{what}: {err}");
+        }
+        check_machine_root_removal(&forgebox_ca()).unwrap();
     }
 }

@@ -270,12 +270,19 @@ impl PortAllocator {
             return Err(ForgeError::PortInUse {
                 port,
                 owner: Some(describe(&holder)),
+                pid: Some(holder.pid),
+                exe: holder
+                    .exe_path
+                    .as_deref()
+                    .map(forge_core::paths::posix_string),
             });
         }
         if !self.bindable(port).await? {
             return Err(ForgeError::PortInUse {
                 port,
                 owner: Some("the system (the port cannot be bound)".into()),
+                pid: None,
+                exe: None,
             });
         }
         let range = range.map(str::to_owned);
@@ -322,6 +329,17 @@ impl PortAllocator {
         let owner = owner.clone();
         self.reader
             .query(move |conn| PortRepo::new(conn).find_owner(&owner))
+            .await
+    }
+
+    /// The reservation holding `port` (any owner), if any: `net.port_check`.
+    pub async fn reservation_of(
+        &self,
+        protocol: PortProtocol,
+        port: u16,
+    ) -> Result<Option<PortReservation>> {
+        self.reader
+            .query(move |conn| PortRepo::new(conn).find_port(protocol, port))
             .await
     }
 

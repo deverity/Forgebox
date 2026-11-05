@@ -128,3 +128,13 @@ pub fn long_path(path: &Path) -> Option<std::path::PathBuf> {
 pub fn spawn_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Result<u32> {
     super::process::create_detached(exe, args, cwd)
 }
+
+/// [`spawn_detached`] that also watches the exit of the new process (through the handle
+/// returned by `CreateProcessW`, so a process that exits at once is still observed).
+pub fn spawn_detached_watched(
+    exe: &Path,
+    args: &[OsString],
+    cwd: &Path,
+) -> Result<crate::platform::process::ProcessExit> {
+    super::process::create_detached_watched(exe, args, cwd)
+}

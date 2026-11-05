@@ -1,0 +1,130 @@
+{
+  "title": "Mail",
+  "count_one": "{count} message",
+  "count_other": "{count} messages",
+  "unreadCount_one": "{count} unread",
+  "unreadCount_other": "{count} unread",
+  "search": {
+    "label": "Search mail",
+    "placeholder": "Search sender, subject or text"
+  },
+  "filter": {
+    "label": "Show",
+    "all": "All",
+    "unread": "Unread"
+  },
+  "open": "Open in Mailpit",
+  "openedDone": "Opened",
+  "credentials": {
+    "toggle": "SMTP credentials",
+    "title": "SMTP credentials",
+    "copy": "Copy .env",
+    "copied": ".env variables copied",
+    "copyFailed": "Could not copy to the clipboard",
+    "loading": "Loading the settings…",
+    "failed": "Could not read the SMTP settings."
+  },
+  "clear": {
+    "button": "Clear mailbox",
+    "title": "Clear the mailbox?",
+    "description_one": "This permanently deletes the {count} captured message. It cannot be undone.",
+    "description_other": "This permanently deletes all {count} captured messages. It cannot be undone.",
+    "cancel": "Cancel",
+    "confirm": "Clear mailbox",
+    "clearing": "Clearing…",
+    "done": "Mailbox cleared"
+  },
+  "empty": {
+    "title": "No mail yet",
+    "description": "Point your app at the SMTP settings below and the messages it sends show up here."
+  },
+  "list": {
+    "label": "Messages",
+    "more": "Load more",
+    "noMatchTitle": "No message matches",
+    "noMatchDescription": "Try another search or show all messages."
+  },
+  "row": {
+    "read": "Read",
+    "unread": "Unread",
+    "noSubject": "(no subject)",
+    "attachments_one": "{count} attachment",
+    "attachments_other": "{count} attachments"
+  },
+  "error": {
+    "title": "Mailpit did not answer",
+    "description": "The mail service is not responding. Restarting it keeps the messages it already captured.",
+    "restart": "Restart Mailpit",
+    "restarted": "Restarted"
+  },
+  "unavailable": {
+    "title": "Mail is not available",
+    "description": "This daemon does not offer the mail API yet."
+  },
+  "offline": {
+    "title": "Waiting for the daemon",
+    "description": "The mailbox appears as soon as the connection is back."
+  },
+  "noTool": {
+    "title": "Install Mailpit to catch your app's mail",
+    "description": "Mailpit receives the messages your projects send while you develop and shows them here.",
+    "action": "Open Mailpit in the catalog"
+  },
+  "stopped": {
+    "title": "Mailpit is stopped",
+    "description": "Start it to receive and read mail.",
+    "start": "Start Mailpit"
+  },
+  "delete": {
+    "toast": "Message deleted",
+    "undo": "Undo",
+    "failed": "Could not delete the message"
+  },
+  "pane": {
+    "none": "Select a message",
+    "noneHint": "Its content shows here.",
+    "markRead": "Mark as read",
+    "markUnread": "Mark as unread",
+    "delete": "Delete",
+    "done": "Done"
+  },
+  "tabs": {
+    "label": "Message view",
+    "html": "HTML",
+    "text": "Text",
+    "headers": "Headers",
+    "attachments": "Attachments",
+    "attachmentsCount_one": "Attachments ({count})",
+    "attachmentsCount_other": "Attachments ({count})"
+  },
+  "html": {
+    "frameTitle": "Message content",
+    "none": "This message has no HTML part.",
+    "remoteBlocked_one": "{count} remote image blocked.",
+    "remoteBlocked_other": "{count} remote images blocked.",
+    "remoteShown_one": "{count} remote image shown.",
+    "remoteShown_other": "{count} remote images shown.",
+    "showRemote": "Show images",
+    "hideRemote": "Block images",
+    "tooLarge": "This message is too large to preview safely as HTML.",
+    "viewText": "View text",
+    "links_one": "{count} link",
+    "links_other": "{count} links"
+  },
+  "text": {
+    "none": "This message has no text part."
+  },
+  "attachments": {
+    "none": "This message has no attachments.",
+    "download": "Download",
+    "downloadNamed": "Download {name}",
+    "saved": "{name} saved",
+    "inline": "inline"
+  },
+  "link": {
+    "title": "Open this link in your browser?",
+    "description": "The link comes from the message and is untrusted. Check the address before opening it.",
+    "cancel": "Cancel",
+    "open": "Open link"
+  }
+}

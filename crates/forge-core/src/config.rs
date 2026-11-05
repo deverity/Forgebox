@@ -38,6 +38,7 @@ pub const CONFIG_HEADER: &str = "\
 
 /// Root of `forgebox.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct ForgeConfig {
     /// TLD of local sites, with the leading dot (`.test`). Always lowercase.
@@ -77,6 +78,7 @@ impl Default for ForgeConfig {
 
 /// `[ports]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct PortsConfig {
     /// Ports never handed out automatically to other owners (Xdebug 9003).
@@ -217,6 +219,27 @@ impl PortSet {
     }
 }
 
+/// Items are single ports or `"start-end"` spans (the TOML shape `Serialize` writes).
+#[cfg(feature = "schemars")]
+impl schemars::JsonSchema for PortSet {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "PortSet".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "array",
+            "description": "Ports and spans: 80, \"19000-19999\".",
+            "items": {
+                "oneOf": [
+                    { "type": "integer", "minimum": 1, "maximum": 65535 },
+                    { "type": "string", "pattern": "^[0-9]+-[0-9]+$" }
+                ]
+            }
+        })
+    }
+}
+
 impl FromStr for PortSet {
     type Err = String;
 
@@ -272,6 +295,7 @@ impl<'de> Deserialize<'de> for PortSet {
 /// `[dns]` (docs/06 §5, docs/13 §5): whether the daemon runs the local resolver and what
 /// it answers besides `tld`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct DnsConfig {
     /// The daemon starts the resolver at boot (docs/01 §5.1 step 5). Default `true`;
@@ -299,6 +323,7 @@ impl Default for DnsConfig {
 
 /// One entry of `[[dns.remote_zones]]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RemoteZoneConfig {
     /// Zone name without dots around it, lowercase (`hml.test`).
     pub zone: String,
@@ -306,21 +331,28 @@ pub struct RemoteZoneConfig {
     pub address: IpAddr,
 }
 
-/// `[metrics]` (docs/14).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// `[metrics]` (docs/14 section 3).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct MetricsConfig {
-    pub enabled: bool,
+    /// Per-site metrics collection. Unset (`None`, the default) means on, except in a
+    /// portable root (`portable.flag`), where metrics stay off until the user sets this
+    /// key explicitly (docs/14 section 3, docs/08 section 2.2). See [`Self::effective`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
 }
 
-impl Default for MetricsConfig {
-    fn default() -> Self {
-        Self { enabled: true }
+impl MetricsConfig {
+    /// Whether metrics are collected: the explicit value, else on unless `portable`.
+    pub fn effective(&self, portable: bool) -> bool {
+        self.enabled.unwrap_or(!portable)
     }
 }
 
 /// `[updates]` (docs/05 §4): background checks respect these.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct UpdatesConfig {
     /// What to do on a metered connection.
@@ -332,6 +364,7 @@ pub struct UpdatesConfig {
 
 /// Local-time window `"HH:MM"`..`"HH:MM"`; may wrap midnight (`22:00`..`07:00`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct QuietHours {
     pub start: String,
     pub end: String,
@@ -366,6 +399,7 @@ fn parse_hhmm(value: &str) -> Result<u16> {
 
 /// Behaviour of background downloads on metered connections.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum MeteredPolicy {
     /// Do not download in the background while metered (default).
@@ -375,25 +409,61 @@ pub enum MeteredPolicy {
     Allow,
 }
 
-/// `[editor]`: command used by "open in editor". `None`: auto-detect.
+/// `[editor]`: command used by "open in editor", with `{path}`, `{line}` and `{column}`
+/// placeholders (quotes group words, e.g. `"C:/Tools/ed.exe" -g {path}:{line}`); without
+/// `{path}` the path is appended. `None`: auto-detect VS Code, PhpStorm, Notepad.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct EditorConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
 }
 
-/// `[terminal]`: external terminal command. `None`: auto-detect.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Shells the integrated terminal knows (`terminal.integrated_shell`, `terminal.open
+/// {shell}`), in auto-detection order.
+pub const INTEGRATED_SHELLS: [&str; 3] = ["pwsh", "powershell", "cmd"];
+
+/// Default of `terminal.max_sessions`.
+pub const DEFAULT_TERMINAL_MAX_SESSIONS: u32 = 16;
+
+/// Largest `terminal.max_sessions` accepted: each session holds a console host process, a
+/// reader thread and a 1 MiB output ring.
+pub const TERMINAL_MAX_SESSIONS_LIMIT: u32 = 256;
+
+/// `[terminal]`: the external terminal command (`command` with an optional `{dir}`
+/// placeholder; `None`: auto-detect Windows Terminal, `pwsh`, `powershell`) and the
+/// integrated terminal hosted by the daemon (docs/07 §5.10, docs/03 §7.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct TerminalConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// Shell of the integrated terminal: `pwsh`, `powershell` or `cmd`. `None`: the first
+    /// one found in that order. A configured shell that is missing falls back the same
+    /// way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integrated_shell: Option<String>,
+    /// Integrated terminal sessions open at once (running or exited and not reaped yet);
+    /// one more is refused with `conflict`. Default 16.
+    pub max_sessions: u32,
+}
+
+impl Default for TerminalConfig {
+    fn default() -> Self {
+        Self {
+            command: None,
+            integrated_shell: None,
+            max_sessions: DEFAULT_TERMINAL_MAX_SESSIONS,
+        }
+    }
 }
 
 /// `[path]` (docs/03 §5.2, docs/08 §3): what `forge_provider::layout::path::ensure` puts on
 /// the user `PATH` once the user agreed to it (onboarding). Never used in portable mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct PathConfig {
     /// `bin/<tool>/current` (plus the manifest's `install.path` subfolders) of every
@@ -413,6 +483,13 @@ impl Default for PathConfig {
 }
 
 impl ForgeConfig {
+    /// JSON Schema (2020-12) of `forgebox.toml` in its nested shape, with the doc comments
+    /// as titles/descriptions. The Settings screen is generated from it (`system.config_list`).
+    #[cfg(feature = "schemars")]
+    pub fn json_schema() -> serde_json::Value {
+        serde_json::to_value(schemars::schema_for!(ForgeConfig)).unwrap_or_default()
+    }
+
     /// Every suffix answered by the local resolver: `tld` then `[dns] extra_tlds`, without
     /// duplicates (`[".test"]` by default).
     pub fn tlds(&self) -> Vec<String> {
@@ -517,6 +594,29 @@ impl ForgeConfig {
             parse_hhmm(&q.start)?;
             parse_hhmm(&q.end)?;
         }
+        if let Some(shell) = &self.terminal.integrated_shell {
+            if !INTEGRATED_SHELLS.contains(&shell.as_str()) {
+                return invalid(format!(
+                    "terminal.integrated_shell {shell:?} must be one of {INTEGRATED_SHELLS:?}"
+                ));
+            }
+        }
+        for (key, command) in [
+            ("editor.command", &self.editor.command),
+            ("terminal.command", &self.terminal.command),
+        ] {
+            if let Some(text) = command.as_deref().filter(|t| !t.trim().is_empty()) {
+                if let Err(err) = crate::platform::split_command(text) {
+                    return invalid(format!("{key}: {err}"));
+                }
+            }
+        }
+        if !(1..=TERMINAL_MAX_SESSIONS_LIMIT).contains(&self.terminal.max_sessions) {
+            return invalid(format!(
+                "terminal.max_sessions must be between 1 and {TERMINAL_MAX_SESSIONS_LIMIT}, got {}",
+                self.terminal.max_sessions
+            ));
+        }
         Ok(())
     }
 }
@@ -534,11 +634,15 @@ mod tests {
         assert_eq!(c.default_server.as_str(), "nginx");
         assert_eq!(c.parked_dirs, vec!["www".to_owned()]);
         assert!(c.case_sensitive);
-        assert!(c.metrics.enabled);
+        assert_eq!(c.metrics.enabled, None);
+        assert!(c.metrics.effective(false));
+        assert!(!c.metrics.effective(true));
         assert_eq!(c.updates.metered, MeteredPolicy::Pause);
         assert_eq!(c.updates.quiet_hours, None);
         assert_eq!(c.editor.command, None);
         assert_eq!(c.terminal.command, None);
+        assert_eq!(c.terminal.integrated_shell, None);
+        assert_eq!(c.terminal.max_sessions, 16);
         assert!(c.path.current_links && !c.path.shims);
         assert_eq!(c.dns, DnsConfig::default());
         assert_eq!(c.tlds(), vec![".test".to_owned()]);
@@ -581,6 +685,8 @@ mod tests {
         });
         c.updates.metered = MeteredPolicy::Allow;
         c.editor.command = Some("code".into());
+        c.terminal.integrated_shell = Some("cmd".into());
+        c.terminal.max_sessions = 4;
         c.path.shims = true;
         let text = c.to_toml().unwrap();
         assert!(text.starts_with(CONFIG_HEADER));
@@ -624,6 +730,18 @@ mod tests {
             "[updates]\nquiet_hours = { start = \"25:00\", end = \"07:00\" }",
             "[updates]\nmetered = \"sometimes\"",
             "case_sensitive = \"yes\"",
+            "[terminal]
+integrated_shell = \"bash\"",
+            "[terminal]
+integrated_shell = \"PWSH\"",
+            "[terminal]
+max_sessions = 0",
+            "[terminal]
+max_sessions = 257",
+            "[editor]
+command = \"\\\"unclosed {path}\"",
+            "[terminal]
+command = \"\\\"\\\" {dir}\"",
         ] {
             let err = ForgeConfig::from_toml(bad).unwrap_err();
             assert_eq!(err.code(), "config_invalid", "{bad}: {err}");

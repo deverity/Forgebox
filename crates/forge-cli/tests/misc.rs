@@ -3,7 +3,7 @@
 
 mod common;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::*;
 
@@ -59,11 +59,73 @@ fn status_watch_prints_snapshots_and_keeps_running() {
 }
 
 #[test]
-fn stats_watch_says_it_is_not_implemented_instead_of_hanging() {
+fn stats_watch_prints_the_snapshot_and_keeps_running() {
     let fx = Fixture::new();
-    let run = fx.root.run(&["--json", "stats", "--watch"]);
-    assert_eq!(run.code, 1, "{run:?}");
-    assert_eq!(run.error_code(), "not_implemented");
+    let dir = fx.root.www("watched");
+    std::fs::write(dir.join("index.html"), "<h1>w</h1>").unwrap();
+    fx.root.json(&[
+        "site",
+        "add",
+        &dir.display().to_string(),
+        "--host",
+        "watched.test",
+    ]);
+    let mut stream = fx.root.forge().spawn(&["--json", "stats", "--watch"]);
+    let line = stream
+        .next_line(Duration::from_secs(15))
+        .expect("the snapshot of metrics.subscribe");
+    let sample: serde_json::Value = serde_json::from_str(&line).expect("a JSON line");
+    assert_eq!(sample["host"], "watched.test", "{sample}");
+    assert_eq!(sample["window"], "5m");
+    // A portable root collects no metrics until `metrics.enabled` is set (docs/14 §3):
+    // only the snapshot, no periodic samples.
+    assert_eq!(sample["metrics_enabled"], false, "{sample}");
+    assert_eq!(sample["requests"], 0);
+    assert!(
+        stream.next_line(Duration::from_millis(2500)).is_none(),
+        "metrics are off: nothing after the snapshot"
+    );
+    assert!(
+        stream.kill(),
+        "the watcher keeps running until it is stopped"
+    );
+}
+
+#[test]
+fn stats_watch_redraws_the_table_every_two_seconds() {
+    let fx = Fixture::new();
+    let dir = fx.root.www("redraw");
+    std::fs::write(dir.join("index.html"), "<h1>r</h1>").unwrap();
+    fx.root.json(&[
+        "site",
+        "add",
+        &dir.display().to_string(),
+        "--host",
+        "redraw.test",
+    ]);
+    // Human mode, window 24h: the samples come every 60 s, the table every 2 s.
+    let mut stream = fx
+        .root
+        .forge()
+        .spawn(&["stats", "--watch", "--window", "24h"]);
+    let mut headers = Vec::new();
+    let started = Instant::now();
+    while headers.len() < 3 && started.elapsed() < Duration::from_secs(15) {
+        if let Some(line) = stream.next_line(Duration::from_millis(500)) {
+            if line.starts_with("SITE") {
+                headers.push(Instant::now());
+            }
+        }
+    }
+    assert!(stream.kill());
+    assert_eq!(headers.len(), 3, "three redraws within 15 s");
+    for pair in headers.windows(2) {
+        let gap = pair[1] - pair[0];
+        assert!(
+            gap >= Duration::from_millis(1700) && gap <= Duration::from_millis(2600),
+            "redraw every 2 s, not at the 60 s cadence: {gap:?}"
+        );
+    }
 }
 
 #[test]
@@ -348,4 +410,59 @@ fn lint_case_lists_mismatches_and_exits_1() {
             .code,
         2
     );
+}
+
+// --- security extras (M2-E3-T11) -------------------------------------------------------
+
+#[test]
+fn site_env_masks_secrets_unless_revealed() {
+    let fx = Fixture::new();
+    let dir = fx.root.www("envsite");
+    std::fs::write(dir.join("index.html"), "<h1>env</h1>").unwrap();
+    std::fs::write(
+        dir.join(".env"),
+        "APP_NAME=Loja\nDB_PASSWORD=s3cr3t\nAPP_KEY=base64:a2V5\n",
+    )
+    .unwrap();
+    let dir_text = dir.display().to_string();
+    fx.root
+        .json(&["site", "add", &dir_text, "--host", "envsite.test"]);
+
+    let masked = fx.root.json(&["site", "env", "envsite.test"]);
+    assert_eq!(masked["revealed"], false);
+    let vars = &masked["files"][0]["vars"];
+    assert_eq!(vars[0]["key"], "APP_NAME");
+    assert_eq!(vars[0]["value"], "Loja");
+    for i in [1, 2] {
+        assert_eq!(vars[i]["secret"], true, "{}", vars[i]);
+        assert!(vars[i]["value"].is_null(), "{}", vars[i]);
+    }
+    let human = fx.root.run(&["site", "env", "envsite.test"]);
+    human.assert_success();
+    assert!(human.stdout.contains("APP_NAME") && human.stdout.contains("Loja"));
+    assert!(human.stdout.contains("******"), "{human:#?}");
+    assert!(!human.stdout.contains("s3cr3t") && !human.stdout.contains("a2V5"));
+
+    // A local connection is admin: --reveal shows the values.
+    let revealed = fx.root.json(&["site", "env", "envsite.test", "--reveal"]);
+    assert_eq!(revealed["revealed"], true);
+    assert_eq!(revealed["files"][0]["vars"][1]["value"], "s3cr3t");
+}
+
+#[test]
+fn kill_port_refuses_a_forgebox_process() {
+    let fx = Fixture::new();
+    // The daemon itself never goes, whatever port is named.
+    let pid = fx.root.daemon_pid().expect("daemon pid").to_string();
+    let run = fx.root.run(&[
+        "--json",
+        "service",
+        "kill-port",
+        "1",
+        "--pid",
+        &pid,
+        "--yes",
+    ]);
+    assert_eq!(run.json()["error"]["code"], "forbidden", "{run:#?}");
+    assert!(fx.root.daemon_pid().is_some(), "still running");
 }

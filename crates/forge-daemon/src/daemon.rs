@@ -37,6 +37,7 @@ use tokio_util::sync::CancellationToken;
 use crate::args::Args;
 use crate::pools::PoolManager;
 use crate::services::ServiceManager;
+use crate::terminal::TerminalManager;
 use crate::web::WebManager;
 
 /// Why the daemon is going down.
@@ -111,6 +112,8 @@ pub struct Inner {
     pub actors: ActorSupervisor,
     pub registry: Registry,
     pub providers: Arc<ProviderRegistry>,
+    /// Release lookups of the install pipeline (`tools.install|releases|plan`).
+    pub resolver: Arc<dyn crate::install::ReleaseResolver>,
     pub downloads: DownloadManager,
     pub layout: Layout,
     pub updates: UpdateEngine,
@@ -122,6 +125,8 @@ pub struct Inner {
     pub web: WebManager,
     pub sites: SiteService,
     pub apps: AppManager,
+    /// Terminal sessions (`terminal.*`), each in its own Job of `job_tree`.
+    pub terminals: TerminalManager,
     pub tls: TlsManager,
     pub dns: DnsServer,
     pub dns_policy: DnsPolicyManager,
@@ -136,6 +141,20 @@ pub struct Inner {
     pub started_at: Timestamp,
     pub server: OnceLock<ServerHandle>,
     pub endpoint: String,
+    /// Serial executor of every `forgebox.toml` write (ADR-0040): no lost updates, live
+    /// effects and `config.changed` per write.
+    pub config_owner: crate::config_owner::ConfigOwner,
+    /// `services.set` stores and renders one change at a time (the restart that follows
+    /// runs outside it), so two clients never interleave writes of the same files.
+    pub settings_turn: Arc<tokio::sync::Semaphore>,
+    /// Cached sizes of the data folders of the database instances (`db.list`).
+    pub db_sizes: crate::databases::SizeCache,
+    /// Last counts of the mail instances and `mail.changed` publication.
+    pub mail: crate::mail::MailHub,
+    /// Per-site metrics (`stats.get`, `metrics.subscribe`; fed by [`crate::metrics`]).
+    pub metrics: forge_metrics::MetricsHandle,
+    /// State between two `stats.top` calls (previous machine sample, daemon CPU).
+    pub top: Arc<crate::top::TopSampler>,
 }
 
 /// Handle on the composed daemon. Cheap to clone.

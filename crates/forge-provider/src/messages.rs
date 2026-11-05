@@ -36,6 +36,10 @@ pub(crate) fn install_moving(tool: &str, folder: &str) -> String {
     format!("Movendo para bin/{tool}/{folder}")
 }
 
+pub(crate) fn install_extension_moving(tool: &str, folder: &str) -> String {
+    format!("Instalando em bin/{tool}/{folder}")
+}
+
 pub(crate) fn install_registering() -> String {
     "Registrando a versão".to_owned()
 }

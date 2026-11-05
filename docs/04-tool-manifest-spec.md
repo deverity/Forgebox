@@ -40,8 +40,10 @@ metadata:
   tags: [php, language, fastcgi]
   homepage: https://www.php.net
   docs: https://www.php.net/manual
+  changelog_url: https://www.php.net/ChangeLog-8.php   # notas de versão do upstream (https), ligadas no catálogo
   license: PHP-3.01
   icon: php.svg                  # relativo a registry/icons/ ou URL https (SVG, regra 7)
+  icon_color: "#777BB4"          # cor da marca (#RRGGBB) do bloco do ícone; o glifo é desenhado em branco sobre ela (§1.10)
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
   deprecated: false              # true + replaced_by: <id> esconde do catálogo (mas mantém instalados)
 
@@ -116,6 +118,7 @@ spec:
         format: ini              # ini | conf-directive | yaml | json | args | text
         label: php.ini
         editable: true
+        overlay: "{{ paths.etc }}/php/{{ series }}/conf.d/90-forgebox-settings.ini"   # quick settings vão aqui, não no php.ini (§1.3)
     quick_settings:              # viram controles nativos na UI (§1.3)
       - key: memory_limit
         label: Memory limit
@@ -162,6 +165,9 @@ spec:
     # zend_extensions: itens `nome` ou `{ name, constraint }`; `constraint` usa a mesma sintaxe de
     # versioning.channels.*.constraint (scheme da tool) e o item só é emitido quando casa com a versão
     # instalada (ausente = sempre). Resolvido por ExtensionsConfig::zend_extensions_for.
+    # As escolhas do usuário (`php.ext_enable|disable`, M2-E2-T9) ficam por série como
+    # `ext_<nome> = true|false`: numa Tool com `config.extensions`, quick settings não podem usar o
+    # prefixo `ext_` (validação).
     env:                         # variáveis injetadas nos processos desta tool e nos `processes:` que usam esta tool como `runtime:` (ex. nodejs: NODE_EXTRA_CA_CERTS, npm_config_prefix; docs/06 §4.4). Variáveis em tempo de execução: version, series, tool, paths.<dir> (sem paths.version)
       PHPRC: "{{ paths.etc }}/php/{{ series }}"
       PHP_INI_SCAN_DIR: "{{ paths.etc }}/php/{{ series }}/conf.d"
@@ -179,6 +185,8 @@ spec:
       recycle: { max_requests: 500, max_rss_mb: 256, max_age: 1h }
       env: { PHP_FCGI_MAX_REQUESTS: "{{ recycle.max_requests }}" }  # o forge-fcgi sobrescreve com um teto acima de max_requests (docs/03 §2.1)
       health: { fastcgi: "/_forgebox/health.php" }
+      logs:                      # lidos como `<tool>@<série>` no visualizador de logs (docs/09); o primeiro vale; mesmo formato de `daemon.logs[]`
+        - { label: Error log, path: "{{ paths.logs }}/php/{{ series }}/error.log", format: php }
 
   # ---------- Descoberta de instalação manual ----------
   discover:
@@ -255,27 +263,76 @@ service:
     autostart: true
 ```
 
+#### `logs[].access` (access log estruturado)
+Todo log com `format: forgebox-json` **declara** `access` (regra 1, `missing_access`): é o mapeamento que o `forge-metrics` ([14](14-observability-metrics.md) §3.1) e a rotação usam para ler a linha JSON sem conhecer o id da tool. `access` em log de outro `format` é erro.
+
+```yaml
+logs:
+  - label: Access log (JSON)
+    path: "{{ paths.logs }}/nginx/access.json"
+    format: forgebox-json
+    access:
+      ts:   { pointer: /t, unit: s, start: false }   # unit: s | ms | us | ns; start: true = instante em que a requisição chegou (Apache), fim = ts + duration
+      host: /host                                    # string; pode ter porta
+      status: /s                                     # número ou string numérica
+      duration: { pointer: /rt, unit: s }
+      upstream_duration: { pointer: /ut, unit: s, multi: sum }   # multi: sum (padrão) | last, para "0.010, 0.020 : 0.003"; omitido se o servidor não registra
+      bytes: /b                                      # opcionais: bytes, method, uri, upstream
+      method: /m
+      uri: { pointer: /u, strip_query: false }       # strip_query: true quando o valor traz a query string (Caddy)
+      upstream: /up
+      lenient_escapes: false                         # true: o servidor escreve \xhh/\v (Apache) e o parser reescreve antes de decodificar
+      rotate:
+        max_size: 64MB                               # B | KB | MB | GB (binários); obrigatório em rename-reopen
+        keep: 1                                      # arquivos rotacionados mantidos (padrão do schema 5; nginx e Apache usam 1)
+        strategy: rename-reopen                      # rename-reopen | self | none (padrão)
+        reopen: { command: "nginx.exe -s reopen ..." }   # ou { signal: ctrl-c | ctrl-break }; obrigatório (e só válido) em rename-reopen
+```
+
+- Cada `pointer` é um JSON Pointer (RFC 6901) para um membro de objeto: começa com `/`, sem token vazio, `~` só como `~0`/`~1`. Um ponteiro não pode ser igual nem prefixo de outro (o parser usa uma trie): `/request` e `/request/host` juntos são erro.
+- `strategy`: `rename-reopen` = o daemon renomeia (`access.json.1`...) e pede ao servidor que reabra o arquivo (`reopen`, com os mesmos `-p`/`-c` do `reload`); `self` = o próprio servidor rotaciona, configurado no template (Caddy: `roll_size`/`roll_keep` em `Caddyfile.j2`, em sincronia com `max_size`/`keep`); `none` = sem rotação (o daemon só avisa quando o arquivo passa de 4× `max_size`). Qual estratégia cada servidor aceita foi medido no M2-E5-T12 ([14 §3.8](14-observability-metrics.md#38-rotação-dos-access-logs-forge_metricsrotate-m2-e5-t12)). `reopen.signal` só entrega `ctrl-break` ao grupo de console da instância; `reopen.command` roda pelo mesmo executor do `reload.command`.
+- Manifestos oficiais: nginx (`/t` s, `/rt` s, `/ut` s somado, `rename-reopen` com `nginx.exe -s reopen`), Apache (`/t` ms com `start: true`, `/rt_us` µs, host com porta, `lenient_escapes`, `rename-reopen` com `reopen: { signal: ctrl-break }`) e Caddy (`/ts`, `/duration`, `/request/host`, `/request/uri` com `strip_query`, `self`).
+- Erros de schema (ponteiro ausente, unidade desconhecida) e de validação (`rename-reopen` sem `reopen`, ponteiro inválido) saem como `arquivo:linha:coluna` no `lint-registry`.
+
 ### 1.3 `config.quick_settings[]`
-`type`: `toggle`, `select`, `number`, `text`, `path`, `port`, `slider{min,max,step}`, `multi` (lista de checkboxes). O `format` do arquivo (`config.files[].format`: `ini | conf-directive | yaml | json | args | text`) decide como o valor é gravado; o alvo dentro do arquivo é **uma** destas chaves: `ini` (chave do ini), `directive` (conf-directive), `pointer` (caminho com pontos em yaml/json) ou `arg` (flag em `args`). Para `conf-directive` (Apache/Nginx), o motor edita só dentro do bloco gerenciado do arquivo. `text` é editável, mas sem quick settings.
+`type`: `toggle`, `select`, `number`, `text`, `path`, `port`, `slider{min,max,step}`, `multi` (lista de checkboxes). O `format` do arquivo (`config.files[].format`: `ini | conf-directive | yaml | json | args | text`) decide como o valor é gravado; o alvo dentro do arquivo é **um** destes campos, o do formato do arquivo (sem nenhum, o alvo é a própria `key`):
+
+| Formato | Campo | Alvo | Como é escrito |
+|---|---|---|---|
+| `ini` | `ini` | `chave` ou `seção/chave` (`mysqld/max_connections`); o ponto faz parte da chave (`opcache.enable`) | troca a **última** ocorrência (vale a última no PHP e no MySQL); ausente: no fim da seção (seção criada no fim se faltar); sem seção: no fim |
+| `conf-directive` | `directive` | nome da diretiva (sem caixa, como no Apache/PostgreSQL) | troca os argumentos da última ocorrência no nível mais raso de `{}`/`<Seção>`, mantendo `nome valor`/`nome = valor`, `;`, aspas e comentário; ausente: no nível de cima, no estilo das outras linhas (diretivas de contexto aninhado, como as do `http {}` do nginx, ficam no template) |
+| `yaml`, `json` | `pointer` | caminho com pontos (`server.port`) de mapeamentos/objetos | troca o valor no lugar; chaves ausentes são criadas |
+| `args` | `arg` | flag (`--smtp`), um argumento por linha | a linha seguinte à flag ou o `--flag=valor`; ausente: acrescentada; booleano nativo = presença da flag |
+| `text` | — | — | sem quick settings |
+
+`text` é editável, mas sem quick settings. Valores são escritos **só em texto do Forgebox** ([ADR-0042](adr/0042-quick-settings-storage-and-apply.md)): no corpo do bloco gerenciado (ou arquivo gerado) que o alvo de render produz para aquele `path` — o `my.ini` e o `nginx.conf` saem do template já com os valores, e o hash do bloco os cobre —; no `overlay` do arquivo, quando declarado; ou, num arquivo que nenhum alvo renderiza, num bloco gerenciado `settings` no fim dele (`json`/`args`, sem comentários, exigem overlay ou alvo). Fora disso o Forgebox não escreve.
+
+`config.files[].overlay`: arquivo 100 % do Forgebox (cabeçalho `generated by forgebox`, mesmo formato) que a tool lê **depois** do arquivo, para que o arquivo do usuário nunca seja editado. PHP: `{{ paths.etc }}/php/{{ series }}/conf.d/90-forgebox-settings.ini`, lido por `PHP_INI_SCAN_DIR` depois do `php.ini` e do `10-forgebox.ini`. Fica em `{{ paths.etc }}` (lint, regra 6).
 
 | Campo | Vale para | Regra |
 |---|---|---|
 | `options` | `select`, `multi` | obrigatório nesses tipos; proibido nos demais |
-| `on` / `off` | `toggle` | valor gravado; ausentes = booleano nativo do formato |
-| `min` / `max` / `step` | `number`, `slider` | `slider` exige `min` e `max`; `min <= max`; `step > 0` |
-| `reserve` | `port` | reserva a porta no alocador (Xdebug 9003) |
+| `on` / `off` | `toggle` | valor gravado; ausentes = booleano nativo do formato (`On`/`Off` em ini, `on`/`off` em conf-directive, `true`/`false` em yaml/json, presença da flag em args) |
+| `min` / `max` / `step` | `number`, `slider` | `slider` exige `min` e `max`; `min <= max`; `step > 0` (o valor é `min` + n × `step`) |
+| `reserve` | `port` | reserva a porta no alocador (Xdebug 9003): numa Extension, `php.xdebug` reserva o valor efetivo para o dono `<tool>@<série>/<extensão>` antes de ligar ([03 §2.3](03-engine.md)) |
 | `default` | todos | `toggle`: true/false/on/off; `select`: um de `options`; `multi`: lista contida em `options`; `port`: 1–65535; `number`/`slider`: dentro de min/max |
 | `apply` | todos | `reload` \| `restart` (padrão) \| `none` |
-| `also_set` | todos | outras chaves gravadas com o mesmo valor (`{{ value }}`) |
+| `also_set` | todos | outros alvos **do mesmo arquivo**, na sintaxe do alvo (`post_max_size`, `mysqldump/max_allowed_packet`), gravados com `{{ value }}` = o texto escrito |
+| `file` | todos | obrigatório numa Tool (o `config.files[].id` que o ajuste escreve) |
+
+**Valores** (M2-E2-T7): a fonte é o SQLite — `instances.settings` para instâncias e `tool_series_settings` por `(tool, série)` para os pools de PHP (`php@8.4`, sobrevive a updates de patch) —, guardados como o texto canônico de `services.set`. O valor **efetivo** de cada ajuste é o guardado ou, sem ele, o `default`, e todos os efetivos são escritos (padrões inclusive), então o arquivo tem o que `services.settings` mostra. Os templates que renderizam o arquivo inteiro recebem os mesmos valores no contexto (`instance.settings.<key>`, `php.settings.<key>`, já no texto do arquivo: `On`, `1G`).
+
+Na API ([ADR-0041](adr/0041-ipc-additions-m2-core-screens.md)), `services.settings` devolve cada quick setting com `kind`, opções, limites, `apply`, `also_set` e o valor atual/padrão tipado pelo `type` (toggle → booleano; number/slider/port → número; multi → lista; select/text/path → texto), os arquivos (o do usuário com overlay vem `managed: false`; o overlay vem com o papel `<id>.overlay`) e as portas nomeadas. `services.set` recebe o **texto** de cada um (`true`/`false` — também `on`/`off`/`1`/`0` ou os textos de `on`/`off` —, números decimais, itens de `multi` separados por `,`, opções sem diferença de caixa; vazio = volta ao padrão) e as portas como `ports.<nome>=<porta>`. Tudo é validado antes de qualquer escrita (chave desconhecida ou valor fora de `options`/`min`/`max`/`step` → `invalid_input` com a chave; bloco gerenciado editado à mão → `conflict`; porta ocupada → `port_in_use` com `pid`/`exe`; reservada para outro → `conflict`); depois o job guarda, renderiza (`config.rendered`) e aplica o modo mais forte dos ajustes alterados: `reload` = recycle do pool (PHP) ou o `reload` do serviço; `restart` = pelo supervisor, validando a configuração antes de parar; `ports.<nome>` move a reserva (`PortAllocator::reserve`), re-renderiza e reinicia a instância com o spec novo ([03](03-engine.md) §3.4, §4).
 
 ### 1.4 Contexto de template nos manifestos
 Strings dos manifestos só **substituem variáveis**: `{{ caminho.da.variavel }}`, com filtros opcionais (`{{ paths.etc | posix_path }}`). Literais, operadores e blocos `{% %}` são erro (regra 5). Variáveis permitidas:
 
 | Onde | Variáveis |
 |---|---|
-| Tool e Extension (qualquer campo de `spec`) | `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` (key declarada em `versioning.variants`; em Extension, as da tool alvo), `{{ paths.root\|bin\|etc\|data\|logs\|tmp\|www\|certs\|version }}`, `{{ instance.name\|data_dir }}`, `{{ instance.ports.<n> }}` (porta declarada em `service.daemon.ports`), `{{ instance.config.<id> }}` (id de `config.files`), `{{ prefs.<chave> }}` |
+| Tool e Extension (qualquer campo de `spec`) | `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` (key declarada em `versioning.variants`; em Extension, `version`, `series`, `variant.*` e `paths.version` são os da versão alvo, §2), `{{ paths.root\|bin\|etc\|data\|logs\|tmp\|www\|certs\|version }}`, `{{ instance.name\|data_dir }}`, `{{ instance.ports.<n> }}` (porta declarada em `service.daemon.ports`), `{{ instance.config.<id> }}` (id de `config.files`), `{{ prefs.<chave> }}` |
 | `spec.install` (Tool e Extension) | só `{{ version }}`, `{{ series }}`, `{{ variant.<key> }}` e `{{ paths.<dir> }}`: `install` roda **uma vez por versão, antes de existir instância** (`instance.*` e `prefs.*` são erro de lint, regra 5). Pastas e arquivos por instância (`logs/mysql/<instância>/`, `my.ini`) vêm do alvo de render e de `service.daemon.logs` no start |
-| `config.quick_settings[]` | + `{{ value }}` (valor escolhido, em `also_set`) |
+| `config.quick_settings[]` | + `{{ value }}` (texto escrito do valor escolhido, em `also_set`) |
+| `spec.database` | + `{{ database }}` (todos os campos menos `client`), `{{ charset }}` (só `queries.*`), `{{ sql }}` (só `client.args`); `{{ instance.ports.<n> }}` como nas demais (§1.8) |
 | `service.pool` | + `{{ port }}`, `{{ recycle.max_requests\|max_rss_mb\|max_age }}`, `{{ scaling.min\|max\|idle_timeout }}` |
 | Stack e Project | `{{ dir }}`, `{{ site.slug\|host\|root }}`, `{{ paths.* }}`, `{{ prefs.* }}`, `{{ instances.<tool>.<instance>.ports.<n>\|config.<id>\|name\|data_dir }}` (tool listada em `spec.tools`/`spec.services`) |
 
@@ -320,7 +377,62 @@ Placeholders de URL usam chaves simples: `{version}`, `{series}`, `{major}`, `{m
 | `update` | `policy: notify`, `retention: 1`, `check_interval: 6h` |
 | `processes.*` (Project) | `restart: failure`, `autostart: true`, `proxy: false` |
 
+### 1.8 `spec.database` (capacidade de banco de dados)
+Bloco opcional e aditivo ([ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)): o daemon lista, cria e remove bancos, exporta/importa e monta strings de conexão **só a partir do manifesto**, sem código por tool. `db.*` aparece para toda instância cuja tool declara o bloco.
+
+```yaml
+database:
+  protocol: mysql                 # mysql | postgresql: só a família de aspas/validação de identificadores
+  port: main                      # nome de service.daemon.ports[] (regra 1, invalid_reference)
+  admin_user: root
+  default_charset: utf8mb4        # valor de {{ charset }} quando o chamador não informa ([A-Za-z0-9_]{1,32})
+  system_databases: [information_schema, mysql, performance_schema, sys]   # escondidos em db.list
+  client:                         # roda UMA instrução; imprime linhas separadas por TAB, sem cabeçalho
+    exe: bin/mysql.exe            # relativo à pasta da versão (regra 6: sem .., caminho absoluto ou variáveis)
+    args: ["--protocol=tcp", "--host=127.0.0.1", "--port={{ instance.ports.main }}", "--user=root",
+           "--batch", "--skip-column-names", "--execute={{ sql }}"]
+  queries:                        # SQL ANSI (information_schema) sempre que a família permite
+    list: "SELECT schema_name FROM information_schema.schemata ORDER BY schema_name"   # nome na 1ª coluna
+    create: "CREATE DATABASE `{{ database }}` CHARACTER SET {{ charset }}"
+    drop: "DROP DATABASE `{{ database }}`"
+  dump: { exe: bin/mysqldump.exe, args: ["--port={{ instance.ports.main }}", "--user=root", "{{ database }}"] }   # stdout
+  restore: { exe: bin/mysql.exe, args: ["--port={{ instance.ports.main }}", "--user=root", "{{ database }}"] }    # stdin
+  shell: { exe: bin/mysql.exe, args: ["--port={{ instance.ports.main }}", "--user=root"] }                        # db.shell
+  url: "mysql://root@127.0.0.1:{{ instance.ports.main }}/{{ database }}"
+  env:                            # variáveis do .env do projeto
+    DB_CONNECTION: mysql
+    DB_PORT: "{{ instance.ports.main }}"
+    DB_DATABASE: "{{ database }}"
+```
+
+- **Variáveis novas, válidas só neste bloco:** `{{ database }}` (nome do banco), `{{ charset }}` (só em `queries.*`) e `{{ sql }}` (só em `client.args`). Fora dele continuam erro de regra 5 (`unknown_template_variable`); `{{ instance.ports.<n> }}` usa as portas declaradas, como no resto do manifesto.
+- `queries.create` e `queries.drop` precisam de `{{ database }}`; `client.args` precisa de `{{ sql }}`. `dump`, `restore` e `shell` são opcionais (sem eles a capacidade correspondente some da UI).
+- **Segurança:** o consumidor valida `database` (`^[A-Za-z0-9_]{1,64}$`) e `charset` (`^[A-Za-z0-9_]{1,32}$`) **antes** de substituir, e o valor substituído nunca é reexaminado. `forge_manifest::database::{DbVars, DatabaseSpec::render_*}` implementa isso e devolve `(exe, argv)` exatos; o daemon só executa o resultado. Nomes diferenciam maiúsculas (docs/15).
+- PostgreSQL não expõe bancos em `information_schema`; `queries.list` lê `pg_database` (sem templates), e `psql` usa `-At -F "\t"` (TAB real em YAML de aspas duplas).
+- Manifestos oficiais: `mysql`, `mariadb` (família `mysql`, clientes `mariadb`/`mariadb-dump`) e `postgresql`.
+
+### 1.9 `spec.mail` (capacidade de captura de e-mail)
+```yaml
+mail:
+  api: mailpit-v1                 # família de API que o adaptador do daemon fala (hoje só mailpit-v1: /api/v1)
+  http_port: http                 # nomes de service.daemon.ports[] (regra 1, invalid_reference)
+  smtp_port: smtp
+  env:                            # variáveis MAIL_* do .env do projeto
+    MAIL_MAILER: smtp
+    MAIL_HOST: "127.0.0.1"
+    MAIL_PORT: "{{ instance.ports.smtp }}"
+```
+O daemon escolhe o adaptador por `api`, nunca pelo id da tool. Manifesto oficial: `mailpit`.
+
 ---
+
+### 1.10 Ícone e cor da marca (`metadata.icon`, `metadata.icon_color`)
+Vale para Tool, Extension e Stack (M2-E1-T24, decisão do usuário de 2026-11-04 sobre o mockup de estilos, estilo C).
+- `metadata.icon` é a **forma oficial do logo** do projeto como glifo **monocromático**: SVG `viewBox="0 0 24 24"`, `fill="currentColor"` (ou sem pintura própria), sem `<text>`, de preferência um único `<path>`, ≤ 20 KB (regra 7) e aprovado por `sanitize_svg`. Não é um ícone colorido: o cliente pinta o glifo.
+- `metadata.icon_color` é a cor da marca, `#RRGGBB` (validada: outro formato é `invalid_value`, regra 1). O cliente desenha o glifo **branco** sobre um bloco arredondado preenchido com essa cor. Se o branco ficar abaixo de 3:1 contra a cor, o cliente escurece o bloco (cálculo genérico pela luminância, nunca por id) até chegar a 3:1; blocos muito escuros ganham um contorno claro sutil no tema escuro ([07](07-ui-ux.md) §2.4).
+- Sem `icon` ou sem `icon_color` (registries de terceiros antigos) o cliente mostra o monograma de duas letras sobre a paleta `--tool-*`.
+- `spec.ui.color` é outra coisa (cor de destaque do card da instância) e não pinta o bloco do ícone.
+- Os ícones do registry oficial vêm do Simple Icons (dados CC0) ou foram redesenhados a partir do logo oficial do projeto; origem, licença do SVG, dono da marca e guia de marca de cada um estão em `registry/icons/ATTRIBUTION.md`. Os logos são marcas dos seus donos e aparecem só para identificar a ferramenta (uso nominativo).
 
 ## 2. `kind: Extension`
 
@@ -350,11 +462,26 @@ spec:
       - { key: mode, ini: "xdebug.mode", type: multi, options: [off, debug, develop, coverage, profile, trace], default: [debug, develop] }
       - { key: start_with_request, ini: "xdebug.start_with_request", type: select, options: [yes, trigger, no], default: trigger }
       - { key: client_port, ini: "xdebug.client_port", type: port, default: 9003, reserve: true }
-  toggle: { enable: "zend_extension=php_xdebug.dll", disable: ";zend_extension=php_xdebug.dll", apply: reload }
+      - { key: idekey, ini: "xdebug.idekey", type: text, default: FORGEBOX }
+  toggle:
+    enable: "zend_extension=php_xdebug.dll"
+    disable: ";zend_extension=php_xdebug.dll"
+    apply: reload
+    modes:                       # presets das quick settings acima, por nome (M2-E2-T9)
+      "on": { mode: [debug, develop], start_with_request: "yes" }
+      trigger: { mode: [debug, develop], start_with_request: trigger }
 ```
+**`toggle`** (M2-E2-T9): `enable`/`disable` são as linhas que carregam ou não a extensão no arquivo que o `post_install` renderiza (`20-xdebug.ini`); a diretiva de `enable` (`zend_extension`) marca `zend: true` em `php.ext_list`. `modes` (opcional) dá nome a conjuntos de valores das quick settings da própria extensão, escritos como um `default` (`multi` em lista); cada chave precisa ser uma `config.quick_settings[].key` da extensão e o nome segue `[a-z][a-z0-9_]*` (validação). A Extension de uma tool de pool que declara `modes` é o **depurador** que `php.xdebug {mode: off|on|trigger}` dirige: `on`/`trigger` gravam `enable` e guardam o preset de mesmo nome nas quick settings da extensão por série; `off` grava `disable`. As quick settings de uma Extension não têm `file`: vão inteiras para o arquivo do `post_install` (`diretiva = "valor"`, [03 §2.3](03-engine.md)).
 `source.releases[].variants` de uma Extension aceita chaves livres (as variantes reais são as da tool alvo): o catálogo usa `php_series` (`{php_series}`) para distinguir DLLs que compartilham `ts`/`compiler` (PHP 8.4 e 8.5 são ambos `nts`/`vs17`). Como xdebug.org não publica `.sha256`, cada release traz `url` e `sha256` curados.
 
 `install` de Extension aceita `archive`, `strip_root`, `target` (obrigatório, começa com `{{ paths.version }}`), `post_install`, `uninstall` e `size_estimate_mb`. Versões de Extension usam `semver`.
+
+**Instalação** ([ADR-0043](adr/0043-extension-install.md), M2-E2-T8): `forge tool install xdebug [--for php@8.4]` instala na versão indicada (série = a mais nova instalada dela; versão exata) ou em **todas** as versões instaladas compatíveis de `extends`.
+- **Compatibilidade**: vale a primeira entrada de `compat` cujo `tool` casa a versão alvo e cujas chaves de `variant` existem no build alvo com o mesmo valor (chave ausente no alvo não casa); sem `compat`, todo alvo serve. Uma release serve ao alvo quando a versão satisfaz `compat.version`, a variante `<extends>_series` (`php_series`) é a série do alvo e as demais chaves da release que o alvo também tem coincidem (as que o alvo não declara não são conferidas). Alvo explícito sem build → `not_found` listando as séries compatíveis; sem `--for`, os incompatíveis são pulados e só "nenhum serve" é erro.
+- **Releases**: os providers resolvem a extensão como uma tool `semver` sem variantes declaradas (as variantes das releases são livres, e viram placeholders de URL).
+- **Arquivos**: `install.target` com as variáveis da versão alvo (`{{ paths.version }}` = pasta dela, `{{ series }}` = série dela, `{{ variant.<key> }}` = variantes dela); o arquivo existente é substituído (e volta se algo falhar). `post_install` roda depois do arquivo no lugar, com as mesmas variáveis; `render` usa o contexto da tool alvo (`php`); `run` **nunca** executa em Extension. O `conf.d/20-xdebug.ini` sai desligado (`;zend_extension = xdebug`) até o Xdebug ser ligado (M2-E2-T9).
+- **Registro**: uma linha de `tool_versions` por alvo, com `canonical_name` = `<tool alvo>-<pasta alvo>` e o vínculo no mapa de variantes (`target_tool`, `target_id`, `target_name`, junto das variantes da release). Por isso o prefixo `target_` é reservado nas variantes de `source.releases[]` de uma Extension (erro de validação).
+- **Remoção**: `forge tool remove xdebug [--for php@8.4]` apaga o arquivo daquele alvo e os arquivos que os `render` dele escreveram, salvo os que outra instalação da mesma extensão também renderiza (overlay da série compartilhado por `8.4.26` e `8.4.27`). Remover a versão alvo apaga as linhas ligadas a ela; um update dentro da série que copia `ext/` (`update.migrate`) religa a instalação à versão nova ([05 §4.1](05-providers-and-updates.md)).
 
 ---
 
@@ -363,7 +490,7 @@ spec:
 ```yaml
 apiVersion: forgebox.dev/v1
 kind: Stack
-metadata: { id: laravel, name: Laravel, summary: "PHP 8.4 + Nginx + MySQL 8 + Redis + Mailpit", icon: laravel.svg }
+metadata: { id: laravel, name: Laravel, summary: "PHP 8.4 + Nginx + MySQL 8 + Redis + Mailpit", icon: laravel.svg, icon_color: "#FF2D20" }
 spec:
   tools:
     - { id: php, series: "8.4", extensions: [xdebug] }
@@ -389,6 +516,8 @@ spec:
       - create_database: { instance: mysql/default, name: "{{ site.slug }}" }   # <tool>/<instance>, tool de spec.tools
       - run: { command: "php artisan key:generate", cwd: "{{ dir }}" }
 ```
+- `metadata.tags` com `onboarding` marca os stacks que o passo 2 do assistente de primeira execução mostra (docs/07 §5.1). `metadata.order` (inteiro, menor primeiro) fixa a ordem entre eles no índice (§5); stacks sem `order` vêm depois, por id.
+- `site` sem `create_with` é válido quando o stack não cria projeto (ex.: `stacks/php.yaml`, driver `generic-php`, que serve a pasta como ela está).
 
 ---
 
@@ -445,7 +574,8 @@ spec:
     - { id: laravel, path: stacks/laravel.yaml, sha256: "<64 hex>" }
 ```
 - `schema_version` é `1`; `sha256` tem 64 dígitos hexadecimais **e é conferido pelo lint contra os bytes do arquivo** (`index_mismatch`); `path` é relativo à raiz do registry.
-- `registry/index.yaml` é **gerado** por `cargo xtask registry-index` (ordenado por id; `categories` vem de `metadata.category`; `latest` é a maior versão estável de `source.releases` quando houver, senão ausente; `updated_at` só muda quando as entradas mudam). Depois de editar qualquer manifesto, rode o comando; `lint-registry` falha com `index_mismatch` se o índice estiver velho.
+- `registry/index.yaml` é **gerado** por `cargo xtask registry-index` (tools por id; stacks com `metadata.order` primeiro, por ordem, depois os demais por id; `categories` vem de `metadata.category`; `latest` é a maior versão estável de `source.releases` quando houver, senão ausente; `updated_at` só muda quando as entradas mudam). Depois de editar qualquer manifesto, rode o comando; `lint-registry` falha com `index_mismatch` se o índice estiver velho.
+- Ícones: `cargo xtask registry-index` lista em cada entrada o ícone relativo de `metadata.icon` (`icon: {path: icons/php.svg, sha256}`); URLs `https` e arquivos ausentes não entram. `metadata.icon_color` não vai para o índice: fica no manifesto (coberto pelo sha256 dele) e chega ao cliente em `CatalogEntryDto.icon_color` e `IconDto.icon_color` (`tools.search`/`tools.icon`, §1.10). O hash vai assinado com o índice, o loader o confere como o dos manifestos (diferente = `verification_failed`, o registry inteiro é recusado), o cache guarda `icons/` e `lint-registry` confere o hash (`index_mismatch`). O daemon só entrega o SVG depois de `sanitize_svg` (`tools.icon`, [09](09-cli.md)). Ícone ausente ou maior que 64 KiB na fonte simplesmente não é oferecido.
 - Assinatura ([ADR-0018](adr/0018-detached-index-signature.md)): o índice é assinado por uma **assinatura minisign destacada, `index.yaml.minisig`, ao lado dele, sobre os bytes crus de `index.yaml`**. Não há canonicalização nem dependência do emissor YAML: o payload é exatamente o arquivo, então qualquer implementação de minisign assina e verifica, inclusive autores de registries de terceiros e o bot do registry (`minisign -S -s <chave> -m index.yaml`). `spec.signature` **não existe mais** no schema (um `signature:` antigo é recusado por `deny_unknown_fields`). `cargo xtask registry-index` gera o índice sem assinatura e `cargo xtask registry-sign --key <secreta> [--dir <registry>]` escreve `index.yaml.minisig` (e confere com o próprio loader antes de gravar); editar o `index.yaml` depois de assinar, por um byte que seja, invalida a assinatura e exige `registry-sign` de novo. Como os bytes são o contrato, toda fonte entrega o arquivo intacto: `Http` baixa `<URL do index>.minisig`, `Git` faz checkout byte-exato (`core.autocrlf=false`; `.gitattributes` fixa LF), `Dir` lê o par de arquivos, e o cache guarda os dois. O loader só aceita um índice sem `.minisig` se o registry estiver marcado `trusted_unsigned` (desenvolvimento; aparece como "não verificado"); uma assinatura presente e errada (outra chave, índice editado, arquivo ilegível) é **sempre** recusada, e uma assinatura sem chave configurada só carrega com `trusted_unsigned`. O `key_id` mostrado vem da chave pública configurada que verificou. A chave de desenvolvimento pública é `registry/keys/dev.pub` (embutida em `forge_registry::index::DEV_PUBLIC_KEY`); a secreta não é commitada. `lint-registry` confere a assinatura quando `registry/keys/dev.pub` existe. Um teste golden (`forge-registry`, `index.rs`) fixa o hash do `index.yaml` da fixture e verifica a assinatura commitada, para pegar mudanças de comportamento em atualizações de dependências.
 - Verificação no loader (`forge-registry`): (1) assinatura do índice **antes** de qualquer manifesto ser lido/baixado; (2) sha256 de cada arquivo contra o índice (diferença = a carga inteira falha e o cache anterior continua valendo); (3) cada manifesto é parseado e validado; um manifesto inválido, com `id`/`kind` diferente do índice ou, em registry não oficial, com `post_install.run` é **ignorado e listado** (`skipped`), sem derrubar o resto. `path` do índice é confinado a `tools/` ou `stacks/`, termina em `.yaml`, sem `..`, `:`, `\` nem caminho absoluto.
 - Fontes: pasta local (`Dir`, também `file://` e compartilhamentos de rede), `Http` (URL do `index.yaml`; manifestos relativos a ela; `ETag`/`If-None-Match`) e `Git` (URL do repositório com `index.yaml` na raiz; usa o comando `git` da máquina, `--depth 1`, sem libgit2 e sem caminho especial para o GitHub; sem `git` no PATH o erro é claro e dá para usar `Http` com `raw.githubusercontent.com`). Esquemas aceitos para git: `https`, `http`, `ssh`, `git`, `file`.
@@ -458,10 +588,10 @@ spec:
 ## 6. Regras de lint (`cargo xtask lint-registry`)
 Implementadas em `forge_manifest::lint` (registry inteiro) e `forge_manifest::parse::validate` (um manifesto). Cada problema tem um código estável (`IssueCode`, também chave de i18n) e a regra a que pertence.
 
-1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
+1. `id` único (Tool + Extension em `tools/`, Stack em `stacks/`), arquivo `<id>.yaml` na pasta do seu `kind`; `apiVersion`/`kind` válidos e schema respeitado (chave desconhecida, tipo errado); `platforms` não vazio; referências a outros manifestos existem (`depends_on`, `suggests`, `replaced_by`, `extends` → Tool, ferramentas e extensions de Stack); `index.yaml` lista exatamente os manifestos existentes, com `id`, `kind` e `sha256` corretos. Todo log `forgebox-json` exige `access` (`missing_access`, §1.2). Demais validações semânticas (variantes, restrições, referências internas, URLs, hosts) também caem aqui, inclusive as de quick settings (o campo de alvo é o do formato do arquivo — `ini`, `directive`, `pointer` ou `arg` —, `ini` é `chave` ou `seção/chave`, `arg` começa com `-`, alvos e chaves de `also_set` sem espaço, aspas, `=`, `;` ou `#`, arquivo `text` sem quick settings nem overlay, quick setting de Tool com `file`) e as de `install`: nomes de shim e de `version_files` em `[A-Za-z0-9._-]` sem repetição (`forgebox.yaml` não é `version_files`: use `project_key`), `shims[].file` relativo com `/` e sem `..`, `shims[].interpreter` = outro shim e exige `file`, `project_key` pontuado em `[a-z0-9_]` começando por `spec.`.
 2. Provider sem checksum upstream (`http`/`github-release` sem `checksum`, `nginx-org`, `mysql`, `postgresql-edb`, `python-embed`) precisa de `releases[].sha256` em todas as releases.
 3. `service.daemon.ports[].range` e `service.pool.port_range` devem existir nas faixas conhecidas (`forge_core::config`, [03](03-engine.md) §4).
 4. Templates referenciados (`post_install[].render.template`) devem existir em `forge-render/templates/` ou no próprio registry (`<registry>/templates/<caminho>`).
-5. Variáveis de template desconhecidas (§1.4) ou expressões que não são variáveis = erro.
-6. `post_install.run` só pode invocar executáveis dentro de `{{ paths.version }}` (caminho relativo, resolvido lá e nunca via PATH; sem `..`, caminho absoluto ou variáveis); destinos de `copy`/`render`/`mkdir` começam com `{{ paths.<dir> }}` e não saem dele; `Extension.install.target` começa com `{{ paths.version }}`; registries de terceiros não podem declarar `run`.
-7. Ícones em SVG ≤ 20 KB (arquivo em `registry/icons/` ou URL `https://` para `.svg`), sem `<script>`; tudo em `registry/icons/` é `.svg`.
+5. Variáveis de template desconhecidas (§1.4) ou expressões que não são variáveis = erro. `{{ sql }}`, `{{ database }}` e `{{ charset }}` só valem dentro de `spec.database` (§1.8, nos campos indicados); em qualquer outro lugar são `unknown_template_variable`.
+6. `post_install.run` só pode invocar executáveis dentro de `{{ paths.version }}` (caminho relativo, resolvido lá e nunca via PATH; sem `..`, caminho absoluto ou variáveis); destinos de `copy`/`render`/`mkdir` começam com `{{ paths.<dir> }}` e não saem dele; `config.files[].overlay` começa com `{{ paths.etc }}` e não sai dele; `Extension.install.target` começa com `{{ paths.version }}`; registries de terceiros não podem declarar `run`. Os `exe` de `spec.database` (`client`, `dump`, `restore`, `shell`) seguem a mesma ideia: caminho relativo à pasta da versão, sem `..`, caminho absoluto ou variáveis (`exe_outside_version`).
+7. Ícones em SVG ≤ 20 KB (arquivo em `registry/icons/` ou URL `https://` para `.svg`), sem `<script>`; tudo em `registry/icons/` é `.svg` (exceto `ATTRIBUTION.md`, a lista de origens e licenças dos logos, §1.10).

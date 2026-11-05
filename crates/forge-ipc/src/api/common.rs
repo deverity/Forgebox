@@ -30,8 +30,22 @@ impl fmt::Display for ApiVersion {
     }
 }
 
-/// The API version implemented by this crate.
-pub const API_VERSION: ApiVersion = ApiVersion { major: 1, minor: 0 };
+/// The API version implemented by this crate. 1.1 (M2, ADR-0039) added, all additive:
+/// `tool.updates_available`, `net.port_check`, `HelloDto.not_implemented`,
+/// `DaemonStatusDto.cpu_pct|rss_bytes`, `sites.open` for browser/explorer and the
+/// `{reason, args}` convention of [`ApiError::details`]; then (ADR-0040) `terminal.*`,
+/// `logs.targets`, `mail.mark_read|delete|attachment`, `shell.open_editor`,
+/// `system.config_list`, `tls.ca_uninstall`, `services.kill_port_holder`, `sites.env`, the
+/// events `mail.changed`, `terminal.exited`, `config.changed`, `tls.ca_untrusted`,
+/// `port.holder_killed` and new optional fields. `db.shell` answers a `ShellCommandDto`
+/// instead of `Ack` (never implemented before). Then (ADR-0041) `tools.releases`,
+/// `tools.plan`, `tools.history`, `tools.icon`, `services.settings`, `services.update`,
+/// `sites.driver`, `tls.list`, the catalog metadata of `CatalogEntryDto`/`ToolInfoDto`,
+/// the extension `target` of `tools.install|remove`, `ServiceCreateParams.data_dir`,
+/// `InstanceDto.data_dir|size_bytes`, `SiteProcessDto.instance_id`,
+/// `ServicePayload.site_id` and `CertificateDto.trusted|ca_thumbprint_sha256`. Peers
+/// accept any `minor` of the same `major`.
+pub const API_VERSION: ApiVersion = ApiVersion { major: 1, minor: 1 };
 
 /// Authorization profile of a connection (ADR-0009, rule 7; docs/13 §3.3). Ordered:
 /// `viewer < operator < admin`. Local connections are always `admin`.
@@ -112,6 +126,9 @@ pub struct MethodInfo {
     pub mutating: bool,
     /// The `forge` commands served by this method (docs/09), `; `-separated.
     pub cli: &'static str,
+    /// Template of the equivalent `forge` command ([`super::cli_template`], ADR-0037);
+    /// `None` when the method has no CLI command.
+    pub cli_template: Option<&'static str>,
     /// Name of the params type (in `generated.ts`).
     pub params: &'static str,
     /// Name of the result type (`JobDto` for jobs, `SubscriptionDto` for streams).
@@ -142,6 +159,7 @@ impl MethodInfo {
             long_running: matches!(kind, MethodKind::Job),
             mutating: false,
             cli,
+            cli_template: None,
             params,
             result,
             job_result: None,
@@ -149,6 +167,12 @@ impl MethodInfo {
             item: None,
             lagged_notification: None,
         }
+    }
+
+    /// Sets the template of the equivalent `forge` command.
+    pub const fn cli_template(mut self, template: &'static str) -> Self {
+        self.cli_template = Some(template);
+        self
     }
 
     /// Marks the method as client-OS dependent.
@@ -180,6 +204,14 @@ impl MethodInfo {
     pub const fn item(mut self, ty: &'static str) -> Self {
         self.item = Some(ty);
         self
+    }
+
+    /// The `forge` command equivalent to calling this method with `params`, as the user
+    /// would type it in PowerShell or `cmd.exe` (ADR-0037). `None` when the method has no
+    /// template, no alternative of the template applies, or a value has no portable
+    /// quoting.
+    pub fn render_cli(&self, params: &serde_json::Value) -> Option<String> {
+        super::cli_template::render(self.cli_template?, params)
     }
 
     /// `group` part of the name (`"sites"` for `"sites.add"`).
@@ -247,7 +279,10 @@ pub struct ApiError {
     pub code: String,
     /// Human readable message (English, like logs; the CLI/GUI localise by `code`).
     pub message: String,
-    /// Optional structured details (port owner, offending path...).
+    /// Structured details, by convention `{"reason": "<stable snake_case id>", "args":
+    /// {...}}` (docs/09 "Detalhes estruturados de erro", ADR-0039): clients localize from
+    /// `code` plus these, never from the English `message`. `port_in_use` also repeats
+    /// `port` and `owner` at the top level (API 1.0 shape, kept for old clients).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[specta(type = Option<specta_typescript::Unknown>)]
     pub details: Option<serde_json::Value>,
@@ -260,6 +295,23 @@ impl ApiError {
             message: message.into(),
             details: None,
         }
+    }
+
+    /// Adds `details = {"reason": reason, "args": args}` (the convention of
+    /// [`ApiError::details`]).
+    pub fn with_reason(mut self, reason: &str, args: serde_json::Value) -> Self {
+        self.details = Some(serde_json::json!({ "reason": reason, "args": args }));
+        self
+    }
+
+    /// `details.reason`, when the error carries structured details.
+    pub fn reason(&self) -> Option<&str> {
+        self.details.as_ref()?.get("reason")?.as_str()
+    }
+
+    /// `details.args`, when the error carries structured details.
+    pub fn args(&self) -> Option<&serde_json::Value> {
+        self.details.as_ref()?.get("args")
     }
 
     /// CLI exit code of this error (docs/09).
@@ -278,12 +330,16 @@ impl std::error::Error for ApiError {}
 
 impl From<&forge_core::ForgeError> for ApiError {
     fn from(err: &forge_core::ForgeError) -> Self {
-        let details = match err {
-            forge_core::ForgeError::PortInUse { port, owner } => {
-                Some(serde_json::json!({ "port": port, "owner": owner }))
-            }
-            _ => None,
-        };
+        let mut details = err.details();
+        if let (
+            forge_core::ForgeError::PortInUse { port, owner, .. },
+            Some(serde_json::Value::Object(map)),
+        ) = (err, details.as_mut())
+        {
+            // API 1.0 clients read the top-level fields.
+            map.insert("port".into(), (*port).into());
+            map.insert("owner".into(), serde_json::json!(owner));
+        }
         Self {
             code: err.code().to_owned(),
             message: err.to_string(),
@@ -445,6 +501,15 @@ pub struct CheckDto {
     pub message: String,
     /// Suggested fix (a `forge` command or a short instruction).
     pub fix: Option<String>,
+    /// A method that fixes it, for a "Fix" button (`net.dns_enable`, `tls.ca_install`,
+    /// `shell.path_add`); clients run it only if it is in their own allowlist, then run the
+    /// check again. API 1.1 (ADR-0040).
+    #[serde(default)]
+    pub fix_method: Option<String>,
+    /// Params of `fix_method`.
+    #[serde(default)]
+    #[specta(type = Option<specta_typescript::Unknown>)]
+    pub fix_params: Option<serde_json::Value>,
 }
 
 /// Answer of every `*.subscribe` method. Notifications of the stream carry
@@ -526,10 +591,58 @@ mod tests {
         let err = ApiError::from(forge_core::ForgeError::PortInUse {
             port: 80,
             owner: Some("httpd.exe".into()),
+            pid: None,
+            exe: None,
         });
         assert_eq!(err.code, "port_in_use");
         assert_eq!(err.exit_code(), 4);
-        assert_eq!(err.details.unwrap()["port"], 80);
+        let details = err.details.unwrap();
+        assert_eq!(details["port"], 80);
+        assert_eq!(details["reason"], "port_in_use");
+        assert_eq!(details["args"]["owner"], "httpd.exe");
+    }
+
+    #[test]
+    fn structured_details_reach_the_wire_for_the_errors_a_gui_acts_on() {
+        use forge_core::ForgeError;
+        for (err, reason) in [
+            (
+                ForgeError::PortInUse {
+                    port: 3306,
+                    owner: None,
+                    pid: None,
+                    exe: None,
+                },
+                "port_in_use",
+            ),
+            (
+                ForgeError::NeedsElevation("nrpt.add".into()),
+                "needs_elevation",
+            ),
+            (ForgeError::NotFound("site a.test".into()), "not_found"),
+            (ForgeError::NotImplemented("x".into()), "not_implemented"),
+        ] {
+            let wire = serde_json::to_value(ApiError::from(&err)).unwrap();
+            assert_eq!(wire["code"], err.code());
+            assert_eq!(wire["details"]["reason"], reason, "{err}");
+            assert!(wire["details"]["args"].is_object(), "{err}");
+        }
+        let api = ApiError::from(&ForgeError::NotFound("site a.test".into()));
+        assert_eq!(api.reason(), Some("not_found"));
+        assert_eq!(api.args().unwrap()["what"], "site a.test");
+        // Errors without structure stay without details (and without the field).
+        let plain = serde_json::to_value(ApiError::from(&ForgeError::Internal("x".into())));
+        assert!(plain.unwrap().get("details").is_none());
+        let custom = ApiError::new("conflict", "x")
+            .with_reason("host_taken", serde_json::json!({"host": "a.test"}));
+        assert_eq!(custom.reason(), Some("host_taken"));
+    }
+
+    #[test]
+    fn api_1_0_peers_are_still_compatible() {
+        assert_eq!(API_VERSION, ApiVersion { major: 1, minor: 1 });
+        assert!(API_VERSION.is_compatible_with(ApiVersion { major: 1, minor: 0 }));
+        assert!(!API_VERSION.is_compatible_with(ApiVersion { major: 2, minor: 0 }));
     }
 
     #[test]

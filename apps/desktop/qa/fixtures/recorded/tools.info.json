@@ -1,0 +1,92 @@
+{
+  "available": [],
+  "changelog_url": "https://www.php.net/ChangeLog-8.php",
+  "description_md": "PHP com builds oficiais de windows.php.net. Várias versões lado a lado; cada site escolhe a sua\npor pool FastCGI (`php-cgi`). NTS é o recomendado para FastCGI.\n",
+  "docs": "https://www.php.net/manual",
+  "extends": null,
+  "homepage": "https://www.php.net",
+  "kind": "tool",
+  "license": "PHP-3.01",
+  "stack": null,
+  "suggests": [
+    "composer",
+    "xdebug"
+  ],
+  "tool": {
+    "category": "runtime",
+    "current": null,
+    "description": "Linguagem PHP (builds oficiais Windows)",
+    "has_service": true,
+    "id": "php",
+    "installed": [
+      {
+        "canonical_name": "8.4.27-nts-vs17-x64",
+        "id": "01FORGEBOXFIXTURE000000001",
+        "installed_at": null,
+        "is_current": false,
+        "path": "C:/Forgebox/bin/php/8.4.27-nts-vs17-x64",
+        "size_bytes": null,
+        "source": "manual",
+        "state": "installed",
+        "tool": "php",
+        "variant": {
+          "arch": "x64",
+          "compiler": "vs17",
+          "ts": "nts"
+        },
+        "version": "8.4.27"
+      }
+    ],
+    "latest": null,
+    "name": "PHP",
+    "policy": "auto-patch",
+    "update_available": null
+  },
+  "used_by": [
+    {
+      "host": "demo.test",
+      "site_id": "01FORGEBOXFIXTURE000000005",
+      "version": "8.4.27"
+    },
+    {
+      "host": "shop.test",
+      "site_id": "01FORGEBOXFIXTURE000000006",
+      "version": "8.4.27"
+    }
+  ],
+  "variants": [
+    {
+      "default": "nts",
+      "derived": false,
+      "key": "ts",
+      "labels": {
+        "nts": "Non Thread Safe",
+        "ts": "Thread Safe"
+      },
+      "values": [
+        "nts",
+        "ts"
+      ]
+    },
+    {
+      "default": null,
+      "derived": true,
+      "key": "compiler",
+      "labels": {},
+      "values": [
+        "vs17",
+        "vs16",
+        "vc15"
+      ]
+    },
+    {
+      "default": "x64",
+      "derived": false,
+      "key": "arch",
+      "labels": {},
+      "values": [
+        "x64"
+      ]
+    }
+  ]
+}

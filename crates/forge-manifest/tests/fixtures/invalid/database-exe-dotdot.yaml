@@ -1,0 +1,28 @@
+# expect: exe_outside_version
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: database-exe-dotdot, name: Fixture, category: database }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  service:
+    kind: daemon
+    daemon:
+      exe: bin/server.exe
+      ports:
+        - { name: main, default: 3306, range: databases }
+  database:
+    protocol: mysql
+    port: main
+    admin_user: root
+    default_charset: utf8mb4
+    client:
+      exe: ../mysql.exe
+      args: ["--port={{ instance.ports.main }}", "--execute={{ sql }}"]
+    queries:
+      list: "SELECT schema_name FROM information_schema.schemata"
+      create: "CREATE DATABASE `{{ database }}` CHARACTER SET {{ charset }}"
+      drop: "DROP DATABASE `{{ database }}`"
+    url: "mysql://127.0.0.1:{{ instance.ports.main }}/{{ database }}"

@@ -1,0 +1,67 @@
+[package]
+name = "forgebox-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Forgebox desktop app (Forgebox.exe): Tauri shell over the forgeboxd API."
+publish = false
+
+# Binary name is the product name: `tauri.conf.json` mainBinaryName = "Forgebox".
+[[bin]]
+name = "Forgebox"
+path = "src/main.rs"
+
+[lib]
+name = "forgebox_desktop"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[features]
+# Embeds apps/desktop/dist and serves it from tauri://. Enabled by `tauri build`; off for plain
+# cargo commands so the workspace builds without Node (docs/02, M2-E1-T1).
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+# Architecture rule (CLAUDE.md): GUI depends on forge-ipc only; checked by `cargo xtask arch-guard`.
+forge-ipc = { path = "../../../crates/forge-ipc" }
+# `tray-icon`: the tray (src/tray, docs/07 §7). Icons are decoded by the crate itself, so
+# no `image-*` feature is needed.
+tauri = { workspace = true, features = ["tray-icon"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The IPC bridge (src/bridge, ADR-0034): async commands, the Contexts actor, stream pumps.
+# Tauri's async runtime is tokio; forge-ipc clients spawn their tasks on it.
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+# Window shell (src/window.rs, ADR-0035): materials and single instance. No windows/windows-sys.
+window-vibrancy = { workspace = true }
+tauri-plugin-single-instance = { workspace = true }
+# Autostart and app updater (src/autostart.rs, src/updater.rs, ADR-0038).
+tauri-plugin-autostart = { workspace = true }
+tauri-plugin-updater = { workspace = true }
+url = { workspace = true }
+# Saving a mail attachment (src/files.rs, M2-E3-T13).
+base64 = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
+# Native toasts (src/notifications.rs, M2-E1-T16).
+tauri-plugin-notification = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# Mock runtime: the updater tests drive the real plugin against a local HTTP server.
+tauri = { workspace = true, features = ["test", "tray-icon"] }
+minisign = { workspace = true }

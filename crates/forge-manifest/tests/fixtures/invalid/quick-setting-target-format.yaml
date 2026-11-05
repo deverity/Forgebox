@@ -1,0 +1,26 @@
+# expect: invalid_value, invalid_reference
+apiVersion: forgebox.dev/v1
+kind: Tool
+metadata: { id: quick-setting-target-format, name: Fixture, category: devtool }
+spec:
+  platforms: [windows-x64]
+  source:
+    providers:
+      - type: nodejs-dist
+  config:
+    files:
+      - { id: main_ini, path: "{{ paths.etc }}/fixture/main.ini", format: ini }
+      - { id: notes, path: "{{ paths.etc }}/fixture/notes.txt", format: text }
+      - { id: args, path: "{{ paths.etc }}/fixture/x.args", format: args }
+    quick_settings:
+      # A directive in an ini file.
+      - { key: a, file: main_ini, directive: "Timeout", type: number }
+      # `section/key` at most once, never empty.
+      - { key: b, file: main_ini, ini: "a/b/c", type: text }
+      - { key: c, file: main_ini, ini: "/c", type: text, also_set: { "x y": "{{ value }}" } }
+      # A text file has no quick settings.
+      - { key: d, file: notes, type: text }
+      # An args target is a flag.
+      - { key: e, file: args, arg: "smtp", type: text }
+      # A Tool's quick setting names its file.
+      - { key: f, ini: "f", type: text }

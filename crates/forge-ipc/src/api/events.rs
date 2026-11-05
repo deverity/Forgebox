@@ -17,11 +17,12 @@ use specta::Type;
 use super::common::{ApiVersion, Resumable};
 use super::net::{DnsMode, DnsPolicyReason, DnsPolicyState};
 use super::services::{FailureReasonDto, PortHolderDto, PortProtocol, ServiceState};
+use super::tls::TrustScopeDto;
 use forge_core::Timestamp;
 pub use forge_core::actor::{ACTOR_EVENT_VERSION, ActorFailedPayload, ActorRestartedPayload};
 use forge_core::event::Event;
 use forge_core::ids::{
-    EventId, InstanceId, JobId, SiteId, SubscriptionId, ToolId, UpdateId, VersionId,
+    EventId, InstanceId, JobId, SiteId, SubscriptionId, TerminalId, ToolId, UpdateId, VersionId,
 };
 use forge_core::jobs::{JobErrorInfo, JobProgress};
 
@@ -268,6 +269,31 @@ pub struct ToolVersionChangePayload {
     pub removed: Vec<String>,
 }
 
+/// One update of `tool.updates_available`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PendingUpdateDto {
+    pub tool: ToolId,
+    /// Series of the active version (`8.3`): the unit of update and rollback.
+    pub series: String,
+    /// Active version (`8.3.36`).
+    pub from: String,
+    /// Version the check found (`8.3.37`).
+    pub to: String,
+}
+
+/// `tool.updates_available`: what the update checks found. The daemon publishes it after
+/// each scheduled check and after `tool.updated|rollback`, always with the **whole** list
+/// of pending updates (so a client replaces what it shows; an empty list clears the
+/// badge). Blocked updates (a build that needs a migration the user must start) are not
+/// listed. Added in API 1.1 (ADR-0039).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ToolUpdatesAvailablePayload {
+    pub v: u32,
+    pub updates: Vec<PendingUpdateDto>,
+    /// `updates.len()`.
+    pub count: u32,
+}
+
 /// `tool.current_changed`: the `bin/<tool>/current` junction was switched (`forge use`).
 ///
 /// Published by `forge_provider::layout::ToolCurrentEventPayload` (same fields).
@@ -341,6 +367,11 @@ pub struct ServicePayload {
     /// `service.failed`: structured diagnosis.
     #[serde(default)]
     pub reason: Option<FailureReasonDto>,
+    /// Site whose process the instance runs (app instances of `sites.run`/`forge up`,
+    /// docs/06 §6), so `EventFilter.site_id` matches its `service.*` events. API 1.1
+    /// (ADR-0041), published from M2-E2-T6.
+    #[serde(default)]
+    pub site_id: Option<SiteId>,
 }
 
 /// `service.metrics`: periodic CPU/memory sample of an instance (sum over the processes
@@ -499,7 +530,8 @@ pub struct PortConflictPayload {
     pub v: u32,
     pub port: u16,
     pub protocol: PortProtocol,
-    /// Forgebox owner that wanted the port (`mysql/default`).
+    /// Forgebox owner that wanted the port: `<tool>/<instance>` (`mysql/default`) for an
+    /// instance; `<kind>/<id>` for other owners.
     pub owner_name: String,
     pub instance_id: Option<InstanceId>,
     pub holder: Option<PortHolderDto>,
@@ -522,6 +554,70 @@ pub struct HelperOpPayload {
     pub reason: Option<String>,
 }
 
+/// `config.changed`: `forgebox.toml` was written (`system.config_set`, any client). Added
+/// in API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ConfigChangedPayload {
+    pub v: u32,
+    /// Dotted keys written (`dns.enabled`, `tld`).
+    pub keys: Vec<String>,
+    /// Follow-up actions the change needs (`tls.ca_rotate`), as in
+    /// `ConfigValueDto.requires`.
+    #[serde(default)]
+    pub requires: Vec<String>,
+}
+
+/// `tls.ca_untrusted`: the local CA was removed from a trust store (`tls.ca_uninstall`).
+/// Added in API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct TlsCaUntrustedPayload {
+    pub v: u32,
+    pub scope: TrustScopeDto,
+    /// SHA-1 thumbprint (40 hex, uppercase) of the removed certificate.
+    pub thumbprint_sha1: String,
+}
+
+/// `port.holder_killed` (audit): `services.kill_port_holder` terminated the process that
+/// held a port. Added in API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct PortHolderKilledPayload {
+    pub v: u32,
+    pub port: u16,
+    pub pid: u32,
+    /// Executable as `PortHolderDto.exe` showed it.
+    pub exe: Option<String>,
+    /// Client that asked (`ClientInfoDto.name` of the connection: `forge`, `Forgebox.exe`).
+    #[serde(default)]
+    pub client: Option<String>,
+}
+
+/// `mail.changed`: the captured mailbox changed. Published by the daemon's watcher while a
+/// mail instance runs (and after `mail.*` changes), only when the counts move. Added in API
+/// 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct MailChangedPayload {
+    pub v: u32,
+    pub instance_id: InstanceId,
+    /// Messages in the mailbox.
+    pub messages: u32,
+    pub unread: u32,
+    /// Messages received since the previous `mail.changed` (0 for deletions/reads).
+    pub new_messages: u32,
+}
+
+/// `terminal.exited`: a daemon-hosted terminal session ended (the process exited or the
+/// session was closed). Added in API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct TerminalExitedPayload {
+    pub v: u32,
+    pub terminal_id: TerminalId,
+    /// Exit code (Windows `DWORD` bits as `i32`); `None` when it was killed without one.
+    pub exit_code: Option<i32>,
+    /// Site the session was opened in.
+    #[serde(default)]
+    pub site_id: Option<SiteId>,
+}
+
 /// Payload type of every canonical event kind (docs/03 §8), for `methods.ts`.
 pub const EVENT_PAYLOADS: &[(&str, &str)] = &[
     ("daemon.ready", "DaemonReadyPayload"),
@@ -542,6 +638,7 @@ pub const EVENT_PAYLOADS: &[(&str, &str)] = &[
     ("tool.install.progress", "ToolInstallPayload"),
     ("tool.install.completed", "ToolInstallPayload"),
     ("tool.install.failed", "ToolInstallPayload"),
+    ("tool.updates_available", "ToolUpdatesAvailablePayload"),
     ("tool.updated", "ToolVersionChangePayload"),
     ("tool.rollback", "ToolVersionChangePayload"),
     ("tool.current_changed", "ToolCurrentPayload"),
@@ -561,12 +658,17 @@ pub const EVENT_PAYLOADS: &[(&str, &str)] = &[
     ("site.php_changed", "SitePhpChangedPayload"),
     ("config.rendered", "ConfigFilePayload"),
     ("config.drift_detected", "ConfigFilePayload"),
+    ("config.changed", "ConfigChangedPayload"),
     ("dns.policy_applied", "DnsPolicyPayload"),
     ("tls.ca_created", "TlsPayload"),
     ("tls.leaf_issued", "TlsPayload"),
     ("tls.renewed", "TlsPayload"),
+    ("tls.ca_untrusted", "TlsCaUntrustedPayload"),
     ("port.conflict", "PortConflictPayload"),
+    ("port.holder_killed", "PortHolderKilledPayload"),
     ("helper.op", "HelperOpPayload"),
+    ("mail.changed", "MailChangedPayload"),
+    ("terminal.exited", "TerminalExitedPayload"),
 ];
 
 /// Registers every payload type for the TypeScript export.
@@ -583,6 +685,7 @@ pub(crate) fn register_payload_types(types: specta::Types) -> specta::Types {
         .register::<ActorFailedPayload>()
         .register::<FsCaseSensitivityPayload>()
         .register::<ToolInstallPayload>()
+        .register::<ToolUpdatesAvailablePayload>()
         .register::<ToolVersionChangePayload>()
         .register::<ToolCurrentPayload>()
         .register::<ServicePayload>()
@@ -592,10 +695,15 @@ pub(crate) fn register_payload_types(types: specta::Types) -> specta::Types {
         .register::<SitePayload>()
         .register::<SitePhpChangedPayload>()
         .register::<ConfigFilePayload>()
+        .register::<ConfigChangedPayload>()
         .register::<DnsPolicyPayload>()
         .register::<TlsPayload>()
+        .register::<TlsCaUntrustedPayload>()
         .register::<PortConflictPayload>()
+        .register::<PortHolderKilledPayload>()
         .register::<HelperOpPayload>()
+        .register::<MailChangedPayload>()
+        .register::<TerminalExitedPayload>()
 }
 
 #[cfg(test)]

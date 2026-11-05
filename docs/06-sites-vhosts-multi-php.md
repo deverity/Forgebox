@@ -26,6 +26,7 @@ Site {
 
 ### 1.1 Origens de um site
 1. **Parked directories** (como `www/` do Laragon ou `herd park`): o watcher cria um site `nome.test` para cada subpasta. Driver detectado automaticamente (ex. existe `artisan` → Laravel → root `public/`). Pode haver vários diretórios parked (`C:\www`, `D:\clientes`), cada um com TLD próprio opcional.
+   **Mudar o TLD** (`forge config set tld .dev`, [ADR-0040](adr/0040-e3-api-terminal-db-mail-logs.md)): o daemon grava, recarrega as zonas do DNS, passa a validar hosts com o TLD novo, reconcilia os parked dirs (cada site parked ganha `nome.<tld novo>`, mesmo id) e re-renderiza os servidores web (`config.rendered`). Sites explícitos (`site add`) e aliases **não** são renomeados. A CA local lista os TLDs nas name constraints, então a resposta traz `requires = ["tls.ca_rotate", "net.dns_enable"]` (rotacionar a CA e reaplicar a política de DNS do TLD novo); certificados antigos dos hosts renomeados deixam de valer.
 2. **Link explícito**: `forge site add <dir> [--host x.test]` (como `valet link`). Para projetos fora dos parked dirs.
 3. **Arquivo `forgebox.yaml` do projeto** (`kind: Project`): `forge up` dentro da pasta.
 4. **Proxy**: `forge proxy add app.test http://127.0.0.1:3000 --ws`.
@@ -42,7 +43,8 @@ VhostModel {
   static_locations: [...], deny: ["/\\.ht", "/.env"],
   headers, client_max_body: "256M",
   ssl: { cert, key } | None, http_redirect: bool,   # http→https
-  proxy: { upstream, websocket, start_on_visit, read_timeout_secs } | None,   # kind: proxy
+  proxy: { upstream, websocket, start_on_visit, read_timeout_secs,
+           keepalive_conns: 32, keepalive_idle_secs: 4 } | None,   # kind: proxy (§4.1.1)
   env: { NOME: valor },                  # fastcgi_param/SetEnv; sem `$` nem `%{`
   fallback_resource,                     # derivado do último try_files (Apache)
   extra: { apache: "...", nginx: "...", caddy: "..." }   # escape hatch por servidor (do usuário)
@@ -75,6 +77,12 @@ VhostModel {
 
 ### 2.1 Como funciona
 - Cada **série** de PHP usada por pelo menos um site ativo tem um **PhpPool** (ver [03-engine.md §2](03-engine.md)). Se um site fixa versão exata (`8.3.36`), o pool é daquela versão exata; se fixa série (`8.3`), o pool segue a última patch instalada da série (e acompanha auto-update).
+- **Pool dedicado** (`pool_mode: dedicated`, `forge site pool loja.test dedicated`, `sites.pool_mode`; [ADR-0044](adr/0044-metrics-v1.md) §7, M2-E5-T11): o site ganha um pool só dele, com a mesma resolução de versão, blue/green e `PoolSwitcher` do pool compartilhado, portas da faixa do PHP e upstream **`php_<ver>__<slug>`** (`php_8_3__loja-test`, em `etc/<servidor>/upstreams/`). O `PoolManager` passa a ser indexado por `PoolKey {versão, site}` (`site` vazio = compartilhado), uma extensão do modelo por versão da [ADR-0029](adr/0029-daemon-composition.md). Trocar o modo é um job: sobe e aquece o pool novo, re-renderiza o vhost, recarrega o servidor e drena o pool antigo se nenhum outro site o usa. Serve para CPU/RAM exatos na aba Desempenho ([14](14-observability-metrics.md) §2) e para isolar um site pesado; custa a memória de mais workers. Sem portas livres na faixa: `conflict` com mensagem clara. O padrão é `shared`.
+  - **Implementação (M2-E5-T11).** `forge_daemon::pools::PoolKey {version, site: Option<SiteId>}`; o plano do `WebManager` (`SitePhp.pool`) dá a chave e o upstream de cada site (`forge_sites::vhost::site_upstream_name`: o nome compartilhado — `php_8_4`, ou `php_8_4_27` com versão exata — seguido de `__<slug>`). O pool dedicado é um segundo `PhpPool` da mesma versão: `PoolSpec.key` = `<version id>~<site id>` vira o dono das portas (`pool/<version id>~<site id>#worker-<n>`; o compartilhado continua `pool/<version id>#…`), então subir ou parar um nunca libera as portas do outro; o nome do ator é `pool/php/<versão>/<upstream>`.
+  - `sites.pool_mode` (job; só sites `php`, outro tipo → `invalid_input`; mesmo modo → nada a fazer): `ensure_pool_for` sobe e aquece o pool-alvo **antes** de gravar a linha (blue/green igual ao de `sites.php`, §2.2), com um `PoolHold` que impede um reconcile concorrente (que ainda não vê a linha nova) de aposentar esse pool; grava a linha (`site.updated`), `reconcile_for` re-renderiza e recarrega, e o pool antigo drena se ninguém mais o usa (o reconcile replaneja os sites logo antes de aposentar, para não drenar o pool de uma troca que gravou a linha durante o render). Falha de render/reload restaura a linha. Pool dedicado que não sobe é parado na hora (portas de volta). Faixa sem espaço → `conflict` "`<host>`: no room for its PHP pool (no free port left in range "php-pools"); widen the PHP range under [ports.ranges] …" (`forge` sai com 4). Um pool aposentado há pouco segura o dono das portas até parar: um pool novo da mesma chave (ida e volta rápida) espera até 35 s por ele.
+  - `sites.metrics {site, enabled}` (call, até 5 s) grava `metrics_enabled` e emite `site.updated` só quando muda; o `metrics::feed_loop` reenvia as rotas e o agregador para de contar o site (o histórico fica). `forge up` (`forgebox.yaml`) preserva `pool_mode` e `metrics_enabled` do site existente.
+  - Visões: `php.pool_status` e `services.status` listam os dois pools da versão (`PoolDto.upstream` diferencia; `sites` = sites compartilhados ou 1); `php.list`/`php.pool_status {version}` mostram o compartilhado em `PhpVersionDto.pool`; `services.restart|reload` de `php@8.4` reciclam todos os pools da versão; `tools.remove` para todos. Métricas: o pool dedicado vai para o serviço como `PoolMode::Dedicated(site)` → CPU/RAM 100 % do site, `approx = false`, e `SiteStatsDto.processes` conta os workers dele. O `PoolSwitcher` do motor de updates (`PoolManager::switch_version`) faz o blue/green de **todos** os pools da versão, o compartilhado primeiro e cada dedicado para o pool da versão nova com o mesmo site e o mesmo upstream.
+  - Medido (fake php-cgi, `crates/forge-daemon/tests/dedicated_pool.rs`): shared → dedicated → shared com carga contínua em dois sites, 0 falhas em ~4.600 requisições, e `tools.rollback php@8.4` 8.4.27 → 8.4.26 move os dois pools sem falha. Online (nginx 1.30.6 + PHP 8.4.27, 5 clientes HTTP, ~1.000 requisições por rodada, 3 rodadas): 0 falhas; 0–4 conexões por rodada fechadas pelo reload do nginx antes de qualquer byte (o worker antigo fecha as conexões cujo pedido ainda não leu; o mesmo acontece com `services.reload` sozinho) são repetidas uma vez pelo teste, como faz um navegador.
 - O vhost renderizado aponta para o upstream do pool:
 
 **Nginx** (`etc/nginx/sites/loja.test.conf`):
@@ -149,6 +157,11 @@ loja.test, *.loja.test {
 2. Re-renderiza o vhost. 3. Reload do servidor. 4. Drena pool antigo se ficou órfão.
 Tempo típico: < 2 s. Nenhum outro site é afetado.
 
+Backend (`sites.php`, M2-E2-T6): a versão ou série é validada **antes** do job — `forge_daemon::web::WebManager::require_php` procura entre as versões instaladas e, se não achar, responde `not_found` com `details {reason: "version_not_installed", args: {tool, requested, installed[], fix}}` (`ForgeError::VersionNotInstalled`), sem tocar no site. No job: primeiro `ensure_pool_for` sobe o pool da versão-alvo (passo 1 do blue/green), depois a linha é gravada, `reconcile_for(site)` renderiza e recarrega os servidores, e o pool antigo drena se ficou órfão. A resposta vale **só para o site-alvo**: pool que não sobe para a versão dele, vhost que não monta ou servidor que falha ao renderizar/recarregar para ele falham o job com o erro estruturado (`job.failed`) e a linha volta ao valor anterior (falha de render/reload). Pool-alvo que não sobe aborta **antes** de gravar a linha (blue/green): a linha não é gravada, não sai `site.updated`, nada é re-renderizado nem drenado e o pool antigo continua servindo; falhas de outros sites e de outros pools ficam no log e nunca entram no resultado. Só depois da troca sai `site.php_changed {site_id, host, from, to}` (versões resolvidas, `8.3.36` → `8.4.27`; sem evento se a versão resolvida não mudou), portanto `job.started < site.php_changed < job.done`.
+
+`sites.driver` (`forge site driver loja.test laravel|auto`): fixa o driver (ou detecta de novo com `auto`), recalcula o document root a partir da pasta do projeto (`forge_sites::drivers::redetect`: o projeto é a pasta com `composer.json`/`artisan`/`.git`... acima do root gravado, ou o pai de `public`/`pub`/`web`/`webroot`), grava `driver`, `kind` e `root` e re-renderiza com a mesma regra de restauração de `sites.php`. Só sites `php` e `static` têm driver. Site **parked** responde `conflict`: o `ParkedSync` redetecta driver e root a cada boot e rajada de eventos, então um override seria revertido em silêncio (ADR-0041 §9: sem marcador nem migração); para fixar o driver, crie um site explícito (`forge site add`), que sempre vence o implícito.
+
+`sites.info` (`forge site info`) devolve os checks `site.dns` (o caminho de `net.dns_test`: resolve para esta máquina, e por qual via), `site.root_access` (a pasta existe, o daemon a lê e o estado da flag NTFS de diferenciação de maiúsculas; aviso se `case_sensitive` está ligado na configuração e a pasta não tem a flag), `site.php_pool` (versão resolvida e se o pool roda; só sites php) e `site.certificate` (validade da folha: aviso abaixo de 30 dias, falha se vencido, aviso se foi assinada por outra CA; sites sem HTTPS respondem ok). Cada check tem orçamento próprio de 4 s e roda em paralelo.
 Implementação: `forge_fcgi::swap::swap` ([03 §2.2](03-engine.md)); os passos 2–3 são o `UpstreamListener` injetado pelo daemon (`UpstreamChange::Swapped{from, to}`) e o passo 4 é `SwapOptions::drain_source` (o daemon passa `false` se outro site ainda usa o pool antigo). Medido com PHP real 8.3 → 8.4 sob carga: troca em ~2 s, zero requisições perdidas.
 
 ### 2.3 Versão de CLI vs versão web
@@ -167,20 +180,58 @@ Implementação: `forge_fcgi::swap::swap` ([03 §2.2](03-engine.md)); os passos 
 ### 4.1 Site proxy
 `forge proxy add app.test http://127.0.0.1:3000 --ws --secure`
 ```nginx
+upstream forgebox_proxy_app.test {      # um pool de conexões por site proxy (§4.1.1)
+    server 127.0.0.1:3000 max_fails=0;
+    keepalive 32;
+    keepalive_timeout 4s;
+}
 server {
     listen 127.0.0.1:443 ssl; http2 on; server_name app.test;
     include snippets/ssl-app.test.conf;
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://forgebox_proxy_app.test;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection $forgebox_upstream_connection;
         proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header FORGEBOX_SITE app.test;
         proxy_read_timeout 1h;          # HMR/WebSocket
         proxy_buffering off;
     }
 }
 ```
-Apache equivalente com `ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket` (2.4.47+). Caddy: `reverse_proxy 127.0.0.1:3000`.
+Apache equivalente com `ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket ttl=4 timeout=3600` (2.4.47+). Caddy: `reverse_proxy 127.0.0.1:3000` com `transport http { keepalive 4s; keepalive_idle_conns_per_host 32 }`.
+
+#### 4.1.1 Conexões com o upstream e reload (M2-E3-T22)
+**Por quê.** Achado do gate M2-E5-T13 ([14 §3.9](14-observability-metrics.md)): o template de proxy do nginx abria uma conexão TCP nova até o app a cada requisição (`Connection: close`). Nesta máquina parte desses connects em loopback custa um tique do Windows (~15,6 ms) e o laço de eventos do worker do nginx trava junto, atrasando **todos** os sites daquele nginx, não só o proxy.
+
+**Modelo** (`forge_render::ProxyModel`, neutro de servidor, sem código por tool): `keepalive_conns` (conexões ociosas guardadas por processo do servidor; padrão `DEFAULT_PROXY_KEEPALIVE_CONNS` = 32; `0` = uma conexão por requisição, o comportamento anterior) e `keepalive_idle_secs` (padrão 4 s: abaixo dos 5 s em que Node e uvicorn fecham uma conexão ociosa, então o proxy nunca reaproveita uma conexão que o app está fechando naquele instante; um POST nela viraria 502, porque o nginx só repete métodos idempotentes). `keepalive_conns > 0` exige `keepalive_idle_secs > 0`. `VhostModel::normalized` valida o upstream (`http(s)://host[:porta]`, sem caminho, credenciais, query nem fragmento, porta 1–65535) e deriva `scheme`, `address` (`host:porta` com a porta padrão do esquema; IPv6 com colchetes: `[::1]:5173`) e `host` (sem colchetes) para os templates. Os valores ainda não são expostos ao usuário (`spec.proxies[]` do `forgebox.yaml` não tem a chave): os padrões valem para todo site `proxy` e `app`.
+
+**Por servidor:**
+- **nginx** (`site-proxy.conf.j2`): um `upstream forgebox_proxy_<host principal>` por site (`*` vira `wildcard`) com `server <address> max_fails=0` (no `start_on_visit` um connect recusado enquanto o app sobe nunca marca o único servidor como indisponível por 10 s), `keepalive` e `keepalive_timeout`; `proxy_pass <scheme>://forgebox_proxy_<host>`, `proxy_http_version 1.1` e `Connection ""`. Com WebSocket, `Upgrade $http_upgrade` e `Connection $forgebox_upstream_connection` (mapa do `nginx.conf`: `upgrade` quando o cliente pede, vazio nos demais casos; o `$connection_upgrade` antigo mandava `close` e impedia o reuso). Upstream HTTPS: `proxy_ssl_server_name on` e `proxy_ssl_name <host>` (o nome do `upstream {}` não serve de SNI). `keepalive_conns = 0` renderiza o formato anterior (`proxy_pass <upstream>`, sem bloco `upstream`).
+- **Apache** (`site-proxy.conf.j2`): o `mod_proxy_http` já reaproveita as conexões do worker do `ProxyPass` (o template não tem `disablereuse`, `enablereuse=off`, `proxy-nokeepalive`, `force-proxy-request-1.0` nem `Connection: close`); o template só acrescenta `ttl=<keepalive_idle_secs>`. Com `0`: `disablereuse=On`.
+- **Caddy** (`site-proxy.caddy.j2`): o `reverse_proxy` mantém conexões por padrão; o template deixa explícitos `keepalive <idle>s` e `keepalive_idle_conns_per_host <conns>` no `transport http`. Com `0`: `keepalive off`.
+- Os três continuam com LF, UTF-8 sem BOM, cabeçalho de arquivo gerado, access log JSON `forgebox` e `FORGEBOX_SITE` ([14](14-observability-metrics.md)); asserts em `crates/forge-render/tests/snapshots.rs` (`nginx_proxy_keeps_upstream_connections_alive`, `apache_proxy_reuses_backend_connections`, `caddy_proxy_keeps_upstream_connections_alive`).
+
+**Verificado com os servidores reais** (`crates/forge-render/tests/proxy_keepalive_online.rs`, `proxy_sites_reuse_upstream_connections_online`; nginx 1.30.6, Apache httpd 2.4.69 e Caddy 2.11.7 do cache, app HTTP/1.1 dentro do teste que conta as conexões TCP): 20 GET e 1 POST, cada um numa conexão nova do cliente, chegam ao app por **uma** conexão nos três servidores, sempre em HTTP/1.1 e sem `Connection: close` (nginx e Caddy não mandam `Connection`; o Apache manda `Keep-Alive`); com `keepalive_conns = 0` são 21 conexões com `Connection: close`. O eco WebSocket passa pelo mesmo site e as requisições normais seguem funcionando depois dele. O e2e existente `nginx_proxies_http_websocket_and_the_on_visit_page_online` (`forge-sites`: Node real, HMR por WebSocket, página "Iniciando" do on-visit) passa com o upstream de keepalive.
+
+**Medido** (2026-11-05, `cargo test -p forge-render --release --test proxy_keepalive_online -- --ignored --nocapture nginx_proxy_keepalive` com `FORGEBOX_PERF_ROUNDS=3`; i5-1135G7 com 4 núcleos e 8 lógicos, Windows 10 Enterprise 19045, **sessão RDP**, nenhum `cargo`/`rustc` rodando; nginx 1.30.6; `oha` 1.16.0; upstream igual ao do gate do T13: atraso log-normal com mediana 20 ms e p99 120 ms, uma thread por conexão). "Antes" = `keepalive_conns = 0` e sem `multi_accept`; "depois" = os templates atuais. Mediana de 3 rodadas:
+
+| Medida | Antes p50 / p90 / p99 | Depois p50 / p90 / p99 |
+|---|---|---|
+| Proxy, `oha -q 1000 -c 64 -z 30s` (keep-alive) | 30,67 / 65,20 / 130,39 ms | **20,90 / 54,07 / 117,52 ms** |
+| 404 do mesmo nginx (`nobody.test`, 50 req/s) durante a carga no proxy | 0,78 / 18,75 / 23,97 ms | **0,25 / 0,46 / 0,90 ms** |
+| 404 com o nginx ocioso (referência) | 0,24 / 0,30 / 0,79 ms | 0,24 / 0,45 / 0,92 ms |
+
+| Falhas com `nginx -s reload` a cada 0,5 s (30 s, ~55 reloads por rodada) | Antes (rodadas 1 / 2 / 3) | Depois |
+|---|---|---|
+| Conexão nova por requisição (`--disable-keepalive`, 4 clientes) | 16 / 17 / 15 de ~2.600 | **0 / 0 / 0** de ~3.560 |
+| Clientes keep-alive (4 conexões) | 41 / 39 / 44 de ~3.170 | 34 / 28 / 22 de ~4.100 |
+
+Com keepalive a latência do proxy volta à distribuição do próprio app (a mediana cai ~10 ms) e o 404 sob carga fica igual ao do nginx ocioso. Na carga principal do "depois" houve 1 erro de socket do lado do `oha` (WSAEINVAL, `os error 10022`) em 90.000 requisições e nenhuma resposta fora de 2xx; ele não se repetiu em 100.000 requisições a um nginx sem upstream, com ou sem `multi_accept`. O teste tolera até 1 erro de transporte em 10.000 requisições e nenhum não-2xx.
+
+**Reload sem requisições perdidas.** Causa medida (nginx 1.30.6 isolado, `return 200`, nenhum upstream, reload a cada 1 s, 200 req/s): todo `nginx -s reload` no Windows sobe workers novos e fecha o socket de escuta do worker antigo; as conexões que ainda estavam na fila de `accept` dele falham no cliente (`connection error`, `error writing a body to connection`), ~1,8 por reload com uma conexão nova por requisição, também com `use poll` ou `accept_mutex on`. Um reload com configuração idêntica falha igual (o nginx sempre troca os workers). **Correção:** `multi_accept on` no bloco `events` do `nginx.conf.j2`: o worker esvazia a fila toda vez que acorda e quase nada sobra nela quando o socket é fechado (0 falhas nas 3 rodadas acima; no experimento isolado, de 0 a 5 em ~54 reloads contra ~51 em 28 sem ele). É o achado do M2-E5-T11/T13: 2 a 5 falhas em ~3.200 requisições PHP com `--disable-keepalive` quando a reciclagem de workers do pool re-renderiza o upstream e recarrega o nginx. No pipeline completo, o gate medido depois desta correção ainda vê 2 a 5 falhas nessa carga ([14 §3.9](14-observability-metrics.md)), sem causa isolada: o resultado acima vale para o `nginx -s reload` isolado da tabela, não para esse cenário.
+
+**Resíduo documentado.** Clientes **keep-alive** ainda podem falhar durante um reload: no desligamento gracioso o nginx fecha as conexões keep-alive ociosas do worker antigo, e um cliente que envia a próxima requisição nesse instante recebe erro de conexão (corrida do HTTP/1.1, igual em qualquer SO). Navegadores repetem sozinhos uma requisição que falha numa conexão reaproveitada; o `oha` não. Por isso o daemon **não recarrega** quando nada mudou: `render::apply_target` só escreve arquivos cujo conteúdo mudou (`WriteOutcome::Unchanged`, comparação byte a byte) e `WebManager::apply_web` só chama `apply_reload` quando algum arquivo do servidor foi escrito (`Applied::changed`). Testes: `forge-daemon` `render::tests::same_web_model_writes_nothing_so_the_server_is_not_reloaded` (o mesmo modelo não escreve nem publica `config.rendered`; um worker reciclado em outra porta reescreve só `upstreams/php_8_4.conf`) e, com o nginx real, o fim de `nginx_proxy_keepalive_latency_and_reload_online` (re-render do mesmo contexto = tudo `Unchanged`). A reciclagem de um worker PHP muda a porta no upstream e por isso continua recarregando; evitar esse reload é desenho do pool (`forge-fcgi`), fora desta tarefa.
 
 ### 4.2 Processes (Procfile 2.0)
 Um site (ou o `forgebox.yaml` do projeto) declara processos; o supervisor os gerencia como `App`:

@@ -59,6 +59,15 @@ pub fn detect_in_file(path: &Path, style: CommentStyle) -> Result<Vec<Drift>> {
     detect_in_text(path, &text, style)
 }
 
+/// Drifts in the file at `path` in any comment style (`#` and `;` blocks): for callers
+/// that do not know which target wrote the file (quick settings check every file they
+/// are about to touch before writing anything, ADR-0042). A missing file has none.
+pub fn detect_in_file_any_style(path: &Path) -> Result<Vec<Drift>> {
+    let mut out = detect_in_file(path, CommentStyle::Hash)?;
+    out.extend(detect_in_file(path, CommentStyle::Semicolon)?);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,6 +95,44 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(
             detect_in_file(&dir.path().join("nope.conf"), CommentStyle::Hash)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn any_style_sees_hash_and_semicolon_blocks() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("my.ini");
+        crate::managed::write_block_file(
+            &path,
+            CommentStyle::Hash,
+            "main",
+            "a=1
+",
+            false,
+        )
+        .unwrap();
+        crate::managed::write_block_file(
+            &path,
+            CommentStyle::Semicolon,
+            "settings",
+            "b=1
+",
+            false,
+        )
+        .unwrap();
+        assert!(detect_in_file_any_style(&path).unwrap().is_empty());
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(&path, text.replace("a=1", "a=2").replace("b=1", "b=2")).unwrap();
+        let blocks: Vec<String> = detect_in_file_any_style(&path)
+            .unwrap()
+            .into_iter()
+            .map(|d| d.block)
+            .collect();
+        assert_eq!(blocks, ["main", "settings"]);
+        assert!(
+            detect_in_file_any_style(&dir.path().join("none.ini"))
                 .unwrap()
                 .is_empty()
         );

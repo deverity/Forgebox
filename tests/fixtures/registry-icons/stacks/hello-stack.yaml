@@ -1,0 +1,12 @@
+apiVersion: forgebox.dev/v1
+kind: Stack
+metadata:
+  id: hello-stack
+  name: Hello Stack
+  summary: Web server plus database
+  tags: [demo]
+  order: 1
+spec:
+  tools:
+    - { id: hello-web, series: "1.10" }
+    - { id: hello-db, instance: default }

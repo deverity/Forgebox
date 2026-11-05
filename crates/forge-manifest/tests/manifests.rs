@@ -142,7 +142,10 @@ fn code_rule(code: &str) -> u8 {
         "unknown_port_range" => 3,
         "missing_template" => 4,
         "unknown_template_variable" | "invalid_template" => 5,
-        "run_outside_version" | "run_not_allowed" | "write_outside_root" => 6,
+        "run_outside_version"
+        | "run_not_allowed"
+        | "write_outside_root"
+        | "exe_outside_version" => 6,
         "invalid_icon" => 7,
         _ => 1,
     }

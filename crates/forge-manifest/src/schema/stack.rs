@@ -35,10 +35,21 @@ pub struct StackMetadata {
     /// SVG file in `registry/icons/` or an `https://` URL (rule 7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Brand colour of the icon tile, `#RRGGBB` (docs/04 §1, docs/07 §2.4): the client paints the
+    /// white glyph of `icon` on a tile of this colour, darkened when the glyph would fall under
+    /// 3:1. Without it, clients fall back to a monogram on a palette colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^#[0-9a-fA-F]{6}$"))]
+    pub icon_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub deprecated: bool,
+    /// Display position among curated stacks (`onboarding`, docs/07 §5.1): lower first. The
+    /// registry index lists stacks with an `order` first, by it, then the others by id
+    /// (docs/04 §5). Absent means "after every ordered stack".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
 }
 
 /// `spec` of a Stack.

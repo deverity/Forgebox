@@ -1,0 +1,14 @@
+---
+source: crates/forge-metrics/tests/parse.rs
+expression: "render_fixture(\"apache-2.4.69.jsonl\", &parser(&apache()))"
+---
+01 2026-10-28T06:03:34.785Z host=loja.test status=200 dur=0us up=None bytes=3 GET route=/index.html
+02 2026-10-28T06:03:34.845Z host=loja.test status=200 dur=0us up=None bytes=2 GET route=/a.txt
+03 2026-10-28T06:03:34.919Z host=loja.test status=404 dur=0us up=None bytes=236 GET route=/missing/{id}/edit
+04 2026-10-28T06:03:34.986638Z host=loja.test status=200 dur=15638us up=None bytes=9 GET route=/api/ok
+05 2026-10-28T06:03:35.048Z host=loja.test status=404 dur=0us up=None bytes=335 GET route=/api/nothere
+06 2026-10-28T06:03:35.107Z host=127.0.0.1 status=404 dur=0us up=None bytes=236 GET route=/café/a"b
+07 2026-10-28T06:03:35.202Z host=loja.test status=404 dur=0us up=None bytes=236 GET route=/café/x/y"z
+08 2026-10-28T06:03:35.202Z host=- status=400 dur=0us up=None bytes=266 GET route=/v
+09 2026-10-28T06:03:35.217638Z host=- status=404 dur=15638us up=None bytes=236 GET route=/nohost
+10 2026-10-28T06:03:35.218Z host=- status=400 dur=0us up=None bytes=266 GET route=/tab

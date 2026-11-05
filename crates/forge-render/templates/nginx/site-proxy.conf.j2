@@ -1,6 +1,17 @@
 {% set s = site %}
 {% set primary = s.hosts | first %}
 {% set p = s.proxy %}
+{% set upstream = 'forgebox_proxy_' ~ (primary | replace('*', 'wildcard')) %}
+{% if p.keepalive_conns %}
+# One connection pool per proxy site (docs/06 section 4.1.1). max_fails=0: a refused
+# connect while the app is down (start_on_visit) never marks it unavailable.
+upstream {{ upstream }} {
+    server {{ p.address }} max_fails=0;
+    keepalive {{ p.keepalive_conns }};
+    keepalive_timeout {{ p.keepalive_idle_secs }}s;
+}
+
+{% endif %}
 {% if s.ssl and s.http_redirect %}
 server {
     listen 127.0.0.1:{{ prefs.http_port }};
@@ -29,11 +40,26 @@ server {
 {% endif %}
 
     location / {
+{% if p.keepalive_conns %}
+        proxy_pass {{ p.scheme }}://{{ upstream }};
+        proxy_http_version 1.1;
+{% if p.websocket %}
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $forgebox_upstream_connection;
+{% else %}
+        proxy_set_header Connection "";
+{% endif %}
+{% if p.scheme == 'https' %}
+        proxy_ssl_server_name on;
+        proxy_ssl_name {{ p.host }};
+{% endif %}
+{% else %}
         proxy_pass {{ p.upstream }};
         proxy_http_version 1.1;
 {% if p.websocket %}
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+{% endif %}
 {% endif %}
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto {{ 'https' if s.ssl else 'http' }};

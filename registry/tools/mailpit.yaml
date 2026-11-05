@@ -16,8 +16,10 @@ metadata:
   tags: [mail, smtp, mailpit, testing]
   homepage: https://mailpit.axllent.org
   docs: https://mailpit.axllent.org/docs/
+  changelog_url: https://github.com/axllent/mailpit/releases
   license: MIT
   icon: mailpit.svg
+  icon_color: "#00B786"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:
@@ -102,3 +104,16 @@ spec:
     color: "#2F8CF5"
     actions:
       - { label: "Abrir caixa de e-mail", icon: mail, browse: "http://127.0.0.1:{{ instance.ports.http }}" }
+
+  # Mail capability (docs/04 section 1.9): the daemon adapter for the `mailpit-v1` API family.
+  mail:
+    api: mailpit-v1
+    http_port: http
+    smtp_port: smtp
+    env:
+      MAIL_MAILER: smtp
+      MAIL_HOST: "127.0.0.1"
+      MAIL_PORT: "{{ instance.ports.smtp }}"
+      MAIL_USERNAME: "null"
+      MAIL_PASSWORD: "null"
+      MAIL_ENCRYPTION: "null"

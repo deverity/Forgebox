@@ -36,6 +36,10 @@ TypesConfig "{{ tool.dir }}/conf/mime.types"
 DirectoryIndex index.php index.html
 AddDefaultCharset UTF-8
 EnableSendfile Off
+# Quick settings (docs/04 section 1.3).
+KeepAlive {{ instance.settings.keep_alive | default('On') }}
+Timeout {{ instance.settings.timeout | default('300') }}
+LimitRequestBody {{ instance.settings.limit_request_body | default('0') }}
 Mutex default
 SSLProtocol -all +TLSv1.2 +TLSv1.3
 SSLSessionCache "shmcb:{{ paths.tmp }}/apache/ssl_scache(512000)"

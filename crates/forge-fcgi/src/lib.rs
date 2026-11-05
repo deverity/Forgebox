@@ -28,8 +28,8 @@ pub mod worker;
 
 pub use events::{PoolScaledEvent, RecycleReason, WorkerRecycledEvent};
 pub use pool::{
-    DrainReport, PhpPool, PoolDeps, PoolHandle, PoolMsg, PoolSpec, PoolState, PoolStatus,
-    PoolTiming, Recycle, Scaling,
+    DrainReport, PhpPool, PoolDeps, PoolHandle, PoolMetrics, PoolMsg, PoolSpec, PoolState,
+    PoolStatus, PoolTiming, Recycle, Scaling,
 };
 pub use probe::{FcgiRequest, FcgiResponse, FcgiValues, HealthReport, HealthScript, ProbeError};
 pub use swap::{PoolDirectory, SwapOptions, SwapReport, Switcher};

@@ -1,0 +1,12 @@
+---
+source: crates/forge-metrics/tests/parse.rs
+expression: "render_fixture(\"caddy-2.11.7.jsonl\", &parser(&caddy()))"
+---
+01 2026-10-28T06:04:12.564343Z host=loja.test status=200 dur=166480us up=None bytes=3 GET route=/
+02 2026-10-28T06:04:14.128012Z host=loja.test status=200 dur=0us up=None bytes=2 GET route=/a.txt
+03 2026-10-28T06:04:14.71265Z host=loja.test status=404 dur=0us up=None bytes=0 GET route=/missing/{id}/edit
+04 2026-10-28T06:04:15.234775Z host=loja.test status=404 dur=25887us up=None bytes=335 GET route=/api/ok
+05 2026-10-28T06:04:15.456988Z host=loja.test status=404 dur=5512us up=None bytes=335 GET route=/api/nothere
+06 2026-10-28T06:04:15.600288Z host=127.0.0.1 status=404 dur=0us up=None bytes=0 GET route=/caf%C3%A9/a%22b
+07 2026-10-28T06:04:15.894099Z host=shop.loja.test status=404 dur=386us up=None bytes=0 GET route=/p/{id}
+08 2026-10-28T06:04:16.733725Z host=127.0.0.1 status=200 dur=0us up=None bytes=3 GET route=/

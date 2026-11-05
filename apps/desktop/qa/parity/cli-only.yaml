@@ -1,0 +1,162 @@
+# Mutating API methods with a `forge` command that no GUI action reaches (M2-E4-T5).
+# `cli_only`: the method stays CLI-only on purpose; every entry needs a `reason`.
+# `pending`: a screen of the named task will add the action; the entry is deleted then
+#   (the Rust gate fails on a listed method that an action already reaches).
+# The M2 gate (M2-E4-T11) runs with FORGE_PARITY_STRICT=1, where `pending` must be empty (it is,
+# since M2-E4-T9 gave the last eight methods an action).
+# `query`: pure queries and streams (non-mutating); every entry needs a `reason` that names the
+#   screen showing the data. Same stale rule as the other sections.
+# Every METHODS row with a non-empty `cli` must be reached by an action or appear here.
+# User-triggered non-mutating methods that M2 screens will reach (doctor, exports, open, ...)
+#   are `pending` with their task, not `query`.
+cli_only:
+  - method: daemon.stop
+    reason: "Daemon stop goes through the shell Sair dialog (M2-E1-T15) and the updater (M2-E1-T18), which call daemon.stop directly, not through the action registry."
+  - method: remote.listen
+    reason: "Remote access is a CLI-first feature in 1.x (docs/09 remote); no screen in M2."
+  - method: remote.pair
+    reason: "Remote pairing is a CLI-first feature in 1.x (docs/09 remote); no screen in M2."
+  - method: remote.revoke
+    reason: "Remote pairing is a CLI-first feature in 1.x (docs/09 remote); no screen in M2."
+  - method: system.bundle_export
+    reason: "Bundle export is an M3 feature (no GUI in M2)."
+  - method: system.bundle_import
+    reason: "Bundle import is an M3 feature (no GUI in M2)."
+  - method: system.backup_now
+    reason: "Backups are an M3 feature (no GUI in M2)."
+  - method: system.backup_schedule
+    reason: "Backups are an M3 feature (no GUI in M2)."
+  - method: system.import_laragon
+    reason: "Laragon import is an M3 feature (no GUI in M2)."
+  - method: db.open
+    reason: "Opening an external DB client is M3-E1; the Databases screen shows 'Abrir em' disabled."
+  - method: net.lan_qr
+    reason: "LAN exposure is an M3 feature (no GUI in M2)."
+  - method: system.self_update
+    reason: "Updating Forgebox itself is an M4 feature; the app updater ships inactive in 0.2.0."
+  - method: sites.share
+    reason: "Public tunnels (share) are an M6 feature."
+  - method: net.lan_expose
+    reason: "LAN exposure is an M3 feature (no GUI in M2)."
+  - method: net.lan_unexpose
+    reason: "LAN exposure is an M3 feature (no GUI in M2)."
+  - method: sites.new
+    reason: "Project scaffolding (forge new) is an M3 feature."
+  - method: tools.add_local
+    reason: "Installing a local zip or folder as a tool version is M3-E1; the daemon answers not_implemented in M2 (crates/forge-daemon/src/api/not_implemented.rs)."
+  - method: sites.unpark
+    reason: "No unpark screen in the M2 plan (onboarding M2-E2-T19 only parks); folders are unparked from the CLI."
+  - method: sites.alias
+    reason: "Aliases are shown read-only in the site detail Geral tab (M2-E2-T16); editing them is CLI/manifest only in M2."
+  - method: shell.path_remove
+    reason: "No M2 screen takes Forgebox out of the user PATH: onboarding (M2-E2-T19) and the Diagnostics 'Corrigir' (M2-E3-T19) only add it; `forge path remove` undoes it."
+  - method: jobs.cancel
+    reason: "The GUI cancels through the job abort in InstallProgressList (catalog and PHP switch), not through a registry action; no screen needs a separate action."
+  - method: tls.issue
+    reason: "Certificates are issued by site creation and by 'sites.secure' (M2-E4-T9); the Settings Seguranca list renews them (tls.renew) but a manual issue is `forge tls issue`."
+  - method: tls.export
+    reason: "Exporting a site certificate with its key (PFX) is a CLI-only admin export; Settings Seguranca exports only the public CA certificate (tls.ca_export)."
+  - method: fs_parity.site_case
+    reason: "The per-site switch stays `forge site case-sensitive` (the Settings screen has no site-level toggle); Settings > Sistema de arquivos converts folders and runs the Case Mismatch Finder (M2-E3-T18)."
+  - method: stats.export
+    reason: "Metrics export is CLI-first in v1 (forge stats export, docs/14 section 6); the Desempenho tab (M2-E5-T16) has no export button."
+query:
+  - method: daemon.status
+    reason: "Query shown by: Shell status footer and Settings (M2-E1, M2-E3-T16)."
+  - method: events.subscribe
+    reason: "Query shown by: Event bus feeding every live screen (M2-E1 data layer)."
+  - method: jobs.get
+    reason: "Query shown by: Job progress shown by the jobs tray (M2-E1)."
+  - method: jobs.list
+    reason: "Query shown by: Job progress shown by the jobs tray (M2-E1)."
+  - method: db.list
+    reason: "Query shown by: Databases screen (M2-E3-T14)."
+  - method: fs_parity.case_status
+    reason: "Query shown by: Settings Sistema de arquivos (M2-E3-T18)."
+  - method: daemon.doctor
+    reason: "Query shown by: Diagnostics screen, run as a job with progress (M2-E3-T19)."
+  - method: logs.targets
+    reason: "Query shown by: Logs screen target picker (M2-E3-T12)."
+  - method: logs.read
+    reason: "Query shown by: Logs screen / LogViewer, Load earlier pages back with before_seq (M2-E3-T12)."
+  - method: logs.subscribe
+    reason: "Stream shown by: Logs screen / LogViewer, Services Logs tab, site Processes logs (M2-E3-T12)."
+  - method: mail.attachment
+    reason: "Query shown by: Mail screen attachment preview (M2-E3-T13)."
+  - method: mail.env
+    reason: "Query shown by: Databases/Mail connection hints (M2-E3-T13)."
+  - method: mail.list
+    reason: "Query shown by: Mail screen inbox (M2-E3-T13)."
+  - method: mail.show
+    reason: "Query shown by: Mail screen message view (M2-E3-T13)."
+  - method: mail.status
+    reason: "Query shown by: Mail screen and sidebar badge (M2-E3-T13)."
+  - method: metrics.subscribe
+    reason: "Query shown by: Dashboard and site Desempenho tab (M2-E5-T14, M2-E5-T16)."
+  - method: net.dns_status
+    reason: "Query shown by: Settings Rede (M2-E3-T17)."
+  - method: php.ext_list
+    reason: "Query shown by: PHP screen extensions (M2-E2-T17)."
+  - method: php.ini
+    reason: "Query shown by: PHP screen (M2-E2-T17)."
+  - method: php.list
+    reason: "Query shown by: PHP screen (M2-E2-T17)."
+  - method: php.pool_status
+    reason: "Query shown by: PHP screen pools (M2-E2-T17)."
+  - method: registry.list
+    reason: "Query shown by: Settings Registries (M2-E3-T18)."
+  - method: remote.clients
+    reason: "Query shown by: Remote access is CLI-first in 1.x (docs/09 remote); no screen in M2."
+  - method: services.ports
+    reason: "Query shown by: Servicos screen and Dashboard (M2-E2-T12, M2-E2-T14)."
+  - method: services.settings
+    reason: "Query shown by: Servicos quick-settings form (M2-E2-T13)."
+  - method: services.status
+    reason: "Query shown by: Servicos screen and Dashboard (M2-E2-T12, M2-E2-T14)."
+  - method: shell.env
+    reason: "Query shown by: Settings Avancado environment view (M2-E3-T16)."
+  - method: shell.path_show
+    reason: "Query shown by: Settings Permissoes PATH state (M2-E3-T16)."
+  - method: sites.env
+    reason: "Query shown by: Site Ambiente tab (M2-E3-T20)."
+  - method: sites.info
+    reason: "Query shown by: Site detail (M2-E2-T16)."
+  - method: sites.list
+    reason: "Query shown by: Sites screen (M2-E2-T15)."
+  - method: sites.parked
+    reason: "Query shown by: Onboarding and Settings parked dirs (M2-E2-T19)."
+  - method: sites.ps
+    reason: "Query shown by: Site detail Processos tab (M2-E2-T16)."
+  - method: stats.get
+    reason: "Query shown by: Dashboard and site Desempenho tab (M2-E5-T16)."
+  - method: stats.routes
+    reason: "Query shown by: Site Desempenho tab (M2-E5-T16)."
+  - method: stats.series
+    reason: "Query shown by: Site Desempenho tab (M2-E5-T16)."
+  - method: stats.top
+    reason: "Query shown by: Dashboard Projetos section (M2-E5-T17)."
+  - method: system.config_get
+    reason: "Query shown by: Settings (M2-E3-T16)."
+  - method: system.config_list
+    reason: "Query shown by: Settings schema-driven rows (M2-E3-T16)."
+  - method: tls.ca_status
+    reason: "Query shown by: Settings Seguranca (M2-E3-T17)."
+  - method: tls.list
+    reason: "Query shown by: Settings Seguranca certificates and site HTTPS (M2-E3-T17, M2-E2-T16)."
+  - method: tools.history
+    reason: "Query shown by: Catalog tool page (M2-E2-T18)."
+  - method: tools.info
+    reason: "Query shown by: Catalog tool page (M2-E2-T18)."
+  - method: tools.list
+    reason: "Query shown by: Catalog and Servicos screens (M2-E2-T18)."
+  - method: tools.releases
+    reason: "Query shown by: Catalog tool page versions (M2-E2-T18)."
+  - method: tools.search
+    reason: "Query shown by: Catalog search (M2-E2-T18)."
+  - method: tools.which
+    reason: "Query shown by: Settings Avancado / CLI resolution (M2-E3-T16)."
+  - method: net.dns_test
+    reason: "Query shown by: Site Diagnostico tab, 'Testar DNS' button (M2-E2-T16)."
+  - method: tools.plan
+    reason: "Query shown by: Catalog tool page install plan and the site PHP switch confirmation (M2-E2-T18, M2-E2-T16)."
+pending: []

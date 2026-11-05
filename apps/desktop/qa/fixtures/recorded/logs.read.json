@@ -1,0 +1,146 @@
+{
+  "last_seq": 89167816032277,
+  "lines": [
+    {
+      "level": "info",
+      "seq": 89167816032258,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"applied migration\",\"version\":1,\"name\":\"init\"},\"target\":\"forge_core::store::migrations\",\"threadName\":\"forgeboxd-8\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032259,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"applied migration\",\"version\":2,\"name\":\"registry_loader\"},\"target\":\"forge_core::store::migrations\",\"threadName\":\"forgeboxd-8\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032260,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"applied migration\",\"version\":3,\"name\":\"update_history_rollback\"},\"target\":\"forge_core::store::migrations\",\"threadName\":\"forgeboxd-8\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032261,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"applied migration\",\"version\":4,\"name\":\"tool_series_settings\"},\"target\":\"forge_core::store::migrations\",\"threadName\":\"forgeboxd-8\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032262,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"applied migration\",\"version\":5,\"name\":\"metrics\"},\"target\":\"forge_core::store::migrations\",\"threadName\":\"forgeboxd-8\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032263,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"store opened\",\"root\":\"C:/Forgebox\",\"schema\":5,\"last_seq\":0},\"target\":\"forge_daemon::boot\",\"threadName\":\"forgeboxd-8\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032264,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"official registry added\",\"source\":\"C:/apps_src/Forgebox-wt/E1/registry\"},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032265,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"registry loaded\",\"registry\":\"official\",\"tools\":12,\"source\":\"Source\"},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032266,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"bin/ reconciled\",\"report\":\"ImportReport { imported: [\\\"C:/Forgebox/bin/php/8.4.27-nts-vs17-x64\\\"], already_registered: [], unknown_version: [], needs_confirmation: [] }\"},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032267,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"tls: loaded\",\"ca\":\"None\",\"leaves\":0},\"target\":\"forge_tls::manager\",\"threadName\":\"forgeboxd-3\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032268,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"dns: disabled in forgebox.toml\"},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032269,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"metrics: history rehydrated\",\"restored\":0,\"skipped\":0},\"target\":\"forge_metrics::service\",\"threadName\":\"forgeboxd-3\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032270,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"tls: CA bundle ready\",\"path\":\"C:/Forgebox/certs/ca-bundle.pem\",\"roots\":56,\"local_ca\":false,\"written\":true},\"target\":\"forge_tls::manager\",\"threadName\":\"forgeboxd-3\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032271,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"tls: CRL responder listening\",\"addr\":\"127.0.0.1:58110\"},\"target\":\"forge_tls::manager\",\"threadName\":\"forgeboxd-3\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032272,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"internal endpoint listening\",\"port\":58111},\"target\":\"forge_daemon::internal\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032273,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"instances loaded\",\"instances\":0,\"created\":0},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032274,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"services autostarted\",\"started\":0,\"failed\":0},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032275,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"parked folders reconciled\",\"report\":\"ReconcileReport { added: [\\\"demo.test\\\", \\\"shop.test\\\"], removed: [], updated: [], skipped: [], unreadable: [] }\"},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032276,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"API server listening\",\"endpoint\":\"\\\\\\\\.\\\\pipe\\\\forgebox-f2093be71cc74597\"},\"target\":\"forge_ipc::server\",\"threadName\":\"forgeboxd-4\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    },
+    {
+      "level": "info",
+      "seq": 89167816032277,
+      "source": "file",
+      "text": "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"level\":\"INFO\",\"fields\":{\"message\":\"daemon ready\",\"endpoint\":\"\\\\\\\\.\\\\pipe\\\\forgebox-f2093be71cc74597\",\"boot_ms\":\"620\",\"pid\":11388},\"target\":\"forge_daemon::boot\",\"threadName\":\"main\"}",
+      "ts": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "target": "daemon"
+}

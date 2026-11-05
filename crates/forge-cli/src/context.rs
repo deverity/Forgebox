@@ -75,8 +75,8 @@ impl Context {
         }
         match connect::try_connect(&self.root).await {
             Ok(client) => Ok(Some(client)),
-            Err(connect::Failure::Down(_)) => Ok(None),
-            Err(connect::Failure::Other(err)) => Err(err),
+            Err(err) if err.is_down() => Ok(None),
+            Err(err) => Err(connect::localize(err, &self.root, &self.out)),
         }
     }
 

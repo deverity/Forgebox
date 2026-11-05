@@ -812,3 +812,62 @@ async fn metrics_match_get_process_within_ten_percent() {
         "no run, no sample"
     );
 }
+
+/// Acceptance of M2-E5-T10: with the fake service burning 50 % of one CPU, the machine
+/// CPU % over 2 s (`forge_core::platform::SystemStats`, `GetSystemTimes`) is at least the
+/// burn share (50 % of one CPU over the logical CPUs), and at least the share the
+/// service's own counters measured on the same scale; the image name of the service PID
+/// is its executable (`QueryFullProcessImageNameW`, cached by `(pid, started_at)`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn machine_cpu_covers_a_burning_service() {
+    use forge_core::platform::{self, ImageNameCache, MachineSample, ProcStats};
+
+    let _exclusive = HEAVY.write().await;
+    let (supervisor, _bus) = supervisor();
+    let instance = supervisor
+        .spawn_instance(fake_spec("machine-burner", &["--polite", "--burn", "50"]))
+        .unwrap();
+    let pid = instance.start(ASK).await.unwrap();
+    // The burner works in 1 s periods: let one pass before measuring.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    let machine = platform::system_stats();
+    let processes = platform::process_stats();
+    let read = {
+        let (machine, processes) = (machine.clone(), processes.clone());
+        move || -> (MachineSample, ProcStats) {
+            (machine.sample().unwrap(), processes.sample(pid).unwrap())
+        }
+    };
+    let (a, pa) = tokio::task::spawn_blocking(read.clone()).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let (b, pb) = tokio::task::spawn_blocking(read).await.unwrap();
+
+    let machine_pct = b.cpu_pct_since(&a).expect("time elapsed");
+    let service_pct = b
+        .cpu_share_since(&a, pb.cpu_total - pa.cpu_total)
+        .expect("time elapsed");
+    let cpus = f64::from(b.logical_cpus);
+    let burn_share = 50.0 / cpus;
+    println!(
+        "machine busy {machine_pct:.2} % over 2 s; service {service_pct:.2} % ({:.1} % of one CPU); burn share {burn_share:.2} % ({cpus} logical CPUs)",
+        service_pct * cpus
+    );
+    assert!(
+        machine_pct >= burn_share,
+        "machine {machine_pct} % < burn share {burn_share} %"
+    );
+    // Same capacity on both sides: only the clock-tick granularity separates them.
+    assert!(
+        machine_pct + 1.0 >= service_pct,
+        "machine {machine_pct} % < service {service_pct} %"
+    );
+
+    let names = ImageNameCache::new(processes);
+    let name = tokio::task::spawn_blocking(move || names.name_of(&pb))
+        .await
+        .unwrap();
+    assert_eq!(name.as_deref(), Some("fake_service.exe"));
+
+    instance.stop(Duration::from_secs(30)).await.unwrap();
+}

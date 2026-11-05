@@ -147,8 +147,10 @@ fn not_implemented_is_1_and_names_the_roadmap_task() {
     let fx = Fixture::new();
     for (args, task) in [
         (&["share", "a.test"][..], "M3-E3"),
-        (&["db", "list"][..], "M2-E3"),
-        (&["stats"][..], "M2-E5"),
+        (
+            &["db", "open", "mysql/default", "--with", "heidisql"][..],
+            "M3-E1",
+        ),
         (&["remote", "pair"][..], "M6-E3"),
         (&["backup", "now"][..], "M3-E3"),
         (&["self-update", "--check"][..], "M4-E1"),

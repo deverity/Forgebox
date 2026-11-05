@@ -44,6 +44,11 @@ pub struct HelloDto {
     #[specta(type = specta_typescript::Number)]
     pub last_event_seq: u64,
     pub server_time: Timestamp,
+    /// Methods of the contract this daemon answers with `not_implemented` (API 1.1): the
+    /// GUI disables or labels the matching controls without trying them. Missing from
+    /// 1.0 daemons (empty).
+    #[serde(default)]
+    pub not_implemented: Vec<String>,
 }
 
 /// Result of `system.ping` (latency indicator, docs/13 §5).
@@ -174,6 +179,31 @@ pub struct ConfigValueDto {
     pub value: serde_json::Value,
     /// The value is the built-in default (not set in `forgebox.toml`).
     pub is_default: bool,
+    /// Follow-up actions the change needs and the daemon did not do by itself, as method
+    /// names (`tls.ca_rotate` after a TLD change, `daemon.restart`). Empty when it took
+    /// effect live. API 1.1 (ADR-0040).
+    #[serde(default)]
+    pub requires: Vec<String>,
+}
+
+/// Result of `system.config_list` (`forge config list`): the whole configuration, so the
+/// Settings screen is generated from `schema`. API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+pub struct ConfigDocumentDto {
+    /// Effective configuration: `forgebox.toml` over the defaults, in its nested shape (the
+    /// `schema` validates it).
+    #[specta(type = specta_typescript::Unknown)]
+    pub values: serde_json::Value,
+    /// Built-in defaults, same shape.
+    #[specta(type = specta_typescript::Unknown)]
+    pub defaults: serde_json::Value,
+    /// JSON Schema (2020-12) of the configuration, with titles and descriptions.
+    #[specta(type = specta_typescript::Unknown)]
+    pub schema: serde_json::Value,
+    /// Dotted keys whose value differs from the default (the file stores every key, so a
+    /// key set to its default counts as default).
+    #[serde(default)]
+    pub set_keys: Vec<String>,
 }
 
 /// Params of `system.self_update`.

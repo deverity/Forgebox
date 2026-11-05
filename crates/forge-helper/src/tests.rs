@@ -1031,7 +1031,7 @@ fn only_a_constrained_forgebox_ca_is_trusted_machine_wide() {
     assert_eq!(again.details["already_trusted"], true);
     assert_eq!(fx.sys.changes().len(), 1);
 
-    for thumbprint in [open, public, evil] {
+    for thumbprint in [open.clone(), public.clone(), evil] {
         fx.refused(
             HelperOp::TrustAddMachineRoot { thumbprint },
             false,
@@ -1076,6 +1076,25 @@ fn only_a_constrained_forgebox_ca_is_trusted_machine_wide() {
         false,
         "forbidden",
     );
+    // Named like ours but not one the helper could have added (unconstrained, public
+    // TLD): removal takes the install test too (ADR-0045).
+    for (pem, thumbprint) in [(&open_pem, &open), (&public_pem, &public)] {
+        fx.sys.machine_root_add(pem.as_bytes()).unwrap();
+        fx.refused(
+            HelperOp::TrustRemoveMachineRoot {
+                thumbprint: thumbprint.clone(),
+            },
+            false,
+            "forbidden",
+        );
+        assert!(
+            fx.sys
+                .machine_root_find(&thumbprint.parse().unwrap())
+                .unwrap()
+                .is_some(),
+            "kept"
+        );
+    }
     let absent = fx.ok(
         HelperOp::TrustRemoveMachineRoot {
             thumbprint: "1".repeat(40),

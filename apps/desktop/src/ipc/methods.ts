@@ -2,7 +2,7 @@
 // Method table of the Forgebox API (forge_ipc::api::methods::METHODS).
 import type * as T from "./generated";
 
-export const API_VERSION = { major: 1, minor: 0 } as const;
+export const API_VERSION = { major: 1, minor: 1 } as const;
 
 export type MethodKind = "call" | "job" | "stream";
 
@@ -14,141 +14,172 @@ export interface MethodMeta {
   readonly mutating: boolean;
   /** `forge` commands served by the method (docs/09). */
   readonly cli: readonly string[];
+  /** Template of the equivalent `forge` command (ADR-0037); `null` without CLI. */
+  readonly cli_template: string | null;
   readonly notification: string | null;
   readonly lagged_notification: string | null;
 }
 
 export const METHODS = {
-  "daemon.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge daemon status"], notification: null, lagged_notification: null },
-  "daemon.stop": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge daemon stop"], notification: null, lagged_notification: null },
-  "daemon.restart": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge daemon restart"], notification: null, lagged_notification: null },
-  "daemon.doctor": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge doctor", "forge daemon doctor"], notification: null, lagged_notification: null },
-  "tools.search": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge search"], notification: null, lagged_notification: null },
-  "tools.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool list"], notification: null, lagged_notification: null },
-  "tools.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool info"], notification: null, lagged_notification: null },
-  "tools.install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool install"], notification: null, lagged_notification: null },
-  "tools.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool remove"], notification: null, lagged_notification: null },
-  "tools.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool update"], notification: null, lagged_notification: null },
-  "tools.check_updates": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool update --check"], notification: null, lagged_notification: null },
-  "tools.rollback": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool rollback"], notification: null, lagged_notification: null },
-  "tools.policy": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge tool policy"], notification: null, lagged_notification: null },
-  "tools.add_local": { kind: "job", min_role: "admin", local_only: true, long_running: true, mutating: true, cli: ["forge tool add-local"], notification: null, lagged_notification: null },
-  "tools.discover": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool discover"], notification: null, lagged_notification: null },
-  "tools.use": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge use"], notification: null, lagged_notification: null },
-  "tools.which": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge which"], notification: null, lagged_notification: null },
-  "services.start": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge start"], notification: null, lagged_notification: null },
-  "services.stop": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge stop"], notification: null, lagged_notification: null },
-  "services.restart": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge restart"], notification: null, lagged_notification: null },
-  "services.reload": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge reload"], notification: null, lagged_notification: null },
-  "services.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge status"], notification: null, lagged_notification: null },
-  "services.create": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service create"], notification: null, lagged_notification: null },
-  "services.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service remove"], notification: null, lagged_notification: null },
-  "services.config": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge service config"], notification: null, lagged_notification: null },
-  "services.config_files": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "services.set": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service set"], notification: null, lagged_notification: null },
-  "services.ports": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge service ports"], notification: null, lagged_notification: null },
-  "logs.read": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs", "forge daemon logs"], notification: null, lagged_notification: null },
-  "logs.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs -f", "forge daemon logs -f"], notification: "logs.line", lagged_notification: "logs.lagged" },
-  "logs.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "php.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php list"], notification: null, lagged_notification: null },
-  "php.pool_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php pool status"], notification: null, lagged_notification: null },
-  "php.ext_list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php ext list"], notification: null, lagged_notification: null },
-  "php.ext_enable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge php ext enable"], notification: null, lagged_notification: null },
-  "php.ext_disable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge php ext disable"], notification: null, lagged_notification: null },
-  "php.xdebug": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge php xdebug"], notification: null, lagged_notification: null },
-  "php.ini": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php ini"], notification: null, lagged_notification: null },
-  "php.ini_open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge php ini --open"], notification: null, lagged_notification: null },
-  "sites.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge site list"], notification: null, lagged_notification: null },
-  "sites.add": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site add", "forge link"], notification: null, lagged_notification: null },
-  "sites.remove": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site remove", "forge unlink", "forge proxy remove"], notification: null, lagged_notification: null },
-  "sites.php": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site php"], notification: null, lagged_notification: null },
-  "sites.secure": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site secure", "forge site unsecure"], notification: null, lagged_notification: null },
-  "sites.server": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site server"], notification: null, lagged_notification: null },
-  "sites.alias": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site alias"], notification: null, lagged_notification: null },
-  "sites.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge site open"], notification: null, lagged_notification: null },
-  "sites.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge site info"], notification: null, lagged_notification: null },
-  "sites.park": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge park"], notification: null, lagged_notification: null },
-  "sites.unpark": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge unpark"], notification: null, lagged_notification: null },
-  "sites.parked": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge parked"], notification: null, lagged_notification: null },
-  "sites.proxy_add": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge proxy add"], notification: null, lagged_notification: null },
-  "sites.up": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge up"], notification: null, lagged_notification: null },
-  "sites.down": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge down"], notification: null, lagged_notification: null },
-  "sites.ps": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge ps"], notification: null, lagged_notification: null },
-  "sites.run": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge run"], notification: null, lagged_notification: null },
-  "sites.share": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge share"], notification: null, lagged_notification: null },
-  "sites.new": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge new"], notification: null, lagged_notification: null },
-  "db.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge db list"], notification: null, lagged_notification: null },
-  "db.create": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge db create"], notification: null, lagged_notification: null },
-  "db.drop": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge db drop"], notification: null, lagged_notification: null },
-  "db.export": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge db export"], notification: null, lagged_notification: null },
-  "db.import": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge db import"], notification: null, lagged_notification: null },
-  "db.shell": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge db shell"], notification: null, lagged_notification: null },
-  "db.url": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: false, cli: ["forge db url"], notification: null, lagged_notification: null },
-  "db.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge db open"], notification: null, lagged_notification: null },
-  "net.dns_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge dns status"], notification: null, lagged_notification: null },
-  "net.dns_enable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge dns enable"], notification: null, lagged_notification: null },
-  "net.dns_disable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge dns disable"], notification: null, lagged_notification: null },
-  "net.dns_test": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge dns test"], notification: null, lagged_notification: null },
-  "net.lan_expose": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge lan expose"], notification: null, lagged_notification: null },
-  "net.lan_unexpose": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge lan unexpose"], notification: null, lagged_notification: null },
-  "net.lan_qr": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge lan qr"], notification: null, lagged_notification: null },
-  "tls.ca_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls ca status"], notification: null, lagged_notification: null },
-  "tls.ca_install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca install"], notification: null, lagged_notification: null },
-  "tls.ca_export": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls ca export"], notification: null, lagged_notification: null },
-  "tls.ca_rotate": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca rotate"], notification: null, lagged_notification: null },
-  "tls.issue": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls issue"], notification: null, lagged_notification: null },
-  "tls.renew": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls renew"], notification: null, lagged_notification: null },
-  "tls.export": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: ["forge tls export"], notification: null, lagged_notification: null },
-  "mail.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail status"], notification: null, lagged_notification: null },
-  "mail.open": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge mail open"], notification: null, lagged_notification: null },
-  "mail.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail list"], notification: null, lagged_notification: null },
-  "mail.show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail show"], notification: null, lagged_notification: null },
-  "mail.clear": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail clear"], notification: null, lagged_notification: null },
-  "mail.env": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail env"], notification: null, lagged_notification: null },
-  "shell.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge shell"], notification: null, lagged_notification: null },
-  "shell.env": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge env", "forge exec"], notification: null, lagged_notification: null },
-  "shell.path_show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge path show"], notification: null, lagged_notification: null },
-  "shell.path_add": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge path add"], notification: null, lagged_notification: null },
-  "shell.path_remove": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge path remove"], notification: null, lagged_notification: null },
-  "fs_parity.case_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge fs case-sensitive status"], notification: null, lagged_notification: null },
-  "fs_parity.case_enable": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge fs case-sensitive enable"], notification: null, lagged_notification: null },
-  "fs_parity.case_disable": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge fs case-sensitive disable"], notification: null, lagged_notification: null },
-  "fs_parity.case_convert": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge fs case-sensitive convert"], notification: null, lagged_notification: null },
-  "fs_parity.site_case": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site case-sensitive"], notification: null, lagged_notification: null },
-  "fs_parity.lint_case": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site lint-case"], notification: null, lagged_notification: null },
-  "jobs.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge jobs"], notification: null, lagged_notification: null },
-  "jobs.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge jobs watch"], notification: null, lagged_notification: null },
-  "jobs.cancel": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge jobs cancel"], notification: null, lagged_notification: null },
-  "stats.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats"], notification: null, lagged_notification: null },
-  "stats.top": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge top"], notification: null, lagged_notification: null },
-  "stats.export": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge stats export"], notification: null, lagged_notification: null },
-  "metrics.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --watch"], notification: "metrics.site", lagged_notification: "metrics.lagged" },
-  "metrics.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "remote.pair": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge remote pair"], notification: null, lagged_notification: null },
-  "remote.listen": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge remote listen"], notification: null, lagged_notification: null },
-  "remote.clients": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: ["forge remote clients"], notification: null, lagged_notification: null },
-  "remote.revoke": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge remote revoke"], notification: null, lagged_notification: null },
-  "registry.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge registry list"], notification: null, lagged_notification: null },
-  "registry.add": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge registry add"], notification: null, lagged_notification: null },
-  "registry.remove": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge registry remove"], notification: null, lagged_notification: null },
-  "registry.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge registry update"], notification: null, lagged_notification: null },
-  "system.hello": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "system.ping": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "system.import_laragon": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge import laragon"], notification: null, lagged_notification: null },
-  "system.bundle_export": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge bundle export"], notification: null, lagged_notification: null },
-  "system.bundle_import": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge bundle import"], notification: null, lagged_notification: null },
-  "system.backup_now": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge backup now"], notification: null, lagged_notification: null },
-  "system.backup_schedule": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge backup schedule"], notification: null, lagged_notification: null },
-  "system.config_get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge config get"], notification: null, lagged_notification: null },
-  "system.config_set": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge config set"], notification: null, lagged_notification: null },
-  "system.self_update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge self-update"], notification: null, lagged_notification: null },
-  "fs.read": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "fs.write": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: [], notification: null, lagged_notification: null },
-  "fs.tail": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "fs.list": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "events.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge status --watch", "forge jobs watch"], notification: "events.event", lagged_notification: "events.lagged" },
-  "events.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
-  "events.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], notification: null, lagged_notification: null },
+  "daemon.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge daemon status"], cli_template: "forge daemon status", notification: null, lagged_notification: null },
+  "daemon.stop": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge daemon stop"], cli_template: "forge daemon stop", notification: null, lagged_notification: null },
+  "daemon.restart": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge daemon restart"], cli_template: "forge daemon restart", notification: null, lagged_notification: null },
+  "daemon.doctor": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge doctor", "forge daemon doctor"], cli_template: "forge doctor", notification: null, lagged_notification: null },
+  "tools.search": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge search"], cli_template: "forge search {text} {category=--category}", notification: null, lagged_notification: null },
+  "tools.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool list"], cli_template: "forge tool list {installed?--installed} {updates?--updates}", notification: null, lagged_notification: null },
+  "tools.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool info"], cli_template: "forge tool info {tool}", notification: null, lagged_notification: null },
+  "tools.install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool install"], cli_template: "forge tool install {specs...} {variant=--variant} {target=--for}", notification: null, lagged_notification: null },
+  "tools.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool remove"], cli_template: "forge tool remove {spec} {keep_config?--keep-config} {target=--for}", notification: null, lagged_notification: null },
+  "tools.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool update"], cli_template: "[tool] forge tool update {tool} | forge tool update --all", notification: null, lagged_notification: null },
+  "tools.check_updates": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool update --check"], cli_template: "[tool] forge tool update {tool} --check | forge tool update --check", notification: null, lagged_notification: null },
+  "tools.rollback": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool rollback"], cli_template: "forge tool rollback {spec}", notification: null, lagged_notification: null },
+  "tools.policy": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge tool policy"], cli_template: "forge tool policy {tool} {policy}", notification: null, lagged_notification: null },
+  "tools.add_local": { kind: "job", min_role: "admin", local_only: true, long_running: true, mutating: true, cli: ["forge tool add-local"], cli_template: "forge tool add-local {source}", notification: null, lagged_notification: null },
+  "tools.discover": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tool discover"], cli_template: "forge tool discover", notification: null, lagged_notification: null },
+  "tools.use": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge use"], cli_template: "forge use {tool} {version}", notification: null, lagged_notification: null },
+  "tools.which": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge which"], cli_template: "forge which {tool}", notification: null, lagged_notification: null },
+  "tools.releases": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool info --versions"], cli_template: "forge tool info {tool} --versions {channel=--channel}", notification: null, lagged_notification: null },
+  "tools.plan": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge tool install --dry-run"], cli_template: "[!stack] forge tool install {specs...} {variant=--variant} {target=--for} --dry-run", notification: null, lagged_notification: null },
+  "tools.history": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tool info --history"], cli_template: "forge tool info {tool} --history {series=--series} {limit=--limit}", notification: null, lagged_notification: null },
+  "tools.icon": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "services.start": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge start"], cli_template: "[targets] forge start {targets...} | forge start all", notification: null, lagged_notification: null },
+  "services.stop": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge stop"], cli_template: "[targets] forge stop {targets...} | forge stop all", notification: null, lagged_notification: null },
+  "services.restart": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge restart"], cli_template: "forge restart {targets...}", notification: null, lagged_notification: null },
+  "services.reload": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge reload"], cli_template: "forge reload {target}", notification: null, lagged_notification: null },
+  "services.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge status"], cli_template: "forge status", notification: null, lagged_notification: null },
+  "services.create": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service create"], cli_template: "forge service create {tool} {name} {port=--port} {autostart?--autostart} {data_dir=--data-dir}", notification: null, lagged_notification: null },
+  "services.remove": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service remove"], cli_template: "forge service remove {instance} {delete_data?--delete-data}", notification: null, lagged_notification: null },
+  "services.config": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge service config"], cli_template: "forge service config {target}", notification: null, lagged_notification: null },
+  "services.config_files": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "services.set": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service set"], cli_template: "[settings] forge service set {target} {settings...}", notification: null, lagged_notification: null },
+  "services.settings": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge service set"], cli_template: "forge service set {target}", notification: null, lagged_notification: null },
+  "services.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge service update"], cli_template: "[!launch] forge service update {instance} {autostart?--autostart:--no-autostart} {restart_policy.on=--restart} {restart_policy.max=--restart-max} {restart_policy.window_secs=--restart-window} {version=--version}", notification: null, lagged_notification: null },
+  "services.ports": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge service ports"], cli_template: "forge service ports", notification: null, lagged_notification: null },
+  "services.kill_port_holder": { kind: "call", min_role: "admin", local_only: true, long_running: false, mutating: true, cli: ["forge service kill-port"], cli_template: "forge service kill-port {port} {pid=--pid}", notification: null, lagged_notification: null },
+  "logs.read": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs", "forge daemon logs"], cli_template: "forge logs {target} {since_secs=--since} {grep=--grep} {limit=-n} {before_seq=--before}", notification: null, lagged_notification: null },
+  "logs.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs -f", "forge daemon logs -f"], cli_template: "forge logs {target} -f {grep=--grep} {tail=-n}", notification: "logs.line", lagged_notification: "logs.lagged" },
+  "logs.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "logs.targets": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge logs --list"], cli_template: "forge logs --list", notification: null, lagged_notification: null },
+  "php.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php list"], cli_template: "forge php list", notification: null, lagged_notification: null },
+  "php.pool_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php pool status"], cli_template: "forge php pool status {version}", notification: null, lagged_notification: null },
+  "php.ext_list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php ext list"], cli_template: "forge php ext list {version}", notification: null, lagged_notification: null },
+  "php.ext_enable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge php ext enable"], cli_template: "forge php ext enable {version} {extension}", notification: null, lagged_notification: null },
+  "php.ext_disable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge php ext disable"], cli_template: "forge php ext disable {version} {extension}", notification: null, lagged_notification: null },
+  "php.xdebug": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge php xdebug"], cli_template: "forge php xdebug {version} {mode} {port=--port}", notification: null, lagged_notification: null },
+  "php.ini": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge php ini"], cli_template: "forge php ini {version}", notification: null, lagged_notification: null },
+  "php.ini_open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge php ini --open"], cli_template: "forge php ini {version} --open", notification: null, lagged_notification: null },
+  "sites.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge site list"], cli_template: "forge site list", notification: null, lagged_notification: null },
+  "sites.add": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site add", "forge link"], cli_template: "forge site add {dir} {host=--host} {php=--php} {server=--server} {secure?--secure} {driver=--driver}", notification: null, lagged_notification: null },
+  "sites.remove": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site remove", "forge unlink", "forge proxy remove"], cli_template: "forge site remove {site}", notification: null, lagged_notification: null },
+  "sites.php": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site php"], cli_template: "forge site php {site} {php}", notification: null, lagged_notification: null },
+  "sites.secure": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site secure", "forge site unsecure"], cli_template: "forge site {secure?secure:unsecure} {site}", notification: null, lagged_notification: null },
+  "sites.server": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site server"], cli_template: "forge site server {site} {server}", notification: null, lagged_notification: null },
+  "sites.driver": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site driver"], cli_template: "[!driver] forge site driver {site} auto | forge site driver {site} {driver}", notification: null, lagged_notification: null },
+  "sites.alias": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site alias"], cli_template: "forge site alias {site} {action} {alias}", notification: null, lagged_notification: null },
+  "sites.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge site open"], cli_template: "[with=editor] forge site open {site} --editor | [with=terminal] forge site open {site} --terminal | [with=explorer] forge site open {site} --explorer | forge site open {site}", notification: null, lagged_notification: null },
+  "sites.info": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge site info"], cli_template: "forge site info {site}", notification: null, lagged_notification: null },
+  "sites.env": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: false, cli: ["forge site env"], cli_template: "forge site env {site} {reveal?--reveal}", notification: null, lagged_notification: null },
+  "sites.park": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge park"], cli_template: "forge park {dir} {tld=--tld}", notification: null, lagged_notification: null },
+  "sites.unpark": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge unpark"], cli_template: "forge unpark {dir}", notification: null, lagged_notification: null },
+  "sites.parked": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge parked"], cli_template: "forge parked", notification: null, lagged_notification: null },
+  "sites.proxy_add": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge proxy add"], cli_template: "forge proxy add {host} {upstream} {websocket?--ws} {secure?--secure}", notification: null, lagged_notification: null },
+  "sites.up": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge up"], cli_template: "forge up {dir}", notification: null, lagged_notification: null },
+  "sites.down": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge down"], cli_template: "forge down {dir}", notification: null, lagged_notification: null },
+  "sites.ps": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge ps"], cli_template: "forge ps {site}", notification: null, lagged_notification: null },
+  "sites.run": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge run"], cli_template: "forge run {site} {process} {action}", notification: null, lagged_notification: null },
+  "sites.share": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge share"], cli_template: "forge share {site} {provider=--provider} {stop?--stop}", notification: null, lagged_notification: null },
+  "sites.new": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge new"], cli_template: "forge new {stack} {name} {php=--php} {db=--db} {dir=--dir}", notification: null, lagged_notification: null },
+  "sites.pool_mode": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site pool"], cli_template: "forge site pool {site} {mode}", notification: null, lagged_notification: null },
+  "sites.metrics": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge site metrics"], cli_template: "forge site metrics {site} {enabled?on:off}", notification: null, lagged_notification: null },
+  "db.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge db list"], cli_template: "forge db list {instance}", notification: null, lagged_notification: null },
+  "db.create": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge db create"], cli_template: "forge db create {name} {instance=--on} {charset=--charset}", notification: null, lagged_notification: null },
+  "db.drop": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge db drop"], cli_template: "forge db drop {name} {instance=--on}", notification: null, lagged_notification: null },
+  "db.export": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge db export"], cli_template: "forge db export {name} {instance=--on} {output=--output}", notification: null, lagged_notification: null },
+  "db.import": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge db import"], cli_template: "forge db import {name} {file} {instance=--on}", notification: null, lagged_notification: null },
+  "db.shell": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge db shell"], cli_template: "forge db shell {instance} {database}", notification: null, lagged_notification: null },
+  "db.url": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: false, cli: ["forge db url"], cli_template: "forge db url {instance} {database}", notification: null, lagged_notification: null },
+  "db.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge db open"], cli_template: "forge db open {instance} {with=--with} {database}", notification: null, lagged_notification: null },
+  "net.dns_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge dns status"], cli_template: "forge dns status", notification: null, lagged_notification: null },
+  "net.dns_enable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge dns enable"], cli_template: "forge dns enable", notification: null, lagged_notification: null },
+  "net.dns_disable": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge dns disable"], cli_template: "forge dns disable", notification: null, lagged_notification: null },
+  "net.dns_test": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge dns test"], cli_template: "forge dns test {host}", notification: null, lagged_notification: null },
+  "net.port_check": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "net.lan_expose": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge lan expose"], cli_template: "forge lan expose {site}", notification: null, lagged_notification: null },
+  "net.lan_unexpose": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge lan unexpose"], cli_template: "forge lan unexpose {site}", notification: null, lagged_notification: null },
+  "net.lan_qr": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge lan qr"], cli_template: "forge lan qr {site}", notification: null, lagged_notification: null },
+  "tls.ca_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls ca status"], cli_template: "forge tls ca status", notification: null, lagged_notification: null },
+  "tls.ca_install": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca install"], cli_template: "[scope=local_machine] forge tls ca install --scope machine | forge tls ca install --scope user", notification: null, lagged_notification: null },
+  "tls.ca_uninstall": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca uninstall"], cli_template: "[scope=local_machine] forge tls ca uninstall --scope machine | forge tls ca uninstall --scope user", notification: null, lagged_notification: null },
+  "tls.ca_export": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls ca export"], cli_template: "forge tls ca export", notification: null, lagged_notification: null },
+  "tls.ca_rotate": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge tls ca rotate"], cli_template: "forge tls ca rotate", notification: null, lagged_notification: null },
+  "tls.issue": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls issue"], cli_template: "forge tls issue {host}", notification: null, lagged_notification: null },
+  "tls.renew": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge tls renew"], cli_template: "forge tls renew {host} {all?--all}", notification: null, lagged_notification: null },
+  "tls.export": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: ["forge tls export"], cli_template: "[format=pfx] forge tls export {host} --pfx | forge tls export {host}", notification: null, lagged_notification: null },
+  "tls.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge tls list"], cli_template: "forge tls list", notification: null, lagged_notification: null },
+  "mail.status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail status"], cli_template: "forge mail status", notification: null, lagged_notification: null },
+  "mail.open": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge mail open"], cli_template: "forge mail open", notification: null, lagged_notification: null },
+  "mail.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail list"], cli_template: "forge mail list {unread?--unread} {query=--search} {limit=--limit} {offset=--offset}", notification: null, lagged_notification: null },
+  "mail.show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail show"], cli_template: "forge mail show {id} {mark_read?:--keep-unread}", notification: null, lagged_notification: null },
+  "mail.mark_read": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail read"], cli_template: "forge mail read {ids...} {read?:--unread}", notification: null, lagged_notification: null },
+  "mail.delete": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail delete"], cli_template: "forge mail delete {ids...}", notification: null, lagged_notification: null },
+  "mail.attachment": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail show --attachment"], cli_template: "forge mail show {id} --attachment {part_id}", notification: null, lagged_notification: null },
+  "mail.clear": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge mail clear"], cli_template: "forge mail clear", notification: null, lagged_notification: null },
+  "mail.env": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge mail env"], cli_template: "forge mail env", notification: null, lagged_notification: null },
+  "shell.open": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: ["forge shell"], cli_template: "forge shell {dir}", notification: null, lagged_notification: null },
+  "shell.open_editor": { kind: "call", min_role: "operator", local_only: true, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "shell.env": { kind: "call", min_role: "viewer", local_only: true, long_running: false, mutating: false, cli: ["forge env", "forge exec"], cli_template: "[format=cmd] forge env {dir} --cmd | [format=bash] forge env {dir} --bash | [format=json] forge env {dir} --json | forge env {dir} --powershell", notification: null, lagged_notification: null },
+  "shell.path_show": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge path show"], cli_template: "forge path show", notification: null, lagged_notification: null },
+  "shell.path_add": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge path add"], cli_template: "forge path add", notification: null, lagged_notification: null },
+  "shell.path_remove": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge path remove"], cli_template: "forge path remove", notification: null, lagged_notification: null },
+  "terminal.open": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.list": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.input": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.resize": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.close": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "terminal.subscribe": { kind: "stream", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: "terminal.output", lagged_notification: "terminal.lagged" },
+  "terminal.unsubscribe": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "fs_parity.case_status": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge fs case-sensitive status"], cli_template: "forge fs case-sensitive status {dir}", notification: null, lagged_notification: null },
+  "fs_parity.case_enable": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge fs case-sensitive enable"], cli_template: "forge fs case-sensitive enable {dir}", notification: null, lagged_notification: null },
+  "fs_parity.case_disable": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge fs case-sensitive disable"], cli_template: "forge fs case-sensitive disable {dir}", notification: null, lagged_notification: null },
+  "fs_parity.case_convert": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge fs case-sensitive convert"], cli_template: "forge fs case-sensitive convert {dir} {revert?--revert}", notification: null, lagged_notification: null },
+  "fs_parity.site_case": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site case-sensitive"], cli_template: "forge site case-sensitive {site} {enabled?on:off}", notification: null, lagged_notification: null },
+  "fs_parity.lint_case": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge site lint-case"], cli_template: "forge site lint-case {site} {fix?--fix} {dry_run?--dry-run} {strategy=--strategy}", notification: null, lagged_notification: null },
+  "jobs.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge jobs"], cli_template: "forge jobs {active?--active}", notification: null, lagged_notification: null },
+  "jobs.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge jobs watch"], cli_template: "forge jobs watch {job_id}", notification: null, lagged_notification: null },
+  "jobs.cancel": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: true, cli: ["forge jobs cancel"], cli_template: "forge jobs cancel {job_id}", notification: null, lagged_notification: null },
+  "stats.get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats"], cli_template: "[from] forge stats {site} {from=--from} {to=--to} | forge stats {site} {window=--window} {to=--to}", notification: null, lagged_notification: null },
+  "stats.series": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --series"], cli_template: "forge stats {site} --series {range=--window} {from=--from} {to=--to}", notification: null, lagged_notification: null },
+  "stats.routes": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --routes"], cli_template: "forge stats {site} --routes", notification: null, lagged_notification: null },
+  "stats.top": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge top"], cli_template: "forge top", notification: null, lagged_notification: null },
+  "stats.export": { kind: "job", min_role: "viewer", local_only: false, long_running: true, mutating: false, cli: ["forge stats export"], cli_template: "forge stats export {site} {from=--from} {to=--to} {format=--output}", notification: null, lagged_notification: null },
+  "metrics.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge stats --watch"], cli_template: "forge stats {site} {window=--window} --watch", notification: "metrics.site", lagged_notification: "metrics.lagged" },
+  "metrics.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "remote.pair": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge remote pair"], cli_template: "forge remote pair", notification: null, lagged_notification: null },
+  "remote.listen": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge remote listen"], cli_template: "forge remote listen {addr=--addr}", notification: null, lagged_notification: null },
+  "remote.clients": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: ["forge remote clients"], cli_template: "forge remote clients", notification: null, lagged_notification: null },
+  "remote.revoke": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge remote revoke"], cli_template: "forge remote revoke {client_id}", notification: null, lagged_notification: null },
+  "registry.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge registry list"], cli_template: "forge registry list", notification: null, lagged_notification: null },
+  "registry.add": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge registry add"], cli_template: "forge registry add {url} {name=--name}", notification: null, lagged_notification: null },
+  "registry.remove": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge registry remove"], cli_template: "forge registry remove {name}", notification: null, lagged_notification: null },
+  "registry.update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge registry update"], cli_template: "forge registry update", notification: null, lagged_notification: null },
+  "system.hello": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "system.ping": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "system.import_laragon": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge import laragon"], cli_template: "forge import laragon {path} {dry_run?--dry-run} {copy_tools?--copy-tools} {move_data?--move-data} {convert_case_sensitive?--convert-case}", notification: null, lagged_notification: null },
+  "system.bundle_export": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge bundle export"], cli_template: "forge bundle export {specs...} {output=--output}", notification: null, lagged_notification: null },
+  "system.bundle_import": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge bundle import"], cli_template: "forge bundle import {file}", notification: null, lagged_notification: null },
+  "system.backup_now": { kind: "job", min_role: "operator", local_only: false, long_running: true, mutating: true, cli: ["forge backup now"], cli_template: "forge backup now {instance}", notification: null, lagged_notification: null },
+  "system.backup_schedule": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge backup schedule"], cli_template: "forge backup schedule {frequency} {at}", notification: null, lagged_notification: null },
+  "system.config_get": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge config get"], cli_template: "forge config get {key}", notification: null, lagged_notification: null },
+  "system.config_list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge config list"], cli_template: "forge config list", notification: null, lagged_notification: null },
+  "system.config_set": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: ["forge config set"], cli_template: "forge config set {key} {value}", notification: null, lagged_notification: null },
+  "system.self_update": { kind: "job", min_role: "admin", local_only: false, long_running: true, mutating: true, cli: ["forge self-update"], cli_template: "forge self-update {check?--check} {channel=--channel}", notification: null, lagged_notification: null },
+  "fs.read": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "fs.write": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: true, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "fs.tail": { kind: "call", min_role: "admin", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "fs.list": { kind: "call", min_role: "operator", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "events.subscribe": { kind: "stream", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: ["forge status --watch", "forge jobs watch"], cli_template: "forge status --watch", notification: "events.event", lagged_notification: "events.lagged" },
+  "events.unsubscribe": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
+  "events.list": { kind: "call", min_role: "viewer", local_only: false, long_running: false, mutating: false, cli: [], cli_template: null, notification: null, lagged_notification: null },
 } as const satisfies Record<string, MethodMeta>;
 
 export type MethodName = keyof typeof METHODS;
@@ -172,6 +203,10 @@ export interface ApiMethods {
   "tools.discover": { params: T.NoParams; result: T.JobDto; job_result: T.ToolDiscoverDto };
   "tools.use": { params: T.ToolUseParams; result: T.ToolVersionDto };
   "tools.which": { params: T.ToolWhichParams; result: T.WhichDto };
+  "tools.releases": { params: T.ToolReleasesParams; result: T.JobDto; job_result: T.ToolReleasesDto };
+  "tools.plan": { params: T.ToolPlanParams; result: T.JobDto; job_result: T.ToolPlanDto };
+  "tools.history": { params: T.ToolHistoryParams; result: T.UpdateHistoryDto };
+  "tools.icon": { params: T.ToolParams; result: T.IconDto };
   "services.start": { params: T.ServiceTargetsParams; result: T.JobDto; job_result: T.ServiceStatusDto };
   "services.stop": { params: T.ServiceTargetsParams; result: T.JobDto; job_result: T.ServiceStatusDto };
   "services.restart": { params: T.ServiceTargetsParams; result: T.JobDto; job_result: T.ServiceStatusDto };
@@ -182,10 +217,14 @@ export interface ApiMethods {
   "services.config": { params: T.ServiceTargetParams; result: T.ConfigFilesDto };
   "services.config_files": { params: T.ServiceTargetParams; result: T.ConfigFilesDto };
   "services.set": { params: T.ServiceSetParams; result: T.JobDto; job_result: T.ServiceStatusDto };
+  "services.settings": { params: T.ServiceTargetParams; result: T.ServiceSettingsDto };
+  "services.update": { params: T.ServiceUpdateParams; result: T.JobDto; job_result: T.InstanceDto };
   "services.ports": { params: T.NoParams; result: T.PortMapDto };
+  "services.kill_port_holder": { params: T.KillPortHolderParams; result: T.Ack };
   "logs.read": { params: T.LogsReadParams; result: T.LogChunkDto };
   "logs.subscribe": { params: T.LogsSubscribeParams; result: T.SubscriptionDto; item: T.LogEnvelope };
   "logs.unsubscribe": { params: T.UnsubscribeParams; result: T.Ack };
+  "logs.targets": { params: T.NoParams; result: T.LogTargetListDto };
   "php.list": { params: T.NoParams; result: T.PhpVersionListDto };
   "php.pool_status": { params: T.PhpPoolStatusParams; result: T.PoolListDto };
   "php.ext_list": { params: T.PhpVersionParams; result: T.PhpExtListDto };
@@ -200,9 +239,11 @@ export interface ApiMethods {
   "sites.php": { params: T.SitePhpParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.secure": { params: T.SiteSecureParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.server": { params: T.SiteServerParams; result: T.JobDto; job_result: T.SiteDto };
+  "sites.driver": { params: T.SiteDriverParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.alias": { params: T.SiteAliasParams; result: T.JobDto; job_result: T.SiteDto };
   "sites.open": { params: T.SiteOpenParams; result: T.Ack };
   "sites.info": { params: T.SiteParams; result: T.SiteInfoDto };
+  "sites.env": { params: T.SiteEnvParams; result: T.SiteEnvDto };
   "sites.park": { params: T.ParkParams; result: T.ParkedDirDto };
   "sites.unpark": { params: T.ParkParams; result: T.Ack };
   "sites.parked": { params: T.NoParams; result: T.ParkedListDto };
@@ -213,39 +254,55 @@ export interface ApiMethods {
   "sites.run": { params: T.SiteRunParams; result: T.JobDto; job_result: T.SiteProcessDto };
   "sites.share": { params: T.SiteShareParams; result: T.JobDto; job_result: T.ShareDto };
   "sites.new": { params: T.SiteNewParams; result: T.JobDto; job_result: T.SiteDto };
+  "sites.pool_mode": { params: T.SitePoolModeParams; result: T.JobDto; job_result: T.SiteDto };
+  "sites.metrics": { params: T.SiteMetricsParams; result: T.SiteDto };
   "db.list": { params: T.DbListParams; result: T.DatabaseListDto };
   "db.create": { params: T.DbCreateParams; result: T.DatabaseDto };
   "db.drop": { params: T.DbDropParams; result: T.Ack };
   "db.export": { params: T.DbExportParams; result: T.JobDto; job_result: T.DbExportDto };
   "db.import": { params: T.DbImportParams; result: T.JobDto; job_result: T.Ack };
-  "db.shell": { params: T.DbShellParams; result: T.Ack };
+  "db.shell": { params: T.DbShellParams; result: T.ShellCommandDto };
   "db.url": { params: T.DbUrlParams; result: T.DbUrlDto };
   "db.open": { params: T.DbOpenParams; result: T.Ack };
   "net.dns_status": { params: T.NoParams; result: T.DnsStatusDto };
   "net.dns_enable": { params: T.NoParams; result: T.JobDto; job_result: T.DnsStatusDto };
   "net.dns_disable": { params: T.NoParams; result: T.JobDto; job_result: T.DnsStatusDto };
   "net.dns_test": { params: T.DnsTestParams; result: T.DnsTestDto };
+  "net.port_check": { params: T.PortCheckParams; result: T.PortCheckDto };
   "net.lan_expose": { params: T.LanSiteParams; result: T.JobDto; job_result: T.LanAccessDto };
   "net.lan_unexpose": { params: T.LanSiteParams; result: T.JobDto; job_result: T.Ack };
   "net.lan_qr": { params: T.LanSiteParams; result: T.LanAccessDto };
   "tls.ca_status": { params: T.NoParams; result: T.CaStatusDto };
   "tls.ca_install": { params: T.CaInstallParams; result: T.JobDto; job_result: T.CaStatusDto };
+  "tls.ca_uninstall": { params: T.CaUninstallParams; result: T.JobDto; job_result: T.CaStatusDto };
   "tls.ca_export": { params: T.NoParams; result: T.PemDto };
   "tls.ca_rotate": { params: T.CaRotateParams; result: T.JobDto; job_result: T.CaStatusDto };
   "tls.issue": { params: T.TlsHostParams; result: T.JobDto; job_result: T.CertificateDto };
   "tls.renew": { params: T.TlsRenewParams; result: T.JobDto; job_result: T.CertificateListDto };
   "tls.export": { params: T.TlsExportParams; result: T.CertExportDto };
+  "tls.list": { params: T.NoParams; result: T.CertificateListDto };
   "mail.status": { params: T.NoParams; result: T.MailStatusDto };
   "mail.open": { params: T.NoParams; result: T.Ack };
   "mail.list": { params: T.MailListParams; result: T.MailListDto };
   "mail.show": { params: T.MailShowParams; result: T.MailMessageDto };
+  "mail.mark_read": { params: T.MailMarkReadParams; result: T.Ack };
+  "mail.delete": { params: T.MailDeleteParams; result: T.Ack };
+  "mail.attachment": { params: T.MailAttachmentParams; result: T.MailAttachmentContentDto };
   "mail.clear": { params: T.MailClearParams; result: T.Ack };
   "mail.env": { params: T.NoParams; result: T.EnvVarsDto };
   "shell.open": { params: T.ShellOpenParams; result: T.Ack };
+  "shell.open_editor": { params: T.ShellOpenEditorParams; result: T.Ack };
   "shell.env": { params: T.ShellEnvParams; result: T.ShellEnvDto };
   "shell.path_show": { params: T.NoParams; result: T.UserPathDto };
   "shell.path_add": { params: T.NoParams; result: T.UserPathDto };
   "shell.path_remove": { params: T.NoParams; result: T.UserPathDto };
+  "terminal.open": { params: T.TerminalOpenParams; result: T.TerminalDto };
+  "terminal.list": { params: T.NoParams; result: T.TerminalListDto };
+  "terminal.input": { params: T.TerminalInputParams; result: T.Ack };
+  "terminal.resize": { params: T.TerminalResizeParams; result: T.Ack };
+  "terminal.close": { params: T.TerminalIdParams; result: T.Ack };
+  "terminal.subscribe": { params: T.TerminalSubscribeParams; result: T.SubscriptionDto; item: T.TerminalEnvelope };
+  "terminal.unsubscribe": { params: T.UnsubscribeParams; result: T.Ack };
   "fs_parity.case_status": { params: T.CaseDirParams; result: T.CaseSensitivityDto };
   "fs_parity.case_enable": { params: T.CaseDirParams; result: T.CaseSensitivityDto };
   "fs_parity.case_disable": { params: T.CaseDirParams; result: T.CaseSensitivityDto };
@@ -256,6 +313,8 @@ export interface ApiMethods {
   "jobs.get": { params: T.JobIdParams; result: T.JobDto };
   "jobs.cancel": { params: T.JobIdParams; result: T.JobCancelDto };
   "stats.get": { params: T.StatsParams; result: T.StatsDto };
+  "stats.series": { params: T.StatsSeriesParams; result: T.SeriesDto };
+  "stats.routes": { params: T.StatsRoutesParams; result: T.RoutesDto };
   "stats.top": { params: T.NoParams; result: T.TopDto };
   "stats.export": { params: T.StatsExportParams; result: T.JobDto; job_result: T.StatsExportDto };
   "metrics.subscribe": { params: T.MetricsSubscribeParams; result: T.SubscriptionDto; item: T.MetricsEnvelope };
@@ -276,6 +335,7 @@ export interface ApiMethods {
   "system.backup_now": { params: T.BackupNowParams; result: T.JobDto; job_result: T.BackupReportDto };
   "system.backup_schedule": { params: T.BackupScheduleDto; result: T.BackupScheduleDto };
   "system.config_get": { params: T.ConfigGetParams; result: T.ConfigValueDto };
+  "system.config_list": { params: T.NoParams; result: T.ConfigDocumentDto };
   "system.config_set": { params: T.ConfigSetParams; result: T.ConfigValueDto };
   "system.self_update": { params: T.SelfUpdateParams; result: T.JobDto; job_result: T.SelfUpdateDto };
   "fs.read": { params: T.FsReadParams; result: T.FsReadDto };
@@ -291,13 +351,15 @@ export interface ApiMethods {
 export interface ApiNotifications {
   "logs.line": T.LogEnvelope;
   "logs.lagged": T.LaggedDto;
+  "terminal.output": T.TerminalEnvelope;
+  "terminal.lagged": T.LaggedDto;
   "metrics.site": T.MetricsEnvelope;
   "metrics.lagged": T.LaggedDto;
   "events.event": T.EventEnvelope;
   "events.lagged": T.LaggedDto;
 }
 
-export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "port.conflict", "helper.op"] as const;
+export const EVENT_KINDS = ["daemon.ready", "daemon.shutdown", "job.started", "job.progress", "job.done", "job.failed", "job.cancelled", "actor.restarted", "actor.failed", "fs.case_sensitivity_applied", "fs.case_sensitivity_unavailable", "tool.install.started", "tool.install.progress", "tool.install.completed", "tool.install.failed", "tool.updates_available", "tool.updated", "tool.rollback", "tool.current_changed", "service.starting", "service.running", "service.stopping", "service.stopped", "service.crashed", "service.failed", "service.maintenance", "service.metrics", "pool.scaled", "pool.worker.recycled", "site.created", "site.updated", "site.removed", "site.php_changed", "config.rendered", "config.drift_detected", "config.changed", "dns.policy_applied", "tls.ca_created", "tls.leaf_issued", "tls.renewed", "tls.ca_untrusted", "port.conflict", "port.holder_killed", "helper.op", "mail.changed", "terminal.exited"] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 /** Payload type of each event kind (`EventDto.payload`). */
@@ -317,6 +379,7 @@ export interface EventPayloads {
   "tool.install.progress": T.ToolInstallPayload;
   "tool.install.completed": T.ToolInstallPayload;
   "tool.install.failed": T.ToolInstallPayload;
+  "tool.updates_available": T.ToolUpdatesAvailablePayload;
   "tool.updated": T.ToolVersionChangePayload;
   "tool.rollback": T.ToolVersionChangePayload;
   "tool.current_changed": T.ToolCurrentPayload;
@@ -336,12 +399,17 @@ export interface EventPayloads {
   "site.php_changed": T.SitePhpChangedPayload;
   "config.rendered": T.ConfigFilePayload;
   "config.drift_detected": T.ConfigFilePayload;
+  "config.changed": T.ConfigChangedPayload;
   "dns.policy_applied": T.DnsPolicyPayload;
   "tls.ca_created": T.TlsPayload;
   "tls.leaf_issued": T.TlsPayload;
   "tls.renewed": T.TlsPayload;
+  "tls.ca_untrusted": T.TlsCaUntrustedPayload;
   "port.conflict": T.PortConflictPayload;
+  "port.holder_killed": T.PortHolderKilledPayload;
   "helper.op": T.HelperOpPayload;
+  "mail.changed": T.MailChangedPayload;
+  "terminal.exited": T.TerminalExitedPayload;
 }
 
 /** Stable error codes (`ApiError.code`); only additions are allowed. */

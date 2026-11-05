@@ -8,8 +8,10 @@ metadata:
   description: |
     Laravel pronto para usar: `composer create-project`, `.env` preenchido com as portas reais
     do MySQL, Memurai e Mailpit, banco criado e chave gerada.
-  tags: [php, laravel, mysql, redis]
+  tags: [php, laravel, mysql, redis, onboarding]
+  order: 1
   icon: laravel.svg
+  icon_color: "#FF2D20"
   homepage: https://laravel.com
 spec:
   tools:

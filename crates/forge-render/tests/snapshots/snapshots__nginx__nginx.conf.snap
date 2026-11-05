@@ -2,13 +2,17 @@
 source: crates/forge-render/tests/snapshots.rs
 expression: content
 ---
-# forgebox:begin main (hash=df8d752a991d379d)
+# forgebox:begin main (hash=2ccaa3ffd5052a81)
 worker_processes 1;
 error_log "C:/fb-test/logs/nginx/error.log";
 pid "C:/fb-test/tmp/nginx/nginx.pid";
 
 events {
     worker_connections 1024;
+    # Accept every pending connection at once. On Windows a reload closes the old worker's
+    # listening socket and the connections still queued on it fail; draining the queue on
+    # each wake-up leaves almost nothing there (docs/06 section 4.1.1).
+    multi_accept on;
 }
 
 http {
@@ -16,6 +20,8 @@ http {
     default_type application/octet-stream;
     sendfile off;
     keepalive_timeout 65;
+    # Server-wide body limit (quick setting); each site sets its own in its server block.
+    client_max_body_size 128M;
     server_tokens off;
     server_names_hash_bucket_size 128;
     client_body_temp_path "C:/fb-test/tmp/nginx/client_body";
@@ -31,6 +37,13 @@ http {
     map $http_upgrade $connection_upgrade {
         default upgrade;
         ''      close;
+    }
+
+    # Proxy sites keep their upstream connections alive (docs/06 section 4.1.1): no
+    # Connection header to the app unless the client asks for an upgrade (WebSocket).
+    map $http_upgrade $forgebox_upstream_connection {
+        default upgrade;
+        ''      '';
     }
 
     # Unknown hosts never fall into a real site.

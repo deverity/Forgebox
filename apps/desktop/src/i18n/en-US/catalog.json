@@ -1,0 +1,127 @@
+{
+  "title": "Catalog",
+  "loading": "Loading the catalog",
+  "unavailable": "The catalog is not available",
+  "count_one": "{count} entry",
+  "count_other": "{count} entries",
+  "search": {
+    "label": "Search the catalog",
+    "placeholder": "Search tools and stacks"
+  },
+  "filter": {
+    "category": "Category",
+    "allCategories": "All categories",
+    "state": "Show",
+    "all": "All",
+    "installed": "Installed",
+    "updates": "Updates available"
+  },
+  "section": {
+    "stacks": "Stacks",
+    "stacksHint": "A stack installs a set of tools that work together.",
+    "tools": "Tools"
+  },
+  "offline": {
+    "title": "Waiting for the daemon",
+    "description": "The catalog loads as soon as Forgebox is connected."
+  },
+  "empty": {
+    "title": "The catalog is empty",
+    "noMatchTitle": "Nothing matches \"{query}\"",
+    "description": "Try another word, another category or a different filter."
+  },
+  "badge": {
+    "official": "Official registry",
+    "thirdParty": "Third-party registry: {registry}",
+    "native": "Native Windows",
+    "wsl": "Via WSL (v2)",
+    "installed": "Installed",
+    "update": "Update to {version}",
+    "stack": "Stack"
+  },
+  "card": {
+    "changelog": "Changelog",
+    "noVersion": "No version for this platform",
+    "latest": "Latest: {version}",
+    "size": "About {size}"
+  },
+  "plan": {
+    "loading": "Calculating what will be downloaded",
+    "title": "What will be installed",
+    "item": "{tool} {version}",
+    "sizeUnknown": "size unknown",
+    "approx": "≈ ",
+    "alreadyInstalled": "already installed",
+    "nothing": "Nothing to download: everything is already installed.",
+    "total": "Total download: {size}",
+    "unknownSize_one": "{count} item has no known size and is not in the total.",
+    "unknownSize_other": "{count} items have no known size and are not in the total."
+  },
+  "tool": {
+    "back": "Back to the catalog",
+    "current": "CLI",
+    "broken": "Broken",
+    "removeVersion": "Remove version {version}",
+    "remove": "Remove",
+    "removeTitle": "Remove {spec}",
+    "removeWarning": "{spec} will be deleted from disk. Sites or services using it must be switched first.",
+    "removing": "Removing",
+    "removed": "Removed",
+    "confirmRemove": "Remove version",
+    "cancel": "Cancel",
+    "installed": "Installed versions",
+    "noneInstalled": "No version installed yet.",
+    "installedBadge": "Installed",
+    "choose": "Choose version {version}",
+    "chosenLabel": "Chosen version {version}",
+    "chosen": "Chosen",
+    "chooseShort": "Choose",
+    "loadingReleases": "Loading versions",
+    "stale": "The version providers could not be reached. Showing the cached list.",
+    "staleSince": "The version providers could not be reached. Showing the list cached on {date}.",
+    "retry": "Try again",
+    "noReleases": "No version is offered for this platform.",
+    "series_one": "Series {series} ({count} version)",
+    "series_other": "Series {series} ({count} versions)",
+    "version": "Version",
+    "variant": "Build",
+    "variantHint": "Build choice ({key}): the default suits most sites; the other one only if a site needs it.",
+    "starting": "Starting",
+    "install": "Install",
+    "extensionNote": "Extensions are installed into a version of {target}, from its own screen.",
+    "pickVersion": "Choose a version first.",
+    "versions": "Available versions",
+    "changelog": "Changelog",
+    "homepage": "Homepage",
+    "docs": "Documentation"
+  },
+  "stack": {
+    "waitPlan": "Waiting for the install plan.",
+    "contains": "What the stack installs",
+    "tool": "{tool} {series}",
+    "latest": "latest",
+    "install": "Install the stack",
+    "confirm": "Confirm and install ({size})",
+    "confirmIdle": "Confirm and install",
+    "projectDisabled": "Creating a project from a stack arrives with the Projects milestone.",
+    "createProject": "Create project",
+    "allInstalled": "Every tool of this stack is already installed."
+  },
+  "installProgress": {
+    "list": "Installs in progress",
+    "label": "Installing {name}",
+    "cancel": "Cancel",
+    "cancelling": "Cancelling",
+    "cancelled": "Install cancelled. Nothing was changed.",
+    "retry": "Try again",
+    "dismiss": "Dismiss",
+    "done": "Installed",
+    "working": "Working",
+    "bytesOf": "{done} of {total}"
+  },
+  "discover": {
+    "label": "Scan bin/ folders",
+    "running": "Scanning…",
+    "done": "Done"
+  }
+}

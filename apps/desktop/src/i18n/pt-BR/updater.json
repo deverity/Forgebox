@@ -1,0 +1,47 @@
+{
+  "title": "Atualizações do app",
+  "version": "Versão {version}",
+  "channel": {
+    "label": "Canal",
+    "stable": "Estável",
+    "beta": "Beta"
+  },
+  "inactive": "Atualizações do app chegam na 1.0.",
+  "state": {
+    "idle": "Ainda não verificado",
+    "checking": "Verificando atualizações…",
+    "upToDate": "O Forgebox está atualizado",
+    "available": "A versão {version} está disponível",
+    "downloading": "Baixando e verificando a assinatura…",
+    "stopping": "Parando o daemon…",
+    "installing": "Iniciando o instalador…",
+    "error": "A atualização falhou"
+  },
+  "footer": {
+    "available": "Atualização {version} disponível"
+  },
+  "check": "Verificar atualizações",
+  "changelog": "Novidades",
+  "noChangelog": "Sem notas de versão.",
+  "apply": "Atualizar e reiniciar",
+  "confirm": "O Forgebox vai parar o daemon e os serviços, executar o instalador e reiniciar. Continuar?",
+  "confirmYes": "Atualizar agora",
+  "confirmNo": "Agora não",
+  "autostart": {
+    "portable": "A inicialização com o Windows fica desativada no modo portátil: exigiria uma entrada no registro do Windows, e uma pasta portátil não deixa rastros.",
+    "failed": "Não foi possível alterar a entrada de inicialização do Windows: {detail}",
+    "label": "Iniciar com o Windows (minimizado)"
+  },
+  "errors": {
+    "inactive": "As atualizações do app não estão ativas nesta versão.",
+    "busy": "Já existe uma atualização em andamento.",
+    "no_update": "Não há atualização para aplicar. Verifique as atualizações primeiro.",
+    "network": "Não foi possível acessar o servidor de atualizações: {detail}",
+    "bad_manifest": "O manifesto de atualização não é válido: {detail}",
+    "bad_signature": "A assinatura da atualização é inválida. O download foi descartado e nada foi instalado.",
+    "daemon_stop": "O daemon não parou ({detail}). A atualização não foi instalada.",
+    "daemon_stop_timeout": "O daemon não parou em {seconds} s. A atualização não foi instalada.",
+    "install": "Não foi possível iniciar o instalador: {detail}",
+    "internal": "Erro inesperado: {detail}"
+  }
+}

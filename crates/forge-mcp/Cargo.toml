@@ -16,5 +16,9 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
+# Forgebox icon resource (build.rs, docs/design/brand).
+[build-dependencies]
+embed-resource = { workspace = true }
+
 [dependencies]
 forge-ipc = { path = "../forge-ipc" }

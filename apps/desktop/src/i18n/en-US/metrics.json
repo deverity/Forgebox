@@ -1,0 +1,247 @@
+{
+  "title": "Performance",
+  "windows": {
+    "1m": "1 min",
+    "5m": "5 min",
+    "1h": "1 h",
+    "24h": "24 h",
+    "7d": "7 days"
+  },
+  "windowLabel": "Window",
+  "state": {
+    "pending": "Waiting for the first sample…",
+    "live": "Live",
+    "failed": "Could not follow the metrics.",
+    "off": "Metrics are off for this site.",
+    "idle": "Metrics are not available on this daemon."
+  },
+  "stat": {
+    "requests": "Requests",
+    "rps": "Rate",
+    "p50": "Median (p50)",
+    "p90": "p90",
+    "p99": "p99",
+    "php": "PHP time",
+    "errors": "Errors",
+    "cpu": "CPU",
+    "memory": "Memory",
+    "bytes": "Data sent",
+    "workers": "Busy workers",
+    "processes": "Processes",
+    "lastRequest": "Last request"
+  },
+  "approx": "Estimate: the pool is shared with other sites, so CPU and memory are apportioned by PHP time.",
+  "lagged_one": "{count} sample was dropped; the chart refills on reconnect.",
+  "lagged_other": "{count} samples were dropped; the chart refills on reconnect.",
+  "poolMode": {
+    "label": "PHP pool",
+    "shared": "Shared",
+    "dedicated": "Dedicated",
+    "hint": "A dedicated pool gives this site exact CPU and memory, and uses more memory."
+  },
+  "toggle": {
+    "label": "Collect metrics",
+    "on": "On",
+    "off": "Off"
+  },
+  "top": {
+    "title": "Top processes",
+    "empty": "No processes in use."
+  },
+  "routes": {
+    "title": "Slowest routes",
+    "errors": "Recent errors",
+    "empty": "No requests recorded yet."
+  },
+  "cli": {
+    "label": "Same thing in the terminal"
+  },
+  "charts": {
+    "loading": "Loading chart",
+    "empty": {
+      "title": "No data yet",
+      "description": "Traffic will show up here as soon as the site gets requests."
+    },
+    "latency": {
+      "title": "Latency"
+    },
+    "throughput": {
+      "title": "Requests and errors"
+    },
+    "resource": {
+      "title": "CPU and memory"
+    },
+    "series": {
+      "rps": "Requests/s"
+    },
+    "summary": {
+      "caption": "{title}: summary",
+      "series": "Series",
+      "latest": "Latest",
+      "peak": "Peak"
+    },
+    "markers": {
+      "php-version": "PHP version changed",
+      "restart": "Restart",
+      "config": "Config changed",
+      "update": "Update"
+    },
+    "sparkline": {
+      "label": "Last {count} samples, latest {latest}, peak {peak}"
+    }
+  },
+  "site": {
+    "loading": "Loading…",
+    "range": {
+      "label": "Range",
+      "1m": "60 s",
+      "1h": "1 h",
+      "24h": "24 h",
+      "7d": "7 days"
+    },
+    "kpi": {
+      "group": "Site indicators",
+      "rps": "Requests/s now",
+      "p50": "p50 (5 min)",
+      "p90": "p90 (5 min)",
+      "p99": "p99 (5 min)",
+      "errors": "Errors (5 min)",
+      "cpu": "CPU ≈",
+      "ram": "RAM ≈",
+      "workers": "Active workers"
+    },
+    "badge": {
+      "live": "Live",
+      "reconnecting": "Reconnecting…",
+      "remote": "Remote daemon"
+    },
+    "remoteNote": "These metrics come from a daemon on another machine; CPU and RAM are its own.",
+    "reconnectingNote": "Reconnecting to the daemon. The numbers below may be out of date.",
+    "noTraffic": "No traffic in this range. Charts show up as soon as the site gets requests.",
+    "noResource": "This is a {kind} site: there is no PHP pool, so no per-site CPU, RAM or workers.",
+    "kind": {
+      "php": "PHP",
+      "static": "static",
+      "proxy": "proxy",
+      "app": "application"
+    },
+    "routes": {
+      "route": "Route",
+      "requests": "Reqs",
+      "time": "Time",
+      "status": "Status",
+      "duration": "Duration",
+      "noErrors": "No 4xx or 5xx errors in the last 24 h.",
+      "failed": "Could not load the routes.",
+      "p50": "p50",
+      "p99": "p99"
+    },
+    "states": {
+      "unavailable": {
+        "title": "Metrics unavailable",
+        "description": "This daemon does not offer per-site metrics. Update Forgebox to see performance."
+      },
+      "globalOff": {
+        "title": "Metrics are off",
+        "description": "Forgebox is not collecting metrics for any site. Turn them on to see requests, latency and errors.",
+        "action": "Turn metrics on"
+      },
+      "siteOff": {
+        "title": "Metrics are off for this site",
+        "description": "The stored history stays on disk, but nothing new is collected until you turn it back on.",
+        "action": "Collect metrics for this site"
+      }
+    },
+    "controls": {
+      "title": "Controls",
+      "applying": "Applying…",
+      "done": "Done",
+      "pool": {
+        "label": "Dedicated pool",
+        "hint": "Gives this site a PHP pool of its own: exact CPU and RAM, at the cost of more memory.",
+        "nonPhp": "Only PHP sites have a pool. This site is {kind}."
+      },
+      "collect": {
+        "label": "Collect metrics for this site",
+        "hint": "When off, this site's requests no longer feed the metrics; the history stays."
+      }
+    }
+  },
+  "projects": {
+    "title": "Projects",
+    "listLabel": "Projects ranked over the last 24 hours",
+    "sortBy": "Sort the ranking by",
+    "sort": "Sort by {column}",
+    "open": "Open the Performance tab of {host}",
+    "columns": {
+      "site": "Site",
+      "cpu": "CPU",
+      "mem": "RAM",
+      "p99": "p99",
+      "errors": "Errors",
+      "trend": "24 h"
+    },
+    "approx": "≈ marks CPU and RAM apportioned from a shared PHP pool; give the site a dedicated pool for exact values.",
+    "empty": {
+      "title": "No traffic recorded yet",
+      "description": "Sites show up here ranked once they get requests."
+    },
+    "unavailable": {
+      "title": "Project ranking is not available",
+      "description": "This daemon does not answer stats.get yet."
+    },
+    "idle": {
+      "title": "Idle for more than {days} days",
+      "hint": "These sites still have running processes but no requests. Stopping them frees CPU and memory.",
+      "days_one": "{count} day idle",
+      "days_other": "{count} days idle",
+      "never": "No request recorded",
+      "processes_one": "{count} process",
+      "processes_other": "{count} processes",
+      "more_one": "and {count} more idle site",
+      "more_other": "and {count} more idle sites"
+    }
+  },
+  "machine": {
+    "title": "Machine",
+    "cpu": "CPU",
+    "ram": "RAM",
+    "disk": "Disk ({role})",
+    "roles": {
+      "root": "Forgebox folder",
+      "data": "data"
+    },
+    "forgebox": "Forgebox: {value}",
+    "ofTotal": "{used} of {total}",
+    "free": "{value} free",
+    "diskTotal": "{total} total",
+    "loading": "Reading the machine...",
+    "unavailable": "The daemon does not report the machine yet."
+  },
+  "attention": {
+    "action": {
+      "performance": "Open Performance",
+      "php": "Open PHP",
+      "settings": "Open settings"
+    },
+    "p99": {
+      "title": "{host} is slow",
+      "cause": "p99 is {value} ms over the last {minutes} minutes (limit {limit} ms)."
+    },
+    "errors": {
+      "title": "{host} is returning errors",
+      "cause": "{value}% of the requests failed in the last 5 minutes (limit {limit}%)."
+    },
+    "poolRam": {
+      "title": "PHP {series} pool uses a lot of memory",
+      "cause": "Its workers hold {gb} GB (limit {limit} GB). Lower the worker limit or restart the pool."
+    },
+    "disk": {
+      "title": {
+        "root": "Little disk space left on the Forgebox folder volume",
+        "data": "Little disk space left on the data volume"
+      },
+      "cause": "Only {gb} GB are free (limit {limit} GB). Downloads, logs and databases may start to fail."
+    }
+  }
+}

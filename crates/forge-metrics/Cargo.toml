@@ -14,3 +14,18 @@ workspace = true
 
 [dependencies]
 forge-core = { path = "../forge-core" }
+# HDR histogram layout and V2 encoding of the persisted histograms (hist.rs).
+hdrhistogram = { workspace = true }
+# End timestamp of an access record (same jiff features as the rest of the workspace).
+jiff = { workspace = true }
+# Borrowed, pointer-driven decoding of access log lines (parse.rs).
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+# Log tailer (tail.rs): one task per file, reads in spawn_blocking, bounded output channel.
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }

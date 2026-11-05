@@ -28,7 +28,8 @@ use forge_core::model::port::{OwnerKind, ReservationOwner};
 use forge_core::paths::ForgeRoot;
 use forge_core::platform::{ProbeCommand, RuntimeDep};
 use forge_core::store::{
-    DesiredState, InstanceRepo, InstanceRow, StoreReader, StoreWriter, ToolVersionRow,
+    DesiredState, EXTERNAL_DATA_DIR_KEY, InstanceRepo, InstanceRow, LAUNCH_ARGS_KEY,
+    LAUNCH_ENV_KEY, RESTART_POLICY_KEY, StoreReader, StoreWriter, ToolVersionRow,
 };
 use forge_core::sync::{LockLevel, OrderedMutex};
 use forge_manifest::schema::RestartOn;
@@ -44,7 +45,9 @@ use forge_supervisor::{
 };
 use tokio::sync::Semaphore;
 
+use crate::advanced;
 use crate::catalog::{self, ToolEntry};
+use crate::data_size::DataSizes;
 use crate::vars::{InstanceVars, RuntimeVars, split_command};
 
 /// Budget of a start (pre-checks, spawn, health) beyond the manifest's `start_timeout`.
@@ -55,6 +58,115 @@ const DATA_INIT_TIMEOUT: Duration = Duration::from_secs(300);
 const RELOAD_TIMEOUT: Duration = Duration::from_secs(30);
 /// Wait for the services turn (create/remove).
 const TURN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Whether two folder texts name the same folder (Windows: case-insensitive, `/` = `\`).
+pub fn same_dir(a: &str, b: &str) -> bool {
+    let norm = |t: &str| t.replace('\\', "/").trim_end_matches('/').to_lowercase();
+    norm(a) == norm(b)
+}
+
+/// `path` with its deepest existing ancestor made canonical (8.3 short names such as
+/// `GUSTAV~1`, links and `\\?\` prefixes resolved), so two spellings of one folder
+/// compare equal. Reads the file system: call it off the async threads.
+fn resolved(path: &std::path::Path) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut base = path.to_path_buf();
+    loop {
+        if let Ok(real) = std::fs::canonicalize(&base) {
+            return rest.iter().rev().fold(real, |acc, part| acc.join(part));
+        }
+        match (base.file_name().map(ToOwned::to_owned), base.parent()) {
+            (Some(name), Some(parent)) => {
+                rest.push(name);
+                base = parent.to_path_buf();
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Checks the `data_dir` of `services.create` and returns it with `/` separators: an
+/// absolute folder without `..`, not the root itself nor a parent of it, not a drive
+/// root, and **not inside `bin/`** (versions there are replaced on update). It may be
+/// inside the root or any folder the user chose; if it exists it must be a folder.
+/// Reads the file system (short names, links): call it in `spawn_blocking`.
+pub fn validate_data_dir(root: &ForgeRoot, dir: &str) -> Result<String> {
+    use std::path::Component;
+    let text = dir.trim();
+    let invalid = |why: &str| ForgeError::InvalidInput(format!("data_dir {text:?}: {why}"));
+    if text.is_empty() || text.contains('\0') {
+        return Err(invalid("it is empty"));
+    }
+    let path = std::path::Path::new(text);
+    if !path.is_absolute() {
+        return Err(invalid("it must be an absolute path"));
+    }
+    if path
+        .components()
+        .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+    {
+        return Err(invalid("`.` and `..` are not allowed"));
+    }
+    if path.file_name().is_none() {
+        return Err(invalid("it cannot be a drive root"));
+    }
+    let lower = |p: &std::path::Path| forge_core::paths::posix_string(&resolved(p)).to_lowercase();
+    let wanted = lower(path);
+    let contained = |inner: &str, outer: &str| {
+        inner == outer || inner.starts_with(&format!("{}/", outer.trim_end_matches('/')))
+    };
+    if contained(&wanted, &lower(&root.bin())) {
+        return Err(invalid(
+            "it cannot be inside bin/: versions there are replaced on update",
+        ));
+    }
+    let root_text = lower(root.path());
+    if contained(&root_text, &wanted) {
+        return Err(invalid("it cannot be the Forgebox root or a parent of it"));
+    }
+    if path.exists() && !path.is_dir() {
+        return Err(invalid("it exists and is not a folder"));
+    }
+    Ok(forge_core::paths::posix_string(path))
+}
+
+/// Refuses a `data_dir` that overlaps a folder already in use, in either direction: equal,
+/// inside it, or containing it (compared resolved, case-insensitively). `others` are the
+/// data folders of the other instances; `tools` are the tool ids whose managed
+/// `data/<tool>` parent folder is off limits (as is `data/` itself).
+/// Reads the file system: call it in `spawn_blocking`.
+pub fn check_data_dir_free(
+    root: &ForgeRoot,
+    dir: &str,
+    others: &[String],
+    tools: &[String],
+) -> Result<()> {
+    let lower = |p: &std::path::Path| forge_core::paths::posix_string(&resolved(p)).to_lowercase();
+    let contained = |inner: &str, outer: &str| {
+        inner == outer || inner.starts_with(&format!("{}/", outer.trim_end_matches('/')))
+    };
+    let wanted = lower(std::path::Path::new(dir));
+    for other in others {
+        let used = lower(std::path::Path::new(other));
+        if contained(&wanted, &used) || contained(&used, &wanted) {
+            return Err(ForgeError::Conflict(format!(
+                "{dir} overlaps {other}, the data folder of another instance"
+            )));
+        }
+    }
+    let managed = root.data();
+    let mut parents = vec![managed.clone()];
+    parents.extend(tools.iter().map(|t| managed.join(t)));
+    for parent in parents {
+        if wanted == lower(&parent) {
+            return Err(ForgeError::InvalidInput(format!(
+                "data_dir {dir:?}: {} is a folder managed by Forgebox",
+                forge_core::paths::posix_string(&parent)
+            )));
+        }
+    }
+    Ok(())
+}
 
 /// The folders of the log files a manifest declares (`service.daemon.logs[].path`) for
 /// one instance, keeping only those inside the root (no `..`): a manifest never makes the
@@ -83,6 +195,20 @@ fn log_dirs_of(
         }
     }
     Ok(dirs)
+}
+
+/// What `services.update` changes, validated (absent = keep).
+#[derive(Debug, Clone, Default)]
+pub struct AdvancedChange {
+    pub autostart: Option<bool>,
+    /// Replaces the extra arguments (`Some([])` clears).
+    pub args: Option<Vec<String>>,
+    /// Replaces the extra environment (`Some({})` clears).
+    pub env: Option<BTreeMap<String, String>>,
+    /// The policy to store (already merged over the current one).
+    pub restart: Option<advanced::StoredRestart>,
+    /// Another installed version of the same series.
+    pub version: Option<ToolVersionRow>,
 }
 
 /// One instance: its row, its resolved runtime facts and its actor.
@@ -129,6 +255,8 @@ struct Inner {
     /// Lock `daemon.tables` (leaf).
     table: OrderedMutex<BTreeMap<InstanceId, Entry>>,
     turn: Arc<Semaphore>,
+    /// Periodic scan of the data folders (`InstanceDto.size_bytes`).
+    sizes: DataSizes,
 }
 
 /// The instances of the daemon. Cheap to clone.
@@ -206,6 +334,7 @@ impl ServiceManager {
             renderer: std::sync::OnceLock::new(),
             table: OrderedMutex::new(LockLevel::DAEMON_TABLES, BTreeMap::new()),
             turn: Arc::new(Semaphore::new(1)),
+            sizes: DataSizes::default(),
         });
         Self { inner }
     }
@@ -322,7 +451,7 @@ impl ServiceManager {
                 .as_ref()
                 .is_some_and(|d| d.autostart);
             match self
-                .create_locked(&tool, newest, "default", None, autostart)
+                .create_locked(&tool, newest, "default", None, autostart, None)
                 .await
             {
                 Ok(entry) => created.push(entry.row.id),
@@ -365,9 +494,10 @@ impl ServiceManager {
         name: &str,
         port: Option<u16>,
         autostart: bool,
+        data_dir: Option<&str>,
     ) -> Result<Entry> {
         let _turn = self.turn().await?;
-        self.create_locked(tool, version, name, port, autostart)
+        self.create_locked(tool, version, name, port, autostart, data_dir)
             .await
     }
 
@@ -378,6 +508,7 @@ impl ServiceManager {
         name: &str,
         port: Option<u16>,
         autostart: bool,
+        data_dir: Option<&str>,
     ) -> Result<Entry> {
         let daemon = tool
             .manifest
@@ -409,6 +540,40 @@ impl ServiceManager {
         }
         let mut row = InstanceRow::new(tool.manifest.metadata.id.clone(), version.id, name);
         row.autostart = autostart;
+        if let Some(dir) = data_dir {
+            // A chosen folder is a reference: the daemon uses it as is (docs/03 §1).
+            if daemon.data.is_none() {
+                return Err(ForgeError::InvalidInput(format!(
+                    "{} declares no data folder (service.daemon.data): --data-dir does not apply",
+                    tool.manifest.metadata.id
+                )));
+            }
+            let (others, tools): (Vec<String>, Vec<String>) = self
+                .inner
+                .table
+                .lock()
+                .values()
+                .map(|e| {
+                    (
+                        e.row.data_dir.clone().unwrap_or_default(),
+                        e.row.tool_id.to_string(),
+                    )
+                })
+                .unzip();
+            let others: Vec<String> = others.into_iter().filter(|d| !d.is_empty()).collect();
+            let mut tools = tools;
+            tools.push(tool.manifest.metadata.id.to_string());
+            let (root, wanted) = (self.inner.root.clone(), dir.to_owned());
+            forge_core::runtime::spawn_blocking_timeout(
+                "checking the data folder",
+                Duration::from_secs(5),
+                move || check_data_dir_free(&root, &wanted, &others, &tools),
+            )
+            .await?;
+            row.data_dir = Some(dir.to_owned());
+            row.settings
+                .insert(EXTERNAL_DATA_DIR_KEY.to_owned(), "true".to_owned());
+        }
         let inserted = row.clone();
         self.inner
             .writer
@@ -469,11 +634,16 @@ impl ServiceManager {
             .release_owner(OwnerKind::Instance, &id.to_string())
             .await?;
         self.inner.table.lock().remove(&id);
+        self.inner.sizes.forget(id);
         if delete_data {
             if let Some(dir) = entry.row.data_dir.clone() {
                 let root = self.inner.root.clone();
                 let path = PathBuf::from(&dir);
-                if path.starts_with(root.data()) && path != root.data() {
+                // A folder the user chose (`--data-dir`) is a reference: never deleted.
+                if entry.row.external_data_dir().is_none()
+                    && path.starts_with(root.data())
+                    && path != root.data()
+                {
                     forge_core::runtime::spawn_blocking_timeout(
                         "deleting the data folder",
                         Duration::from_secs(120),
@@ -670,7 +840,11 @@ impl ServiceManager {
         else {
             return Ok(());
         };
-        let dir = PathBuf::from(vars.substitute(&data.dir)?);
+        // A folder chosen by the user (`--data-dir`, an import) wins over the manifest's.
+        let dir = match entry.row.external_data_dir() {
+            Some(external) => PathBuf::from(external),
+            None => PathBuf::from(vars.substitute(&data.dir)?),
+        };
         let exists = {
             let dir = dir.clone();
             tokio::task::spawn_blocking(move || dir.is_dir())
@@ -780,41 +954,233 @@ impl ServiceManager {
             .and_then(|m| m.spec.service.daemon.as_ref())
             .and_then(|d| d.reload.as_ref())
             .and_then(|r| r.command.clone());
-        match (command, &entry.vars, &entry.version) {
-            (Some(command), Some(vars), Some(version)) => {
-                let line = vars.substitute(&command)?;
-                let mut parts = split_command(&line).into_iter();
-                let program = parts
-                    .next()
-                    .ok_or_else(|| ForgeError::ConfigInvalid("empty reload command".into()))?;
-                let version_dir = PathBuf::from(&version.path);
-                let probe = ProbeCommand {
-                    exe: resolve_exe(&version_dir, &program),
-                    args: parts.map(Into::into).collect(),
-                    cwd: version_dir,
-                };
-                let output = forge_core::runtime::spawn_blocking_timeout(
-                    "reload command",
-                    RELOAD_TIMEOUT + Duration::from_secs(5),
-                    move || forge_core::platform::run_probe(&probe, RELOAD_TIMEOUT),
-                )
-                .await?;
-                if output.exit_code == Some(0) {
-                    Ok(true)
-                } else {
-                    Err(ForgeError::ConfigInvalid(format!(
-                        "{}: reload failed (exit {:?}): {}",
-                        entry.label(),
-                        output.exit_code,
-                        tail(&output.combined(), 2_000)
-                    )))
-                }
+        match command {
+            Some(command) if entry.vars.is_some() && entry.version.is_some() => {
+                Self::run_instance_command(&entry, &command, "reload").await?;
+                Ok(true)
             }
             _ => handle
                 .restart(entry.stop_worst_case + entry.start_timeout + START_SLACK)
                 .await
                 .map(|_| true),
         }
+    }
+
+    /// Runs `command` (a manifest command line, variables substituted) in the instance's
+    /// version folder and requires exit 0. `what` names the action in the error.
+    async fn run_instance_command(entry: &Entry, command: &str, what: &str) -> Result<()> {
+        let (Some(vars), Some(version)) = (&entry.vars, &entry.version) else {
+            return Err(ForgeError::ConfigInvalid(format!(
+                "{}: no version to run the {what} command in",
+                entry.label()
+            )));
+        };
+        let line = vars.substitute(command)?;
+        let mut parts = split_command(&line).into_iter();
+        let program = parts
+            .next()
+            .ok_or_else(|| ForgeError::ConfigInvalid(format!("empty {what} command")))?;
+        let version_dir = PathBuf::from(&version.path);
+        let probe = ProbeCommand {
+            exe: resolve_exe(&version_dir, &program),
+            args: parts.map(Into::into).collect(),
+            cwd: version_dir,
+        };
+        let output = forge_core::runtime::spawn_blocking_timeout(
+            "instance command",
+            RELOAD_TIMEOUT + Duration::from_secs(5),
+            move || forge_core::platform::run_probe(&probe, RELOAD_TIMEOUT),
+        )
+        .await?;
+        if output.exit_code == Some(0) {
+            Ok(())
+        } else {
+            Err(ForgeError::ConfigInvalid(format!(
+                "{}: {what} failed (exit {:?}): {}",
+                entry.label(),
+                output.exit_code,
+                tail(&output.combined(), 2_000)
+            )))
+        }
+    }
+
+    /// Makes a running instance reopen its files (access log rotation, docs/14 section
+    /// 3.8) with the manifest's `reopen` (`access.rotate.reopen`), through the same
+    /// command runner as the reload: `command` runs in the version folder; `signal`
+    /// delivers `CTRL_BREAK` to the console group of the instance (`processes`). Returns
+    /// whether the instance was running (and therefore told).
+    pub async fn apply_reopen(
+        &self,
+        id: InstanceId,
+        reopen: &forge_manifest::schema::tool::Reload,
+        processes: &Arc<dyn forge_core::platform::ProcessControl>,
+    ) -> Result<bool> {
+        use forge_manifest::schema::tool::ConsoleSignal;
+        let (entry, handle) = self.handle_of(id)?;
+        let status = handle.status(QUICK_ASK_TIMEOUT).await?;
+        if status.state != InstanceState::Running {
+            return Ok(false);
+        }
+        if let Some(command) = &reopen.command {
+            Self::run_instance_command(&entry, command, "reopen").await?;
+            return Ok(true);
+        }
+        match (reopen.signal, status.pid) {
+            (Some(ConsoleSignal::CtrlBreak), Some(pid)) => {
+                let processes = Arc::clone(processes);
+                forge_core::runtime::spawn_blocking_timeout(
+                    "reopen signal",
+                    RELOAD_TIMEOUT,
+                    move || processes.send_ctrl_break(pid, Duration::from_secs(5)),
+                )
+                .await?;
+                Ok(true)
+            }
+            (Some(signal), _) => Err(ForgeError::ConfigInvalid(format!(
+                "{}: the reopen signal {signal:?} cannot be delivered (only ctrl-break, to a running instance)",
+                entry.label()
+            ))),
+            (None, _) => Err(ForgeError::ConfigInvalid(format!(
+                "{}: the reopen has neither command nor signal",
+                entry.label()
+            ))),
+        }
+    }
+
+    /// Stores quick-setting `changes` of `id` (`Some` = value, `None` = back to the
+    /// default) in `instances.settings` and in the cached entry, so the next render writes
+    /// them (ADR-0042). Returns the settings now stored.
+    pub async fn update_settings(
+        &self,
+        id: InstanceId,
+        changes: BTreeMap<String, Option<String>>,
+    ) -> Result<BTreeMap<String, String>> {
+        let stored = self
+            .inner
+            .writer
+            .execute(move |conn| InstanceRepo::new(conn).update_settings(id, &changes))
+            .await?;
+        if let Some(entry) = self.inner.table.lock().get_mut(&id) {
+            entry.row.settings = stored.clone();
+        }
+        Ok(stored)
+    }
+
+    /// Renders the configuration of `id` now (its target and its quick settings) without
+    /// touching the process.
+    pub async fn render(&self, id: InstanceId) -> Result<()> {
+        let entry = self
+            .get(id)
+            .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+        match self.inner.renderer.get().cloned() {
+            Some(renderer) => renderer.render_instance(&entry).await,
+            None => Ok(()),
+        }
+    }
+
+    /// Whether `id` runs (or is starting) right now.
+    pub async fn is_running(&self, id: InstanceId) -> bool {
+        let Some(handle) = self.get(id).and_then(|e| e.handle) else {
+            return false;
+        };
+        handle
+            .status(QUICK_ASK_TIMEOUT)
+            .await
+            .is_ok_and(|s| matches!(s.state, InstanceState::Running | InstanceState::Starting))
+    }
+
+    /// Rebuilds the actor of `id` from its row and the current port reservations (a port
+    /// moved: the arguments, health probe and pre-checks name it). A running instance is
+    /// stopped through its cascade first and started again on the new spec (rendering its
+    /// configuration); a stopped one only gets its configuration rendered. The old actor
+    /// is shut down once the new one is in the table.
+    pub async fn rebuild(&self, id: InstanceId) -> Result<()> {
+        let was_running = self.is_running(id).await;
+        {
+            let _turn = self.turn().await?;
+            let entry = self
+                .get(id)
+                .ok_or_else(|| ForgeError::NotFound(format!("instance {id}")))?;
+            if let (Some(handle), true) = (&entry.handle, was_running) {
+                handle.stop(entry.stop_worst_case + START_SLACK).await?;
+            }
+            let fresh = self.build(entry.row.clone()).await;
+            if let Some(err) = &fresh.error {
+                tracing::warn!(instance = %fresh.label(), %err, "rebuilt instance not runnable");
+            }
+            self.inner.table.lock().insert(id, fresh);
+            if let Some(handle) = &entry.handle {
+                handle.shutdown().await;
+            }
+        }
+        if was_running {
+            self.start(id).await.map(|_| ())
+        } else {
+            self.render(id).await
+        }
+    }
+
+    /// The periodic data-folder scan (`InstanceDto.size_bytes`): asks for the folders of
+    /// `entries` to be measured when their measurement is missing or older than the TTL
+    /// (in the background, never waiting) and returns what is known now.
+    pub fn data_sizes(&self, entries: &[Entry]) -> BTreeMap<InstanceId, u64> {
+        let dirs: Vec<(InstanceId, PathBuf)> = entries
+            .iter()
+            .filter_map(|e| Some((e.row.id, PathBuf::from(e.row.data_dir.as_deref()?))))
+            .collect();
+        self.inner.sizes.refresh(dirs.clone());
+        dirs.into_iter()
+            .filter_map(|(id, dir)| Some((id, self.inner.sizes.get(id, &dir)?)))
+            .collect()
+    }
+
+    /// `services.update`: stores the advanced settings of `id` and, when the process
+    /// launch changed (arguments, environment, restart policy or version), rebuilds the
+    /// actor and restarts it if it ran. `autostart` alone touches nothing else. The
+    /// caller validated `change` ([`crate::advanced`]). Returns whether the instance was
+    /// rebuilt.
+    pub async fn update_advanced(&self, id: InstanceId, change: AdvancedChange) -> Result<bool> {
+        let mut settings: BTreeMap<String, Option<String>> = BTreeMap::new();
+        if let Some(args) = &change.args {
+            settings.insert(
+                LAUNCH_ARGS_KEY.to_owned(),
+                (!args.is_empty())
+                    .then(|| advanced::to_json(args))
+                    .transpose()?,
+            );
+        }
+        if let Some(env) = &change.env {
+            settings.insert(
+                LAUNCH_ENV_KEY.to_owned(),
+                (!env.is_empty())
+                    .then(|| advanced::to_json(env))
+                    .transpose()?,
+            );
+        }
+        if let Some(restart) = &change.restart {
+            settings.insert(
+                RESTART_POLICY_KEY.to_owned(),
+                Some(advanced::to_json(restart)?),
+            );
+        }
+        let (autostart, version_id) = (change.autostart, change.version.as_ref().map(|v| v.id));
+        let rebuild = !settings.is_empty() || version_id.is_some();
+        let stored = self
+            .inner
+            .writer
+            .execute(move |conn| {
+                InstanceRepo::new(conn).update_advanced(id, autostart, version_id, &settings)
+            })
+            .await?;
+        if let Some(entry) = self.inner.table.lock().get_mut(&id) {
+            entry.row.autostart = stored.autostart;
+            entry.row.version_id = stored.version_id;
+            entry.row.settings = stored.settings.clone();
+        }
+        if rebuild {
+            self.rebuild(id).await?;
+        }
+        Ok(rebuild)
     }
 
     /// Records one daemon-owned key of `instances.settings` (`forgebox.*`) in the store and
@@ -998,12 +1364,21 @@ pub fn instance_spec(
         None => version_dir.clone(),
     };
     let path = path_entries(manifest, &version_dir);
-    let mut spawn = SpawnSpec::new(exe, cwd).args(vars.substitute_all(&daemon.args)?);
+    // The instance's own launch (`services.update`) comes after the manifest's.
+    let launch = advanced::launch_of(row);
+    let mut spawn = SpawnSpec::new(exe, cwd)
+        .args(vars.substitute_all(&daemon.args)?)
+        .args(launch.args.iter().cloned());
     for (name, value) in manifest.spec.config.env.iter().chain(&daemon.env) {
         if name.eq_ignore_ascii_case("PATH") {
             continue;
         }
         spawn.env.set(name.clone(), vars.substitute(value)?);
+    }
+    for (name, value) in &launch.env {
+        if !name.eq_ignore_ascii_case("PATH") {
+            spawn.env.set(name.clone(), value.clone());
+        }
     }
     for spec in &daemon.ports {
         if let (Some(env), Some(port)) = (&spec.env, ports.get(&spec.name)) {
@@ -1066,14 +1441,15 @@ pub fn instance_spec(
         instance.health = Some(spec);
     }
 
-    instance.restart = match daemon.restart_policy.on {
+    let restart = advanced::effective_restart(&daemon.restart_policy, &launch);
+    instance.restart = match restart.on.manifest() {
         RestartOn::Never => RestartPolicy::Never,
         RestartOn::Always => RestartPolicy::Always {
             backoff: Backoff::default(),
         },
         RestartOn::Failure => RestartPolicy::OnFailure {
-            max: daemon.restart_policy.max,
-            window: daemon.restart_policy.window.as_std(),
+            max: restart.max,
+            window: Duration::from_secs(u64::from(restart.window_secs)),
             backoff: Backoff::default(),
         },
     };

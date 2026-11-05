@@ -20,8 +20,10 @@ metadata:
   tags: [nginx, webserver, proxy, fastcgi]
   homepage: https://nginx.org
   docs: https://nginx.org/en/docs/
+  changelog_url: https://nginx.org/en/CHANGES
   license: BSD-2-Clause
   icon: nginx.svg
+  icon_color: "#009639"
   maintainers: [{ name: Forgebox Team, url: https://github.com/forgebox }]
 
 spec:
@@ -81,7 +83,7 @@ spec:
         directive: "worker_processes"
         type: select
         options: [auto, 1, 2, 4]
-        default: auto
+        default: 1
         apply: restart
       - key: client_max_body_size
         label: Tamanho máximo do corpo (client_max_body_size)
@@ -126,7 +128,28 @@ spec:
       restart_policy: { on: failure, max: 3, window: 60s }
       logs:
         - { label: Error log, path: "{{ paths.logs }}/nginx/error.log", format: nginx-error }
-        - { label: Access log (JSON), path: "{{ paths.logs }}/nginx/access.json", format: forgebox-json }
+        - label: Access log (JSON)
+          path: "{{ paths.logs }}/nginx/access.json"
+          format: forgebox-json
+          access:
+            # log_format forgebox (crates/forge-render/templates/nginx/nginx.conf.j2)
+            ts: { pointer: /t, unit: s }                 # $msec: when the response was logged
+            host: /host
+            status: /s
+            duration: { pointer: /rt, unit: s }          # $request_time
+            upstream_duration: { pointer: /ut, unit: s, multi: sum }   # "0.010, 0.020 : 0.003"
+            bytes: /b
+            method: /m
+            uri: { pointer: /u }                         # $uri has no query string
+            upstream: /up
+            # Measured with nginx 1.30.6 (docs/14 section 3.8): the log is opened with
+            # FILE_SHARE_DELETE, so the daemon renames it while nginx writes, and
+            # `-s reopen` makes the workers create a new one without losing a line.
+            rotate:
+              max_size: 64MB
+              keep: 1
+              strategy: rename-reopen
+              reopen: { command: "nginx.exe -s reopen -p {{ paths.version }} -c {{ instance.config.nginx_conf }}" }
       autostart: true
 
   discover:

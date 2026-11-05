@@ -23,7 +23,7 @@ use crate::error::CliResult;
 pub async fn run(ctx: &Context, command: Command) -> CliResult<()> {
     match command {
         Command::Daemon(cmd) => daemon::run(ctx, cmd).await,
-        Command::Doctor => daemon::doctor(ctx).await,
+        Command::Doctor(args) => daemon::doctor(ctx, args).await,
         Command::Search(args) => tool::search(ctx, args).await,
         Command::Tool(cmd) => tool::run(ctx, cmd).await,
         Command::Use(args) => tool::use_version(ctx, args).await,
@@ -34,19 +34,24 @@ pub async fn run(ctx: &Context, command: Command) -> CliResult<()> {
         Command::Reload(args) => service::reload(ctx, args).await,
         Command::Status(args) => service::status(ctx, args).await,
         Command::Service(cmd) => service::service(ctx, cmd).await,
-        Command::Logs(args) => {
-            logs::run(
-                ctx,
-                logs::LogsRequest {
-                    target: args.target,
-                    follow: args.follow,
-                    since: args.since,
-                    grep: args.grep,
-                    lines: args.lines,
-                },
-            )
-            .await
-        }
+        Command::Logs(args) => match args.target {
+            Some(target) if !args.list => {
+                logs::run(
+                    ctx,
+                    logs::LogsRequest {
+                        target,
+                        follow: args.follow,
+                        since: args.since,
+                        grep: args.grep,
+                        lines: args.lines,
+                        before: args.before,
+                    },
+                )
+                .await
+            }
+            // clap requires a target without `--list` and refuses one with it.
+            _ => logs::targets(ctx).await,
+        },
         Command::Php(cmd) => php::run(ctx, cmd).await,
         Command::Site(cmd) => site::run(ctx, cmd).await,
         Command::Park(args) => site::park(ctx, args).await,
@@ -116,6 +121,8 @@ pub(crate) mod tests_support {
             processes: vec![],
             created_at: now,
             updated_at: now,
+            pool_mode: Default::default(),
+            metrics_enabled: true,
         }
     }
 }

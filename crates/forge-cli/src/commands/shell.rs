@@ -5,7 +5,8 @@ use std::ffi::OsString;
 use std::process::{Command, Stdio};
 
 use forge_ipc::api::{
-    NoParams, ShellEnvDto, ShellEnvParams, ShellFormat, ShellOpenParams, UserPathDto,
+    NoParams, ShellCommandDto, ShellEnvDto, ShellEnvParams, ShellFormat, ShellOpenParams,
+    UserPathDto,
 };
 
 use crate::cli::{EnvArgs, ExecArgs, OptDirArg, PathCmd};
@@ -15,16 +16,20 @@ use crate::messages::Msg;
 use crate::output::{GREEN, YELLOW, paint};
 
 pub async fn shell(ctx: &Context, args: OptDirArg) -> CliResult<()> {
-    let dir = args
-        .dir
-        .as_deref()
-        .map(crate::parse::absolute)
-        .transpose()?;
     let ack = ctx
-        .call::<forge_ipc::api::methods::shell_open>(ShellOpenParams { dir })
+        .call::<forge_ipc::api::methods::shell_open>(shell_open_params(
+            ctx.dir_or_cwd(args.dir.as_deref())?,
+        ))
         .await?;
     ctx.out.emit(&ack, |_| {});
     Ok(())
+}
+
+/// The request of `forge shell`: always a project folder (the argument or the current one,
+/// resolved here like `forge env`), so the terminal gets the project's versions. The daemon
+/// default (no folder means the Forgebox root) is for the GUI.
+fn shell_open_params(dir: String) -> ShellOpenParams {
+    ShellOpenParams { dir: Some(dir) }
 }
 
 /// `--powershell` (default), `--cmd`, `--bash`; `--json` asks for the data only.
@@ -156,6 +161,42 @@ pub async fn exec(ctx: &Context, args: ExecArgs) -> CliResult<()> {
     }
 }
 
+/// Runs a command the daemon prepared (`db.shell`) attached to this console: same stdin,
+/// stdout and stderr, its environment additions on top of ours; exits with its code.
+pub(crate) async fn run_attached(ctx: &Context, command: &ShellCommandDto) -> CliResult<()> {
+    let status = tokio::task::spawn_blocking({
+        let command = command.clone();
+        move || {
+            let mut child = Command::new(&command.program);
+            child
+                .args(&command.args)
+                .envs(&command.env)
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit());
+            if let Some(cwd) = &command.cwd {
+                child.current_dir(cwd);
+            }
+            child.status().map_err(|e| (command.program, e))
+        }
+    })
+    .await
+    .map_err(|e| CliError::new("internal", e.to_string()))?
+    .map_err(|(program, e)| {
+        let code = if e.kind() == std::io::ErrorKind::NotFound {
+            "not_found"
+        } else {
+            "io"
+        };
+        CliError::new(code, ctx.out.tf(Msg::ExecFailed, &[&program, &e]))
+    })?;
+    match status.code() {
+        Some(0) => Ok(()),
+        Some(code) => Err(CliError::exit_silently(code)),
+        None => Err(CliError::exit_silently(1)),
+    }
+}
+
 fn path_lines(ctx: &Context, path: &UserPathDto) {
     let out = &ctx.out;
     out.line(paint(crate::output::BOLD, out.t(Msg::PathForgeboxEntries)));
@@ -196,6 +237,12 @@ pub async fn path(ctx: &Context, command: PathCmd) -> CliResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_sends_the_project_folder() {
+        let params = shell_open_params(r"C:\www\proj".to_owned());
+        assert_eq!(params.dir.as_deref(), Some(r"C:\www\proj"));
+    }
 
     #[test]
     fn exec_finds_batch_shims_like_a_shell() {

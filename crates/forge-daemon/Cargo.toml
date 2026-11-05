@@ -22,8 +22,12 @@ default = []
 # RUSTFLAGS="--cfg tokio_unstable", docs/03 §7.1). The default build never uses tokio_unstable.
 console = ["forge-core/console"]
 
+# Forgebox icon resource (build.rs, docs/design/brand).
+[build-dependencies]
+embed-resource = { workspace = true }
+
 [dependencies]
-forge-core = { path = "../forge-core" }
+forge-core = { path = "../forge-core", features = ["schemars"] }
 forge-manifest = { path = "../forge-manifest" }
 forge-registry = { path = "../forge-registry" }
 forge-provider = { path = "../forge-provider" }
@@ -37,9 +41,12 @@ forge-metrics = { path = "../forge-metrics" }
 forge-ipc = { path = "../forge-ipc" }
 base64 = { workspace = true }
 clap = { workspace = true, features = ["env"] }
+# `.sql.gz` input of db.import (M2-E3-T6).
+flate2 = { workspace = true }
 futures = { workspace = true }
 jiff = { workspace = true }
 rand = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -49,9 +56,14 @@ tracing = { workspace = true }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+# `.sql.zst` of db.export/db.import (M2-E3-T6).
+zstd = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true }
 pretty_assertions = { workspace = true }
 # Checks the PHP zip of the online test (php_pool_online).
 sha2 = { workspace = true }
 tempfile = { workspace = true }
+# Builds the archive of the install-equals-plan test (releases_plan).
+zip = { workspace = true }

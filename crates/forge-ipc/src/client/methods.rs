@@ -31,7 +31,7 @@ macro_rules! client_method {
 }
 
 macro_rules! client_methods {
-    ($($kind:ident $name:literal $fn:ident ($params:ident) -> $res:ident [$($flags:tt)*] $cli:literal;)*) => {
+    ($($kind:ident $name:literal $fn:ident ($params:ident) -> $res:ident [$($flags:tt)*] $cli:literal $(=> $tpl:literal)?;)*) => {
         /// Typed methods, one per row of the method table.
         impl Client {
             $(client_method!($kind $name $fn $params $res);)*

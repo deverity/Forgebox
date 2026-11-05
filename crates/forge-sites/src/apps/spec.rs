@@ -462,7 +462,8 @@ impl AppSpec {
             tool,
             self.instance_name(),
             self.spawn_spec(),
-        );
+        )
+        .for_site(self.site_id);
         spec.logs = LogOptions {
             file: Some(self.log_file.clone()),
             ..LogOptions::default()
@@ -824,6 +825,7 @@ mod tests {
         let instance = app.instance_spec().unwrap();
         assert_eq!(instance.tool.as_str(), "app");
         assert_eq!(instance.name, "app.test.web");
+        assert_eq!(instance.site_id, Some(f.site.id), "events carry the site");
         assert_eq!(instance.logs.file.as_deref(), Some(app.log_file.as_path()));
         assert!(matches!(instance.restart, RestartPolicy::Always { .. }));
         assert_eq!(instance.precheck.ports, [3100]);

@@ -2,7 +2,8 @@
 //!
 //! Two files are generated under `apps/desktop/src/ipc/`:
 //! * `generated.ts`: every DTO, payload and parameter type (specta, deterministic);
-//! * `methods.ts`: the method table (name, kind, role, `local_only`, CLI commands), a
+//! * `methods.ts`: the method table (name, kind, role, `local_only`, CLI commands and
+//!   their `cli_template`), a
 //!   typed map `ApiMethods` (params/result/job result/stream item per method), the
 //!   notifications, event kinds with their payload types, and the stable error codes.
 //!
@@ -99,6 +100,8 @@ pub fn methods_ts() -> String {
          \x20 readonly mutating: boolean;\n\
          \x20 /** `forge` commands served by the method (docs/09). */\n\
          \x20 readonly cli: readonly string[];\n\
+         \x20 /** Template of the equivalent `forge` command (ADR-0037); `null` without CLI. */\n\
+         \x20 readonly cli_template: string | null;\n\
          \x20 readonly notification: string | null;\n\
          \x20 readonly lagged_notification: string | null;\n\
          }\n\n",
@@ -113,7 +116,7 @@ pub fn methods_ts() -> String {
             .collect();
         let _ = writeln!(
             out,
-            "  {}: {{ kind: {}, min_role: {}, local_only: {}, long_running: {}, mutating: {}, cli: {}, notification: {}, lagged_notification: {} }},",
+            "  {}: {{ kind: {}, min_role: {}, local_only: {}, long_running: {}, mutating: {}, cli: {}, cli_template: {}, notification: {}, lagged_notification: {} }},",
             ts_string(m.name),
             ts_string(m.kind.as_str()),
             ts_string(m.min_role.as_str()),
@@ -121,6 +124,7 @@ pub fn methods_ts() -> String {
             m.long_running,
             m.mutating,
             ts_string_list(cli),
+            ts_opt_string(m.cli_template),
             ts_opt_string(m.notification),
             ts_opt_string(m.lagged_notification),
         );

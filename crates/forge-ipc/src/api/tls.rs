@@ -42,6 +42,14 @@ pub struct CaInstallParams {
     pub scope: TrustScopeDto,
 }
 
+/// Params of `tls.ca_uninstall`: removes the Forgebox CA from one trust store
+/// (`local_machine` through `forgebox-helper`, with the same validation as the install).
+/// Idempotent. API 1.1 (ADR-0040).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct CaUninstallParams {
+    pub scope: TrustScopeDto,
+}
+
 /// Params of `tls.ca_rotate`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct CaRotateParams {
@@ -73,6 +81,15 @@ pub struct CertificateDto {
     pub not_before: Timestamp,
     pub not_after: Timestamp,
     pub thumbprint_sha256: String,
+    /// SHA-256 thumbprint of the CA that issued it: a leaf of a CA rotated away differs
+    /// from `CaStatusDto.thumbprint_sha256`. API 1.1 (ADR-0041); `None` when not checked.
+    #[serde(default)]
+    pub ca_thumbprint_sha256: Option<String>,
+    /// Browsers on this machine accept it: issued by the current local CA and that CA is
+    /// trusted (current user or machine store). `None` when not checked (`tls.issue`,
+    /// `tls.renew`, API 1.0). API 1.1 (ADR-0041), filled by `tls.list`.
+    #[serde(default)]
+    pub trusted: Option<bool>,
 }
 
 /// Params of `tls.renew`.
@@ -86,7 +103,8 @@ pub struct TlsRenewParams {
     pub all: bool,
 }
 
-/// Result of the `tls.renew` job.
+/// Result of the `tls.renew` job and of `tls.list` (every leaf certificate of `certs/`,
+/// expired ones included, soonest `not_after` first; API 1.1, ADR-0041).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct CertificateListDto {
     pub certificates: Vec<CertificateDto>,

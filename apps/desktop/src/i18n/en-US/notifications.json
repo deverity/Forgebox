@@ -1,0 +1,34 @@
+{
+  "service_crashed": "{service} stopped unexpectedly",
+  "service_restarted": "{service} was restarted",
+  "update_available": "{tool} {version} is available",
+  "toast": {
+    "service_restarted": {
+      "title": "Service restarted",
+      "body": "{service} stopped unexpectedly and was restarted.",
+      "body_many": "{count} services were restarted: {list}."
+    },
+    "update_installed": {
+      "title": "Update installed",
+      "body": "{tool} was updated to {version}.",
+      "body_many": "{count} updates were installed: {list}."
+    },
+    "install_completed": {
+      "title": "Installation complete",
+      "body": "{tool} {version} was installed.",
+      "body_many": "{count} installations finished: {list}."
+    },
+    "performance_alert": {
+      "title": "Performance alert",
+      "body": "{subject}: {detail}",
+      "body_many": "{count} alerts: {list}"
+    }
+  },
+  "types": {
+    "service_restarted": "Service restarted after a crash",
+    "update_installed": "Update installed",
+    "install_completed": "Install or download complete",
+    "performance_alert": "Performance alert (off)"
+  },
+  "dont_show_again": "Don't show again"
+}

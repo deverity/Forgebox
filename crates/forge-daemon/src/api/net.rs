@@ -3,12 +3,17 @@
 
 use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
+use forge_core::error::ForgeError;
 use forge_core::error::Result;
-use forge_ipc::api::methods::{net_dns_disable, net_dns_enable, net_dns_status, net_dns_test};
+use forge_core::model::port::PortProtocol as StoredProtocol;
+use forge_ipc::api::methods::{
+    net_dns_disable, net_dns_enable, net_dns_status, net_dns_test, net_port_check,
+};
 use forge_ipc::api::{
     DnsMode, DnsPolicyReason, DnsPolicyState, DnsProbeDto, DnsStatusDto, DnsTestDto, DnsTestParams,
-    DnsTldPolicyDto, JobDto, NoParams,
+    DnsTldPolicyDto, JobDto, NoParams, PortCheckDto, PortCheckParams, PortHolderDto, PortProtocol,
 };
 use forge_ipc::server::{Ctx, Router};
 use forge_net::dns::{DnsDiagnostics, ZoneSet};
@@ -24,6 +29,57 @@ pub fn register(router: &mut Router, daemon: &Daemon) {
     route!(router, daemon, net_dns_enable, enable);
     route!(router, daemon, net_dns_disable, disable);
     route!(router, daemon, net_dns_test, test);
+    route!(router, daemon, net_port_check, port_check);
+    // Below the 1 s default so a stalled OS table answers with a timeout, not silence.
+    router.timeout::<net_port_check>(PORT_CHECK_BUDGET);
+}
+
+/// Budget of the OS table read of `net.port_check` (the acceptance is an answer in 50 ms;
+/// the figure is measured in `tests/shell_api.rs`).
+const PORT_CHECK_BUDGET: Duration = Duration::from_millis(900);
+
+/// `net.port_check`: is `port` usable right now? Crosses the OS table (who listens) with
+/// the Forgebox reservations (who has it reserved), both read at once; the table read is
+/// blocking Win32 and runs in `spawn_blocking` (ADR-0011).
+async fn port_check(daemon: Daemon, params: PortCheckParams, _ctx: Ctx) -> Result<PortCheckDto> {
+    if params.port == 0 {
+        return Err(ForgeError::InvalidInput("port 0 is not a port".into()));
+    }
+    let (port, protocol) = (params.port, params.protocol);
+    let table = Arc::clone(daemon.platform.port_table());
+    let stored = match protocol {
+        PortProtocol::Tcp => StoredProtocol::Tcp,
+        PortProtocol::Udp => StoredProtocol::Udp,
+    };
+    let listening = forge_core::runtime::spawn_blocking_timeout(
+        "reading the port table",
+        PORT_CHECK_BUDGET,
+        move || {
+            Ok(match protocol {
+                PortProtocol::Tcp => table.listeners()?,
+                PortProtocol::Udp => table.udp_endpoints()?,
+            }
+            .into_iter()
+            .find(|l| l.port == port))
+        },
+    );
+    let (listening, reservation) =
+        tokio::join!(listening, daemon.ports.reservation_of(stored, port));
+    let holder = listening?.map(|l| PortHolderDto {
+        pid: l.pid,
+        exe: l
+            .exe_path
+            .as_deref()
+            .map(forge_core::paths::posix_string)
+            .unwrap_or_else(|| "?".into()),
+    });
+    let reserved_by = reservation?
+        .map(|r| super::services::owner_name(&super::services::instance_names(&daemon), &r.owner));
+    Ok(PortCheckDto {
+        free: holder.is_none() && reserved_by.is_none(),
+        reserved_by,
+        holder,
+    })
 }
 
 fn state_dto(state: PolicyState) -> DnsPolicyState {
@@ -159,21 +215,13 @@ async fn status(daemon: Daemon, _params: NoParams, _ctx: Ctx) -> Result<DnsStatu
 }
 
 async fn set_enabled(daemon: &Daemon, enabled: bool) -> Result<()> {
-    let mut config = (*daemon.config()).clone();
-    if config.dns.enabled == enabled {
-        return Ok(());
-    }
-    config.dns.enabled = enabled;
-    let path = daemon.root.forgebox_toml();
-    let saved = config.clone();
-    forge_core::runtime::spawn_blocking_timeout(
-        "saving forgebox.toml",
-        std::time::Duration::from_secs(5),
-        move || saved.save(&path),
-    )
-    .await?;
-    daemon.set_config(config);
-    Ok(())
+    crate::config_owner::update(daemon, move |config| {
+        let mut next = config.clone();
+        next.dns.enabled = enabled;
+        Ok(next)
+    })
+    .await
+    .map(|_| ())
 }
 
 async fn enable(daemon: Daemon, _params: NoParams, ctx: Ctx) -> Result<JobDto> {
@@ -210,6 +258,11 @@ async fn disable(daemon: Daemon, _params: NoParams, ctx: Ctx) -> Result<JobDto> 
 }
 
 async fn test(daemon: Daemon, params: DnsTestParams, _ctx: Ctx) -> Result<DnsTestDto> {
+    dns_test_for(&daemon, &params.host).await
+}
+
+/// `net.dns_test` for `host`; also the `site.dns` check of `sites.info`.
+pub(super) async fn dns_test_for(daemon: &Daemon, host: &str) -> Result<DnsTestDto> {
     let config = daemon.config();
     let zones = ZoneSet::from_config(&config)?;
     let server = daemon.dns.stats().await.ok().and_then(|s| s.listen);
@@ -218,7 +271,7 @@ async fn test(daemon: Daemon, params: DnsTestParams, _ctx: Ctx) -> Result<DnsTes
         Arc::clone(daemon.platform.port_table()),
         Arc::clone(daemon.platform.net_adapters()),
     );
-    let diagnosis = diagnostics.diagnose(&params.host, &zones, server).await;
+    let diagnosis = diagnostics.diagnose(host, &zones, server).await;
     let via = match diagnosis.mode {
         PolicyMode::Hosts => "hosts",
         PolicyMode::Nrpt => "forgebox-dns",

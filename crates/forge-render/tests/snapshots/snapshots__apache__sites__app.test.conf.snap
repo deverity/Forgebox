@@ -21,6 +21,8 @@ expression: content
     ProxyPass "/_forgebox/starting" "http://127.0.0.1:19000/_forgebox/starting"
     ErrorDocument 502 "/_forgebox/starting?host=app.test"
     ErrorDocument 503 "/_forgebox/starting?host=app.test"
-    ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket timeout=3600
+    # mod_proxy_http reuses backend connections by default; ttl closes idle ones before the
+    # app does (docs/06 section 4.1.1).
+    ProxyPass "/" "http://127.0.0.1:3000/" upgrade=websocket ttl=4 timeout=3600
     ProxyPassReverse "/" "http://127.0.0.1:3000/"
 </VirtualHost>

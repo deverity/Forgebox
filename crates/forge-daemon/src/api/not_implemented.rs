@@ -16,32 +16,12 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "installing a local zip or folder as a tool version",
     ),
     (
-        "services.set",
-        "M2-E2",
-        "quick settings written into the managed config files",
-    ),
-    ("php.ext_enable", "M2-E2", "per-version extension toggles"),
-    ("php.ext_disable", "M2-E2", "per-version extension toggles"),
-    ("php.xdebug", "M2-E2", "Xdebug toggle per PHP version"),
-    (
-        "sites.open",
-        "M2-E1",
-        "opening a site in the browser/editor/terminal of the daemon's machine",
-    ),
-    (
         "sites.share",
         "M3-E3",
         "public tunnels (cloudflared, ngrok, expose)",
     ),
     ("sites.new", "M3-E2", "project scaffolding from a stack"),
-    ("db.list", "M2-E3", "database management"),
-    ("db.create", "M2-E3", "database management"),
-    ("db.drop", "M2-E3", "database management"),
-    ("db.export", "M2-E3", "database export"),
-    ("db.import", "M2-E3", "database import"),
-    ("db.shell", "M2-E3", "database shell"),
-    ("db.url", "M2-E3", "database URLs"),
-    ("db.open", "M2-E3", "database GUI launch"),
+    ("db.open", "M3-E1", "database GUI launch"),
     (
         "net.lan_expose",
         "M3-E3",
@@ -53,21 +33,6 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
         "LAN exposure with firewall rules",
     ),
     ("net.lan_qr", "M3-E3", "LAN QR codes"),
-    ("mail.status", "M2-E3", "Mailpit integration"),
-    ("mail.open", "M2-E3", "Mailpit integration"),
-    ("mail.list", "M2-E3", "Mailpit integration"),
-    ("mail.show", "M2-E3", "Mailpit integration"),
-    ("mail.clear", "M2-E3", "Mailpit integration"),
-    ("mail.env", "M2-E3", "Mailpit integration"),
-    ("shell.open", "M2-E3", "integrated terminal"),
-    ("stats.get", "M2-E5", "per-site metrics (forge-metrics)"),
-    ("stats.top", "M2-E5", "per-site metrics (forge-metrics)"),
-    ("stats.export", "M2-E5", "per-site metrics (forge-metrics)"),
-    (
-        "metrics.subscribe",
-        "M2-E5",
-        "per-site metrics stream (forge-metrics)",
-    ),
     ("remote.pair", "M6-E3", "remote mode pairing"),
     ("remote.listen", "M6-E3", "remote mode listener"),
     ("remote.clients", "M6-E3", "remote mode clients"),
@@ -83,15 +48,27 @@ pub const NOT_IMPLEMENTED: &[(&str, &str, &str)] = &[
     ),
 ];
 
-/// The error answered by a method of the table.
+/// The method names of the table, in table order: what `system.hello` reports as
+/// `not_implemented` (API 1.1) so clients can disable the matching controls.
+pub fn methods() -> Vec<String> {
+    NOT_IMPLEMENTED
+        .iter()
+        .map(|(method, _, _)| (*method).to_owned())
+        .collect()
+}
+
+/// The error answered by a method of the table. Its structured details are
+/// `{reason: "not_implemented", args: {method, task, what}}` (ADR-0039).
 pub fn error(method: &str) -> ForgeError {
     let (task, what) = NOT_IMPLEMENTED
         .iter()
         .find(|(name, _, _)| *name == method)
         .map_or(("?", "this method"), |(_, task, what)| (*task, *what));
-    ForgeError::NotImplemented(format!(
-        "{method} is not implemented yet: {what} (roadmap {task})"
-    ))
+    ForgeError::NotImplementedYet {
+        method: method.to_owned(),
+        task: task.to_owned(),
+        what: what.to_owned(),
+    }
 }
 
 /// Registers every method of [`NOT_IMPLEMENTED`] that has no handler yet.
@@ -125,6 +102,133 @@ mod tests {
         let err = error("sites.share");
         assert_eq!(err.code(), "not_implemented");
         assert!(err.to_string().contains("M3-E3"));
+        let details = err.details().unwrap();
+        assert_eq!(details["reason"], "not_implemented");
+        assert_eq!(details["args"]["method"], "sites.share");
+        assert_eq!(details["args"]["task"], "M3-E3");
+    }
+
+    #[test]
+    fn hello_reports_exactly_the_table() {
+        let reported = methods();
+        assert_eq!(reported.len(), NOT_IMPLEMENTED.len());
+        for (method, _, _) in NOT_IMPLEMENTED {
+            assert!(reported.iter().any(|m| m == method), "{method}");
+        }
+        // sites.open works for every target: not "not implemented".
+        assert!(!reported.iter().any(|m| m == "sites.open"));
+        // Sorted names would hide a duplicated row.
+        let mut sorted = reported.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), reported.len(), "duplicated row");
+    }
+
+    #[test]
+    fn e3_methods_name_their_task() {
+        // The E3 contract (ADR-0040): each backend task owns its methods.
+        let (method, task) = ("db.open", "M3-E1");
+        let err = error(method);
+        assert_eq!(err.code(), "not_implemented", "{method}");
+        assert!(
+            err.to_string().contains(&format!("(roadmap {task})")),
+            "{method}: {err}"
+        );
+        assert_eq!(err.details().unwrap()["args"]["task"], task, "{method}");
+        // The local launchers exist (M2-E3-T9).
+        for method in ["shell.open", "shell.open_editor"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        // The security extras exist (M2-E3-T11).
+        for method in ["tls.ca_uninstall", "services.kill_port_holder", "sites.env"] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        // The terminal backend exists (M2-E3-T4); terminal.unsubscribe is a server
+        // built-in (closes any stream of the connection).
+        assert!(!methods().iter().any(|m| m.starts_with("terminal.")));
+        assert!(crate::api::SERVER_BUILTINS.contains(&"terminal.unsubscribe"));
+    }
+
+    #[test]
+    fn e2_methods_name_their_task() {
+        // The E2 contract (ADR-0041): each backend task owns its methods.
+        // Partial methods (they work without the new parameter) stay out of the table, and
+        // so do the ones whose backend landed (M2-E2-T4: history and icons; M2-E2-T5:
+        // releases and plans; M2-E2-T7: quick settings; M2-E2-T9: extensions and Xdebug).
+        for method in [
+            "tools.releases",
+            "tools.plan",
+            "tools.install",
+            "tools.remove",
+            "tools.history",
+            "tools.icon",
+            "services.create",
+            "services.settings",
+            "services.set",
+            "services.update",
+            "php.ext_enable",
+            "php.ext_disable",
+            "php.xdebug",
+        ] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        // Every E2 row names its task, not only the epic.
+        for (method, task, _) in NOT_IMPLEMENTED {
+            if task.starts_with("M2-E2") {
+                assert!(task.starts_with("M2-E2-T"), "{method}: {task}");
+            }
+        }
+    }
+
+    #[test]
+    fn e5_methods_name_their_task() {
+        // The metrics contract (ADR-0044): every E5 backend method shipped (T8 stats.get and
+        // metrics.subscribe, T9 stats.*, T11 per-site switches), so no E5 row is left.
+        assert!(
+            !NOT_IMPLEMENTED
+                .iter()
+                .any(|(_, task, _)| task.starts_with("M2-E5")),
+            "an M2-E5 method is still listed as not implemented"
+        );
+        // metrics.unsubscribe is a server built-in.
+        for method in [
+            "stats.get",
+            "metrics.subscribe",
+            "stats.series",
+            "stats.routes",
+            "stats.export",
+            "stats.top",
+            "sites.pool_mode",
+            "sites.metrics",
+        ] {
+            assert!(!methods().iter().any(|m| m == method), "{method}");
+        }
+        assert!(crate::api::SERVER_BUILTINS.contains(&"metrics.unsubscribe"));
+    }
+
+    #[test]
+    fn the_gui_fake_bridge_mirrors_the_table() {
+        // apps/desktop's fakeBridge answers not_implemented from this fixture; a stale copy
+        // would make the GUI tests disagree with the daemon.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/desktop/src/ipc/fixtures/not-implemented.json");
+        let fixture: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let rows: Vec<(String, String, String)> = fixture
+            .iter()
+            .map(|row| {
+                let field = |name: &str| row[name].as_str().unwrap_or_default().to_owned();
+                (field("method"), field("task"), field("what"))
+            })
+            .collect();
+        let table: Vec<(String, String, String)> = NOT_IMPLEMENTED
+            .iter()
+            .map(|(m, t, w)| ((*m).to_owned(), (*t).to_owned(), (*w).to_owned()))
+            .collect();
+        assert_eq!(
+            rows, table,
+            "update apps/desktop/src/ipc/fixtures/not-implemented.json"
+        );
     }
 
     #[test]

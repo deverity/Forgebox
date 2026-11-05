@@ -108,9 +108,14 @@ fn the_binary_demands_elevation() {
     let root = Root::new();
     // Without the compatibility switch a non-elevated CreateProcess is refused by
     // Windows with ERROR_ELEVATION_REQUIRED (740): the manifest is in effect. (An
-    // elevated test runner starts it normally.)
+    // elevated test runner starts it normally.) The switch is removed explicitly: a
+    // runner (shell, IDE, agent harness) may already export `__COMPAT_LAYER=RunAsInvoker`,
+    // and the child would inherit it and start without the manifest's elevation check.
     let elevated = forge_core::platform::windows::process_is_elevated().unwrap();
-    let result = Command::new(&root.exe).arg("--version").output();
+    let result = Command::new(&root.exe)
+        .env_remove("__COMPAT_LAYER")
+        .arg("--version")
+        .output();
     if elevated {
         assert!(result.unwrap().status.success());
     } else {

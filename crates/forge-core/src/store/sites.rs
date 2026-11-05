@@ -88,6 +88,39 @@ impl SiteXdebug {
     }
 }
 
+/// Pool mode of a `php` site (`sites.pool_mode`, docs/14 section 3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SitePoolMode {
+    /// The site shares the pool of its PHP series.
+    #[default]
+    Shared,
+    /// The site has a pool of its own.
+    Dedicated,
+}
+
+impl SitePoolMode {
+    /// Stored name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Dedicated => "dedicated",
+        }
+    }
+
+    fn parse(s: &str) -> Result<Self> {
+        Ok(match s {
+            "shared" => Self::Shared,
+            "dedicated" => Self::Dedicated,
+            other => return Err(ForgeError::Schema(format!("sites.pool_mode {other:?}"))),
+        })
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
 /// PHP selection of a `php` site: a series follows the latest patch, an exact version is
 /// pinned (docs/06 §2.1).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -130,6 +163,12 @@ pub struct Site {
     pub case_sensitive: bool,
     /// Procfile processes (shape owned by `forge-sites::apps`, M1-E4-T5).
     pub processes: serde_json::Value,
+    /// Shared or dedicated PHP pool (M2-E5-T7; the switch itself is M2-E5-T11).
+    #[serde(default)]
+    pub pool_mode: SitePoolMode,
+    /// Whether metrics are collected for the site (default on).
+    #[serde(default = "default_true")]
+    pub metrics_enabled: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
@@ -157,6 +196,8 @@ impl Site {
             enabled: true,
             case_sensitive: true,
             processes: serde_json::Value::Array(Vec::new()),
+            pool_mode: SitePoolMode::Shared,
+            metrics_enabled: true,
             created_at: now,
             updated_at: now,
         }
@@ -170,7 +211,7 @@ impl Site {
 
 const COLUMNS: &str = "id, slug, host, aliases, kind, root, driver, server, php_series, \
     php_exact, php_pool_overrides, upstream, secure, http_redirect, env, xdebug, parked, \
-    enabled, case_sensitive, processes, created_at, updated_at";
+    enabled, case_sensitive, processes, created_at, updated_at, pool_mode, metrics_enabled";
 
 fn corrupt(what: &str, e: impl ToString) -> ForgeError {
     ForgeError::Schema(format!("sites row: invalid {what}: {}", e.to_string()))
@@ -200,6 +241,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Site>> {
     let processes: String = row.get(19)?;
     let created: String = row.get(20)?;
     let updated: String = row.get(21)?;
+    let pool_mode: String = row.get(22)?;
+    let metrics_enabled: bool = row.get(23)?;
     let decode = || -> Result<Site> {
         Ok(Site {
             id,
@@ -226,6 +269,8 @@ fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Site>> {
             enabled,
             case_sensitive,
             processes: serde_json::from_str(&processes).map_err(|e| corrupt("processes", e))?,
+            pool_mode: SitePoolMode::parse(&pool_mode)?,
+            metrics_enabled,
             created_at: created.parse().map_err(|e| corrupt("created_at", e))?,
             updated_at: updated.parse().map_err(|e| corrupt("updated_at", e))?,
         })
@@ -313,7 +358,7 @@ impl<'c> SiteRepo<'c> {
         self.conn.execute(
             &format!(
                 "INSERT INTO sites ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, \
-                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)"
+                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)"
             ),
             params![
                 site.id,
@@ -338,6 +383,8 @@ impl<'c> SiteRepo<'c> {
                 json(&site.processes)?,
                 site.created_at.to_string(),
                 site.updated_at.to_string(),
+                site.pool_mode.as_str(),
+                site.metrics_enabled,
             ],
         )?;
         Ok(())
@@ -354,7 +401,7 @@ impl<'c> SiteRepo<'c> {
              driver = ?7, server = ?8, php_series = ?9, php_exact = ?10, \
              php_pool_overrides = ?11, upstream = ?12, secure = ?13, http_redirect = ?14, \
              env = ?15, xdebug = ?16, parked = ?17, enabled = ?18, case_sensitive = ?19, \
-             processes = ?20, updated_at = ?21 WHERE id = ?1",
+             processes = ?20, updated_at = ?21, pool_mode = ?22, \n             metrics_enabled = ?23 WHERE id = ?1",
             params![
                 site.id,
                 site.slug,
@@ -377,6 +424,8 @@ impl<'c> SiteRepo<'c> {
                 site.case_sensitive,
                 json(&site.processes)?,
                 site.updated_at.to_string(),
+                site.pool_mode.as_str(),
+                site.metrics_enabled,
             ],
         )?;
         if n == 0 {
@@ -458,6 +507,30 @@ mod tests {
         assert!(repo.delete(a.id).unwrap());
         assert!(!repo.delete(a.id).unwrap());
         assert!(repo.get(a.id).unwrap().is_none());
+    }
+
+    #[test]
+    fn pool_mode_and_metrics_switch_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        let repo = SiteRepo::new(store.conn());
+        let mut a = site("a.test");
+        assert_eq!(a.pool_mode, SitePoolMode::Shared);
+        assert!(a.metrics_enabled);
+        repo.insert(&a).unwrap();
+        assert_eq!(repo.get(a.id).unwrap().unwrap(), a);
+        a.pool_mode = SitePoolMode::Dedicated;
+        a.metrics_enabled = false;
+        repo.update(&a).unwrap();
+        let back = repo.get(a.id).unwrap().unwrap();
+        assert_eq!(back.pool_mode, SitePoolMode::Dedicated);
+        assert!(!back.metrics_enabled);
+        // A serialized site from before the columns existed still reads with the defaults.
+        let mut json = serde_json::to_value(&back).unwrap();
+        json.as_object_mut().unwrap().remove("pool_mode");
+        json.as_object_mut().unwrap().remove("metrics_enabled");
+        let old: Site = serde_json::from_value(json).unwrap();
+        assert_eq!(old.pool_mode, SitePoolMode::Shared);
+        assert!(old.metrics_enabled);
     }
 
     #[test]

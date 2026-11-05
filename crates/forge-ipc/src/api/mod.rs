@@ -8,6 +8,7 @@
 //! Every DTO is re-exported at this level (`forge_ipc::api::SiteDto`); names are unique
 //! across groups because TypeScript has a single namespace.
 
+pub mod cli_template;
 pub mod common;
 pub mod contracts;
 pub mod daemon;
@@ -28,6 +29,7 @@ pub mod shell;
 pub mod sites;
 pub mod stats;
 pub mod system;
+pub mod terminal;
 pub mod tls;
 pub mod tools;
 
@@ -50,11 +52,12 @@ pub use shell::*;
 pub use sites::*;
 pub use stats::*;
 pub use system::*;
+pub use terminal::*;
 pub use tls::*;
 pub use tools::*;
 
 pub use crate::transport::TransportKind;
 pub use forge_core::ids::{
     ClientId, EventId, InstanceId, JobId, PortReservationId, RequestId, SessionId, SiteId,
-    SubscriptionId, ToolId, VersionId,
+    SubscriptionId, TerminalId, TerminalWriterId, ToolId, UpdateId, VersionId,
 };

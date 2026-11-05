@@ -9,7 +9,9 @@
 //!   `INetworkCostManager`), the probe the update scheduler checks before background
 //!   downloads (`[updates] metered`).
 //! * [`spawn_detached`]: launches a process outside the caller's console and process
-//!   group (`daemon.restart` starts the new daemon this way before the old one exits).
+//!   group (`daemon.restart` starts the new daemon this way before the old one exits);
+//!   [`spawn_detached_watched`] also reports how it ended (client auto-start of the
+//!   daemon, `forge_ipc::client::local`).
 //!
 //! All calls are blocking (fast syscalls; the network cost goes through COM): async code
 //! uses `spawn_blocking`.
@@ -140,6 +142,77 @@ pub fn spawn_detached(exe: &Path, args: &[OsString], cwd: &Path) -> Result<u32> 
     }
 }
 
+/// [`spawn_detached`] that also watches how the new process ends, without racing a pid
+/// that may already be gone: an auto-started daemon that exits at once (another one owns
+/// the root, a broken root) is reported instead of waited for. Dropping the
+/// [`ProcessExit`] only stops watching; the process keeps running.
+pub fn spawn_detached_watched(
+    exe: &Path,
+    args: &[OsString],
+    cwd: &Path,
+) -> Result<super::process::ProcessExit> {
+    #[cfg(windows)]
+    {
+        super::windows::spawn_detached_watched(exe, args, cwd)
+    }
+    #[cfg(not(windows))]
+    {
+        let child = std::process::Command::new(exe)
+            .args(args)
+            .current_dir(cwd)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| crate::error::ForgeError::io_at("starting", exe, e))?;
+        let pid = child.id();
+        Ok(super::process::ProcessExit::new(
+            pid,
+            Box::new(unix_exit::ChildExit(std::sync::Mutex::new(child))),
+        ))
+    }
+}
+
+#[cfg(not(windows))]
+mod unix_exit {
+    use std::task::{Context, Poll};
+    use std::time::Duration;
+
+    use crate::error::{ForgeError, Result};
+    use crate::platform::process::ExitSource;
+
+    /// Exit of a std child, polled (the Linux/macOS ports may replace it with pidfd).
+    pub(super) struct ChildExit(pub(super) std::sync::Mutex<std::process::Child>);
+
+    impl ExitSource for ChildExit {
+        fn poll_exit(&mut self, cx: &mut Context<'_>) -> Poll<Result<u32>> {
+            match self.try_exit_code() {
+                Ok(Some(code)) => Poll::Ready(Ok(code)),
+                Ok(None) => {
+                    let waker = cx.waker().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(Duration::from_millis(50));
+                        waker.wake();
+                    });
+                    Poll::Pending
+                }
+                Err(err) => Poll::Ready(Err(err)),
+            }
+        }
+
+        fn try_exit_code(&self) -> Result<Option<u32>> {
+            let mut child = self
+                .0
+                .lock()
+                .map_err(|_| ForgeError::Internal("child exit lock poisoned".into()))?;
+            child
+                .try_wait()
+                .map(|status| status.map(|s| s.code().unwrap_or(-1) as u32))
+                .map_err(|e| ForgeError::io("polling a process exit", e))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,6 +272,27 @@ mod tests {
         assert!(pid > 0);
         let missing = dir.path().join("nope.exe");
         let err = spawn_detached(&missing, &[], dir.path()).unwrap_err();
+        assert_eq!(err.code(), "not_found", "{err}");
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn a_watched_detached_start_reports_an_early_exit_code() {
+        let dir = tempfile::tempdir().unwrap();
+        let shell = std::env::var_os("ComSpec")
+            .map(std::path::PathBuf::from)
+            .unwrap();
+        let args: Vec<OsString> = vec!["/c".into(), "exit".into(), "4".into()];
+        let mut exit = spawn_detached_watched(&shell, &args, dir.path()).unwrap();
+        assert!(exit.pid() > 0);
+        let code = exit
+            .wait_timeout(std::time::Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(code, Some(4));
+        assert_eq!(exit.try_exit_code().unwrap(), Some(4));
+        let missing = dir.path().join("nope.exe");
+        let err = spawn_detached_watched(&missing, &[], dir.path()).unwrap_err();
         assert_eq!(err.code(), "not_found", "{err}");
     }
 }

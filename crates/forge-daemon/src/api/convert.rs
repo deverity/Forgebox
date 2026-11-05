@@ -3,16 +3,20 @@
 
 use forge_core::model::port::{OwnerKind, PortReservation, PortState as DomainPortState};
 use forge_core::store::{
-    Site, SiteKind as DomainSiteKind, SiteXdebug as DomainXdebug, ToolVersionRow, VersionSource,
-    VersionState,
+    Site, SiteKind as DomainSiteKind, SitePoolMode as DomainPoolMode, SiteXdebug as DomainXdebug,
+    ToolVersionRow, UpdateHistoryRow, UpdateStatus, UpdateTrigger, VersionSource, VersionState,
 };
 use forge_fcgi::{PoolState, PoolStatus, WorkerPhase};
 use forge_ipc::api::{
-    ApiError, CaStatusDto, CertificateDto, FailureReasonDto, InstanceDto, PoolDto, PortDto,
-    PortHolderDto, PortOwnerKind, PortProtocol, PortState, RegistryDto, RegistryKind, ServiceState,
-    SiteDto, SiteKind, SitePhpDto, SiteXdebug, ToolVersionDto, ToolVersionSource, ToolVersionState,
-    UpdatePolicy, XdebugMode,
+    ApiError, CaStatusDto, CatalogKind, CertificateDto, FailureReasonDto, InstanceDto, PoolDto,
+    PortDto, PortHolderDto, PortOwnerKind, PortProtocol, PortState, RegistryDto, RegistryKind,
+    ServiceState, SiteDto, SiteKind, SitePhpDto, SitePoolMode, SiteXdebug, StackDto, StackToolDto,
+    ToolVersionDto, ToolVersionSource, ToolVersionState, UpdateHistoryEntryDto, UpdatePolicy,
+    UpdateStatusDto, UpdateTriggerDto, VariantDefDto, XdebugMode,
 };
+use forge_manifest::schema::stack::StackManifest;
+use forge_manifest::schema::tool::Variant;
+use forge_manifest::schema::{Kind, Platform};
 use forge_registry::RegistryInfo;
 use forge_supervisor::{FailureReason, InstanceState, InstanceStatus};
 use forge_tls::{LeafInfo, PermittedSubtree, TlsStatus};
@@ -34,6 +38,94 @@ pub fn version_source(source: VersionSource) -> ToolVersionSource {
         VersionSource::Registry => ToolVersionSource::Registry,
         VersionSource::Manual => ToolVersionSource::Manual,
         VersionSource::Import => ToolVersionSource::Import,
+    }
+}
+
+/// `kind` of a catalog manifest (only tools, extensions and stacks are catalog entries;
+/// the other kinds never reach the catalog and read as tools).
+pub fn catalog_kind(kind: Kind) -> CatalogKind {
+    match kind {
+        Kind::Extension => CatalogKind::Extension,
+        Kind::Stack => CatalogKind::Stack,
+        Kind::Tool | Kind::Project | Kind::Registry => CatalogKind::Tool,
+    }
+}
+
+/// `versioning.variants[]` → the variant picker definitions.
+pub fn variant_defs(variants: &[Variant]) -> Vec<VariantDefDto> {
+    variants
+        .iter()
+        .map(|v| VariantDefDto {
+            key: v.key.clone(),
+            values: v.values.clone(),
+            default: v.default.clone(),
+            labels: v.label.clone(),
+            derived: v.derive.is_some(),
+        })
+        .collect()
+}
+
+/// `spec.tools` of a stack → what `tools.info` shows.
+pub fn stack_dto(stack: &StackManifest) -> StackDto {
+    StackDto {
+        tools: stack
+            .spec
+            .tools
+            .iter()
+            .map(|t| StackToolDto {
+                id: t.id.clone(),
+                series: t.series.clone(),
+                version: t.version.clone(),
+                instance: t.instance.clone(),
+                extensions: t.extensions.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Platform as the manifests write it (`windows-x64`).
+pub fn platform_text(platform: Platform) -> String {
+    serde_json::to_value(platform)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// The platform the daemon runs on, in manifest terms.
+pub fn host_platform() -> Platform {
+    if cfg!(target_arch = "aarch64") {
+        Platform::WindowsArm64
+    } else {
+        Platform::WindowsX64
+    }
+}
+
+/// An `update_history` row → `tools.history` entry.
+pub fn history_entry(row: UpdateHistoryRow) -> UpdateHistoryEntryDto {
+    UpdateHistoryEntryDto {
+        id: row.id,
+        series: row.series,
+        from: row.from_version,
+        to: row.to_version,
+        from_version_id: row.from_version_id,
+        to_version_id: row.to_version_id,
+        policy: row.policy.as_deref().and_then(update_policy),
+        trigger: match row.triggered_by {
+            UpdateTrigger::Auto => UpdateTriggerDto::Auto,
+            UpdateTrigger::User => UpdateTriggerDto::User,
+            UpdateTrigger::Rollback => UpdateTriggerDto::Rollback,
+        },
+        status: match row.status {
+            UpdateStatus::Started => UpdateStatusDto::Started,
+            UpdateStatus::Completed => UpdateStatusDto::Completed,
+            UpdateStatus::Failed => UpdateStatusDto::Failed,
+            UpdateStatus::RolledBack => UpdateStatusDto::RolledBack,
+        },
+        error: row.error,
+        job_id: row.job_id,
+        rollback_of: row.rollback_of,
+        started_at: row.started_at,
+        finished_at: row.finished_at,
     }
 }
 
@@ -110,8 +202,25 @@ fn failure_error(reason: &FailureReason) -> ApiError {
     ApiError {
         code: code.to_owned(),
         message: serde_json::to_string(reason).unwrap_or_default(),
-        details: dto.and_then(|d| serde_json::to_value(d).ok()),
+        details: dto.and_then(|d| failure_details(&d)),
     }
+}
+
+/// `details` of a service failure: the `kind`-tagged diagnosis (API 1.0 shape, kept) plus
+/// the `{reason, args}` convention (ADR-0039): `reason` = the kind (`port_in_use`,
+/// `missing_dll`...), `args` = its other fields.
+fn failure_details(dto: &FailureReasonDto) -> Option<serde_json::Value> {
+    let mut value = serde_json::to_value(dto).ok()?;
+    let map = value.as_object_mut()?;
+    let reason = map.get("kind")?.clone();
+    let args: serde_json::Map<String, serde_json::Value> = map
+        .iter()
+        .filter(|(key, _)| key.as_str() != "kind")
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    map.insert("reason".into(), reason);
+    map.insert("args".into(), serde_json::Value::Object(args));
+    Some(value)
 }
 
 pub fn port_owner_kind(kind: OwnerKind) -> PortOwnerKind {
@@ -154,6 +263,7 @@ pub fn instance(
     status: Option<&InstanceStatus>,
     ports: &[PortReservation],
     metrics: Option<&forge_supervisor::InstanceMetrics>,
+    size_bytes: Option<u64>,
 ) -> InstanceDto {
     let (state, pid, last_error, restarts, started_at) = match status {
         Some(s) => (
@@ -201,6 +311,8 @@ pub fn instance(
         rss_bytes: metrics.map(|m| m.rss_bytes),
         restarts,
         last_error,
+        data_dir: entry.row.data_dir.as_ref().map(|d| d.replace('\\', "/")),
+        size_bytes,
     }
 }
 
@@ -214,8 +326,8 @@ pub fn pool_state(state: &PoolState) -> ServiceState {
     }
 }
 
-/// A pool; `sites` = enabled sites it serves.
-pub fn pool(status: &PoolStatus, sites: u32) -> PoolDto {
+/// A pool; `sites` = enabled sites it serves, `xdebug` = its debugger is on (M2-E2-T9).
+pub fn pool(status: &PoolStatus, sites: u32, xdebug: bool) -> PoolDto {
     let active = status.count(WorkerPhase::Active);
     PoolDto {
         series: status.series.clone(),
@@ -236,9 +348,25 @@ pub fn pool(status: &PoolStatus, sites: u32) -> PoolDto {
         max_workers: status.max_workers,
         ports: status.workers.iter().filter_map(|w| w.port).collect(),
         sites,
-        xdebug: false,
+        xdebug,
         requests_total: Some(status.requests_total),
         rss_bytes: Some(status.rss_bytes),
+    }
+}
+
+/// Shared or dedicated pool of a site (`sites.pool_mode`, ADR-0044 §7).
+pub fn site_pool_mode(mode: DomainPoolMode) -> SitePoolMode {
+    match mode {
+        DomainPoolMode::Shared => SitePoolMode::Shared,
+        DomainPoolMode::Dedicated => SitePoolMode::Dedicated,
+    }
+}
+
+/// [`site_pool_mode`] the other way.
+pub fn domain_pool_mode(mode: SitePoolMode) -> DomainPoolMode {
+    match mode {
+        SitePoolMode::Shared => DomainPoolMode::Shared,
+        SitePoolMode::Dedicated => DomainPoolMode::Dedicated,
     }
 }
 
@@ -260,9 +388,14 @@ pub fn site_xdebug(x: DomainXdebug) -> SiteXdebug {
     }
 }
 
-/// A site; `php` = what the daemon resolved for it; `https_port` for the URL.
-pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto {
+/// The URL a site is served at (`https://loja.test`).
+pub fn site_url(site: &Site) -> String {
     let scheme = if site.secure { "https" } else { "http" };
+    format!("{scheme}://{}", site.host)
+}
+
+/// A site; `php` = what the daemon resolved for it.
+pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto {
     SiteDto {
         id: site.id,
         slug: site.slug.clone(),
@@ -291,10 +424,12 @@ pub fn site(site: &Site, php: Option<&SitePhp>, default_server: &str) -> SiteDto
         parked: site.parked,
         enabled: site.enabled,
         case_sensitive: site.case_sensitive,
-        url: format!("{scheme}://{}", site.host),
+        url: site_url(site),
         processes: Vec::new(),
         created_at: site.created_at,
         updated_at: site.updated_at,
+        pool_mode: site_pool_mode(site.pool_mode),
+        metrics_enabled: site.metrics_enabled,
     }
 }
 
@@ -306,6 +441,9 @@ pub fn certificate(leaf: &LeafInfo, site_id: Option<forge_core::ids::SiteId>) ->
         not_before: leaf.not_before,
         not_after: leaf.not_after,
         thumbprint_sha256: leaf.thumbprint_sha256.clone(),
+        // Checked by `tls.list` (M2-E2-T6); `tls.issue`/`tls.renew` do not check.
+        ca_thumbprint_sha256: None,
+        trusted: None,
     }
 }
 
@@ -346,13 +484,104 @@ pub fn registry(info: &RegistryInfo) -> RegistryDto {
         priority: i32::try_from(info.priority).unwrap_or(i32::MAX),
         tools: u32::try_from(info.tools).unwrap_or(u32::MAX),
         last_refresh_at: info.last_refresh_at,
+        trusted_unsigned: info.trusted_unsigned,
+        verified: info.verification.as_ref().is_some_and(|v| v.is_verified()),
+        key_id: match &info.verification {
+            Some(forge_registry::Verification::Verified { key_id }) => Some(key_id.clone()),
+            _ => None,
+        },
+        last_error: info.last_error.clone(),
     }
 }
 
-pub fn xdebug_mode(enabled: bool) -> XdebugMode {
-    if enabled {
-        XdebugMode::On
+/// The pool of a version that has no pool actor yet (stopped), from its spec.
+pub fn stopped_pool(spec: &forge_fcgi::PoolSpec, sites: u32, xdebug: bool) -> PoolDto {
+    PoolDto {
+        series: spec.series.clone(),
+        version: spec.version.clone(),
+        version_id: spec.version_id,
+        state: ServiceState::Stopped,
+        upstream: spec.upstream.clone(),
+        workers: 0,
+        busy_workers: 0,
+        min_workers: spec.scaling.min,
+        max_workers: spec.scaling.max,
+        ports: Vec::new(),
+        sites,
+        xdebug,
+        requests_total: None,
+        rss_bytes: None,
+    }
+}
+
+/// `PhpVersionDto.xdebug` of a version: off without the debugger or with it turned off;
+/// else the preset its stored values match (`trigger`), `on` for any other value set.
+pub fn xdebug_mode(state: Option<&crate::php_ext::DebuggerState>) -> XdebugMode {
+    match state {
+        Some(s) if s.enabled => match s.mode.as_deref() {
+            Some("trigger") => XdebugMode::Trigger,
+            _ => XdebugMode::On,
+        },
+        _ => XdebugMode::Off,
+    }
+}
+
+/// Milliseconds of a microsecond value (percentiles of the metrics histograms).
+fn us_to_ms(us: u64) -> f64 {
+    us as f64 / 1000.0
+}
+
+/// One site's metrics sample (`stats.get`, `metrics.site`). `window` labels the span; the
+/// covered span is `[sample.summary.from, sample.summary.to)` (docs/14 §3.6, ADR-0044).
+pub fn site_stats(
+    sample: &forge_metrics::SiteSample,
+    window: forge_ipc::api::StatsWindow,
+) -> forge_ipc::api::SiteStatsDto {
+    let s = &sample.summary;
+    let c = &s.counters;
+    let seconds = s.to.duration_since(s.from).as_secs_f64();
+    let rps = if seconds > 0.0 {
+        c.requests as f64 / seconds
     } else {
-        XdebugMode::Off
+        0.0
+    };
+    let error_pct = if c.requests > 0 {
+        (c.err4xx() + c.err5xx()) as f64 * 100.0 / c.requests as f64
+    } else {
+        0.0
+    };
+    let rt = s.rt.unwrap_or_default();
+    let res = sample.resources.as_ref();
+    forge_ipc::api::SiteStatsDto {
+        site_id: sample.site,
+        host: sample.host.clone(),
+        window,
+        at: s.to,
+        requests: c.requests,
+        rps,
+        p50_ms: us_to_ms(rt.p50_us),
+        p90_ms: us_to_ms(rt.p90_us),
+        p99_ms: us_to_ms(rt.p99_us),
+        error_pct,
+        cpu_pct: res.map(|r| r.cpu_pct),
+        mem_bytes: res.map(|r| r.mem_bytes),
+        approx: res.is_some_and(|r| r.approx),
+        sampled: s.sampled,
+        from: Some(s.from),
+        bytes: c.bytes,
+        status_1xx: c.status[0],
+        status_2xx: c.status[1],
+        status_3xx: c.status[2],
+        status_4xx: c.status[3],
+        status_5xx: c.status[4],
+        php_p50_ms: s.ut.map(|p| us_to_ms(p.p50_us)),
+        php_p90_ms: s.ut.map(|p| us_to_ms(p.p90_us)),
+        php_p99_ms: s.ut.map(|p| us_to_ms(p.p99_us)),
+        workers_active: res.map(|r| r.workers_active),
+        // The dedicated pool's workers are added by the stats handler (it knows the pool
+        // table); the app processes arrive with the app samples.
+        processes: None,
+        last_request_at: sample.last_request_at,
+        metrics_enabled: sample.metrics_enabled,
     }
 }

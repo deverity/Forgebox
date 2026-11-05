@@ -10,7 +10,8 @@
 //!    consistency;
 //! 4. `render.template` exists in [`LintContext::known_templates`] (the templates embedded
 //!    by forge-render), in `<registry>/templates/` or in [`LintContext::template_roots`];
-//! 7. icons in `<registry>/icons/` are SVG, at most 20 KB and without scripts.
+//! 7. icons in `<registry>/icons/` are SVG, at most 20 KB and without scripts (plus the
+//!    `ATTRIBUTION.md` that lists their sources).
 //!
 //! Rules 2, 3, 5 and 6 come from the validator. The lint is blocking file I/O: call it
 //! from `spawn_blocking` in async code.
@@ -23,6 +24,7 @@ use forge_core::config::PortsConfig;
 use forge_core::ids::ToolId;
 
 use crate::issue::IssueCode;
+use crate::locate::locate;
 use crate::parse::{self, ManifestError, ValidateOptions};
 use crate::schema::common::Kind;
 use crate::schema::tool::PostInstallAction;
@@ -31,6 +33,9 @@ use crate::yaml::Location;
 
 /// Largest icon accepted (rule 7).
 pub const MAX_ICON_BYTES: u64 = 20 * 1024;
+
+/// The one non-SVG file allowed in `icons/`: where each logo comes from (docs/04 §1.10).
+pub const ICON_ATTRIBUTION: &str = "ATTRIBUTION.md";
 
 /// A registry folder: `index.yaml`, `tools/`, `stacks/`, `icons/`, `templates/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,7 +253,16 @@ pub fn lint_registry(dir: &RegistryDir, ctx: &LintContext) -> LintReport {
         match parse::load_file(&path) {
             Err(err) => report.issues.push(schema_issue(&path, &err)),
             Ok(manifest) => {
-                lint_one(dir, ctx, &options, &path, &manifest, &mut report.issues);
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                lint_one(
+                    dir,
+                    ctx,
+                    &options,
+                    &path,
+                    &manifest,
+                    &text,
+                    &mut report.issues,
+                );
                 loaded.push(Loaded { path, manifest });
             }
         }
@@ -270,6 +284,7 @@ fn lint_one(
     options: &ValidateOptions,
     path: &Path,
     manifest: &Manifest,
+    text: &str,
     issues: &mut Vec<LintIssue>,
 ) {
     let folder = path
@@ -306,12 +321,10 @@ fn lint_one(
         }
     }
     for issue in parse::validate_with(manifest, options) {
-        issues.push(LintIssue::new(
-            path,
-            issue.code,
-            Some(issue.field),
-            issue.message,
-        ));
+        let location = locate(text, &issue.field);
+        let mut lint_issue = LintIssue::new(path, issue.code, Some(issue.field), issue.message);
+        lint_issue.location = location;
+        issues.push(lint_issue);
     }
     // Rule 4.
     let post_install = match manifest {
@@ -398,6 +411,10 @@ fn lint_icons_dir(dir: &RegistryDir, issues: &mut Vec<LintIssue>) {
     let mut paths: Vec<PathBuf> = entries.filter_map(|e| e.ok().map(|e| e.path())).collect();
     paths.sort();
     for path in paths.into_iter().filter(|p| p.is_file()) {
+        // The list of logo sources, licences and trademark owners (docs/04 §1.10).
+        if path.file_name().is_some_and(|n| n == ICON_ATTRIBUTION) {
+            continue;
+        }
         let svg = path.extension().is_some_and(|e| e == "svg");
         let problem = if svg {
             icon_problem(&path)
@@ -615,6 +632,28 @@ fn index_entries(
                             Some(field.clone()),
                             format!("cannot read {}: {e}", entry.path),
                         )),
+                    }
+                    if let Some(icon) = &entry.icon {
+                        // The icon hash is signed with the index like the manifests' are.
+                        let actual = icon
+                            .path
+                            .strip_prefix("icons/")
+                            .filter(|name| !name.contains(['/', '\\']))
+                            .and_then(|name| std::fs::read(root.join("icons").join(name)).ok())
+                            .map(|bytes| crate::index::sha256_hex(&bytes));
+                        if actual.as_deref() != Some(icon.sha256.as_str()) {
+                            issues.push(LintIssue::new(
+                                index,
+                                IssueCode::IndexMismatch,
+                                Some(format!("{field}.icon.sha256")),
+                                format!(
+                                    "sha256 of {} is {}, the index says {}",
+                                    icon.path,
+                                    actual.as_deref().unwrap_or("(unreadable)"),
+                                    icon.sha256
+                                ),
+                            ));
+                        }
                     }
                     if item.id() != Some(&entry.id) || !kinds.contains(&kind) {
                         issues.push(LintIssue::new(
