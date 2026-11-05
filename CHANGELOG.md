@@ -4,14 +4,49 @@ Todas as mudanças relevantes do Forgebox são registradas aqui.
 
 O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e o projeto adota [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
-O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de arquitetura, em [docs/adr/](docs/adr/) (as ADRs 0012 a 0033 foram tomadas nesta versão).
+O detalhe por tarefa está em [docs/STATUS.md](docs/STATUS.md); as decisões de arquitetura, em [docs/adr/](docs/adr/) (as ADRs 0012 a 0033 são da 0.1.0; as 0034 a 0048, da 0.2.0).
 
 ## [Não lançado]
 
+## [0.2.0] — 2026-11-05
+
+Primeira versão com interface gráfica: o app `Forgebox.exe` (M2). Continua sem instalador (M4). O updater do app está compilado, mas **inativo** nesta versão: a chave e o endpoint de produção ficam para o M4-E1.
+
+### Atenção antes de usar
+- **O gate final do M2 não foi executado.** A M2-E4-T11 (script `m2-gate.ps1` e checklist manual) foi adiada por decisão do projeto e será tratada em versões de patch. A suíte automática completa passou em `develop`, mas nenhuma pessoa percorreu o app seguindo a checklist.
+- **Arrastar a janela:** o desempenho do vidro no Windows 10 foi medido por script. O atraso da janela em relação ao cursor com o mouse físico ainda não foi conferido.
+
 ### Adicionado
-- Esqueleto do desktop (`apps/desktop`): Vite 8, React 19, TypeScript 6, Tailwind 4, vitest, ESLint 9 e crate Tauri `forgebox-desktop` (`Forgebox.exe`) no workspace Cargo; compila sem Node e sem `dist` (M2-E1-T1).
+
+#### App desktop
+- `Forgebox.exe` (Tauri 2 + React 19): painel, serviços, sites (com PHP por vhost e desempenho por site), PHP, bancos de dados, mail, logs, catálogo, terminal, configurações e diagnóstico.
+- Onboarding, paleta de comandos (`Ctrl+K`), bandeja do sistema, notificações nativas e início com o Windows.
+- Moldura estilo macOS: sidebar de vidro em toda a altura da janela e controles em bolinhas coloridas à direita, na ordem do Windows (minimizar, maximizar, fechar). Material por sistema: desfoque no Windows 10, Mica no Windows 11 22000 e Acrylic a partir do 22621; opaco em RDP, com transparência desligada ou alto contraste (M2-E1-T23, adendo à ADR-0035).
+- Ícones das ferramentas com os logos oficiais em branco sobre o bloco da cor da marca; campo `metadata.icon_color` nos manifestos; origem e licença de cada logo em `registry/icons/ATTRIBUTION.md` (M2-E1-T24).
+- Temas claro e escuro, pt-BR e en-US, e gates automáticos de contraste, foco, movimento reduzido e paridade entre GUI e CLI.
+- Capturas de tela no README e `pnpm -C apps/desktop qa:readme-shots` para regerá-las (M2-E4-T12).
+
+#### Métricas
+- Métricas por site a partir do access log `forgebox`: requisições, erros, p50/p90/p99, CPU e RAM, com pool PHP dedicado por site quando se quer valores exatos (M2-E5).
+- Aceite medido a 1.000 req/s: CPU do daemon em 0,40 % da máquina e percentis a menos de 0,4 % do `oha` (`docs/14` §3.9).
+
+#### CLI e daemon
+- Esqueleto do desktop (`apps/desktop`) e crate Tauri `forgebox-desktop` no workspace Cargo; compila sem Node e sem `dist` (M2-E1-T1).
 - `cargo xtask arch-guard`: falha se `forge-cli`, `forge-mcp` ou `forgebox-desktop` dependerem de outro crate do workspace além de `forge-ipc`, ou se o desktop depender direto de `windows`/`windows-sys` (M2-E1-T1).
 - `forge tls ca uninstall [--scope user|machine]` (`tls.ca_uninstall`): tira a CA do Forgebox (e as antigas registradas) do store, resolvendo o problema conhecido da 0.1.0; `forge service kill-port <porta> --pid <n>` (`services.kill_port_holder`): encerra quem ocupa a porta só depois de conferir de novo, no mesmo handle, que ele ainda escuta nela e não é do Forgebox, serviço, processo crítico/do sistema ou de outro usuário, com evento de auditoria; `forge site env <host> [--reveal]` (`sites.env`): `.env`/`.env.local` do site com segredos mascarados no daemon. O helper só remove de `LocalMachine\Root` uma CA que ele aceitaria instalar (M2-E3-T11, ADR-0045).
+
+### Alterado
+- Sites proxy mantêm a conexão com o app aberta nos três servidores (`keepalive_conns`, padrão 32). No nginx, a 1.000 req/s, o p50 caiu de 30,67 ms para 20,90 ms; um 404 no mesmo nginx durante a carga caiu de 18,75 ms para 0,46 ms no p90 (M2-E3-T22, `docs/06` §4.1.1).
+- nginx com `multi_accept on`: com conexão nova por requisição e um reload a cada 0,5 s, as falhas caíram de cerca de 16 por rodada para 0 (M2-E3-T22).
+
+### Removido
+- Atualizações automáticas do Dependabot (`.github/dependabot.yml`).
+
+### Problemas conhecidos
+- **Reload do nginx ainda derruba poucas requisições.** Clientes que mantêm a conexão aberta: de 22 a 34 falhas em cerca de 4.100 requisições, com reloads seguidos (navegadores repetem sozinhos). Carga de PHP com conexão nova por requisição: de 2 a 5 falhas em cerca de 3.200 requisições, quando um processo do PHP é reciclado (`docs/06` §4.1.1).
+- **`.localhost` não resolve no sistema no Windows 10.** Só os navegadores resolvem `*.localhost` sozinhos; `docs/06` §5.1 ainda diz que resolve nativamente. Uma opção de sites em `.localhost` sem DNS ficou para uma versão de patch.
+- **Ícones em tamanho pequeno:** os do Composer, PHP e MySQL perdem definição.
+- A galeria interna de QA ainda descreve os ícones como "na cor da marca".
 
 ## [0.1.0] — 2026-10-28
 
