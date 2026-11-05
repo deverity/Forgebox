@@ -188,7 +188,8 @@ fn an_app_site_proxies_to_its_port_in_every_server() {
     let nginx = render("nginx", "1.30.6", &m.root, vec![model.clone()]);
     let nginx = &nginx["nginx/sites/app.test.conf"];
     assert!(
-        nginx.contains("proxy_pass http://127.0.0.1:3000;"),
+        nginx.contains("server 127.0.0.1:3000 max_fails=0;")
+            && nginx.contains("proxy_pass http://forgebox_proxy_app.test;"),
         "{nginx}"
     );
     assert!(
@@ -244,7 +245,8 @@ fn fixed_ports_proxy_options_and_extra_proxy_sites() {
     let nginx = render("nginx", "1.30.6", &m.root, vec![model]);
     let nginx = &nginx["nginx/sites/api.app.test.conf"];
     assert!(
-        nginx.contains("proxy_pass http://127.0.0.1:4000;"),
+        nginx.contains("server 127.0.0.1:4000 max_fails=0;")
+            && nginx.contains("proxy_pass http://forgebox_proxy_api.app.test;"),
         "{nginx}"
     );
     assert!(

@@ -23,6 +23,13 @@
         header_up FORGEBOX_SITE {{ primary | quote }}
         transport http {
             read_timeout {{ p.read_timeout_secs }}s
+{% if p.keepalive_conns %}
+            # Idle upstream connections are reused (docs/06 section 4.1.1).
+            keepalive {{ p.keepalive_idle_secs }}s
+            keepalive_idle_conns_per_host {{ p.keepalive_conns }}
+{% else %}
+            keepalive off
+{% endif %}
         }
     }
 {% if p.start_on_visit %}

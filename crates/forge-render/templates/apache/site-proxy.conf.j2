@@ -34,7 +34,9 @@
     ErrorDocument 502 "/_forgebox/starting?host={{ primary }}"
     ErrorDocument 503 "/_forgebox/starting?host={{ primary }}"
 {% endif %}
-    ProxyPass "/" "{{ p.upstream }}/"{% if p.websocket %} upgrade=websocket{% endif %} timeout={{ p.read_timeout_secs }}
+    # mod_proxy_http reuses backend connections by default; ttl closes idle ones before the
+    # app does (docs/06 section 4.1.1).
+    ProxyPass "/" "{{ p.upstream }}/"{% if p.websocket %} upgrade=websocket{% endif %}{% if p.keepalive_conns %} ttl={{ p.keepalive_idle_secs }}{% else %} disablereuse=On{% endif %} timeout={{ p.read_timeout_secs }}
     ProxyPassReverse "/" "{{ p.upstream }}/"
 {% if s.extra.apache %}
 

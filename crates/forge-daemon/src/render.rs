@@ -342,6 +342,53 @@ mod tests {
         assert!(!again.changed());
     }
 
+    /// `WebManager::apply_web` reloads a server only when [`Applied::changed`]: rendering
+    /// the same sites and pools again (a pool change that did not move a port, a site
+    /// saved without a change) writes nothing, publishes nothing and so never reloads
+    /// (M2-E3-T22: every nginx reload on Windows can fail requests, docs/06 section 4.1.1).
+    #[test]
+    fn same_web_model_writes_nothing_so_the_server_is_not_reloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = ForgeRoot::new(dir.path()).unwrap();
+        let bus = EventBus::new();
+        let mut events = bus.subscribe();
+        let engine = Engine::embedded_only();
+        let mut ctx = RenderContext::new(&root, "nginx", "1.30.6");
+        ctx.pools = vec![forge_render::UpstreamModel::new(
+            "php_8_4",
+            vec![forge_render::UpstreamServer {
+                host: "127.0.0.1".into(),
+                port: 19084,
+            }],
+        )];
+        ctx.sites = vec![forge_render::VhostModel {
+            kind: forge_render::SiteKind::Proxy,
+            hosts: vec!["app.test".into()],
+            proxy: Some(forge_render::ProxyModel::new("http://127.0.0.1:3000")),
+            ..forge_render::VhostModel::default()
+        }];
+        let first = apply_target(&root, &engine, &bus, &ctx, "nginx/default", &[]).unwrap();
+        assert!(first.changed());
+        assert!(
+            first
+                .written
+                .contains(&"nginx/sites/app.test.conf".to_owned())
+        );
+        assert_eq!(
+            std::iter::from_fn(|| events.try_recv()).count(),
+            first.written.len()
+        );
+        let again = apply_target(&root, &engine, &bus, &ctx, "nginx/default", &[]).unwrap();
+        assert!(!again.changed(), "{:?}", again.written);
+        assert_eq!(again.unchanged, first.written.len());
+        assert!(events.try_recv().is_none());
+
+        // A recycled PHP worker moves to another port: only that upstream is written.
+        ctx.pools[0].servers[0].port = 19085;
+        let moved = apply_target(&root, &engine, &bus, &ctx, "nginx/default", &[]).unwrap();
+        assert_eq!(moved.written, ["nginx/upstreams/php_8_4.conf"]);
+    }
+
     #[test]
     fn settings_go_to_the_overlay_and_into_rendered_blocks() {
         let dir = tempfile::tempdir().unwrap();
