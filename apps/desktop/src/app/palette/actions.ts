@@ -47,7 +47,8 @@ export interface PaletteActions {
 }
 
 export function usePaletteActions(onTogglePalette: () => void): PaletteActions {
-  const { t } = useTranslation("palette");
+  // No suspension: the keyboard listener must exist while the texts load (`PaletteHost`).
+  const { t } = useTranslation("palette", { useSuspense: false });
   const tx = t as unknown as Translate;
   const runtime = useRuntime();
   const navigate = useNavigate();
