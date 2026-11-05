@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { searchForWorkspaceRoot } from "vite";
 import { defineConfig } from "vitest/config";
 
 // `tauri dev` loads devUrl (tauri.conf.json) and requires this exact port.
@@ -14,6 +15,15 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
     // src-tauri/target holds hundreds of thousands of files; never watch them.
     watch: { ignored: ["**/src-tauri/**"] },
+    // The QA fixtures bundle the official registry's icons (`dev:qa`, M2-E1-T24).
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        "../../registry/icons",
+        "../../registry/tools",
+        "../../registry/stacks",
+      ],
+    },
   },
   // `--mode qa` (ADR-0036) builds next to the real app, never over dist/ (Tauri embeds it).
   build: { target: "es2022", outDir: mode === "qa" ? "dist-qa" : "dist" },
