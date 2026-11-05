@@ -270,6 +270,12 @@ describe("pool card", () => {
     expect(within(card).getByTestId("pool-workers")).toHaveTextContent("1/4 workers");
 
     const runtime = h.layer.runtime("local");
+    // The live 2 s poll would race the injected samples: its `services.status` has no pool in
+    // this scenario, so a poll landing after `setState` drops the ring and the card falls back
+    // to "—" (seen under full-suite load). Disposing the poller also discards a poll already in
+    // flight. The poll itself (100 → 140 over 2 s = 20.0) is covered with fake timers in
+    // `state/metrics.test.tsx`; this test covers what the card renders from the store.
+    runtime.metrics.dispose();
     const listed = await runtime.api.call("php.list", {});
     const pool = listed.versions.find((v) => v.series === "8.3")?.pool;
     if (pool === null || pool === undefined) throw new Error("no pool");
